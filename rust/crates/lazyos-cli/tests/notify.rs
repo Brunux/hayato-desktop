@@ -254,18 +254,18 @@ impl Bus {
         }
         let dir = scratch(&format!("bus-{name}"));
         let config = dir.join("bus.conf");
-        let socket = dir.join("bus");
         std::fs::write(
             &config,
             format!(
                 "<!DOCTYPE busconfig PUBLIC \"-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN\" \
                  \"http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd\">\n\
-                 <busconfig>\n  <type>session</type>\n  <listen>unix:path={}</listen>\n  \
+                 <busconfig>\n  <type>session</type>\n  \
+                 <listen>unix:abstract=/tmp/dbus-lazyos-{name}-{}</listen>\n  \
                  <auth>EXTERNAL</auth>\n  <apparmor mode=\"disabled\"/>\n  <policy context=\"default\">\n    \
                  <allow send_destination=\"*\"/>\n    \
                  <allow receive_sender=\"*\"/>\n    \
                  <allow eavesdrop=\"true\"/>\n    <allow own=\"*\"/>\n  </policy>\n</busconfig>\n",
-                socket.display()
+                std::process::id()
             ),
         )
         .unwrap();
@@ -309,12 +309,22 @@ impl Bus {
             std::fs::read_to_string(self.dir.join("daemon.stderr")).unwrap_or_default();
         let monitor_err =
             std::fs::read_to_string(self.dir.join("monitor.stderr")).unwrap_or_default();
-        let socket_exists = self.dir.join("bus").exists();
+        let aa_attr = std::fs::read_to_string("/proc/self/attr/current").unwrap_or_default();
+        let mut notify_profiles = std::fs::read_dir("/etc/apparmor.d")
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| n.contains("notify") || n.contains("dbus") || n.contains("unpriv"))
+            .collect::<Vec<_>>();
+        notify_profiles.sort();
         format!(
-            "address={}, socket_exists={}, daemon={}, daemon_stderr={:?}, monitor_stderr={:?}",
+            "address={}, daemon={}, attr={:?}, aa_profiles={:?}, daemon_stderr={:?}, monitor_stderr={:?}",
             self.address,
-            socket_exists,
             daemon_state,
+            aa_attr.trim(),
+            notify_profiles,
             daemon_err.trim(),
             monitor_err.trim(),
         )
