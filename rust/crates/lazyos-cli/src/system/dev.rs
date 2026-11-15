@@ -11,13 +11,14 @@ use std::cell::Cell;
 use std::path::Path;
 
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, KeyHint, ListState, Outcome, Row, Screen, TextStyle, draw_card,
+    BodyCtx, Design, Glyph, Header, KeyHint, ListState, Outcome, Row, Screen, Task, TaskView,
+    TextStyle, draw_card,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::layout::Rect;
 
 use crate::system::pick::{Picker, Question};
-use crate::system::{have, missing, say};
+use crate::system::{have, missing};
 
 /// A developer action entry.
 #[derive(Clone, Debug)]
@@ -365,30 +366,31 @@ pub fn menu(
         needed.push("lazyos-profile");
     }
     if let Some(said) = missing(&needed) {
-        say(
+        return Err(crate::Failure::new(
             "Developer",
             format!("{said} (lazyos-profile, wl-clipboard, sudo, tar, gnupg, zstd)"),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Box,
-        );
-        return Ok(3);
+        ));
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+    let mut banner: Option<String> = None;
 
     loop {
+        let note = banner.take().unwrap_or_else(|| {
+            "The archive carries ~/.ssh and ~/.gnupg \u{00b7} the passphrase protects it"
+                .to_string()
+        });
         let mut main_picker = Picker::new(
             "Developer",
             vec![Question::choose(
                 "Developer",
-                "The archive carries ~/.ssh and ~/.gnupg · the passphrase protects it",
+                note,
                 vec![
                     Row::new("Export my profile")
                         .glyph(Glyph::Box)
-                        .detail("keys, configs and packages, encrypted · to a disk"),
+                        .detail("keys, configs and packages, encrypted \u{00b7} to a disk"),
                     Row::new("Restore a profile")
                         .glyph(Glyph::Undo)
-                        .detail("from an exported archive · the current files are backed up first"),
+                        .detail("from an exported archive \u{00b7} the current files are backed up first"),
                     Row::new("Save a diagnostics bundle")
                         .glyph(Glyph::Bug)
                         .detail("the system report and this boot's journal, for a bug report"),
@@ -414,13 +416,11 @@ pub fn menu(
             "restore" => {
                 let archives = DevScreen::list_archives();
                 if archives.is_empty() {
-                    say(
-                        "Developer",
-                        "No exported profile on a mounted disk · insert the stick, mount it in Places, then try again",
-                        lazyos_ui::Urgency::Normal,
-                        Glyph::Info,
+                    banner = Some(
+                        "No exported profile found on mounted disks or ~/Downloads \u{00b7} mount a stick in Places first"
+                            .to_string(),
                     );
-                    return Ok(0);
+                    continue;
                 }
 
                 let rows: Vec<Row> = archives
@@ -428,34 +428,48 @@ pub fn menu(
                     .map(|a| {
                         Row::new(&a.name)
                             .glyph(Glyph::Key)
-                            .detail(&format!("{} · {}", a.date, a.size))
+                            .detail(format!("{} \u{00b7} {}", a.date, a.size))
                     })
                     .collect();
                 let keys: Vec<String> = archives.iter().map(|a| a.path.clone()).collect();
                 let mut archive_picker = Picker::new(
                     "Restore a profile",
-                    vec![Question::choose(
-                        "Restore a profile",
-                        "Enter restores · the current files are backed up first · Escape closes",
-                        rows,
-                        keys,
-                    )],
+                    vec![
+                        Question::choose(
+                            "Restore a profile",
+                            "Select an archive \u{00b7} the current files are backed up first \u{00b7} Escape goes back",
+                            rows,
+                            keys,
+                        ),
+                        Question::ask(
+                            "Restore this profile?",
+                            "Current configs are backed up to ~/.cache/lazyos/backups first",
+                            "Restore {0} into your home directory?",
+                            "Restore",
+                            "go",
+                        ),
+                    ],
                 );
 
                 let r_code =
                     crate::run_screen(terminal, design, "Restore a profile", &mut archive_picker)?;
                 if r_code == 1 {
-                    // Escape: step back to main Developer menu
                     continue;
                 }
                 if r_code != 0 {
                     return Ok(r_code);
                 }
 
-                if let Some(archive_path) = archive_picker.answers().first() {
+                let answers = archive_picker.answers();
+                if answers.get(1) != Some(&"go".to_string()) {
+                    continue;
+                }
+
+                if let Some(archive_path) = answers.first() {
                     let mut args = vec![
                         profile_bin.to_string_lossy().to_string(),
                         "import".to_string(),
+                        "--yes".to_string(),
                         archive_path.to_string(),
                     ];
                     if archive_path.ends_with(".gpg") {
@@ -463,7 +477,7 @@ pub fn menu(
                             "Passphrase for the profile",
                             vec![Question::input(
                                 "Passphrase for the profile",
-                                "Enter the passphrase to decrypt the archive · Escape cancels",
+                                "Enter the passphrase to decrypt the archive \u{00b7} Escape cancels",
                                 "Passphrase",
                                 true,
                             )],
@@ -479,11 +493,8 @@ pub fn menu(
                         }
                         let pw = pw_picker.answers().first().cloned().unwrap_or_default();
                         if pw.is_empty() {
-                            say(
-                                "Developer",
-                                "A passphrase is required to decrypt the profile",
-                                lazyos_ui::Urgency::Normal,
-                                Glyph::Info,
+                            banner = Some(
+                                "A passphrase is required to decrypt the profile".to_string(),
                             );
                             continue;
                         }
@@ -504,8 +515,19 @@ pub fn menu(
                             args.extend(["--passphrase-file".to_string(), pass_file]);
                         }
                     }
-                    let _ = crate::menu::spawn_detached(&args, &home);
-                    return Ok(0);
+
+                    let tag = format!("dev-restore-{}", std::process::id());
+                    let step_label = format!("Decrypt, back up current home & restore {archive_path}");
+                    let task = Task::start_steps(
+                        &tag,
+                        "Restore profile",
+                        vec![step_label],
+                        false,
+                        vec![args],
+                    )
+                    .map_err(|e| crate::Failure::new("Developer", e.to_string()))?;
+                    let mut view = TaskView::new(task);
+                    return crate::run_screen(terminal, design, "Restore a profile", &mut view);
                 }
             }
             "export" => {
@@ -514,7 +536,7 @@ pub fn menu(
                     "Export the profile to",
                     vec![Question::choose(
                         "Export the profile to",
-                        "Mounted disks first · Escape closes",
+                        "Mounted disks first \u{00b7} Escape goes back",
                         target_rows,
                         target_keys,
                     )],
@@ -527,7 +549,6 @@ pub fn menu(
                     &mut target_picker,
                 )?;
                 if t_code == 1 {
-                    // Escape: step back to main Developer menu
                     continue;
                 }
                 if t_code != 0 {
@@ -540,13 +561,13 @@ pub fn menu(
                         vec![
                             Question::input(
                                 "Passphrase for the profile",
-                                "A passphrase is required: it is what makes the archive safe to lose · Escape cancels",
+                                "A passphrase is required: it is what makes the archive safe to lose \u{00b7} Escape cancels",
                                 "Passphrase",
                                 true,
                             ),
                             Question::input(
                                 "Confirm passphrase",
-                                "The same passphrase again · Escape cancels",
+                                "The same passphrase again \u{00b7} Escape cancels",
                                 "Again",
                                 true,
                             ),
@@ -565,21 +586,14 @@ pub fn menu(
                     let p1 = answers.first().map(|s| s.as_str()).unwrap_or("");
                     let p2 = answers.get(1).map(|s| s.as_str()).unwrap_or("");
                     if p1.is_empty() {
-                        say(
-                            "Developer",
-                            "A passphrase is required: it is what makes the archive safe to lose",
-                            lazyos_ui::Urgency::Normal,
-                            Glyph::Info,
+                        banner = Some(
+                            "A passphrase is required: it makes the archive safe to lose"
+                                .to_string(),
                         );
                         continue;
                     }
                     if p1 != p2 {
-                        say(
-                            "Developer",
-                            "The two passphrases differ; try again",
-                            lazyos_ui::Urgency::Normal,
-                            Glyph::Info,
-                        );
+                        banner = Some("The two passphrases differ; please try again".to_string());
                         continue;
                     }
 
@@ -605,8 +619,18 @@ pub fn menu(
                         args.extend(["--passphrase-file".to_string(), pass_file]);
                     }
 
-                    let _ = crate::menu::spawn_detached(&args, &home);
-                    return Ok(0);
+                    let tag = format!("dev-export-{}", std::process::id());
+                    let step_label = format!("Archive & GPG-encrypt profile into {target_dir}");
+                    let task = Task::start_steps(
+                        &tag,
+                        format!("Export profile to {target_dir}"),
+                        vec![step_label],
+                        false,
+                        vec![args],
+                    )
+                    .map_err(|e| crate::Failure::new("Developer", e.to_string()))?;
+                    let mut view = TaskView::new(task);
+                    return crate::run_screen(terminal, design, "Export my profile", &mut view);
                 }
             }
             "report" => {
@@ -615,7 +639,7 @@ pub fn menu(
                     "Save the diagnostics bundle to",
                     vec![Question::choose(
                         "Save the diagnostics bundle to",
-                        "No keys and no passwords are in it",
+                        "No keys and no passwords are in it \u{00b7} Escape goes back",
                         target_rows,
                         target_keys,
                     )],
@@ -628,7 +652,6 @@ pub fn menu(
                     &mut target_picker,
                 )?;
                 if t_code == 1 {
-                    // Escape: step back to main Developer menu
                     continue;
                 }
                 if t_code != 0 {
@@ -636,15 +659,28 @@ pub fn menu(
                 }
 
                 if let Some(target_dir) = target_picker.answers().first() {
-                    let _ = crate::menu::spawn_detached(
-                        &[
-                            profile_bin.to_string_lossy().to_string(),
-                            "report".to_string(),
-                            target_dir.to_string(),
-                        ],
-                        &home,
+                    let args = vec![
+                        profile_bin.to_string_lossy().to_string(),
+                        "report".to_string(),
+                        target_dir.to_string(),
+                    ];
+                    let tag = format!("dev-report-{}", std::process::id());
+                    let step_label = format!("Collect check-system report & boot journal into {target_dir}");
+                    let task = Task::start_steps(
+                        &tag,
+                        format!("Save diagnostics bundle to {target_dir}"),
+                        vec![step_label],
+                        true,
+                        vec![args],
+                    )
+                    .map_err(|e| crate::Failure::new("Developer", e.to_string()))?;
+                    let mut view = TaskView::new(task);
+                    return crate::run_screen(
+                        terminal,
+                        design,
+                        "Save a diagnostics bundle",
+                        &mut view,
                     );
-                    return Ok(0);
                 }
             }
             _ => return Ok(0),

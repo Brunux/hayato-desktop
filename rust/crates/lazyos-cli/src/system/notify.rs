@@ -15,24 +15,26 @@ use std::io::BufRead;
 use std::path::PathBuf;
 
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row, Screen,
-    TextStyle, draw_card,
+    BodyCtx, Card, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row, Screen,
+    Urgency, draw_card, draw_filter_bar,
 };
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 
-use crate::system::{missing, out, say};
+use crate::system::missing;
 
 const NEEDED: &[&str] = &["wl-copy"];
 
 /// The notify screen.
 pub struct NotifyScreen {
     notifications: Vec<Notification>,
+    actions: Vec<String>,
     dnd: bool,
     list: ListState,
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
+    status_note: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -65,11 +67,17 @@ impl NotifyScreen {
     pub fn new() -> Self {
         let mut screen = Self {
             notifications: Vec::new(),
+            actions: Vec::new(),
             dnd: false,
             list: ListState::new(),
             header: Header::new("LazyOS").subtitle("Notifications"),
-            keybar: vec![KeyHint::new("Enter", "copy"), KeyHint::new("Esc", "close")],
+            keybar: vec![
+                KeyHint::new("Enter", "copy / act"),
+                KeyHint::new("type", "filter"),
+                KeyHint::new("Esc", "close"),
+            ],
             rows_height: Cell::new(20),
+            status_note: None,
         };
         screen.reload();
         screen
@@ -145,63 +153,62 @@ impl NotifyScreen {
 
     fn build_rows(&mut self) {
         let mut rows = Vec::new();
+        let mut actions = Vec::new();
         if self.notifications.is_empty() {
             rows.push(
                 Row::new("Nothing in the history yet")
                     .glyph(Glyph::Bell)
                     .detail("Notifications land here after they expire"),
             );
+            actions.push("none".to_string());
         } else {
             for n in &self.notifications {
-                let body_short = if n.body.len() > 64 {
-                    format!("{}…", &n.body[..64])
+                let body_short: String = n.body.chars().take(64).collect();
+                let body_short = if n.body.chars().count() > 64 {
+                    format!("{body_short}…")
                 } else {
-                    n.body.clone()
+                    body_short
                 };
-                let detail = format!("{} · {}", n.app, body_short);
-                rows.push(
-                    Row::new(n.summary.clone())
-                        .glyph(Glyph::Bell)
-                        .detail(detail)
-                        .value(format!("id:{}", n.id)),
-                );
+                let mut r = Row::new(n.summary.clone())
+                    .glyph(Glyph::Bell)
+                    .detail(body_short);
+                if !n.app.is_empty() {
+                    r = r.value(n.app.clone());
+                }
+                rows.push(r);
+                actions.push(format!("id:{}", n.id));
             }
         }
-        let dnd_label = if self.dnd {
-            "Do not disturb · on"
-        } else {
-            "Do not disturb · off"
-        };
         let dnd_glyph = if self.dnd {
             Glyph::BellOff
         } else {
             Glyph::Bell
         };
-        let dnd_color = if self.dnd {
-            lazyos_ui::ColorRole::Warn
-        } else {
-            lazyos_ui::ColorRole::Dim
-        };
         rows.push(
-            Row::new(dnd_label)
+            Row::new("Do not disturb")
                 .glyph(dnd_glyph)
-                .detail("toggle do-not-disturb")
-                .value("dnd"),
+                .detail("toggle quiet mode (critical alerts still show)")
+                .value(if self.dnd { "● on" } else { "○ off" }),
         );
+        actions.push("dnd".to_string());
+
         rows.push(
             Row::new("Restore the last one")
                 .glyph(Glyph::Undo)
-                .detail("back on screen")
-                .value("restore"),
+                .detail("re-display newest notification on screen"),
         );
+        actions.push("restore".to_string());
+
         let count = self.notifications.len();
         rows.push(
             Row::new("Dismiss everything")
                 .glyph(Glyph::Trash)
-                .detail(format!("{} in the history", count))
-                .value("dismiss"),
+                .detail(format!("{count} in the history")),
         );
-        self.list.set_rows(rows);
+        actions.push("dismiss".to_string());
+
+        self.actions = actions;
+        self.list.update_rows(rows);
     }
 }
 
@@ -209,13 +216,22 @@ impl Screen for NotifyScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Notifications"), true);
         let (filter, rows) = super::pick::list_layout(ctx.area);
-        let msg = if self.notifications.is_empty() {
-            "Escape closes"
+        let msg = if let Some(note) = &self.status_note {
+            note.as_str()
+        } else if self.notifications.is_empty() {
+            "Notification history is empty · Escape closes"
         } else {
-            "Enter copies the notification · Escape closes"
+            "Enter copies notification · type to filter · Escape closes"
         };
-        ctx.buf
-            .set_string(filter.x, filter.y, msg, ctx.design.style(TextStyle::Dim));
+        draw_filter_bar(
+            ctx.buf,
+            filter,
+            ctx.design,
+            self.list.filter(),
+            msg,
+            self.list.len(),
+            self.notifications.len(),
+        );
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
     }
@@ -226,11 +242,24 @@ impl Screen for NotifyScreen {
         }
         let rows_height = self.rows_height.get();
         match key.code {
-            KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+            KeyCode::Esc => {
+                if !self.list.filter().is_empty() {
+                    self.list.set_filter("");
+                    return Outcome::Continue;
+                }
+                return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
+            }
             KeyCode::Enter => {
                 if let Some(index) = self.list.selected_index() {
                     return self.activate(index);
                 }
+            }
+            KeyCode::Char(_) | KeyCode::Backspace
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                    && self.list.type_filter(key) =>
+            {
+                return Outcome::Continue;
             }
             _ => {}
         }
@@ -266,18 +295,13 @@ impl Screen for NotifyScreen {
 
 impl NotifyScreen {
     fn activate(&mut self, index: usize) -> Outcome {
-        let rows = self.list.rows();
-        let Some(row) = rows.get(index) else {
+        let Some(key) = self.actions.get(index).cloned() else {
             return Outcome::Continue;
         };
-        let Some(key) = row.value.as_deref() else {
-            return Outcome::Continue;
-        };
-        if key.is_empty() || key == "-" {
+        if key.is_empty() || key == "none" {
             return Outcome::Continue;
         }
-        if key.starts_with("id:") {
-            let id = &key[3..];
+        if let Some(id) = key.strip_prefix("id:") {
             if let Some(n) = self.notifications.iter().find(|n| n.id == id) {
                 let text = if n.body.is_empty() {
                     n.summary.clone()
@@ -290,25 +314,21 @@ impl NotifyScreen {
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())
                     .status();
-                say(
-                    "Notifications",
-                    format!("Copied: {}", n.summary),
-                    lazyos_ui::Urgency::Normal,
-                    Glyph::Clipboard,
-                );
-                return Outcome::Done(lazyos_ui::app::exit::OK);
+                self.status_note = Some(format!("Copied notification: {}", n.summary));
             }
         } else {
-            match key {
+            match key.as_str() {
                 "dnd" => {
                     let path = dnd_path();
                     if path.exists() {
                         let _ = fs::remove_file(&path);
+                        self.status_note = Some("Do not disturb: off".to_string());
                     } else {
                         if let Some(parent) = path.parent() {
                             let _ = fs::create_dir_all(parent);
                         }
                         let _ = fs::write(&path, "1\n");
+                        self.status_note = Some("Do not disturb: on".to_string());
                     }
                     self.reload();
                 }
@@ -317,7 +337,10 @@ impl NotifyScreen {
                         let mut cmd = std::process::Command::new("notify-send");
                         if !last.app.is_empty() {
                             cmd.arg("-a").arg(&last.app);
+                        } else {
+                            cmd.arg("-a").arg("LazyOS");
                         }
+                        cmd.arg("-i").arg("bell");
                         cmd.arg(&last.summary);
                         if !last.body.is_empty() {
                             cmd.arg(&last.body);
@@ -327,48 +350,23 @@ impl NotifyScreen {
                             .stdout(std::process::Stdio::null())
                             .stderr(std::process::Stdio::null())
                             .spawn();
-                        say(
-                            "Notifications",
-                            "Last notification restored",
-                            lazyos_ui::Urgency::Normal,
-                            Glyph::Bell,
-                        );
+                        self.status_note =
+                            Some(format!("Restored notification: {}", last.summary));
+                    } else {
+                        self.status_note = Some("No notification in history to restore".to_string());
                     }
                 }
                 "dismiss" => {
+                    let count = self.notifications.len();
                     let path = history_path();
                     let _ = fs::write(&path, "");
-                    say(
-                        "Notifications",
-                        "Everything dismissed",
-                        lazyos_ui::Urgency::Normal,
-                        Glyph::Trash,
-                    );
+                    self.status_note = Some(format!("Dismissed {count} notifications"));
                     self.reload();
                 }
                 _ => {}
             }
         }
         Outcome::Continue
-    }
-
-    fn list_layout(area: Rect) -> (Rect, Rect) {
-        let inner = Rect {
-            x: area.x + 2,
-            y: area.y + 1,
-            width: area.width.saturating_sub(4),
-            height: area.height.saturating_sub(2),
-        };
-        let filter = Rect {
-            height: 1.min(inner.height),
-            ..inner
-        };
-        let rows = Rect {
-            y: inner.y + 2,
-            height: inner.height.saturating_sub(2),
-            ..inner
-        };
-        (filter, rows)
     }
 }
 
@@ -378,13 +376,10 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        say(
+        return Err(crate::Failure::new(
             "Notifications",
             format!("{said} (wl-clipboard)"),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Bell,
-        );
-        return Ok(3);
+        ));
     }
     let mut screen = NotifyScreen::new();
     let code = crate::run_screen(terminal, design, "Notifications", &mut screen)?;

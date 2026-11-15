@@ -334,7 +334,6 @@ fn query(resolved: &Resolved) -> Option<i32> {
             println!("{}", system::bluetooth::status());
             Some(EXIT_OK)
         }
-        ("menu qr", ["--wifi"]) => Some(system::qr::wifi_dialog()),
         ("menu format" | "menu swap", ["--candidates"]) => {
             let mut out = io::stdout();
             for d in system::disk::candidates_from_machine() {
@@ -513,7 +512,7 @@ fn execute(
         "menu clip" => system::clip::menu(terminal, design),
         "menu emoji" => system::emoji::menu(terminal, design),
         "menu capture" => system::capture::menu(terminal, design),
-        "menu qr" => system::qr::menu(terminal, design),
+        "menu qr" => system::qr::menu_with_args(&resolved.args, terminal, design),
         "menu remind" => system::remind::menu(terminal, design),
         "menu calc" => system::calc::menu(terminal, design),
         "menu colour" => system::colour::menu(terminal, design),

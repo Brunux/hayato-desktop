@@ -12,13 +12,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, Input, KeyHint, ListAction, ListState, Outcome, Row, Screen,
-    TextStyle, draw_card,
+    BodyCtx, Card, Design, Glyph, Header, Input, KeyHint, ListAction, ListState, Outcome, Row,
+    Screen, TextStyle, Urgency, draw_card, draw_filter_bar, draw_scrollbar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 
-use crate::system::{have, missing, print, say};
+use crate::system::missing;
 
 const DOCS_DIR: &str = "/usr/share/doc/lazyos";
 
@@ -30,11 +30,19 @@ pub struct ManualPage {
     pub summary: String,
 }
 
+#[derive(Clone, Debug)]
+enum LearnRowAction {
+    Page(PathBuf),
+    SearchManuals,
+    Apropos,
+}
+
 /// The learn state.
 pub struct LearnScreen {
     input: Input,
     pages: Vec<ManualPage>,
     filtered: Vec<ManualPage>,
+    actions: Vec<LearnRowAction>,
     list: ListState,
     header: Header,
     keybar: Vec<KeyHint>,
@@ -76,15 +84,15 @@ pub enum LearnMode {
 impl LearnScreen {
     pub fn new() -> Self {
         let pages = Self::load_pages();
-        let mut list = ListState::new()
+        let list = ListState::new()
             .with_empty("no manual pages found")
             .ranked();
-        list.set_rows(pages.iter().map(Self::page_row).collect());
 
-        Self {
+        let mut screen = Self {
             input: Input::new(),
             pages: pages.clone(),
             filtered: pages,
+            actions: Vec::new(),
             list,
             header: Header::new("LazyOS").subtitle("Learn"),
             keybar: vec![
@@ -110,7 +118,9 @@ impl LearnScreen {
                 KeyHint::new("type", "filter"),
                 KeyHint::new("Esc", "back"),
             ],
-        }
+        };
+        screen.filter_pages();
+        screen
     }
 
     fn load_pages() -> Vec<ManualPage> {
@@ -174,8 +184,33 @@ impl LearnScreen {
                 .cloned()
                 .collect();
         }
-        self.list
-            .set_rows(self.filtered.iter().map(Self::page_row).collect());
+
+        let mut rows = Vec::new();
+        let mut actions = Vec::new();
+
+        for p in &self.filtered {
+            rows.push(Self::page_row(p));
+            actions.push(LearnRowAction::Page(p.path.clone()));
+        }
+
+        if !query.is_empty() {
+            rows.push(
+                Row::new(format!("Search manual pages for “{query}”"))
+                    .glyph(Glyph::Search)
+                    .detail("full-text ripgrep over /usr/share/doc/lazyos"),
+            );
+            actions.push(LearnRowAction::SearchManuals);
+
+            rows.push(
+                Row::new(format!("Search system man pages (apropos) for “{query}”"))
+                    .glyph(Glyph::Book)
+                    .detail("apropos over installed man pages"),
+            );
+            actions.push(LearnRowAction::Apropos);
+        }
+
+        self.actions = actions;
+        self.list.set_rows(rows);
     }
 
     fn search_manuals(&mut self) {
@@ -383,28 +418,15 @@ impl Screen for LearnScreen {
         match self.view_mode {
             LearnMode::List => {
                 let (filter, rows) = Self::list_layout(ctx.area);
-                let x = ctx.buf.set_string(
-                    filter.x,
-                    filter.y,
-                    &format!("{} ", Glyph::Search.cell()),
-                    ctx.design.style(TextStyle::Title),
+                draw_filter_bar(
+                    ctx.buf,
+                    filter,
+                    ctx.design,
+                    self.input.text(),
+                    "Enter opens manual page · type to filter or search",
+                    self.list.len(),
+                    self.actions.len(),
                 );
-                let x = filter.x + 1 + Glyph::Search.cell().len() as u16;
-                if self.input.text().is_empty() {
-                    ctx.buf.set_string(
-                        x,
-                        filter.y,
-                        "type to filter · Enter on first row searches · second row is apropos",
-                        ctx.design.style(TextStyle::Dim),
-                    );
-                } else {
-                    ctx.buf.set_string(
-                        x,
-                        filter.y,
-                        self.input.text(),
-                        ctx.design.style(TextStyle::Body),
-                    );
-                }
                 self.rows_height.set(rows.height);
                 self.list.render(rows, ctx.buf, ctx.design, true);
             }
@@ -427,39 +449,31 @@ impl Screen for LearnScreen {
                         ctx.design.style(TextStyle::Body),
                     );
                 }
-                // Scroll indicator
-                if self.content_lines.len() > inner.height as usize {
-                    let indicator = format!(
-                        "↓ {} more lines",
-                        self.content_lines.len() - inner.height as usize - scroll
-                    );
-                    ctx.buf.set_string(
-                        inner.x,
-                        inner.y + inner.height - 1,
-                        &indicator,
-                        ctx.design.style(TextStyle::Dim),
-                    );
-                }
+                draw_scrollbar(
+                    ctx.buf,
+                    inner,
+                    ctx.design,
+                    scroll,
+                    inner.height as usize,
+                    self.content_lines.len(),
+                    true,
+                );
             }
             LearnMode::Search | LearnMode::Apropos => {
                 let (filter, rows) = Self::list_layout(ctx.area);
-                let x = ctx.buf.set_string(
-                    filter.x,
-                    filter.y,
-                    &format!("{} ", Glyph::Search.cell()),
-                    ctx.design.style(TextStyle::Title),
-                );
-                let x = filter.x + 1 + Glyph::Search.cell().len() as u16;
                 let mode_name = if self.view_mode == LearnMode::Search {
                     "Manual search"
                 } else {
                     "Apropos"
                 };
-                ctx.buf.set_string(
-                    x,
-                    filter.y,
-                    &format!("{} for \"{}\"", mode_name, self.search_query),
-                    ctx.design.style(TextStyle::Dim),
+                draw_filter_bar(
+                    ctx.buf,
+                    filter,
+                    ctx.design,
+                    "",
+                    &format!("{mode_name} results for “{}” · Esc goes back", self.search_query),
+                    self.search_list.len(),
+                    self.search_results.len(),
                 );
                 self.rows_height.set(rows.height);
                 self.search_list.render(rows, ctx.buf, ctx.design, true);
@@ -477,6 +491,7 @@ impl Screen for LearnScreen {
                 let rows_height = self.rows_height.get();
                 if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
                     && !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
                 {
                     let _ = self.input.handle(key);
                     self.filter_pages();
@@ -485,32 +500,23 @@ impl Screen for LearnScreen {
                 match key.code {
                     KeyCode::Enter => {
                         if let Some(selected) = self.list.selected_index() {
-                            if selected == 0 {
-                                // Search the manual
-                                self.search_manuals();
-                                return Outcome::Continue;
-                            } else if selected == 1 {
-                                // Apropos
-                                self.run_apropos();
-                                return Outcome::Continue;
-                            } else if let Some(page) = self.filtered.get(selected - 2).cloned() {
-                                self.open_page(&page.path);
-                                return Outcome::Continue;
-                            }
+                            self.activate_list_row(selected);
                         }
+                        return Outcome::Continue;
                     }
-                    KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+                    KeyCode::Esc => {
+                        if !self.input.text().is_empty() {
+                            self.input.set("");
+                            self.filter_pages();
+                            return Outcome::Continue;
+                        }
+                        return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
+                    }
                     _ => {}
                 }
                 match self.list.handle(key, rows_height, design) {
                     ListAction::Activated(index) => {
-                        if index == 0 {
-                            self.search_manuals();
-                        } else if index == 1 {
-                            self.run_apropos();
-                        } else if let Some(page) = self.filtered.get(index - 2).cloned() {
-                            self.open_page(&page.path);
-                        }
+                        self.activate_list_row(index);
                         Outcome::Continue
                     }
                     _ => Outcome::Continue,
@@ -521,14 +527,14 @@ impl Screen for LearnScreen {
                     self.view_mode = LearnMode::List;
                     Outcome::Continue
                 }
-                KeyCode::Up => {
+                KeyCode::Up | KeyCode::Char('k') => {
                     let scroll = self.content_scroll.get();
                     if scroll > 0 {
                         self.content_scroll.set(scroll - 1);
                     }
                     Outcome::Continue
                 }
-                KeyCode::Down => {
+                KeyCode::Down | KeyCode::Char('j') => {
                     let scroll = self.content_scroll.get() as usize;
                     let max = self.content_lines.len().saturating_sub(1);
                     if scroll < max {
@@ -538,25 +544,28 @@ impl Screen for LearnScreen {
                 }
                 KeyCode::PageUp => {
                     let scroll = self.content_scroll.get() as usize;
-                    self.content_scroll.set((scroll.saturating_sub(10)) as u16);
+                    self.content_scroll.set((scroll.saturating_sub(15)) as u16);
                     Outcome::Continue
                 }
                 KeyCode::PageDown => {
                     let scroll = self.content_scroll.get() as usize;
                     let max = self.content_lines.len().saturating_sub(1);
-                    self.content_scroll.set(((scroll + 10).min(max)) as u16);
+                    self.content_scroll.set(((scroll + 15).min(max)) as u16);
+                    Outcome::Continue
+                }
+                KeyCode::Home => {
+                    self.content_scroll.set(0);
+                    Outcome::Continue
+                }
+                KeyCode::End => {
+                    let max = self.content_lines.len().saturating_sub(1);
+                    self.content_scroll.set(max as u16);
                     Outcome::Continue
                 }
                 _ => Outcome::Continue,
             },
             LearnMode::Search | LearnMode::Apropos => {
                 let rows_height = self.rows_height.get();
-                if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-                    && !key.modifiers.contains(KeyModifiers::CONTROL)
-                {
-                    let _ = self.input.handle(key);
-                    return Outcome::Continue;
-                }
                 match key.code {
                     KeyCode::Enter => {
                         if let Some(selected) = self.search_list.selected_index() {
@@ -573,7 +582,6 @@ impl Screen for LearnScreen {
                     }
                     KeyCode::Esc => {
                         self.view_mode = LearnMode::List;
-                        self.input = Input::new();
                         return Outcome::Continue;
                     }
                     _ => {}
@@ -602,13 +610,7 @@ impl Screen for LearnScreen {
                 if let Some(row) = row {
                     self.list.set_cursor(row);
                     if let Some(index) = self.list.selected_index() {
-                        if index == 0 {
-                            self.search_manuals();
-                        } else if index == 1 {
-                            self.run_apropos();
-                        } else if let Some(page) = self.filtered.get(index - 2).cloned() {
-                            self.open_page(&page.path);
-                        }
+                        self.activate_list_row(index);
                     }
                 }
                 Outcome::Continue
@@ -658,9 +660,26 @@ impl Screen for LearnScreen {
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }
+
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        match self.view_mode {
+            LearnMode::Page => Some((1060, 740)),
+            LearnMode::List | LearnMode::Search | LearnMode::Apropos => Some((860, 540)),
+        }
+    }
 }
 
 impl LearnScreen {
+    fn activate_list_row(&mut self, index: usize) {
+        if let Some(action) = self.actions.get(index).cloned() {
+            match action {
+                LearnRowAction::Page(path) => self.open_page(&path),
+                LearnRowAction::SearchManuals => self.search_manuals(),
+                LearnRowAction::Apropos => self.run_apropos(),
+            }
+        }
+    }
+
     fn list_layout(area: Rect) -> (Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
@@ -687,13 +706,7 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(&["rg", "apropos", "man"]) {
-        say(
-            "Learn",
-            format!("{said} (ripgrep, man-db)"),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Book,
-        );
-        return Ok(3);
+        return Err(crate::Failure::new("Learn", format!("{said} (ripgrep, man-db)")));
     }
     let mut screen = LearnScreen::new();
     let code = crate::run_screen(terminal, design, "Learn", &mut screen)?;

@@ -41,6 +41,17 @@ pub enum ColorRole {
     Selection,
 }
 
+impl ColorRole {
+    #[allow(non_upper_case_globals)]
+    pub const Warning: Self = Self::Warn;
+    #[allow(non_upper_case_globals)]
+    pub const Success: Self = Self::Ok;
+    #[allow(non_upper_case_globals)]
+    pub const Border: Self = Self::Faint;
+    #[allow(non_upper_case_globals)]
+    pub const Faint: Self = Self::SurfaceAlt;
+}
+
 /// The spacing scale. Four steps, no arbitrary numbers: on this 1366 px panel
 /// one cell is ~8 px, so the scale is in cells and the density multiplies it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,6 +94,13 @@ pub enum TextStyle {
     Key,
     /// The error card's summary.
     Danger,
+}
+
+impl TextStyle {
+    #[allow(non_upper_case_globals)]
+    pub const Caption: Self = Self::Dim;
+    #[allow(non_upper_case_globals)]
+    pub const Subtitle: Self = Self::Title;
 }
 
 /// How much room a row and the frame's bands get.
@@ -284,7 +302,11 @@ pub const GLYPHS: &[char] = &[
     '\u{256e}', // ╮
     '\u{256f}', // ╯
     '\u{2570}', // ╰
-    '\u{2588}', // █ gauge full
+    '\u{2580}', // ▀ qr upper half block
+    '\u{2582}', // ▂ signal bar 1
+    '\u{2584}', // ▄ qr/signal lower half block
+    '\u{2586}', // ▆ signal bar 3
+    '\u{2588}', // █ gauge full / qr full block / signal bar 4
     '\u{258d}', // ▍ selection bar
     '\u{2591}', // ░ gauge empty
     '\u{2595}', // ▕ gauge end

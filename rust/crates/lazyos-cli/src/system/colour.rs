@@ -9,24 +9,27 @@
 #![allow(clippy::vec_init_then_push)]
 use std::cell::Cell;
 
+use lazyos_theme::Rgb;
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row, Screen,
-    TextStyle, draw_card,
+    BodyCtx, Card, ColorRole, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row,
+    Screen, TextStyle, Urgency, draw_badge, draw_card, draw_filter_bar, draw_gauge,
 };
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
+use ratatui::style::Style;
 
-use crate::system::{missing, out, say};
+use crate::system::{missing, out};
 
 const NEEDED: &[&str] = &["slurp", "grim", "ffmpeg"];
 
-/// The colour screen: a list of swatches with the picked colour first.
+/// The colour screen: dual-pane truecolor swatch inspector + searchable palette list.
 pub struct ColourScreen {
     picked: Option<Colour>,
     list: ListState,
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
+    status_note: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -35,19 +38,72 @@ struct Colour {
     rgb: (u8, u8, u8),
 }
 
+impl Colour {
+    fn from_hex(hex: &str) -> Option<Self> {
+        let raw = hex.trim().strip_prefix('#').unwrap_or(hex.trim());
+        if raw.len() != 6 {
+            return None;
+        }
+        let r = u8::from_str_radix(&raw[0..2], 16).ok()?;
+        let g = u8::from_str_radix(&raw[2..4], 16).ok()?;
+        let b = u8::from_str_radix(&raw[4..6], 16).ok()?;
+        Some(Self {
+            hex: format!("#{:02X}{:02X}{:02X}", r, g, b),
+            rgb: (r, g, b),
+        })
+    }
+
+    fn relative_luminance(&self) -> f64 {
+        fn channel(c: u8) -> f64 {
+            let s = c as f64 / 255.0;
+            if s <= 0.03928 {
+                s / 12.92
+            } else {
+                ((s + 0.055) / 1.055).powf(2.4)
+            }
+        }
+        0.2126 * channel(self.rgb.0) + 0.7152 * channel(self.rgb.1) + 0.0722 * channel(self.rgb.2)
+    }
+
+    fn contrast_ratio(l1: f64, l2: f64) -> f64 {
+        let (bright, dark) = if l1 > l2 { (l1, l2) } else { (l2, l1) };
+        (bright + 0.05) / (dark + 0.05)
+    }
+}
+
 impl ColourScreen {
     pub fn new() -> Self {
-        let mut list = ListState::new().with_empty("pick a pixel to see its colour");
+        let list = ListState::new().with_empty("pick a pixel to see its colour");
         Self {
             picked: None,
             list,
             header: Header::new("LazyOS").subtitle("Colour"),
             keybar: vec![
                 KeyHint::new("Enter", "copy / pick"),
+                KeyHint::new("type", "filter"),
                 KeyHint::new("Esc", "close"),
             ],
             rows_height: Cell::new(20),
+            status_note: None,
         }
+    }
+
+    fn selected_colour(&self) -> Colour {
+        if let Some(idx) = self.list.selected_index() {
+            if let Some(row) = self.list.rows().get(idx) {
+                if let Some(val) = row.value.as_deref() {
+                    if let Some(hex) = val.strip_prefix("hex:") {
+                        if let Some(c) = Colour::from_hex(hex) {
+                            return c;
+                        }
+                    }
+                }
+            }
+        }
+        self.picked.clone().unwrap_or(Colour {
+            hex: "#2AA198".to_string(),
+            rgb: (0x2a, 0xa1, 0x98),
+        })
     }
 
     fn pick_pixel() -> Option<Colour> {
@@ -166,12 +222,119 @@ notify-send -a LazyOS -i color-picker "Colour" "$hex copied to the clipboard (${
 impl Screen for ColourScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Colour"), true);
-        let (filter, rows) = super::pick::list_layout(ctx.area);
-        ctx.buf.set_string(
-            filter.x,
-            filter.y,
-            "Enter copies or picks a pixel · Escape closes",
-            ctx.design.style(TextStyle::Dim),
+        let (left_pane, filter, rows) = Self::layout(ctx.area);
+
+        if let Some(lp) = left_pane {
+            let c = self.selected_colour();
+            let swatch_style = Style::default().fg(lazyos_ui::design::color(Rgb::new(
+                c.rgb.0, c.rgb.1, c.rgb.2,
+            )));
+            let swatch_line = "\u{2588}".repeat(lp.width.saturating_sub(2).min(24) as usize);
+            for dy in 0..4.min(lp.height) {
+                ctx.buf
+                    .set_string(lp.x, lp.y + dy, &swatch_line, swatch_style);
+            }
+
+            if lp.height >= 6 {
+                let mut x = draw_badge(
+                    ctx.buf,
+                    lp.x,
+                    lp.y + 5,
+                    ctx.design,
+                    &c.hex,
+                    ColorRole::Accent,
+                );
+                x += 1;
+                ctx.buf.set_string(
+                    x,
+                    lp.y + 5,
+                    format!("rgb({},{},{})", c.rgb.0, c.rgb.1, c.rgb.2),
+                    ctx.design.style(TextStyle::Dim),
+                );
+            }
+
+            let bar_w = lp.width.saturating_sub(8);
+            if lp.height >= 10 && bar_w >= 6 {
+                let r_val = format!("{:>3}", c.rgb.0);
+                let g_val = format!("{:>3}", c.rgb.1);
+                let b_val = format!("{:>3}", c.rgb.2);
+                ctx.buf
+                    .set_string(lp.x, lp.y + 7, "R", ctx.design.style(TextStyle::Title));
+                draw_gauge(
+                    ctx.buf,
+                    Rect {
+                        x: lp.x + 2,
+                        y: lp.y + 7,
+                        width: bar_w,
+                        height: 1,
+                    },
+                    ctx.design,
+                    c.rgb.0 as f64 / 255.0,
+                    &r_val,
+                );
+
+                ctx.buf
+                    .set_string(lp.x, lp.y + 8, "G", ctx.design.style(TextStyle::Title));
+                draw_gauge(
+                    ctx.buf,
+                    Rect {
+                        x: lp.x + 2,
+                        y: lp.y + 8,
+                        width: bar_w,
+                        height: 1,
+                    },
+                    ctx.design,
+                    c.rgb.1 as f64 / 255.0,
+                    &g_val,
+                );
+
+                ctx.buf
+                    .set_string(lp.x, lp.y + 9, "B", ctx.design.style(TextStyle::Title));
+                draw_gauge(
+                    ctx.buf,
+                    Rect {
+                        x: lp.x + 2,
+                        y: lp.y + 9,
+                        width: bar_w,
+                        height: 1,
+                    },
+                    ctx.design,
+                    c.rgb.2 as f64 / 255.0,
+                    &b_val,
+                );
+            }
+
+            if lp.height >= 13 {
+                let lum = c.relative_luminance();
+                let vs_white = Colour::contrast_ratio(lum, 1.0);
+                let vs_black = Colour::contrast_ratio(lum, 0.0);
+                ctx.buf.set_string(
+                    lp.x,
+                    lp.y + 11,
+                    format!("WCAG vs #FFF: {vs_white:.1}:1"),
+                    ctx.design.style(TextStyle::Dim),
+                );
+                ctx.buf.set_string(
+                    lp.x,
+                    lp.y + 12,
+                    format!("WCAG vs #000: {vs_black:.1}:1"),
+                    ctx.design.style(TextStyle::Dim),
+                );
+            }
+        }
+
+        let note = self
+            .status_note
+            .as_deref()
+            .unwrap_or("Enter copies or picks a pixel · type to filter");
+        draw_filter_bar(
+            ctx.buf,
+            filter,
+            ctx.design,
+            self.list.filter(),
+            note,
+            self.list.len(),
+            self.list.rows().len(),
         );
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
@@ -183,11 +346,24 @@ impl Screen for ColourScreen {
         }
         let rows_height = self.rows_height.get();
         match key.code {
-            KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+            KeyCode::Esc => {
+                if !self.list.filter().is_empty() {
+                    self.list.set_filter("");
+                    return Outcome::Continue;
+                }
+                return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
+            }
             KeyCode::Enter => {
                 if let Some(index) = self.list.selected_index() {
                     return self.activate(index);
                 }
+            }
+            KeyCode::Char(_) | KeyCode::Backspace
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                    && self.list.type_filter(key) =>
+            {
+                return Outcome::Continue;
             }
             _ => {}
         }
@@ -208,7 +384,7 @@ impl Screen for ColourScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        let (_, rows) = super::pick::list_layout(area);
+        let (_, _, rows) = Self::layout(area);
         self.list.hit_row(rows, x, y, design)
     }
 
@@ -219,9 +395,50 @@ impl Screen for ColourScreen {
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }
+
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        Some((780, 460))
+    }
 }
 
 impl ColourScreen {
+    fn layout(area: Rect) -> (Option<Rect>, Rect, Rect) {
+        let inner = Rect {
+            x: area.x + 2,
+            y: area.y + 1,
+            width: area.width.saturating_sub(4),
+            height: area.height.saturating_sub(2),
+        };
+        if inner.width >= 60 && inner.height >= 10 {
+            let left_w = 26;
+            let left = Rect {
+                x: inner.x,
+                y: inner.y,
+                width: left_w,
+                height: inner.height,
+            };
+            let right = Rect {
+                x: inner.x + left_w + 2,
+                y: inner.y,
+                width: inner.width.saturating_sub(left_w + 2),
+                height: inner.height,
+            };
+            let filter = Rect {
+                height: 1.min(right.height),
+                ..right
+            };
+            let rows = Rect {
+                y: right.y + 2,
+                height: right.height.saturating_sub(2),
+                ..right
+            };
+            (Some(left), filter, rows)
+        } else {
+            let (filter, rows) = super::pick::list_layout(area);
+            (None, filter, rows)
+        }
+    }
+
     fn activate(&mut self, index: usize) -> Outcome {
         let rows = self.list.rows();
         let Some(row) = rows.get(index) else {
@@ -233,20 +450,15 @@ impl ColourScreen {
         if key == "pick" {
             Self::pick_detached();
             Outcome::Done(lazyos_ui::app::exit::OK)
-        } else if let Some(hex) = key.strip_prefix("hex:") {
+        } else if let Some(hex) = key.strip_prefix("hex:").map(|s| s.to_uppercase()) {
             let _ = std::process::Command::new("wl-copy")
-                .arg(hex)
+                .arg(&hex)
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
                 .status();
-            say(
-                "Colour",
-                format!("{hex} copied to the clipboard"),
-                lazyos_ui::Urgency::Normal,
-                Glyph::Brush,
-            );
-            Outcome::Done(lazyos_ui::app::exit::OK)
+            self.status_note = Some(format!("Copied {hex} to the clipboard"));
+            Outcome::Continue
         } else {
             Outcome::Continue
         }
@@ -259,13 +471,10 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        say(
+        return Err(crate::Failure::new(
             "Colour",
             format!("{said} (slurp, grim, ffmpeg)"),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Brush,
-        );
-        return Ok(3);
+        ));
     }
     let mut screen = ColourScreen::new();
     screen.build_rows();

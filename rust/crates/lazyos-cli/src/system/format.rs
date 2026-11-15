@@ -18,14 +18,14 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use lazyos_ui::{Design, Glyph, Urgency};
+use lazyos_ui::{Design, Glyph, Task, TaskView};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 use super::disk::{self, Disk, Facts};
 use super::pick::{Picker, Question, row};
 use super::step::{self, Failed, Step};
-use super::{missing, out, say};
+use super::{missing, out};
 
 /// What the menu needs before it offers anything.
 pub const NEEDED: &[&str] = &["parted", "mkfs.exfat", "mkfs.ext4", "lsblk"];
@@ -141,27 +141,43 @@ pub fn questions(found: &[Disk]) -> Vec<Question> {
     ]
 }
 
-/// `lazyos menu format` (`rofi-format`): the window, then the steps.
+/// `lazyos menu format` (`rofi-format`): the window, then the steps in a TaskView.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        say(
+        return Err(crate::Failure::new(
             "Format a disk",
             format!("{said} (parted, exfatprogs, e2fsprogs)"),
-            Urgency::Critical,
-            Glyph::Disk,
+        ));
+    }
+
+    let found = loop {
+        let listing = out(&["lsblk", "-dnro", "NAME,SIZE,MODEL,TRAN"]).unwrap_or_default();
+        let facts = Facts::from_machine();
+        let candidates = disk::candidates(&listing, &facts);
+        if !candidates.is_empty() {
+            break candidates;
+        }
+        let mut empty_picker = Picker::new(
+            "Format a disk",
+            vec![Question::choose(
+                "No removable disks available",
+                disk::NOTHING,
+                vec![row(
+                    "Rescan removable disks",
+                    "plug in an unmounted USB stick or SD card and press Enter",
+                    Glyph::Sync,
+                )],
+                vec!["rescan".to_string()],
+            )],
         );
-        return Ok(3);
-    }
-    let listing = out(&["lsblk", "-dnro", "NAME,SIZE,MODEL,TRAN"]).unwrap_or_default();
-    let facts = Facts::from_machine();
-    let found = disk::candidates(&listing, &facts);
-    if found.is_empty() {
-        say("Format a disk", disk::NOTHING, Urgency::Normal, Glyph::Disk);
-        return Ok(0);
-    }
+        let code = crate::run_screen(terminal, design, "Format a disk", &mut empty_picker)?;
+        if code != 0 {
+            return Ok(code);
+        }
+    };
 
     let mut picker = Picker::new("Format a disk", questions(&found));
     let code = crate::run_screen(terminal, design, "Format a disk", &mut picker)?;
@@ -173,42 +189,65 @@ pub fn menu(
         return Ok(1);
     };
 
-    // The list is the safety, and this is the last gate: the steps below erase
-    // the disk, so the rule is asked once more, over what the machine says now.
     let name = dev.trim_start_matches("/dev/");
     let now = Facts::from_machine();
     if disk::is_system_disk(name, &now) {
-        say(
+        return Err(crate::Failure::new(
             "Format a disk",
             format!(
                 "{dev} is built into this machine or is the disk this system runs from: never formatted here (install-emmc.sh writes the eMMC)"
             ),
-            Urgency::Critical,
-            Glyph::Disk,
-        );
-        return Ok(3);
+        ));
     }
 
-    match apply(dev, fs) {
-        Ok(done) => {
-            say(
-                "Format a disk",
-                format!("{done} · mount it from Places when you need it"),
-                Urgency::Normal,
-                Glyph::Disk,
-            );
-            Ok(0)
-        }
-        Err(failed) => {
-            say(
-                "Format a disk",
-                failed.said(),
-                Urgency::Critical,
-                Glyph::Disk,
-            );
-            Ok(3)
-        }
+    let (part_steps, part) = steps(dev, fs).map_err(|r| crate::Failure::new("Format a disk", r))?;
+    let fs_step = mkfs(fs, &part);
+
+    let mut commands = Vec::new();
+    for s in &part_steps {
+        let mut cmd = if s.root {
+            vec!["sudo".to_string(), "-n".to_string()]
+        } else {
+            Vec::new()
+        };
+        cmd.extend(s.argv.clone());
+        commands.push(cmd);
     }
+    commands.push(vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        format!(
+            "for _i in $(seq 1 50); do [ -e '{part}' ] && exit 0; sleep 0.1; done; [ -e '{part}' ]"
+        ),
+    ]);
+    {
+        let mut cmd = if fs_step.root {
+            vec!["sudo".to_string(), "-n".to_string()]
+        } else {
+            Vec::new()
+        };
+        cmd.extend(fs_step.argv.clone());
+        commands.push(cmd);
+    }
+
+    let tag = format!("format-{}", std::process::id());
+    let step_labels = vec![
+        format!("Create GPT partition table on {dev}"),
+        format!("Create primary {fs} partition (1MiB..100%)"),
+        format!("Wait for kernel partition node {part}"),
+        format!("Write {fs} filesystem (label {LABEL})"),
+    ];
+    let task = Task::start_steps(
+        &tag,
+        format!("Format {dev} ({fs})"),
+        step_labels,
+        false,
+        commands,
+    )
+    .map_err(|e| crate::Failure::new("Format a disk", e.to_string()))?;
+
+    let mut view = TaskView::new(task);
+    crate::run_screen(terminal, design, "Format a disk", &mut view)
 }
 
 #[cfg(test)]

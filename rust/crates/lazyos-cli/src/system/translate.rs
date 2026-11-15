@@ -219,49 +219,49 @@ pub fn menu_config(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
-    let cur = target_code();
-    let cur_name = name_of(&cur);
+    let mut status_note: Option<String> = None;
 
-    let mut rows = Vec::new();
-    let mut keys = Vec::new();
+    loop {
+        let cur = target_code();
+        let cur_name = name_of(&cur);
 
-    for (code, name) in LANGUAGES {
-        let is_cur = *code == cur;
-        let mark = if is_cur { "● " } else { "  " };
-        let detail = if is_cur {
-            format!("{code} · current")
-        } else {
-            code.to_string()
-        };
-        rows.push(row(format!("{}{}", mark, name), detail, Glyph::Globe));
-        keys.push(code.to_string());
-    }
+        let mut rows = Vec::new();
+        let mut keys = Vec::new();
 
-    let mut picker = Picker::new(
-        "Translate",
-        vec![Question::choose(
-            "Translate Target Language",
-            format!("Everything goes into {cur_name} · Enter sets language"),
-            rows,
-            keys,
-        )],
-    );
+        for (code, name) in LANGUAGES {
+            let is_cur = *code == cur;
+            let mut r = row(*name, *code, Glyph::Globe);
+            if is_cur {
+                r = r.value("● current");
+            }
+            rows.push(r);
+            keys.push(code.to_string());
+        }
 
-    let code = crate::run_screen(terminal, design, "Translate", &mut picker)?;
-    if code != 0 {
-        return Ok(code);
-    }
+        let note = status_note
+            .clone()
+            .unwrap_or_else(|| format!("Everything goes into {cur_name} · Enter sets language"));
 
-    if let Some(chosen) = picker.answers().first() {
-        let _ = set_target_code(chosen);
-        say(
+        let mut picker = Picker::new(
             "Translate",
-            format!("Target language: {}", name_of(chosen)),
-            Urgency::Normal,
-            Glyph::Globe,
+            vec![Question::choose(
+                "Translate Target Language",
+                note,
+                rows,
+                keys,
+            )],
         );
+
+        let code = crate::run_screen(terminal, design, "Translate", &mut picker)?;
+        if code != 0 {
+            return Ok(code);
+        }
+
+        if let Some(chosen) = picker.answers().first() {
+            let _ = set_target_code(chosen);
+            status_note = Some(format!("Target language set to {}", name_of(chosen)));
+        }
     }
-    Ok(0)
 }
 
 #[cfg(test)]

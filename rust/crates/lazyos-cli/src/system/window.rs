@@ -11,14 +11,14 @@ use std::cell::Cell;
 use std::collections::HashMap;
 
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, Input, KeyHint, ListAction, ListState, Outcome, Row, Screen,
-    TextStyle, draw_card,
+    BodyCtx, Card, Design, Glyph, Header, Input, KeyHint, ListAction, ListState, Outcome, Row,
+    Screen, TextStyle, Urgency, draw_card, draw_filter_bar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 use serde::Deserialize;
 
-use crate::system::{have, missing, print, say};
+use crate::system::{have, missing, print};
 
 /// A window from the sway tree.
 #[derive(Clone, Debug, Deserialize)]
@@ -62,6 +62,7 @@ pub struct WindowScreen {
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
+    status_note: Option<String>,
 }
 
 impl WindowScreen {
@@ -84,6 +85,7 @@ impl WindowScreen {
                 KeyHint::new("Esc", "close"),
             ],
             rows_height: Cell::new(20),
+            status_note: None,
         }
     }
 
@@ -181,38 +183,25 @@ impl WindowScreen {
 
     fn focus_window(&self, window: &WindowEntry) {
         let _ = std::process::Command::new("swaymsg")
-            .args(["[con_id="])
-            .arg(window.id.to_string())
-            .arg("] focus")
+            .args([format!("[con_id={}]", window.id), "focus".to_string()])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status();
         print(&format!("Focused: {}", window.title));
-        say(
-            "Windows",
-            format!("Focused {}", window.title),
-            lazyos_ui::Urgency::Normal,
-            Glyph::Window,
-        );
     }
 
-    fn close_window(&self, window: &WindowEntry) {
+    fn close_window(&mut self, window: &WindowEntry) {
         let _ = std::process::Command::new("swaymsg")
-            .args(["[con_id="])
-            .arg(window.id.to_string())
-            .arg("] kill")
+            .args([format!("[con_id={}]", window.id), "kill".to_string()])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status();
         print(&format!("Closed: {}", window.title));
-        say(
-            "Windows",
-            format!("Closed {}", window.title),
-            lazyos_ui::Urgency::Normal,
-            Glyph::Window,
-        );
+        self.status_note = Some(format!("Closed {}", window.title));
+        self.windows = Self::load_windows();
+        self.filter_windows();
     }
 }
 
@@ -220,27 +209,21 @@ impl Screen for WindowScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Windows"), true);
         let (filter, rows) = Self::list_layout(ctx.area);
-        let x = ctx.buf.set_string(
-            filter.x,
-            filter.y,
-            &format!("{} ", Glyph::Search.cell()),
-            ctx.design.style(TextStyle::Title),
+        draw_filter_bar(
+            ctx.buf,
+            filter,
+            ctx.design,
+            self.input.text(),
+            "type to filter windows...",
+            self.filtered.len(),
+            self.windows.len(),
         );
-        let x = filter.x + 1 + Glyph::Search.cell().len() as u16;
-        if self.input.text().is_empty() {
-            ctx.buf.set_string(
-                x,
-                filter.y,
-                "type to filter windows...",
-                ctx.design.style(TextStyle::Dim),
-            );
-        } else {
-            ctx.buf.set_string(
-                x,
-                filter.y,
-                self.input.text(),
-                ctx.design.style(TextStyle::Body),
-            );
+        if let Some(note) = &self.status_note {
+            let nx = filter.right().saturating_sub(note.chars().count() as u16 + 2);
+            if nx > filter.x + 24 {
+                ctx.buf
+                    .set_string(nx, filter.y, note, ctx.design.style(TextStyle::Title));
+            }
         }
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
@@ -253,6 +236,7 @@ impl Screen for WindowScreen {
         let rows_height = self.rows_height.get();
         if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
             && !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
         {
             let _ = self.input.handle(key);
             self.filter_windows();
@@ -269,8 +253,8 @@ impl Screen for WindowScreen {
             }
             KeyCode::Char('1') if key.modifiers.contains(KeyModifiers::ALT) => {
                 if let Some(selected) = self.list.selected_index() {
-                    if let Some(window) = self.filtered.get(selected) {
-                        self.close_window(window);
+                    if let Some(window) = self.filtered.get(selected).cloned() {
+                        self.close_window(&window);
                         return Outcome::Continue;
                     }
                 }
@@ -344,13 +328,7 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(&["swaymsg"]) {
-        say(
-            "Windows",
-            format!("{said} (sway)"),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Window,
-        );
-        return Ok(3);
+        return Err(crate::Failure::new("Windows", format!("{said} (sway)")));
     }
     let mut screen = WindowScreen::new();
     let code = crate::run_screen(terminal, design, "Windows", &mut screen)?;

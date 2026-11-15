@@ -22,7 +22,7 @@ use std::cell::Cell;
 use lazyos_ui::widgets::put_trunc;
 use lazyos_ui::{
     BodyCtx, Confirm, ConfirmAction, Design, Glyph, Header, Input, InputAction, KeyHint,
-    ListAction, ListState, Outcome, Row, Screen, TextStyle, draw_card,
+    ListAction, ListState, Outcome, Row, Screen, TextStyle, draw_card, draw_filter_bar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::layout::Rect;
@@ -338,25 +338,53 @@ impl Screen for Picker {
         };
         draw_card(ctx.buf, ctx.area, ctx.design, Some(&self.name), true);
         let (filter, rows) = list_layout(ctx.area);
-        put_trunc(
-            ctx.buf,
-            filter.x,
-            filter.y,
-            &self.note,
-            filter.width,
-            ctx.design.style(TextStyle::Dim),
-        );
         match question {
             Question::Choose { .. } | Question::Rows { .. } => {
+                if self.list.filter().is_empty() {
+                    put_trunc(
+                        ctx.buf,
+                        filter.x,
+                        filter.y,
+                        &self.note,
+                        filter.width,
+                        ctx.design.style(TextStyle::Dim),
+                    );
+                } else {
+                    draw_filter_bar(
+                        ctx.buf,
+                        filter,
+                        ctx.design,
+                        self.list.filter(),
+                        &self.note,
+                        self.list.visible_len(),
+                        self.list.len(),
+                    );
+                }
                 self.rows_height.set(rows.height);
                 self.list.render(rows, ctx.buf, ctx.design, true);
             }
             Question::Ask { .. } => {
+                put_trunc(
+                    ctx.buf,
+                    filter.x,
+                    filter.y,
+                    &self.note,
+                    filter.width,
+                    ctx.design.style(TextStyle::Dim),
+                );
                 if let Some(confirm) = &self.confirm {
                     confirm.render(ctx.area, ctx.buf, ctx.design);
                 }
             }
             Question::Input { placeholder, .. } => {
+                put_trunc(
+                    ctx.buf,
+                    filter.x,
+                    filter.y,
+                    &self.note,
+                    filter.width,
+                    ctx.design.style(TextStyle::Dim),
+                );
                 if let Some(input) = &self.input {
                     let input_rect = Rect {
                         x: filter.x,

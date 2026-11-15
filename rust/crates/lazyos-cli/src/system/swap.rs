@@ -16,7 +16,7 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use lazyos_ui::{Design, Glyph, Urgency};
+use lazyos_ui::{Design, Glyph, Task, TaskView};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
@@ -24,7 +24,7 @@ use super::disk::{self, Disk, Facts};
 use super::fstab;
 use super::pick::{Picker, Question, row};
 use super::step::{self, Failed, Step};
-use super::{missing, out, say};
+use super::{missing, out};
 
 /// What the menu needs before it offers anything.
 pub const NEEDED: &[&str] = &["parted", "mkswap", "swapon", "swapoff", "blkid", "lsblk"];
@@ -365,22 +365,18 @@ fn questions(found: &[Disk]) -> Vec<Question> {
     ]
 }
 
-/// `lazyos menu swap` (`rofi-swap`): the window, then the steps or the undo.
+/// `lazyos menu swap` (`rofi-swap`): the window, then the steps or the undo inside a TaskView.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        say(
+        return Err(crate::Failure::new(
             "Auxiliary swap",
             format!("{said} (parted, util-linux)"),
-            Urgency::Critical,
-            Glyph::Disk,
-        );
-        return Ok(3);
+        ));
     }
 
-    // Both setup and undo rewrite /etc/fstab.
     let fstab_text = std::fs::read_to_string("/etc/fstab").map_err(|_| {
         crate::Failure::new(
             "/etc/fstab is missing or unreadable: nothing can be configured".to_string(),
@@ -388,20 +384,15 @@ pub fn menu(
         )
     })?;
 
-    let listing = out(&["lsblk", "-dnro", "NAME,SIZE,MODEL,TRAN"]).unwrap_or_default();
-    let facts = Facts::from_machine();
-    let found = disk::candidates(&listing, &facts);
-
     let status = Status::from_machine();
 
-    // Already set up: status and undo.
     if status.configured || status.active {
         let mut picker = Picker::new(
             "Auxiliary swap",
             vec![
                 Question::choose(
                     "Auxiliary swap",
-                    "Enter acts · Escape closes · the card is not touched",
+                    "Enter acts \u{00b7} Escape closes \u{00b7} the card is not touched",
                     vec![
                         row(
                             "Status",
@@ -422,8 +413,8 @@ pub fn menu(
                 ),
                 Question::ask(
                     "Turn off the auxiliary swap?",
-                    "a card that is in use can take a while · Escape leaves it as it is",
-                    "{0} · files on it are not erased",
+                    "a card that is in use can take a while \u{00b7} Escape leaves it as it is",
+                    "{0} \u{00b7} files on it are not erased",
                     "Turn it off",
                     "go",
                 ),
@@ -440,83 +431,100 @@ pub fn menu(
             return Ok(0);
         }
 
-        match turn_off(&status, &fstab_text) {
-            Ok(done) => {
-                say("Auxiliary swap", done, Urgency::Normal, Glyph::Disk);
-                Ok(0)
-            }
-            Err(failed) => {
-                say(
-                    "Auxiliary swap",
-                    failed.said(),
-                    Urgency::Critical,
-                    Glyph::Disk,
-                );
-                Ok(3)
+        let stripped = fstab::strip(&fstab_text);
+        fstab::replace(&stripped).map_err(|f| crate::Failure::new("Auxiliary swap", f))?;
+
+        let mut steps_meta: Vec<String> = Vec::new();
+        let mut commands = Vec::new();
+        if let Some(ref part) = status.part {
+            let listing = out(&["swapon", "--show=NAME", "--noheadings"]).unwrap_or_default();
+            let joined = joined(&listing);
+            if active_in(&joined, part) {
+                steps_meta.push(format!("Deactivate swap on {part} (swapoff)"));
+                commands.push(vec![
+                    "sudo".to_string(),
+                    "-n".to_string(),
+                    "swapoff".to_string(),
+                    part.clone(),
+                ]);
             }
         }
+        steps_meta.push("Reload systemd mount units (systemctl daemon-reload)".to_string());
+        commands.push(vec![
+            "sudo".to_string(),
+            "-n".to_string(),
+            "systemctl".to_string(),
+            "daemon-reload".to_string(),
+        ]);
+
+        let tag = format!("swap-off-{}", std::process::id());
+        let task = Task::start_steps(&tag, "Turn off auxiliary swap", steps_meta, false, commands)
+            .map_err(|e| crate::Failure::new("Auxiliary swap", e.to_string()))?;
+        let mut view = TaskView::new(task);
+        crate::run_screen(terminal, design, "Auxiliary swap", &mut view)
     } else {
-        // Nothing set up yet: pick a disk.
-        if found.is_empty() {
-            say(
+        let found = loop {
+            let listing = out(&["lsblk", "-dnro", "NAME,SIZE,MODEL,TRAN"]).unwrap_or_default();
+            let facts = Facts::from_machine();
+            let candidates = disk::candidates(&listing, &facts);
+            if !candidates.is_empty() {
+                break candidates;
+            }
+            let mut empty_picker = Picker::new(
                 "Auxiliary swap",
-                disk::NOTHING,
-                Urgency::Normal,
-                Glyph::Disk,
+                vec![Question::choose(
+                    "No removable disks available",
+                    disk::NOTHING,
+                    vec![row(
+                        "Rescan removable disks",
+                        "plug in an unmounted USB stick or SD card and press Enter",
+                        Glyph::Sync,
+                    )],
+                    vec!["rescan".to_string()],
+                )],
             );
-            return Ok(0);
-        }
+            let code =
+                crate::run_screen(terminal, design, "Auxiliary swap", &mut empty_picker)?;
+            if code != 0 {
+                return Ok(code);
+            }
+        };
 
         let mut picker = Picker::new("Auxiliary swap", questions(&found));
-
-        // We need to drive the first question (disk), then build the size question,
-        // then drive the rest. Picker's queue is fixed at construction, so we handle
-        // the first question here, then reconstruct for the remaining two.
         let code = crate::run_screen(terminal, design, "Auxiliary swap", &mut picker)?;
         if code != 0 {
             return Ok(code);
         }
 
         let answers = picker.answers();
-        let Some(dev) = answers.first() else {
+        let Some(dev) = answers.first().cloned() else {
             return Ok(1);
         };
         let name = dev.trim_start_matches("/dev/");
 
-        // The same last gate as Format a disk: this rewrites the whole disk with
-        // parted, so a disk that `disk::is_system_disk` refuses is refused again
-        // after the pick, whatever the list said.
         let now = Facts::from_machine();
         if disk::is_system_disk(name, &now) {
-            say(
+            return Err(crate::Failure::new(
                 "Auxiliary swap",
                 format!(
                     "{dev} is built into this machine or is the disk this system runs from: never repartitioned here"
                 ),
-                Urgency::Critical,
-                Glyph::Disk,
-            );
-            return Ok(3);
+            ));
         }
 
-        // One label means one card: refuse a different disk that already carries it.
         let existing = out(&["blkid", "-L", "lazyos_swap"]).unwrap_or_default();
-        let parent = out(&["lsblk", "-no", "PKNAME", dev]).unwrap_or_default();
+        let parent = out(&["lsblk", "-no", "PKNAME", &dev]).unwrap_or_default();
         let parent = parent.trim();
-        if label_taken(&existing, dev, parent, name) {
-            say(
+        if label_taken(&existing, &dev, parent, name) {
+            return Err(crate::Failure::new(
                 "Auxiliary swap",
                 format!(
                     "{existing} already carries the lazyos_swap label: turn that swap off first"
                 ),
-                Urgency::Critical,
-                Glyph::Disk,
-            );
-            return Ok(3);
+            ));
         }
 
-        // Get the disk size in MiB for the size options.
-        let bytes = out(&["lsblk", "-bdno", "SIZE", dev]).unwrap_or_default();
+        let bytes = out(&["lsblk", "-bdno", "SIZE", &dev]).unwrap_or_default();
         let total_mib: u64 = bytes.trim().parse().unwrap_or(0);
 
         let size_opts = sizes(total_mib);
@@ -526,27 +534,24 @@ pub fn menu(
             .collect();
         let size_keys: Vec<String> = size_opts.iter().map(|(k, _)| k.clone()).collect();
 
-        // Second question: the size.
         let mut picker = Picker::new(
             "Auxiliary swap",
             vec![
                 Question::choose(
                     "How much swap?",
-                    "{0} · more swap is slower than RAM",
+                    "{0} \u{00b7} more swap is slower than RAM",
                     size_rows,
                     size_keys,
                 ),
                 Question::ask(
                     "Use this card for swap?",
-                    "{0} · every file on it is lost",
-                    "{0} · {1} of swap, label lazyos_swap",
+                    "{0} \u{00b7} every file on it is lost",
+                    "{0} \u{00b7} {1} of swap, label lazyos_swap",
                     "Erase it",
                     "go",
                 ),
             ],
         );
-
-        // Pre-fill the first answer (the device) so the second question's placeholders work.
         picker.set_answers(vec![dev.clone()]);
 
         let code = crate::run_screen(terminal, design, "Auxiliary swap", &mut picker)?;
@@ -563,32 +568,51 @@ pub fn menu(
             return Ok(1);
         };
         let end = extent(size_choice, total_mib);
-        let alloc = match size_choice.as_str() {
-            "100%" => format!(
-                "{} · one swap partition, nothing beside it",
-                out(&["lsblk", "-dno", "SIZE", dev]).unwrap_or_default()
-            ),
-            "2GiB" => "2 GiB".to_string(),
-            "4GiB" => "4 GiB".to_string(),
-            "8GiB" => "8 GiB".to_string(),
-            _ => size_choice.clone(),
-        };
+        let part = fstab::partition(&dev);
 
-        match apply(dev, &end, &alloc, &fstab_text) {
-            Ok(done) => {
-                say("Auxiliary swap", done, Urgency::Normal, Glyph::Disk);
-                Ok(0)
-            }
-            Err(failed) => {
-                say(
-                    "Auxiliary swap",
-                    failed.said(),
-                    Urgency::Critical,
-                    Glyph::Disk,
-                );
-                Ok(3)
-            }
+        let new_fstab = fstab::with_swap(&fstab_text);
+        fstab::replace(&new_fstab)
+            .map_err(|f| crate::Failure::new("Auxiliary swap", f))?;
+
+        let mut commands = Vec::new();
+        for s in partition_steps(&dev, &end) {
+            let mut cmd = vec!["sudo".to_string(), "-n".to_string()];
+            cmd.extend(s.argv);
+            commands.push(cmd);
         }
+        commands.push(vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            format!(
+                "for _i in $(seq 1 50); do [ -e '{part}' ] && exit 0; sleep 0.1; done; [ -e '{part}' ]"
+            ),
+        ]);
+        for s in [swap_area_step(&part), reload_step(), activation_step(&part)] {
+            let mut cmd = vec!["sudo".to_string(), "-n".to_string()];
+            cmd.extend(s.argv);
+            commands.push(cmd);
+        }
+
+        let tag = format!("swap-on-{}", std::process::id());
+        let step_labels = vec![
+            format!("Create GPT partition table on {dev}"),
+            format!("Create linux-swap partition (1MiB..{end})"),
+            format!("Wait for kernel partition node {part}"),
+            format!("Write swap header (mkswap -L {})", fstab::LABEL),
+            "Reload systemd mount units (systemctl daemon-reload)".to_string(),
+            format!("Activate swap at priority 10 (swapon -p 10 {part})"),
+        ];
+        let task = Task::start_steps(
+            &tag,
+            format!("Configure auxiliary swap on {dev}"),
+            step_labels,
+            false,
+            commands,
+        )
+        .map_err(|e| crate::Failure::new("Auxiliary swap", e.to_string()))?;
+
+        let mut view = TaskView::new(task);
+        crate::run_screen(terminal, design, "Auxiliary swap", &mut view)
     }
 }
 

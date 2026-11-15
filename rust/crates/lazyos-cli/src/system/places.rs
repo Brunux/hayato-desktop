@@ -4,15 +4,15 @@
 //! and mountable block storage devices with filesystem usage and mountpoints.
 //! Also provides `--rows` headless output for witnesses.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
-use lazyos_ui::{Design, Glyph, Urgency};
+use lazyos_ui::{Design, Glyph};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 use super::pick::{Picker, Question, row};
-use super::{have, out, say};
+use super::{have, out};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlaceEntry {
@@ -199,98 +199,88 @@ pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
-    let places = collect_places();
-    let mut rows = Vec::new();
-    let mut keys = Vec::new();
+    let mut status_note: Option<String> = None;
 
-    for p in &places {
-        rows.push(row(&p.label, &p.target, p.glyph));
-        keys.push(p.key.clone());
-    }
+    loop {
+        let places = collect_places();
+        let mut rows = Vec::new();
+        let mut keys = Vec::new();
 
-    let mut picker = Picker::new(
-        "Places",
-        vec![Question::choose(
+        for p in &places {
+            rows.push(row(&p.label, &p.target, p.glyph));
+            keys.push(p.key.clone());
+        }
+
+        let note = status_note
+            .clone()
+            .unwrap_or_else(|| "Enter opens · type to filter · Escape closes".to_string());
+
+        let mut picker = Picker::new(
             "Places",
-            "Enter opens · Escape closes",
-            rows,
-            keys,
-        )],
-    );
+            vec![Question::choose("Places", note, rows, keys)],
+        );
 
-    let code = crate::run_screen(terminal, design, "Places", &mut picker)?;
-    if code != 0 {
-        return Ok(code);
-    }
+        let code = crate::run_screen(terminal, design, "Places", &mut picker)?;
+        if code != 0 {
+            return Ok(code);
+        }
 
-    let answers = picker.answers();
-    let Some(key) = answers.first() else {
-        return Ok(1);
-    };
+        let answers = picker.answers();
+        let Some(key) = answers.first() else {
+            return Ok(1);
+        };
 
-    match key.as_str() {
-        "action:swap" => {
-            crate::system::spawn_detached("exec lazyos menu swap");
-            Ok(0)
-        }
-        "action:format" => {
-            crate::system::spawn_detached("exec lazyos menu format");
-            Ok(0)
-        }
-        k if k.starts_with("term:") => {
-            let path = &k[5..];
-            let escaped = path.replace('\'', "'\\''");
-            crate::system::spawn_detached(&format!("exec foot --working-directory '{escaped}'"));
-            Ok(0)
-        }
-        k if k.starts_with("open:") => {
-            let path = &k[5..];
-            let escaped = path.replace('\'', "'\\''");
-            crate::system::spawn_detached(&format!("exec lazyos menu files '{escaped}'"));
-            Ok(0)
-        }
-        k if k.starts_with("mount:") => {
-            let dev = &k[6..];
-            let out = Command::new("udisksctl")
-                .args(["mount", "-b", dev])
-                .output();
-            match out {
-                Ok(res) if res.status.success() => {
-                    let text = String::from_utf8_lossy(&res.stdout);
-                    // "Mounted /dev/sda1 at /run/media/user/LABEL."
-                    if let Some(pos) = text.rfind(" at ") {
-                        let mp = text[pos + 4..].trim().trim_end_matches('.');
-                        let escaped = mp.replace('\'', "'\\''");
-                        crate::system::spawn_detached(&format!(
-                            "exec lazyos menu files '{escaped}'"
-                        ));
-                    } else {
-                        say("Places", "Device mounted", Urgency::Normal, Glyph::Disk);
+        match key.as_str() {
+            "action:swap" => {
+                crate::system::spawn_detached("exec lazyos menu swap");
+                return Ok(0);
+            }
+            "action:format" => {
+                crate::system::spawn_detached("exec lazyos menu format");
+                return Ok(0);
+            }
+            k if k.starts_with("term:") => {
+                let path = &k[5..];
+                let escaped = path.replace('\'', "'\\''");
+                crate::system::spawn_detached(&format!("exec foot --working-directory '{escaped}'"));
+                return Ok(0);
+            }
+            k if k.starts_with("open:") => {
+                let path = &k[5..];
+                let escaped = path.replace('\'', "'\\''");
+                crate::system::spawn_detached(&format!("exec lazyos menu files '{escaped}'"));
+                return Ok(0);
+            }
+            k if k.starts_with("mount:") => {
+                let dev = &k[6..];
+                let out = Command::new("udisksctl")
+                    .args(["mount", "-b", dev])
+                    .output();
+                match out {
+                    Ok(res) if res.status.success() => {
+                        let text = String::from_utf8_lossy(&res.stdout);
+                        if let Some(pos) = text.rfind(" at ") {
+                            let mp = text[pos + 4..].trim().trim_end_matches('.');
+                            let escaped = mp.replace('\'', "'\\''");
+                            crate::system::spawn_detached(&format!(
+                                "exec lazyos menu files '{escaped}'"
+                            ));
+                            return Ok(0);
+                        } else {
+                            status_note = Some(format!("Mounted {dev}"));
+                        }
                     }
-                    Ok(0)
-                }
-                Ok(res) => {
-                    let err = String::from_utf8_lossy(&res.stderr);
-                    say(
-                        "Places",
-                        format!("Could not mount {dev}: {}", err.trim()),
-                        Urgency::Critical,
-                        Glyph::Disk,
-                    );
-                    Ok(3)
-                }
-                Err(e) => {
-                    say(
-                        "Places",
-                        format!("Could not mount {dev}: {e}"),
-                        Urgency::Critical,
-                        Glyph::Disk,
-                    );
-                    Ok(3)
+                    Ok(res) => {
+                        let err = String::from_utf8_lossy(&res.stderr);
+                        status_note = Some(format!("Could not mount {dev}: {}", err.trim()));
+                    }
+                    Err(e) => {
+                        status_note = Some(format!("Could not mount {dev}: {e}"));
+                    }
                 }
             }
+            _ => return Ok(0),
         }
-        _ => Ok(0),
     }
 }
 

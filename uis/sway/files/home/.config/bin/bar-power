@@ -40,8 +40,8 @@ done
 bat=${bat:-${fallback:-}}
 
 if [ -z "${bat:-}" ]; then
-	swaynag -t warning -m 'No battery found in /sys/class/power_supply' -b Close >/dev/null 2>&1 &
-	exit 0
+	printf '%s\n' 'No battery found in /sys/class/power_supply'
+	exec lazyos menu power
 fi
 
 cap=$(read_sys "$bat/capacity")
@@ -106,4 +106,7 @@ msg=$(printf '%-11s%s\n' \
 	'Kernel' "$(uname -r)")
 
 printf '%s\n' "$msg"
-swaynag -t info -m "$msg" -b Close >/dev/null 2>&1 &
+if [ "${1:-}" = "--status" ]; then
+	exit 0
+fi
+exec lazyos menu power

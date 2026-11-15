@@ -152,6 +152,13 @@ pub enum Glyph {
     Shield,
 }
 
+impl Glyph {
+    #[allow(non_upper_case_globals)]
+    pub const Sparkles: Self = Self::Sparkle;
+    #[allow(non_upper_case_globals)]
+    pub const Palette: Self = Self::Theme;
+}
+
 /// Every variant, in the order the generated table lists them.
 ///
 /// A new variant goes here **and** in `scripts/make-glyphs.sh`;

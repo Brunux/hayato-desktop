@@ -509,6 +509,7 @@ cmd_export() {
 cmd_import() {
 	_archive=
 	_pass_file=
+	_yes=no
 	while [ $# -gt 0 ]; do
 		case $1 in
 		--passphrase-file)
@@ -516,12 +517,15 @@ cmd_import() {
 			_pass_file=${1:-}
 			[ -n "$_pass_file" ] || die "--passphrase-file needs a file"
 			;;
+		-y | --yes)
+			_yes=yes
+			;;
 		-*) die "unknown option: $1" ;;
 		*) _archive=$1 ;;
 		esac
 		shift
 	done
-	[ -n "$_archive" ] || die "usage: lazyos-profile import ARCHIVE [--passphrase-file FILE]"
+	[ -n "$_archive" ] || die "usage: lazyos-profile import ARCHIVE [--passphrase-file FILE] [--yes]"
 	[ -r "$_archive" ] || die "cannot read: $_archive"
 
 	mkdir -p "$CACHE"
@@ -583,19 +587,16 @@ cmd_import() {
 		fi
 	fi
 
-	_confirm=no
-	if on_terminal; then
-		printf 'Type restore to go ahead: ' >&2
-		IFS= read -r _answer || _answer=
-		if [ "$_answer" = restore ]; then
-			_confirm=yes
-		fi
-	else
-		_choice=$(printf 'Cancel\nRestore\n' |
-			"$UI_BIN/bar-pick" 'Restore the profile' \
-				-mesg "$_about · the current files are backed up first") || :
-		if [ "$_choice" = Restore ]; then
-			_confirm=yes
+	_confirm=$_yes
+	if [ "$_confirm" != yes ]; then
+		if on_terminal; then
+			printf 'Type restore to go ahead: ' >&2
+			IFS= read -r _answer || _answer=
+			if [ "$_answer" = restore ]; then
+				_confirm=yes
+			fi
+		else
+			die "non-interactive restore requires --yes (confirmed by lazyos menu dev)"
 		fi
 	fi
 	if [ "$_confirm" != yes ]; then

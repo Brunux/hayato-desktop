@@ -35,15 +35,19 @@ pub mod glyphs;
 pub mod task;
 pub mod widgets;
 
-pub use app::{App, BodyCtx, EmptyScreen, FailureScreen, MOTION_MS, Outcome, Screen};
+pub use app::{
+    App, BodyCtx, EmptyScreen, FailureScreen, MOTION_MS, Outcome, Screen, request_window_size,
+};
 pub use card::{Card, Icon, Kind, Timeout, Urgency};
 pub use design::{Border, ColorRole, Density, Design, GLYPHS, Space, TextStyle};
 pub use glyphs::Glyph;
 pub use task::{Step, StepState, Task, TaskState, TaskView};
 pub use widgets::{
-    Confirm, ConfirmAction, Header, Input, InputAction, KeyHint, ListAction, ListState, LogPane,
-    Row, Tier, centered, draw_badge, draw_card, draw_card_with, draw_empty, draw_failure,
-    draw_gauge, draw_header, draw_keybar, draw_progress,
+    ActionRunner, BRAILLE_SPINNER, Confirm, ConfirmAction, Header, Input, InputAction, KeyHint,
+    ListAction, ListState, LogPane, QrCode, Row, Tier, centered, draw_badge, draw_card,
+    draw_card_with, draw_empty, draw_failure, draw_filter_bar, draw_gauge, draw_header,
+    draw_keybar, draw_progress, draw_qr, draw_scrollbar, draw_signal_bars, list_layout,
+    signal_bars,
 };
 
 /// A buffer as text, one line per row, for tests that want to read the screen

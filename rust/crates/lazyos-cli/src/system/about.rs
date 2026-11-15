@@ -12,13 +12,13 @@ use std::fs;
 use std::path::Path;
 
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row, Screen,
-    TextStyle, draw_card,
+    BodyCtx, Card, ColorRole, Design, Glyph, Header, KeyHint, ListState, Outcome, Row, Screen,
+    TextStyle, Urgency, draw_badge, draw_card, draw_filter_bar, draw_scrollbar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 
-use crate::system::{have, missing, print, say};
+use crate::system::{have, missing, out, print};
 
 /// The about screen state.
 pub struct AboutScreen {
@@ -28,9 +28,11 @@ pub struct AboutScreen {
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
     view_mode: AboutMode,
+    detail_title: String,
     content: String,
     content_scroll: Cell<u16>,
     detail_keyhints: Vec<KeyHint>,
+    status_note: Option<String>,
 }
 
 /// A fact row.
@@ -83,22 +85,26 @@ impl AboutScreen {
         list.set_rows(facts.iter().map(Self::fact_row).collect());
 
         Self {
-            facts: facts.clone(),
+            facts,
             list,
             header: Header::new("LazyOS").subtitle("About"),
             keybar: vec![
-                KeyHint::new("Enter", "open/copy"),
+                KeyHint::new("Enter", "inspect / copy"),
+                KeyHint::new("type", "filter"),
                 KeyHint::new("\u{2191}\u{2193}", "move"),
                 KeyHint::new("Esc", "close"),
             ],
             rows_height: Cell::new(20),
             view_mode: AboutMode::List,
+            detail_title: String::new(),
             content: String::new(),
             content_scroll: Cell::new(0),
             detail_keyhints: vec![
-                KeyHint::new("\u{2191}\u{2193}", "scroll"),
+                KeyHint::new("\u{2191}\u{2193}/PgUp/PgDn", "scroll"),
+                KeyHint::new("c", "copy"),
                 KeyHint::new("Esc", "back"),
             ],
+            status_note: None,
         }
     }
 
@@ -510,7 +516,7 @@ impl AboutScreen {
         }
     }
 
-    fn run_action(&self, action: &FactAction) {
+    fn run_action(&mut self, action: &FactAction) {
         match action {
             FactAction::CopySummary => {
                 let summary = self
@@ -526,32 +532,47 @@ impl AboutScreen {
                     .stderr(std::process::Stdio::null())
                     .status();
                 print("System summary copied");
-                say(
-                    "About",
-                    "System summary copied to clipboard",
-                    lazyos_ui::Urgency::Normal,
-                    Glyph::Clipboard,
-                );
+                self.status_note = Some("Copied system summary to clipboard".to_string());
             }
             FactAction::Errors => {
-                crate::system::spawn_detached(CMD_ERRORS);
+                let logs = out(&["sudo", "-n", "journalctl", "-p", "err", "-b", "--no-pager"])
+                    .or_else(|| out(&["journalctl", "-p", "err", "-b", "--no-pager"]))
+                    .unwrap_or_default();
+                self.detail_title = "Errors this boot (journalctl -p err -b)".to_string();
+                self.content = if logs.trim().is_empty() {
+                    "No errors logged at priority err for this boot.".to_string()
+                } else {
+                    logs
+                };
+                self.content_scroll.set(0);
+                self.view_mode = AboutMode::Detail;
             }
             FactAction::BootTime => {
-                crate::system::spawn_detached(CMD_BOOT);
+                let summary = out(&["systemd-analyze"]).unwrap_or_default();
+                let blame = out(&["systemd-analyze", "blame", "--no-pager"]).unwrap_or_default();
+                self.detail_title = "Boot time (systemd-analyze blame)".to_string();
+                self.content = format!("{}\n{}", summary.trim(), blame);
+                self.content_scroll.set(0);
+                self.view_mode = AboutMode::Detail;
             }
             FactAction::Devices => {
-                crate::system::spawn_detached(CMD_DEVICES);
+                let pci = out(&["lspci"]).unwrap_or_default();
+                let usb = out(&["lsusb"]).unwrap_or_default();
+                self.detail_title = "Hardware Devices (lspci & lsusb)".to_string();
+                self.content = format!("=== PCI ===\n{}\n=== USB ===\n{}", pci.trim(), usb.trim());
+                self.content_scroll.set(0);
+                self.view_mode = AboutMode::Detail;
             }
             FactAction::Fastfetch => {
                 if have("fastfetch") {
-                    crate::system::spawn_detached(CMD_FASTFETCH);
+                    let ff = out(&["fastfetch", "--pipe"]).unwrap_or_default();
+                    self.detail_title = "Fastfetch Overview".to_string();
+                    self.content = ff;
+                    self.content_scroll.set(0);
+                    self.view_mode = AboutMode::Detail;
                 } else {
-                    say(
-                        "About",
-                        "fastfetch is not installed (packages/tools.list)",
-                        lazyos_ui::Urgency::Critical,
-                        Glyph::Warning,
-                    );
+                    self.status_note =
+                        Some("fastfetch is not installed (packages/tools.list)".to_string());
                 }
             }
         }
@@ -560,16 +581,60 @@ impl AboutScreen {
 
 impl Screen for AboutScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("About"), true);
+        let title = match self.view_mode {
+            AboutMode::List => "About",
+            AboutMode::Detail => self.detail_title.as_str(),
+        };
+        draw_card(ctx.buf, ctx.area, ctx.design, Some(title), true);
 
         match self.view_mode {
             AboutMode::List => {
-                let (filter, rows) = Self::list_layout(ctx.area);
-                ctx.buf.set_string(
-                    filter.x,
-                    filter.y,
-                    "Enter on action rows · Escape closes",
-                    ctx.design.style(TextStyle::Dim),
+                let (hero, filter, rows) = Self::list_layout(ctx.area);
+                if let Some(h) = hero {
+                    let model = self
+                        .facts
+                        .iter()
+                        .find(|f| f.label == "Model")
+                        .map(|f| f.value.as_str())
+                        .unwrap_or("LazyOS");
+                    let rev = self
+                        .facts
+                        .iter()
+                        .find(|f| f.label == "Revision")
+                        .map(|f| f.value.as_str())
+                        .unwrap_or_else(|| crate::version::version());
+                    let mut x = draw_badge(
+                        ctx.buf,
+                        h.x,
+                        h.y,
+                        ctx.design,
+                        "LAZYOS",
+                        ColorRole::Accent,
+                    );
+                    x += 2;
+                    ctx.buf
+                        .set_string(x, h.y, model, ctx.design.style(TextStyle::Title));
+                    if h.height >= 2 {
+                        ctx.buf.set_string(
+                            h.x,
+                            h.y + 1,
+                            format!("Revision: {rev}"),
+                            ctx.design.style(TextStyle::Dim),
+                        );
+                    }
+                }
+                let note = self
+                    .status_note
+                    .as_deref()
+                    .unwrap_or("Enter inspects or copies · type to filter");
+                draw_filter_bar(
+                    ctx.buf,
+                    filter,
+                    ctx.design,
+                    self.list.filter(),
+                    note,
+                    self.list.len(),
+                    self.facts.len(),
                 );
                 self.rows_height.set(rows.height);
                 self.list.render(rows, ctx.buf, ctx.design, true);
@@ -581,8 +646,9 @@ impl Screen for AboutScreen {
                     width: ctx.area.width.saturating_sub(4),
                     height: ctx.area.height.saturating_sub(2),
                 };
+                let lines: Vec<&str> = self.content.lines().collect();
                 let scroll = self.content_scroll.get() as usize;
-                for (i, line) in self.content.lines().skip(scroll).enumerate() {
+                for (i, line) in lines.iter().skip(scroll).enumerate() {
                     if i as u16 >= inner.height {
                         break;
                     }
@@ -593,6 +659,15 @@ impl Screen for AboutScreen {
                         ctx.design.style(TextStyle::Body),
                     );
                 }
+                draw_scrollbar(
+                    ctx.buf,
+                    inner,
+                    ctx.design,
+                    scroll,
+                    inner.height as usize,
+                    lines.len(),
+                    true,
+                );
             }
         }
     }
@@ -608,14 +683,28 @@ impl Screen for AboutScreen {
                 match key.code {
                     KeyCode::Enter => {
                         if let Some(selected) = self.list.selected_index() {
-                            if let Some(fact) = self.facts.get(selected) {
-                                if let Some(action) = &fact.action {
-                                    self.run_action(action);
-                                }
+                            if let Some(action) =
+                                self.facts.get(selected).and_then(|f| f.action.clone())
+                            {
+                                self.run_action(&action);
                             }
                         }
+                        return Outcome::Continue;
                     }
-                    KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+                    KeyCode::Esc => {
+                        if !self.list.filter().is_empty() {
+                            self.list.set_filter("");
+                            return Outcome::Continue;
+                        }
+                        return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
+                    }
+                    KeyCode::Char(_) | KeyCode::Backspace
+                        if !key.modifiers.contains(KeyModifiers::CONTROL)
+                            && !key.modifiers.contains(KeyModifiers::ALT)
+                            && self.list.type_filter(key) =>
+                    {
+                        return Outcome::Continue;
+                    }
                     _ => {}
                 }
                 let _ = self.list.handle(key, rows_height, design);
@@ -626,18 +715,50 @@ impl Screen for AboutScreen {
                     self.view_mode = AboutMode::List;
                     Outcome::Continue
                 }
-                KeyCode::Up => {
+                KeyCode::Char('c') => {
+                    let _ = std::process::Command::new("wl-copy")
+                        .arg(&self.content)
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status();
+                    self.status_note = Some(format!("Copied {} to clipboard", self.detail_title));
+                    Outcome::Continue
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
                     let scroll = self.content_scroll.get();
                     if scroll > 0 {
                         self.content_scroll.set(scroll - 1);
                     }
                     Outcome::Continue
                 }
-                KeyCode::Down => {
+                KeyCode::Down | KeyCode::Char('j') => {
                     let scroll = self.content_scroll.get() as usize;
-                    if scroll < self.content.lines().count() {
+                    let total = self.content.lines().count();
+                    if scroll + 1 < total {
                         self.content_scroll.set((scroll + 1) as u16);
                     }
+                    Outcome::Continue
+                }
+                KeyCode::PageUp => {
+                    let scroll = self.content_scroll.get();
+                    self.content_scroll.set(scroll.saturating_sub(15));
+                    Outcome::Continue
+                }
+                KeyCode::PageDown => {
+                    let scroll = self.content_scroll.get() as usize;
+                    let total = self.content.lines().count();
+                    let next = (scroll + 15).min(total.saturating_sub(1));
+                    self.content_scroll.set(next as u16);
+                    Outcome::Continue
+                }
+                KeyCode::Home => {
+                    self.content_scroll.set(0);
+                    Outcome::Continue
+                }
+                KeyCode::End => {
+                    let total = self.content.lines().count();
+                    self.content_scroll.set(total.saturating_sub(1) as u16);
                     Outcome::Continue
                 }
                 _ => Outcome::Continue,
@@ -646,13 +767,14 @@ impl Screen for AboutScreen {
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
+        if self.view_mode != AboutMode::List {
+            return Outcome::Continue;
+        }
         if let Some(row) = row {
             self.list.set_cursor(row);
             if let Some(index) = self.list.selected_index() {
-                if let Some(fact) = self.facts.get(index) {
-                    if let Some(action) = &fact.action {
-                        self.run_action(action);
-                    }
+                if let Some(action) = self.facts.get(index).and_then(|f| f.action.clone()) {
+                    self.run_action(&action);
                 }
             }
         }
@@ -660,7 +782,10 @@ impl Screen for AboutScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        let (_, rows) = Self::list_layout(area);
+        if self.view_mode != AboutMode::List {
+            return None;
+        }
+        let (_, _, rows) = Self::list_layout(area);
         self.list.hit_row(rows, x, y, design)
     }
 
@@ -674,26 +799,51 @@ impl Screen for AboutScreen {
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }
+
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        match self.view_mode {
+            AboutMode::List => Some((860, 560)),
+            AboutMode::Detail => Some((1080, 720)),
+        }
+    }
 }
 
 impl AboutScreen {
-    fn list_layout(area: Rect) -> (Rect, Rect) {
+    fn list_layout(area: Rect) -> (Option<Rect>, Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
             y: area.y + 1,
             width: area.width.saturating_sub(4),
             height: area.height.saturating_sub(2),
         };
-        let filter = Rect {
-            height: 1.min(inner.height),
-            ..inner
-        };
-        let rows = Rect {
-            y: inner.y + 2,
-            height: inner.height.saturating_sub(2),
-            ..inner
-        };
-        (filter, rows)
+        if inner.height >= 12 {
+            let hero = Rect {
+                height: 2,
+                ..inner
+            };
+            let filter = Rect {
+                y: inner.y + 3,
+                height: 1,
+                ..inner
+            };
+            let rows = Rect {
+                y: inner.y + 5,
+                height: inner.height.saturating_sub(5),
+                ..inner
+            };
+            (Some(hero), filter, rows)
+        } else {
+            let filter = Rect {
+                height: 1.min(inner.height),
+                ..inner
+            };
+            let rows = Rect {
+                y: inner.y + 2,
+                height: inner.height.saturating_sub(2),
+                ..inner
+            };
+            (None, filter, rows)
+        }
     }
 }
 
@@ -741,15 +891,12 @@ pub fn menu(
         "df",
         "sway",
     ]) {
-        say(
+        return Err(crate::Failure::new(
             "About",
             format!(
                 "{said} (coreutils, util-linux, systemd, pciutils, usbutils, procps, network-manager, sway)"
             ),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Info,
-        );
-        return Ok(3);
+        ));
     }
     let mut screen = AboutScreen::new();
     let code = crate::run_screen(terminal, design, "About", &mut screen)?;

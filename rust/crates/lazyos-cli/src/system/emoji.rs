@@ -17,13 +17,13 @@ use std::env;
 use std::fs;
 
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, Input, KeyHint, ListAction, ListState, Outcome, Row, Screen,
-    TextStyle, draw_card,
+    BodyCtx, Card, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row, Screen,
+    Urgency, draw_card, draw_filter_bar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 
-use crate::system::{have, missing, say};
+use crate::system::missing;
 
 const NEEDED: &[&str] = &["wl-copy", "wtype"];
 const EMOJI_PATH: &str = "~/.config/emojis.tsv";
@@ -36,6 +36,7 @@ pub struct EmojiScreen {
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
     font_ok: bool,
+    status_note: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -54,10 +55,12 @@ impl EmojiScreen {
             keybar: vec![
                 KeyHint::new("Enter", "insert at cursor"),
                 KeyHint::new("Alt+1", "copy only"),
+                KeyHint::new("type", "filter"),
                 KeyHint::new("Esc", "close"),
             ],
             rows_height: Cell::new(20),
             font_ok: true,
+            status_note: None,
         };
         screen.load_emojis();
         screen
@@ -158,11 +161,20 @@ impl Screen for EmojiScreen {
         let (filter, rows) = super::pick::list_layout(ctx.area);
         let msg = if !self.font_ok {
             "The emoji font pin does not match · run make-emojis.sh"
+        } else if let Some(note) = &self.status_note {
+            note.as_str()
         } else {
-            "Enter inserts at cursor · Alt+1 copies only · Escape closes"
+            "Enter inserts at cursor · Alt+1 copies only · type to filter"
         };
-        ctx.buf
-            .set_string(filter.x, filter.y, msg, ctx.design.style(TextStyle::Dim));
+        draw_filter_bar(
+            ctx.buf,
+            filter,
+            ctx.design,
+            self.list.filter(),
+            msg,
+            self.list.len(),
+            self.emojis.len(),
+        );
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
     }
@@ -173,19 +185,32 @@ impl Screen for EmojiScreen {
         }
         let is_alt1 = key.code == KeyCode::Char('1') && key.modifiers.contains(KeyModifiers::ALT);
         let rows_height = self.rows_height.get();
+        if is_alt1 {
+            if let Some(index) = self.list.selected_index() {
+                return self.insert_emoji(index, true);
+            }
+        }
         match key.code {
-            KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+            KeyCode::Esc => {
+                if !self.list.filter().is_empty() {
+                    self.list.set_filter("");
+                    return Outcome::Continue;
+                }
+                return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
+            }
             KeyCode::Enter => {
                 if let Some(index) = self.list.selected_index() {
                     return self.insert_emoji(index, false);
                 }
             }
-            _ => {}
-        }
-        if is_alt1 {
-            if let Some(index) = self.list.selected_index() {
-                return self.insert_emoji(index, true);
+            KeyCode::Char(_) | KeyCode::Backspace
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                    && self.list.type_filter(key) =>
+            {
+                return Outcome::Continue;
             }
+            _ => {}
         }
         match self.list.handle(key, rows_height, design) {
             ListAction::Activated(index) => self.insert_emoji(index, false),
@@ -196,10 +221,11 @@ impl Screen for EmojiScreen {
     fn click(&mut self, row: Option<usize>) -> Outcome {
         if let Some(r) = row {
             self.list.set_cursor(r);
-            self.insert_emoji(r, false)
-        } else {
-            Outcome::Continue
+            if let Some(index) = self.list.selected_index() {
+                return self.insert_emoji(index, false);
+            }
         }
+        Outcome::Continue
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
@@ -221,9 +247,10 @@ impl EmojiScreen {
         if index >= self.emojis.len() || !self.font_ok {
             return Outcome::Continue;
         }
-        let glyph = &self.emojis[index].glyph;
+        let glyph = self.emojis[index].glyph.clone();
+        let name = self.emojis[index].name.clone();
         let copied = std::process::Command::new("wl-copy")
-            .arg(glyph)
+            .arg(&glyph)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -231,47 +258,18 @@ impl EmojiScreen {
             .map(|s| s.success())
             .unwrap_or(false);
         if !copied {
-            say(
-                "Emoji",
-                "wl-copy is not available",
-                lazyos_ui::Urgency::Critical,
-                Glyph::Smile,
-            );
+            self.status_note = Some("wl-copy is not available".to_string());
             return Outcome::Continue;
         }
         if copy_only {
-            say(
-                "Emoji",
-                format!("{} copied to the clipboard", glyph),
-                lazyos_ui::Urgency::Normal,
-                Glyph::Smile,
-            );
-            Outcome::Done(lazyos_ui::app::exit::OK)
+            self.status_note = Some(format!("Copied {glyph} ({name}) to clipboard"));
+            Outcome::Continue
         } else {
             crate::system::spawn_detached(
                 "sleep 0.15; if command -v wtype >/dev/null 2>&1; then wtype -M shift -k Insert -m shift; fi",
             );
             Outcome::Done(lazyos_ui::app::exit::OK)
         }
-    }
-
-    fn list_layout(area: Rect) -> (Rect, Rect) {
-        let inner = Rect {
-            x: area.x + 2,
-            y: area.y + 1,
-            width: area.width.saturating_sub(4),
-            height: area.height.saturating_sub(2),
-        };
-        let filter = Rect {
-            height: 1.min(inner.height),
-            ..inner
-        };
-        let rows = Rect {
-            y: inner.y + 2,
-            height: inner.height.saturating_sub(2),
-            ..inner
-        };
-        (filter, rows)
     }
 }
 
@@ -281,13 +279,7 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        say(
-            "Emoji",
-            format!("{said} (wl-clipboard, wtype)"),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Smile,
-        );
-        return Ok(3);
+        return Err(crate::Failure::new("Emoji", format!("{said} (wl-clipboard, wtype)")));
     }
     let mut screen = EmojiScreen::new();
     let code = crate::run_screen(terminal, design, "Emoji", &mut screen)?;

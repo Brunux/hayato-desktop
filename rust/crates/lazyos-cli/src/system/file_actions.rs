@@ -3,15 +3,16 @@
 //! Secondary actions for the file under the cursor: disk usage, compress,
 //! extract, mount disk image, convert media, copy path, terminal.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
-use lazyos_ui::{Design, Glyph, Urgency};
+use lazyos_ui::task::{Task, TaskView};
+use lazyos_ui::{Card, Design, Glyph, Urgency};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 use super::pick::{Picker, Question, row};
-use super::{have, out, say};
+use super::out;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FileKind {
@@ -78,13 +79,8 @@ pub fn menu_for_path(
 ) -> Result<i32, crate::Failure> {
     let target = Path::new(path_str);
     if !target.exists() && !target.is_symlink() {
-        say(
-            "File actions",
-            format!("{} is not there any more", target.display()),
-            Urgency::Critical,
-            Glyph::Warning,
-        );
-        return Ok(3);
+        return Err(crate::Failure::new("File actions",
+                format!("{} is not there any more", target.display())));
     }
 
     let base = target
@@ -97,243 +93,255 @@ pub fn menu_for_path(
         .to_path_buf();
 
     let kind = detect_kind(target);
-    let mut rows = Vec::new();
-    let mut keys = Vec::new();
+    let mut cached_du: Option<String> = None;
+    let mut status_note: Option<String> = None;
 
-    if kind == FileKind::Directory {
-        rows.push(row("Disk usage", "du -sh: size calculation", Glyph::Disk));
-        keys.push("du".to_string());
-    }
+    loop {
+        let mut rows = Vec::new();
+        let mut keys = Vec::new();
 
-    rows.push(row("Compress", format!("→ {base}.tar.xz"), Glyph::Box));
-    keys.push("pack".to_string());
-
-    if matches!(kind, FileKind::ArchiveZip | FileKind::ArchiveTar) {
-        rows.push(row(
-            "Extract here",
-            "→ folder named after archive",
-            Glyph::Box,
-        ));
-        keys.push("unpack".to_string());
-    }
-
-    if kind == FileKind::DiskImage {
-        rows.push(row(
-            "Mount the image",
-            "udisksctl loop-setup then open",
-            Glyph::Disk,
-        ));
-        keys.push("mount".to_string());
-    }
-
-    if matches!(kind, FileKind::Video | FileKind::Audio) {
-        rows.push(row(
-            "Convert",
-            "ffmpeg: MP4 video or MP3 audio",
-            Glyph::Video,
-        ));
-        keys.push("convert".to_string());
-    }
-
-    rows.push(row(
-        "Copy the path",
-        target.display().to_string(),
-        Glyph::Clipboard,
-    ));
-    keys.push("copy".to_string());
-
-    rows.push(row(
-        "A terminal here",
-        parent.display().to_string(),
-        Glyph::Terminal,
-    ));
-    keys.push("term".to_string());
-
-    let mut picker = Picker::new(
-        &format!("File actions · {base}"),
-        vec![Question::choose(
-            format!("File actions · {base}"),
-            target.display().to_string(),
-            rows,
-            keys,
-        )],
-    );
-
-    let code = crate::run_screen(
-        terminal,
-        design,
-        &format!("File actions · {base}"),
-        &mut picker,
-    )?;
-    if code != 0 {
-        return Ok(code);
-    }
-
-    let answers = picker.answers();
-    let Some(action) = answers.first() else {
-        return Ok(1);
-    };
-
-    match action.as_str() {
-        "copy" => {
-            let _ = Command::new("wl-copy")
-                .arg(target.to_str().unwrap_or(""))
-                .status();
-            say(
-                "File actions",
-                "The path is in the clipboard",
-                Urgency::Normal,
-                Glyph::Clipboard,
-            );
-            Ok(0)
+        if kind == FileKind::Directory {
+            let du_detail = cached_du
+                .as_ref()
+                .map(|s| format!("calculated size: {s}"))
+                .unwrap_or_else(|| "du -sh: calculate directory size".to_string());
+            let mut r = row("Disk usage", du_detail, Glyph::Disk);
+            if let Some(s) = &cached_du {
+                r = r.value(s.clone());
+            }
+            rows.push(r);
+            keys.push("du".to_string());
         }
-        "term" => {
-            let dir = if kind == FileKind::Directory {
-                target
-            } else {
-                &parent
-            };
-            crate::system::spawn_detached(&format!(
-                "exec foot --working-directory '{}'",
-                dir.display()
+
+        rows.push(row("Compress", format!("→ {base}.tar.xz"), Glyph::Box));
+        keys.push("pack".to_string());
+
+        if matches!(kind, FileKind::ArchiveZip | FileKind::ArchiveTar) {
+            rows.push(row(
+                "Extract here",
+                "→ folder named after archive",
+                Glyph::Box,
             ));
-            Ok(0)
+            keys.push("unpack".to_string());
         }
-        "du" => {
-            let out_str = out(&["du", "-sh", target.to_str().unwrap_or("")]).unwrap_or_default();
-            let size = out_str.split_whitespace().next().unwrap_or("?");
-            say(
-                "Disk usage",
-                format!("{base} · {size}"),
-                Urgency::Normal,
+
+        if kind == FileKind::DiskImage {
+            rows.push(row(
+                "Mount the image",
+                "udisksctl loop-setup then open",
                 Glyph::Disk,
-            );
-            Ok(0)
+            ));
+            keys.push("mount".to_string());
         }
-        "pack" => {
-            let out_archive = parent.join(format!("{base}.tar.xz"));
-            let res = Command::new("tar")
-                .args([
-                    "-caf",
-                    out_archive.to_str().unwrap_or(""),
-                    "-C",
-                    parent.to_str().unwrap_or("."),
-                    "--",
-                    &base,
-                ])
-                .status();
-            if res.map(|s| s.success()).unwrap_or(false) {
-                say(
-                    "Compress",
-                    format!("Packed {base}.tar.xz"),
-                    Urgency::Normal,
-                    Glyph::Box,
-                );
-                Ok(0)
-            } else {
-                say(
-                    "Compress",
-                    format!("Could not pack {base}"),
-                    Urgency::Critical,
-                    Glyph::Warning,
-                );
-                Ok(3)
+
+        if matches!(kind, FileKind::Video | FileKind::Audio) {
+            rows.push(row(
+                "Convert",
+                "ffmpeg: MP4 video or MP3 audio",
+                Glyph::Video,
+            ));
+            keys.push("convert".to_string());
+        }
+
+        rows.push(row(
+            "Copy the path",
+            target.display().to_string(),
+            Glyph::Clipboard,
+        ));
+        keys.push("copy".to_string());
+
+        rows.push(row(
+            "A terminal here",
+            parent.display().to_string(),
+            Glyph::Terminal,
+        ));
+        keys.push("term".to_string());
+
+        let note = status_note
+            .clone()
+            .unwrap_or_else(|| target.display().to_string());
+
+        let mut picker = Picker::new(
+            &format!("File actions · {base}"),
+            vec![Question::choose(
+                format!("File actions · {base}"),
+                note,
+                rows,
+                keys,
+            )],
+        );
+
+        let code = crate::run_screen(
+            terminal,
+            design,
+            &format!("File actions · {base}"),
+            &mut picker,
+        )?;
+        if code != 0 {
+            return Ok(code);
+        }
+
+        let answers = picker.answers();
+        let Some(action) = answers.first() else {
+            return Ok(1);
+        };
+
+        match action.as_str() {
+            "copy" => {
+                let _ = Command::new("wl-copy")
+                    .arg(target.to_str().unwrap_or(""))
+                    .status();
+                status_note = Some(format!("Copied path to clipboard: {}", target.display()));
             }
-        }
-        "unpack" => {
-            let stem = base
-                .strip_suffix(".tar.gz")
-                .or_else(|| base.strip_suffix(".tar.xz"))
-                .or_else(|| base.strip_suffix(".tar.bz2"))
-                .or_else(|| base.strip_suffix(".tar.zst"))
-                .or_else(|| base.strip_suffix(".zip"))
-                .or_else(|| base.strip_suffix(".tar"))
-                .unwrap_or(&base);
-            let dest = parent.join(stem);
-            let _ = std::fs::create_dir_all(&dest);
-            let status = if kind == FileKind::ArchiveZip {
-                Command::new("unzip")
-                    .args([
-                        "-q",
-                        "-o",
-                        target.to_str().unwrap_or(""),
-                        "-d",
-                        dest.to_str().unwrap_or("."),
-                    ])
-                    .status()
-            } else {
-                Command::new("tar")
-                    .args([
-                        "-xf",
-                        target.to_str().unwrap_or(""),
-                        "-C",
-                        dest.to_str().unwrap_or("."),
-                    ])
-                    .status()
-            };
-            if status.map(|s| s.success()).unwrap_or(false) {
-                say(
-                    "Extract",
-                    format!("Unpacked into {stem}/"),
-                    Urgency::Normal,
-                    Glyph::Box,
-                );
-                Ok(0)
-            } else {
-                say(
-                    "Extract",
-                    format!("Could not unpack {base}"),
-                    Urgency::Critical,
-                    Glyph::Warning,
-                );
-                Ok(3)
+            "term" => {
+                let dir = if kind == FileKind::Directory {
+                    target
+                } else {
+                    &parent
+                };
+                crate::system::spawn_detached(&format!(
+                    "exec foot --working-directory '{}'",
+                    dir.display()
+                ));
+                return Ok(0);
             }
-        }
-        "mount" => {
-            let res = Command::new("udisksctl")
-                .args(["loop-setup", "-f", target.to_str().unwrap_or("")])
-                .output();
-            if let Ok(o) = res {
-                let text = String::from_utf8_lossy(&o.stdout);
-                if let Some(pos) = text.find("/dev/loop") {
-                    let loop_dev = text[pos..].split_whitespace().next().unwrap_or("");
-                    let mount_res = Command::new("udisksctl")
-                        .args(["mount", "-b", loop_dev])
-                        .output();
-                    if let Ok(mo) = mount_res {
-                        let mtext = String::from_utf8_lossy(&mo.stdout);
-                        if let Some(at) = mtext.rfind(" at ") {
-                            let mp = mtext[at + 4..].trim().trim_end_matches('.');
-                            let _ = Command::new("lazyos").args(["menu", "files", mp]).status();
+            "du" => {
+                let out_str =
+                    out(&["du", "-sh", target.to_str().unwrap_or("")]).unwrap_or_default();
+                let size = out_str.split_whitespace().next().unwrap_or("?").to_string();
+                cached_du = Some(size.clone());
+                status_note = Some(format!("Disk usage for {base}: {size}"));
+            }
+            "pack" => {
+                let out_archive = parent.join(format!("{base}.tar.xz"));
+                let cmd = vec![
+                    "tar".to_string(),
+                    "-caf".to_string(),
+                    out_archive.to_string_lossy().to_string(),
+                    "-C".to_string(),
+                    parent.to_string_lossy().to_string(),
+                    "--".to_string(),
+                    base.clone(),
+                ];
+                let title = format!("Compress {base}");
+                let tag = format!("pack-{}", std::process::id());
+                let task = Task::start_steps(
+                    &tag,
+                    title.clone(),
+                    vec![format!("Pack {base}.tar.xz")],
+                    true,
+                    vec![cmd],
+                )
+                .map_err(|e| {
+                    crate::Failure::new("Compress", format!("Could not start tar: {e}"))
+                })?;
+                let mut view = TaskView::new(task);
+                return crate::run_screen(terminal, design, &title, &mut view);
+            }
+            "unpack" => {
+                let stem = base
+                    .strip_suffix(".tar.gz")
+                    .or_else(|| base.strip_suffix(".tar.xz"))
+                    .or_else(|| base.strip_suffix(".tar.bz2"))
+                    .or_else(|| base.strip_suffix(".tar.zst"))
+                    .or_else(|| base.strip_suffix(".zip"))
+                    .or_else(|| base.strip_suffix(".tar"))
+                    .unwrap_or(&base);
+                let dest = parent.join(stem);
+                let _ = std::fs::create_dir_all(&dest);
+                let cmd = if kind == FileKind::ArchiveZip {
+                    vec![
+                        "unzip".to_string(),
+                        "-o".to_string(),
+                        target.to_string_lossy().to_string(),
+                        "-d".to_string(),
+                        dest.to_string_lossy().to_string(),
+                    ]
+                } else {
+                    vec![
+                        "tar".to_string(),
+                        "-xvf".to_string(),
+                        target.to_string_lossy().to_string(),
+                        "-C".to_string(),
+                        dest.to_string_lossy().to_string(),
+                    ]
+                };
+                let title = format!("Extract {base}");
+                let tag = format!("unpack-{}", std::process::id());
+                let task = Task::start_steps(
+                    &tag,
+                    title.clone(),
+                    vec![format!("Unpack into {stem}/")],
+                    true,
+                    vec![cmd],
+                )
+                .map_err(|e| {
+                    crate::Failure::new("Extract", format!("Could not start extractor: {e}"))
+                })?;
+                let mut view = TaskView::new(task);
+                return crate::run_screen(terminal, design, &title, &mut view);
+            }
+            "mount" => {
+                let res = Command::new("udisksctl")
+                    .args(["loop-setup", "-f", target.to_str().unwrap_or("")])
+                    .output();
+                if let Ok(o) = res {
+                    let text = String::from_utf8_lossy(&o.stdout);
+                    if let Some(pos) = text.find("/dev/loop") {
+                        let loop_dev = text[pos..].split_whitespace().next().unwrap_or("");
+                        let mount_res = Command::new("udisksctl")
+                            .args(["mount", "-b", loop_dev])
+                            .output();
+                        if let Ok(mo) = mount_res {
+                            let mtext = String::from_utf8_lossy(&mo.stdout);
+                            if let Some(at) = mtext.rfind(" at ") {
+                                let mp = mtext[at + 4..].trim().trim_end_matches('.');
+                                let _ =
+                                    Command::new("lazyos").args(["menu", "files", mp]).status();
+                                return Ok(0);
+                            }
                         }
                     }
                 }
+                status_note = Some(format!("Could not mount disk image {base}"));
             }
-            Ok(0)
+            "convert" => {
+                let out_file = parent.join(format!("{}-converted.mp4", base));
+                let cmd = vec![
+                    "ffmpeg".to_string(),
+                    "-hide_banner".to_string(),
+                    "-y".to_string(),
+                    "-i".to_string(),
+                    target.to_string_lossy().to_string(),
+                    "-c:v".to_string(),
+                    "libx264".to_string(),
+                    "-crf".to_string(),
+                    "23".to_string(),
+                    "-preset".to_string(),
+                    "veryfast".to_string(),
+                    "-c:a".to_string(),
+                    "aac".to_string(),
+                    "-b:a".to_string(),
+                    "160k".to_string(),
+                    out_file.to_string_lossy().to_string(),
+                ];
+                let title = format!("Convert {base}");
+                let tag = format!("convert-{}", std::process::id());
+                let task = Task::start_steps(
+                    &tag,
+                    title.clone(),
+                    vec![format!("Transcode to {base}-converted.mp4")],
+                    true,
+                    vec![cmd],
+                )
+                .map_err(|e| {
+                    crate::Failure::new("Convert", format!("Could not start ffmpeg: {e}"))
+                })?;
+                let mut view = TaskView::new(task);
+                return crate::run_screen(terminal, design, &title, &mut view);
+            }
+            _ => return Ok(0),
         }
-        "convert" => {
-            let out_file = parent.join(format!("{}-converted.mp4", base));
-            let escaped_target = target.display().to_string().replace('\'', "'\\''");
-            let escaped_out = out_file.display().to_string().replace('\'', "'\\''");
-            let escaped_base = base.replace('\'', "'\\''");
-            let cmd = format!(
-                "ffmpeg -hide_banner -loglevel error -y -i '{escaped_target}' -c:v libx264 -crf 23 -preset veryfast -c:a aac -b:a 160k '{escaped_out}' 2>&1; \
-                if [ $? -eq 0 ]; then \
-                    lazyos notify send --app Convert --title 'Conversion complete' --body '{escaped_base}' --glyph video; \
-                else \
-                    lazyos notify send --app Convert --title 'Conversion failed' --body '{escaped_base}' --glyph video --urgency critical; \
-                fi"
-            );
-            crate::system::spawn_detached(&cmd);
-            say(
-                "Convert",
-                format!("Converting {base} in background…"),
-                Urgency::Normal,
-                Glyph::Video,
-            );
-            Ok(0)
-        }
-        _ => Ok(0),
     }
 }
 

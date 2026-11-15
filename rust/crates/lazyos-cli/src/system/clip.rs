@@ -15,14 +15,14 @@
 use std::cell::Cell;
 
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row, Screen,
-    TextStyle, draw_card,
+    BodyCtx, Card, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row, Screen,
+    Urgency, draw_card, draw_filter_bar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 use std::process::Stdio;
 
-use crate::system::{missing, out, say};
+use crate::system::{missing, out};
 
 const NEEDED: &[&str] = &["cliphist", "wl-copy", "wl-paste", "xdg-open", "file"];
 
@@ -34,6 +34,7 @@ pub struct ClipScreen {
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
+    status_note: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -60,9 +61,11 @@ impl ClipScreen {
             keybar: vec![
                 KeyHint::new("Enter", "copy back"),
                 KeyHint::new("Alt+1", "delete entry"),
+                KeyHint::new("type", "filter"),
                 KeyHint::new("Esc", "close"),
             ],
             rows_height: Cell::new(20),
+            status_note: None,
         };
         screen.reload();
         screen
@@ -104,7 +107,7 @@ impl ClipScreen {
                     .glyph(Glyph::Clipboard)
                     .detail("The history fills as you copy things"),
             );
-            keys.push("".to_string());
+            keys.push("empty".to_string());
         } else {
             for e in &self.entries {
                 let (glyph, kind_str) = match e.kind {
@@ -112,36 +115,30 @@ impl ClipScreen {
                     ClipKind::Link => (Glyph::Link, "link"),
                     ClipKind::Text => (Glyph::Clipboard, "text"),
                 };
-                let shown = if e.preview.len() > 58 {
-                    format!("{}…", &e.preview[..58])
+                let shown: String = e.preview.chars().take(58).collect();
+                let shown = if e.preview.chars().count() > 58 {
+                    format!("{shown}…")
                 } else {
-                    e.preview.clone()
+                    shown
                 };
-                rows.push(
-                    Row::new(shown)
-                        .glyph(glyph)
-                        .detail(kind_str)
-                        .value(e.id.clone()),
-                );
+                rows.push(Row::new(shown).glyph(glyph).value(kind_str));
                 keys.push(e.id.clone());
             }
         }
         rows.push(
             Row::new("Save the newest image")
                 .glyph(Glyph::Image)
-                .detail("to ~/Pictures/clipboard and open it")
-                .value("save"),
+                .detail("to ~/Pictures/clipboard and open it"),
         );
         keys.push("save".to_string());
         rows.push(
             Row::new("Clear the history")
                 .glyph(Glyph::Trash)
-                .detail(format!("{} entries", self.entries.len()))
-                .value("wipe"),
+                .detail(format!("{} entries", self.entries.len())),
         );
         keys.push("wipe".to_string());
         self.keys = keys;
-        self.list.set_rows(rows);
+        self.list.update_rows(rows);
     }
 }
 
@@ -149,13 +146,22 @@ impl Screen for ClipScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Clipboard"), true);
         let (filter, rows) = Self::list_layout(ctx.area);
-        let msg = if self.entries.is_empty() {
-            "Escape closes"
+        let msg = if let Some(note) = &self.status_note {
+            note.as_str()
+        } else if self.entries.is_empty() {
+            "Clipboard history is empty · Escape closes"
         } else {
-            "Enter copies back · Alt+1 deletes that entry · Escape closes"
+            "Enter copies back · Alt+1 deletes entry · type to filter"
         };
-        ctx.buf
-            .set_string(filter.x, filter.y, msg, ctx.design.style(TextStyle::Dim));
+        draw_filter_bar(
+            ctx.buf,
+            filter,
+            ctx.design,
+            self.list.filter(),
+            msg,
+            self.list.len(),
+            self.entries.len(),
+        );
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
     }
@@ -170,11 +176,7 @@ impl Screen for ClipScreen {
             if let Some(index) = self.list.selected_index() {
                 if index < self.entries.len() {
                     let deleted = std::process::Command::new("sh")
-                        .arg("-c")
-                        .arg(format!(
-                            "echo '{}' | cliphist delete",
-                            self.entries[index].id
-                        ))
+                        .args(["-c", "printf '%s\\n' \"$1\" | cliphist delete", "--", &self.entries[index].id])
                         .stdin(Stdio::null())
                         .stdout(Stdio::null())
                         .stderr(Stdio::null())
@@ -182,36 +184,38 @@ impl Screen for ClipScreen {
                         .map(|s| s.success())
                         .unwrap_or(false);
                     if deleted {
-                        say(
-                            "Clipboard",
-                            "Entry deleted from the history",
-                            lazyos_ui::Urgency::Normal,
-                            Glyph::Trash,
-                        );
+                        self.status_note = Some("Entry deleted from clipboard history".to_string());
                         self.reload();
                     } else {
-                        say(
-                            "Clipboard",
-                            "Could not delete that entry",
-                            lazyos_ui::Urgency::Critical,
-                            Glyph::Trash,
-                        );
+                        self.status_note = Some("Could not delete that entry".to_string());
                     }
                 }
                 return Outcome::Continue;
             }
         }
         match key.code {
-            KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+            KeyCode::Esc => {
+                if !self.list.filter().is_empty() {
+                    self.list.set_filter("");
+                    return Outcome::Continue;
+                }
+                return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
+            }
             KeyCode::Enter => {
                 if let Some(index) = self.list.selected_index() {
                     return self.activate(index);
                 }
             }
+            KeyCode::Char(_) | KeyCode::Backspace
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                    && self.list.type_filter(key) =>
+            {
+                return Outcome::Continue;
+            }
             _ => {}
         }
-        // Handle list activation
-        let action = self.list.handle(key, self.rows_height.get(), design);
+        let action = self.list.handle(key, rows_height, design);
         match action {
             ListAction::Activated(index) => self.activate(index),
             ListAction::Ignored | ListAction::Moved => Outcome::Continue,
@@ -221,10 +225,11 @@ impl Screen for ClipScreen {
     fn click(&mut self, row: Option<usize>) -> Outcome {
         if let Some(r) = row {
             self.list.set_cursor(r);
-            self.activate(r)
-        } else {
-            Outcome::Continue
+            if let Some(index) = self.list.selected_index() {
+                return self.activate(index);
+            }
         }
+        Outcome::Continue
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
@@ -262,7 +267,7 @@ impl ClipScreen {
     }
 
     fn activate(&mut self, index: usize) -> Outcome {
-        let Some(key) = self.keys.get(index) else {
+        let Some(key) = self.keys.get(index).cloned() else {
             return Outcome::Continue;
         };
         match key.as_str() {
@@ -282,41 +287,26 @@ impl ClipScreen {
                         entry.id
                     );
                     crate::system::spawn_detached(&cmd);
-                    say(
-                        "Clipboard",
-                        "Saved image to ~/Pictures/clipboard and opened it",
-                        lazyos_ui::Urgency::Normal,
-                        Glyph::Image,
-                    );
                     Outcome::Done(lazyos_ui::app::exit::OK)
                 } else {
-                    say(
-                        "Clipboard",
-                        "No image in clipboard history",
-                        lazyos_ui::Urgency::Normal,
-                        Glyph::Image,
-                    );
+                    self.status_note = Some("No image in clipboard history".to_string());
                     Outcome::Continue
                 }
             }
             "wipe" => {
+                let count = self.entries.len();
                 let _ = std::process::Command::new("cliphist")
                     .arg("wipe")
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .status();
-                say(
-                    "Clipboard",
-                    format!("History cleared ({} entries)", self.entries.len()),
-                    lazyos_ui::Urgency::Normal,
-                    Glyph::Trash,
-                );
-                Outcome::Done(lazyos_ui::app::exit::OK)
+                self.status_note = Some(format!("Cleared clipboard history ({count} entries)"));
+                self.reload();
+                Outcome::Continue
             }
-            "empty" => Outcome::Continue,
+            "empty" | "" => Outcome::Continue,
             id => {
-                let entry = self.entries.iter().find(|e| e.id == id);
                 let copied = std::process::Command::new("sh")
                     .args(["-c", "cliphist decode \"$1\" | wl-copy", "--", id])
                     .stdin(Stdio::null())
@@ -326,31 +316,9 @@ impl ClipScreen {
                     .map(|s| s.success())
                     .unwrap_or(false);
                 if copied {
-                    let msg = if let Some(e) = entry {
-                        match e.kind {
-                            ClipKind::Image => "Image copied back to the clipboard".to_string(),
-                            _ => {
-                                let shown = e.preview.trim().replace(['\n', '\t'], " ");
-                                format!("Copied: {}", shown)
-                            }
-                        }
-                    } else {
-                        "Entry copied back to the clipboard".to_string()
-                    };
-                    say(
-                        "Clipboard",
-                        msg,
-                        lazyos_ui::Urgency::Normal,
-                        Glyph::Clipboard,
-                    );
                     Outcome::Done(lazyos_ui::app::exit::OK)
                 } else {
-                    say(
-                        "Clipboard",
-                        "Could not copy that entry back",
-                        lazyos_ui::Urgency::Critical,
-                        Glyph::Clipboard,
-                    );
+                    self.status_note = Some("Could not copy that entry back".to_string());
                     Outcome::Continue
                 }
             }
@@ -364,13 +332,10 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        say(
+        return Err(crate::Failure::new(
             "Clipboard",
             format!("{said} (cliphist, wl-clipboard, xdg-utils, file)"),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Clipboard,
-        );
-        return Ok(3);
+        ));
     }
     let mut screen = ClipScreen::new();
     let code = crate::run_screen(terminal, design, "Clipboard", &mut screen)?;

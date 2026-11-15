@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use lazyos_ui::{Design, Glyph, Urgency};
+use lazyos_ui::{Card, Design, Glyph, Task, TaskState, TaskView, Urgency};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
@@ -151,13 +151,6 @@ pub fn launch(agent: &AgentDef, account: Option<&str>) {
         None => agent.name.to_string(),
     };
 
-    say(
-        &format!("Starting {}", agent.name),
-        account.map(|a| format!("account: {a}")).unwrap_or_default(),
-        Urgency::Normal,
-        Glyph::Code,
-    );
-
     let script = format!(
         "cd '{}' 2>/dev/null || cd ~; {pre}exec {}",
         cwd.display(),
@@ -233,254 +226,271 @@ pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
-    let def_agent = get_default_agent();
-    let mut rows = Vec::new();
-    let mut keys = Vec::new();
+    let mut status_note: Option<String> = None;
 
-    for agent in AGENTS {
-        let installed = is_installed(agent.binary);
-        let is_default = def_agent.is_some_and(|d| d.binary == agent.binary);
-        let mark = if is_default { "● " } else { "  " };
+    loop {
+        let def_agent = get_default_agent();
+        let mut rows = Vec::new();
+        let mut keys = Vec::new();
 
-        if installed {
-            rows.push(row(
-                format!("{}{}", mark, agent.name),
-                "launch session",
-                Glyph::Code,
-            ));
-            keys.push(format!("launch:{}", agent.binary));
+        for agent in AGENTS {
+            let installed = is_installed(agent.binary);
+            let is_default = def_agent.is_some_and(|d| d.binary == agent.binary);
 
-            if !agent.envvar.is_empty() {
-                rows.push(row(
-                    format!("{} accounts…", agent.name),
-                    "switch or create accounts",
-                    Glyph::People,
-                ));
-                keys.push(format!("accounts:{}", agent.binary));
-            }
-        } else {
-            rows.push(row(
-                agent.name,
-                format!("install {}", agent.npm),
-                Glyph::Download,
-            ));
-            keys.push(format!("install:{}", agent.binary));
-        }
-    }
-
-    rows.push(row(
-        "Set the default agent…",
-        "choose active default agent",
-        Glyph::Gear,
-    ));
-    keys.push("default".to_string());
-
-    rows.push(row("Open a terminal in ~/Work", "~/Work", Glyph::Terminal));
-    keys.push("shell".to_string());
-
-    let mut picker = Picker::new(
-        "Agents",
-        vec![Question::choose(
-            "Agents",
-            "Enter launches · Escape closes",
-            rows,
-            keys,
-        )],
-    );
-
-    let code = crate::run_screen(terminal, design, "Agents", &mut picker)?;
-    if code != 0 {
-        return Ok(code);
-    }
-
-    let answers = picker.answers();
-    let Some(action) = answers.first() else {
-        return Ok(1);
-    };
-
-    match action.as_str() {
-        "shell" => {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-            let work = Path::new(&home).join("Work");
-            let cwd = if work.is_dir() {
-                work
-            } else {
-                PathBuf::from(home)
-            };
-            crate::system::spawn_detached(&format!(
-                "exec foot -T Work --working-directory '{}'",
-                cwd.display()
-            ));
-            Ok(0)
-        }
-        "default" => {
-            let mut inst_rows = Vec::new();
-            let mut inst_keys = Vec::new();
-            for agent in AGENTS {
-                if is_installed(agent.binary) {
-                    inst_rows.push(row(agent.name, agent.binary, Glyph::Code));
-                    inst_keys.push(agent.binary.to_string());
+            if installed {
+                let mut r = row(agent.name, "launch session", Glyph::Code);
+                if is_default {
+                    r = r.value("● default");
                 }
-            }
-            if inst_rows.is_empty() {
-                say(
-                    "Agents",
-                    "No agent CLI is installed yet",
-                    Urgency::Critical,
-                    Glyph::Code,
-                );
-                return Ok(3);
-            }
-            let mut pick_def = Picker::new(
-                "Default agent",
-                vec![Question::choose(
-                    "Default agent",
-                    "Enter selects as default · Escape cancels",
-                    inst_rows,
-                    inst_keys,
-                )],
-            );
-            let c = crate::run_screen(terminal, design, "Default agent", &mut pick_def)?;
-            if c == 0 {
-                if let Some(chosen) = pick_def.answers().first() {
-                    let _ = set_default_agent(chosen);
-                    say(
-                        "Agents",
-                        format!("Default agent: {chosen}"),
-                        Urgency::Normal,
-                        Glyph::Code,
-                    );
-                }
-            }
-            Ok(0)
-        }
-        act if act.starts_with("launch:") => {
-            let bin = &act[7..];
-            if let Some(agent) = AGENTS.iter().find(|a| a.binary == bin) {
-                let mut acc = None;
+                rows.push(r);
+                keys.push(format!("launch:{}", agent.binary));
+
                 if !agent.envvar.is_empty() {
-                    let def_acc_file = data_dir().join(agent.binary).join("default");
-                    if let Ok(content) = fs::read_to_string(def_acc_file) {
-                        let l = content.trim().to_string();
-                        if !l.is_empty() {
-                            acc = Some(l);
-                        }
-                    }
+                    let def_acc = fs::read_to_string(data_dir().join(agent.binary).join("default"))
+                        .ok()
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty());
+                    let detail = match def_acc {
+                        Some(acc) => format!("active account: {acc}"),
+                        None => "switch or create accounts".to_string(),
+                    };
+                    rows.push(row(format!("{} accounts…", agent.name), detail, Glyph::People));
+                    keys.push(format!("accounts:{}", agent.binary));
                 }
-                launch(agent, acc.as_deref());
-            }
-            Ok(0)
-        }
-        act if act.starts_with("install:") => {
-            let bin = &act[8..];
-            if let Some(agent) = AGENTS.iter().find(|a| a.binary == bin) {
-                let npm = agent.npm;
-                let cmd = format!(
-                    "npm install -g --prefix \"$HOME/.local\" --allow-scripts='{npm}' '{npm}' && echo && echo \"{} is in ~/.local/bin; ready.\" && read -r _",
-                    agent.name
-                );
-                let escaped_cmd = cmd.replace('\'', "'\\''");
-                crate::system::spawn_detached(&format!(
-                    "exec foot -T 'Install {}' -e bash -lc '{escaped_cmd}'",
-                    agent.name
+            } else {
+                rows.push(row(
+                    agent.name,
+                    format!("install {}", agent.npm),
+                    Glyph::Download,
                 ));
+                keys.push(format!("install:{}", agent.binary));
             }
-            Ok(0)
         }
-        act if act.starts_with("accounts:") => {
-            let bin = &act[9..];
-            let Some(agent) = AGENTS.iter().find(|a| a.binary == bin) else {
+
+        rows.push(row(
+            "Set the default agent…",
+            "choose active default agent",
+            Glyph::Gear,
+        ));
+        keys.push("default".to_string());
+
+        rows.push(row("Open a terminal in ~/Work", "~/Work", Glyph::Terminal));
+        keys.push("shell".to_string());
+
+        let note = match &status_note {
+            Some(msg) => format!("{msg} · Enter selects · Escape closes"),
+            None => "Enter launches or configures · Escape closes".to_string(),
+        };
+
+        let mut picker = Picker::new(
+            "Agents",
+            vec![Question::choose("Agents", note, rows, keys)],
+        );
+
+        let code = crate::run_screen(terminal, design, "Agents", &mut picker)?;
+        if code != 0 {
+            return Ok(code);
+        }
+
+        let answers = picker.answers();
+        let Some(action) = answers.first() else {
+            return Ok(1);
+        };
+
+        match action.as_str() {
+            "shell" => {
+                let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+                let work = Path::new(&home).join("Work");
+                let cwd = if work.is_dir() {
+                    work
+                } else {
+                    PathBuf::from(home)
+                };
+                crate::system::spawn_detached(&format!(
+                    "exec foot -T Work --working-directory '{}'",
+                    cwd.display()
+                ));
                 return Ok(0);
-            };
-            let dir = data_dir().join(agent.binary);
-            let _ = fs::create_dir_all(&dir);
-
-            let mut acc_rows = Vec::new();
-            let mut acc_keys = Vec::new();
-
-            if let Ok(entries) = fs::read_dir(&dir) {
-                for entry in entries.flatten() {
-                    if let Ok(ft) = entry.file_type() {
-                        if ft.is_dir() {
-                            let name = entry.file_name().to_string_lossy().to_string();
-                            acc_rows.push(row(&name, "account profile", Glyph::People));
-                            acc_keys.push(format!("use:{name}"));
-                        }
+            }
+            "default" => {
+                let mut inst_rows = Vec::new();
+                let mut inst_keys = Vec::new();
+                for agent in AGENTS {
+                    if is_installed(agent.binary) {
+                        inst_rows.push(row(agent.name, agent.binary, Glyph::Code));
+                        inst_keys.push(agent.binary.to_string());
+                    }
+                }
+                if inst_rows.is_empty() {
+                    status_note = Some("No agent CLI is installed yet".to_string());
+                    continue;
+                }
+                let mut pick_def = Picker::new(
+                    "Default agent",
+                    vec![Question::choose(
+                        "Default agent",
+                        "Enter selects as default · Escape goes back",
+                        inst_rows,
+                        inst_keys,
+                    )],
+                );
+                let c = crate::run_screen(terminal, design, "Default agent", &mut pick_def)?;
+                if c == 0 {
+                    if let Some(chosen) = pick_def.answers().first() {
+                        let _ = set_default_agent(chosen);
+                        status_note = Some(format!("Default agent set to {chosen}"));
                     }
                 }
             }
-
-            acc_rows.push(row("New account…", "create profile", Glyph::People));
-            acc_keys.push("new".to_string());
-
-            let mut acc_picker = Picker::new(
-                &format!("Accounts · {}", agent.name),
-                vec![Question::choose(
-                    format!("Accounts · {}", agent.name),
-                    "Enter selects · Escape cancels",
-                    acc_rows,
-                    acc_keys,
-                )],
-            );
-            let c = crate::run_screen(
-                terminal,
-                design,
-                &format!("Accounts · {}", agent.name),
-                &mut acc_picker,
-            )?;
-            if c == 0 {
-                if let Some(chosen) = acc_picker.answers().first() {
-                    if chosen == "new" {
-                        let mut new_picker = Picker::new(
-                            "New Account",
-                            vec![Question::input(
-                                "Account name",
-                                "Enter account name (e.g. work, personal)",
-                                "account_name",
-                                false,
-                            )],
-                        );
-                        let nc =
-                            crate::run_screen(terminal, design, "New Account", &mut new_picker)?;
-                        if nc == 0 {
-                            if let Some(name) = new_picker.answers().first() {
-                                let safe_name: String = name
-                                    .chars()
-                                    .map(|c| {
-                                        if c.is_alphanumeric() || c == '.' || c == '_' || c == '-' {
-                                            c
-                                        } else {
-                                            '_'
-                                        }
-                                    })
-                                    .collect();
-                                if !safe_name.is_empty() {
-                                    let new_dir = dir.join(&safe_name);
-                                    let _ = fs::create_dir_all(&new_dir);
-                                    let _ = fs::write(dir.join("default"), &safe_name);
-                                    say(
-                                        &format!("{}: account {safe_name} ready", agent.name),
-                                        "Account created",
-                                        Urgency::Normal,
-                                        Glyph::People,
-                                    );
-                                }
+            act if act.starts_with("launch:") => {
+                let bin = &act[7..];
+                if let Some(agent) = AGENTS.iter().find(|a| a.binary == bin) {
+                    let mut acc = None;
+                    if !agent.envvar.is_empty() {
+                        let def_acc_file = data_dir().join(agent.binary).join("default");
+                        if let Ok(content) = fs::read_to_string(def_acc_file) {
+                            let l = content.trim().to_string();
+                            if !l.is_empty() {
+                                acc = Some(l);
                             }
                         }
-                    } else if let Some(acc) = chosen.strip_prefix("use:") {
-                        let _ = fs::write(dir.join("default"), acc);
-                        say(
-                            agent.name,
-                            format!("default account: {acc}"),
-                            Urgency::Normal,
-                            Glyph::People,
-                        );
+                    }
+                    launch(agent, acc.as_deref());
+                }
+                return Ok(0);
+            }
+            act if act.starts_with("install:") => {
+                let bin = &act[8..];
+                if let Some(agent) = AGENTS.iter().find(|a| a.binary == bin) {
+                    let npm = agent.npm.to_string();
+                    let name = agent.name.to_string();
+                    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+                    let prefix = format!("{home}/.local");
+                    let allow = format!("--allow-scripts={npm}");
+                    let cmd = vec![
+                        "npm".to_string(),
+                        "install".to_string(),
+                        "-g".to_string(),
+                        "--prefix".to_string(),
+                        prefix,
+                        allow,
+                        npm.clone(),
+                    ];
+                    let id = format!("agent-install-{}", std::process::id());
+                    let task = Task::start_steps(
+                        &id,
+                        format!("Installing {name}"),
+                        vec![format!("Install {npm} into ~/.local")],
+                        false,
+                        vec![cmd],
+                    )
+                    .map_err(|e| {
+                        crate::Failure::new("Agents", format!("Could not start installer: {e}"))
+                    })?;
+                    let mut view = TaskView::new(task);
+                    let _ = crate::run_screen(terminal, design, &format!("Install {}", agent.name), &mut view)?;
+                    status_note = Some(if view.task().state == TaskState::Done {
+                        format!("Installed {}", agent.name)
+                    } else {
+                        format!("Install of {} did not complete", agent.name)
+                    });
+                }
+            }
+            act if act.starts_with("accounts:") => {
+                let bin = &act[9..];
+                let Some(agent) = AGENTS.iter().find(|a| a.binary == bin) else {
+                    continue;
+                };
+                let dir = data_dir().join(agent.binary);
+                let _ = fs::create_dir_all(&dir);
+
+                let mut acc_rows = Vec::new();
+                let mut acc_keys = Vec::new();
+
+                if let Ok(entries) = fs::read_dir(&dir) {
+                    for entry in entries.flatten() {
+                        if let Ok(ft) = entry.file_type() {
+                            if ft.is_dir() {
+                                let name = entry.file_name().to_string_lossy().to_string();
+                                acc_rows.push(row(&name, "account profile", Glyph::People));
+                                acc_keys.push(format!("use:{name}"));
+                            }
+                        }
+                    }
+                }
+
+                acc_rows.push(row("New account…", "create profile", Glyph::People));
+                acc_keys.push("new".to_string());
+
+                let mut acc_picker = Picker::new(
+                    &format!("Accounts · {}", agent.name),
+                    vec![Question::choose(
+                        format!("Accounts · {}", agent.name),
+                        "Enter selects · Escape goes back",
+                        acc_rows,
+                        acc_keys,
+                    )],
+                );
+                let c = crate::run_screen(
+                    terminal,
+                    design,
+                    &format!("Accounts · {}", agent.name),
+                    &mut acc_picker,
+                )?;
+                if c == 0 {
+                    if let Some(chosen) = acc_picker.answers().first() {
+                        if chosen == "new" {
+                            let mut new_picker = Picker::new(
+                                "New Account",
+                                vec![Question::input(
+                                    "Account name",
+                                    "Enter account name (e.g. work, personal)",
+                                    "account_name",
+                                    false,
+                                )],
+                            );
+                            let nc = crate::run_screen(
+                                terminal,
+                                design,
+                                "New Account",
+                                &mut new_picker,
+                            )?;
+                            if nc == 0 {
+                                if let Some(name) = new_picker.answers().first() {
+                                    let safe_name: String = name
+                                        .chars()
+                                        .map(|c| {
+                                            if c.is_alphanumeric()
+                                                || c == '.'
+                                                || c == '_'
+                                                || c == '-'
+                                            {
+                                                c
+                                            } else {
+                                                '_'
+                                            }
+                                        })
+                                        .collect();
+                                    if !safe_name.is_empty() {
+                                        let new_dir = dir.join(&safe_name);
+                                        let _ = fs::create_dir_all(&new_dir);
+                                        let _ = fs::write(dir.join("default"), &safe_name);
+                                        status_note = Some(format!(
+                                            "{}: account {safe_name} created & selected",
+                                            agent.name
+                                        ));
+                                    }
+                                }
+                            }
+                        } else if let Some(acc) = chosen.strip_prefix("use:") {
+                            let _ = fs::write(dir.join("default"), acc);
+                            status_note = Some(format!("{}: active account set to {acc}", agent.name));
+                        }
                     }
                 }
             }
-            Ok(0)
+            _ => {}
         }
-        _ => Ok(0),
     }
 }
 

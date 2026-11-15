@@ -22,10 +22,10 @@ use std::path::Path;
 use std::time::Duration;
 
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row, Screen,
-    TextStyle, draw_card,
+    BodyCtx, Card, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row, Screen,
+    TextStyle, Urgency, draw_card, draw_filter_bar,
 };
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 
 use crate::system::{missing, out, print, say};
@@ -45,6 +45,7 @@ pub struct CaptureScreen {
     recording: bool,
     rec_file: String,
     list: ListState,
+    keys: Vec<String>,
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
@@ -56,9 +57,14 @@ impl CaptureScreen {
         let mut screen = Self {
             recording: false,
             rec_file: String::new(),
-            list: ListState::new(),
+            list: ListState::new().with_empty("no matching capture actions"),
+            keys: Vec::new(),
             header: Header::new("LazyOS").subtitle("Capture"),
-            keybar: vec![KeyHint::new("Enter", "run"), KeyHint::new("Esc", "close")],
+            keybar: vec![
+                KeyHint::new("Enter", "run"),
+                KeyHint::new("type", "filter"),
+                KeyHint::new("Esc", "close"),
+            ],
             rows_height: Cell::new(20),
             open_qr: false,
         };
@@ -102,19 +108,21 @@ impl CaptureScreen {
 
     fn build_rows(&mut self) {
         let mut rows = Vec::new();
+        let mut keys = Vec::new();
         if self.recording {
             rows.push(
                 Row::new("Stop recording")
                     .glyph(Glyph::Stop)
-                    .detail(format!(
-                        "{}",
+                    .detail(
                         Path::new(&self.rec_file)
                             .file_name()
                             .unwrap_or_default()
                             .to_string_lossy()
-                    ))
-                    .value("stop"),
+                            .to_string(),
+                    )
+                    .value("● recording"),
             );
+            keys.push("stop".to_string());
         } else {
             let shotdir = dirs::picture_dir()
                 .map(|p| p.join("Screenshots"))
@@ -123,75 +131,75 @@ impl CaptureScreen {
             rows.push(
                 Row::new("Screenshot · the whole screen")
                     .glyph(Glyph::Camera)
-                    .detail(format!("saved to {}/{}", shotdir.display(), day))
-                    .value("shot:save:screen"),
+                    .detail(format!("saved to {}/{}", shotdir.display(), day)),
             );
+            keys.push("shot:save:screen".to_string());
             rows.push(
                 Row::new("Screenshot · an area")
                     .glyph(Glyph::Crop)
-                    .detail(format!("saved to {}/{}", shotdir.display(), day))
-                    .value("shot:save:area"),
+                    .detail(format!("saved to {}/{}", shotdir.display(), day)),
             );
+            keys.push("shot:save:area".to_string());
             rows.push(
                 Row::new("Screenshot · an area, to the clipboard")
                     .glyph(Glyph::Crop)
-                    .detail("paste it anywhere")
-                    .value("shot:copy:area"),
+                    .detail("paste it anywhere"),
             );
+            keys.push("shot:copy:area".to_string());
             rows.push(
                 Row::new("Screenshot · a window")
                     .glyph(Glyph::Image)
-                    .detail("pick one with the pointer")
-                    .value("shot:save:window"),
+                    .detail("pick one with the pointer"),
             );
+            keys.push("shot:save:window".to_string());
             rows.push(
                 Row::new("Annotate an area")
                     .glyph(Glyph::Camera)
-                    .detail("arrows, text, crop (swappy)")
-                    .value("annotate"),
+                    .detail("arrows, text, crop (swappy)"),
             );
+            keys.push("annotate".to_string());
             rows.push(
                 Row::new("Record · the whole screen")
                     .glyph(Glyph::Video)
-                    .detail("until you stop it")
-                    .value("rec:none"),
+                    .detail("until you stop it"),
             );
+            keys.push("rec:none".to_string());
             rows.push(
                 Row::new("Record · an area")
                     .glyph(Glyph::Video)
-                    .detail("pick it with the pointer")
-                    .value("rec:area"),
+                    .detail("pick it with the pointer"),
             );
+            keys.push("rec:area".to_string());
         }
-        rows.push(Row::new("").glyph(Glyph::Camera)); // separator
         rows.push(
             Row::new("Text from an area")
                 .glyph(Glyph::File)
-                .detail("OCR (tesseract) → clipboard")
-                .value("ocr"),
+                .detail("OCR (tesseract) → clipboard"),
         );
+        keys.push("ocr".to_string());
         rows.push(
             Row::new("QR code from an area")
                 .glyph(Glyph::Qr)
-                .detail("zbarimg → clipboard")
-                .value("qr"),
+                .detail("zbarimg → clipboard"),
         );
+        keys.push("qr".to_string());
         rows.push(
             Row::new("Make a QR code")
                 .glyph(Glyph::Qr)
-                .detail("the Wi-Fi password, or any text")
-                .value("make-qr"),
+                .detail("the Wi-Fi password, or any text"),
         );
+        keys.push("make-qr".to_string());
         let shotdir = dirs::picture_dir()
             .map(|p| p.join("Screenshots"))
             .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Pictures"));
         rows.push(
             Row::new("Open the pictures folder")
-                .glyph(Glyph::File)
-                .detail(shotdir.display().to_string())
-                .value("folder"),
+                .glyph(Glyph::Folder)
+                .detail(shotdir.display().to_string()),
         );
+        keys.push("folder".to_string());
         self.list.set_rows(rows);
+        self.keys = keys;
     }
 }
 
@@ -199,11 +207,14 @@ impl Screen for CaptureScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Capture"), true);
         let (filter, rows) = super::pick::list_layout(ctx.area);
-        ctx.buf.set_string(
-            filter.x,
-            filter.y,
-            "Enter runs · Escape closes",
-            ctx.design.style(TextStyle::Dim),
+        draw_filter_bar(
+            ctx.buf,
+            filter,
+            ctx.design,
+            self.list.filter(),
+            "type to filter · Enter runs · Escape closes",
+            self.list.len(),
+            self.keys.len(),
         );
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
@@ -220,6 +231,11 @@ impl Screen for CaptureScreen {
                 if let Some(index) = self.list.selected_index() {
                     return self.activate(index);
                 }
+            }
+            KeyCode::Char(_) | KeyCode::Backspace
+                if !key.modifiers.contains(KeyModifiers::CONTROL) && self.list.type_filter(key) =>
+            {
+                return Outcome::Continue;
             }
             _ => {}
         }
@@ -255,16 +271,10 @@ impl Screen for CaptureScreen {
 
 impl CaptureScreen {
     fn activate(&mut self, index: usize) -> Outcome {
-        let rows = self.list.rows();
-        let Some(row) = rows.get(index) else {
+        let Some(key) = self.keys.get(index).cloned() else {
             return Outcome::Continue;
         };
-        let Some(key) = row.value.as_deref() else {
-            return Outcome::Continue;
-        };
-        if key.is_empty() || key == "-" {
-            return Outcome::Continue;
-        }
+        let key = key.as_str();
         if key.starts_with("shot:") {
             let action = &key[5..];
             let target = action.split(':').nth(1).unwrap_or("");
@@ -514,13 +524,8 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        say(
-            "Capture",
-            format!("{said} (grimshot, swappy, tesseract, zbarimg, wf-recorder, slurp, grim)"),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Capture,
-        );
-        return Ok(3);
+        return Err(crate::Failure::new("Capture",
+                format!("{said} (grimshot, swappy, tesseract, zbarimg, wf-recorder, slurp, grim)")));
     }
     let mut screen = CaptureScreen::new();
     let code = crate::run_screen(terminal, design, "Capture", &mut screen)?;

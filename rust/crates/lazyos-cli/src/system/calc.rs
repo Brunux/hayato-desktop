@@ -22,14 +22,14 @@ use std::cell::Cell;
 use std::collections::VecDeque;
 
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, Input, KeyHint, ListAction, ListState, Outcome, Row, Screen,
-    TextStyle, draw_card,
+    BodyCtx, Card, ColorRole, Design, Glyph, Header, Input, KeyHint, ListAction, ListState,
+    Outcome, Row, Screen, TextStyle, Urgency, draw_badge, draw_card,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 
 use crate::paths::Paths;
-use crate::system::{have, missing, print, say};
+use crate::system::{have, missing};
 
 const MAX_HISTORY: usize = 50;
 
@@ -44,6 +44,7 @@ pub struct CalcScreen {
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
+    status_note: Option<String>,
 }
 
 impl CalcScreen {
@@ -52,12 +53,7 @@ impl CalcScreen {
         let mut list = ListState::new()
             .with_empty("no history yet - type an expression and press Enter")
             .ranked();
-        list.set_rows(
-            history
-                .iter()
-                .map(|h| Row::new(h.as_str()).glyph(Glyph::Calculator))
-                .collect(),
-        );
+        list.set_rows(Self::history_rows(&history));
 
         Self {
             input: Input::new(),
@@ -65,13 +61,32 @@ impl CalcScreen {
             list,
             header: Header::new("LazyOS").subtitle("Calculator"),
             keybar: vec![
-                KeyHint::new("Enter", "evaluate"),
-                KeyHint::new("type", "filter history"),
-                KeyHint::new("\u{2191}\u{2193}", "move"),
+                KeyHint::new("Enter", "save & copy"),
+                KeyHint::new("type", "live evaluate"),
+                KeyHint::new("\u{2191}\u{2193}", "history"),
                 KeyHint::new("Esc", "close"),
             ],
             rows_height: Cell::new(20),
+            status_note: None,
         }
+    }
+
+    fn history_rows(history: &VecDeque<String>) -> Vec<Row> {
+        history
+            .iter()
+            .map(|h| {
+                if let Some(eq_pos) = h.find(" = ") {
+                    let expr = &h[..eq_pos];
+                    let res = &h[eq_pos + 3..];
+                    Row::new(expr)
+                        .glyph(Glyph::Calculator)
+                        .detail("Enter copies result")
+                        .value(format!("= {res}"))
+                } else {
+                    Row::new(h.as_str()).glyph(Glyph::Calculator)
+                }
+            })
+            .collect()
     }
 
     fn load_history() -> VecDeque<String> {
@@ -124,43 +139,98 @@ impl CalcScreen {
         if self.history.len() > MAX_HISTORY {
             self.history.pop_back();
         }
-        self.list.set_rows(
-            self.history
-                .iter()
-                .map(|h| Row::new(h.as_str()).glyph(Glyph::Calculator))
-                .collect(),
-        );
+        self.list.set_rows(Self::history_rows(&self.history));
         self.save_history();
+    }
+
+    fn copy_result(&mut self, entry_label: &str, result: &str) {
+        if have("wl-copy") {
+            let _ = std::process::Command::new("wl-copy")
+                .arg(result)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+        self.status_note = Some(format!("Copied {result} ({entry_label}) to clipboard"));
     }
 }
 
 impl Screen for CalcScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Calculator"), true);
-        let (filter, rows) = super::pick::list_layout(ctx.area);
-        let x = ctx.buf.set_string(
-            filter.x,
-            filter.y,
-            &format!("{} ", Glyph::Calculator.cell()),
-            ctx.design.style(TextStyle::Title),
+        let (hero, rows) = Self::layout(ctx.area);
+
+        let expr = self.input.text().trim();
+        let mut x = draw_badge(
+            ctx.buf,
+            hero.x,
+            hero.y,
+            ctx.design,
+            "EXPR",
+            ColorRole::Accent,
         );
-        let x = filter.x + 1 + Glyph::Calculator.cell().len() as u16;
-        let room = filter.right().saturating_sub(x);
-        if self.list.filter().is_empty() {
+        x += 2;
+        if expr.is_empty() {
             ctx.buf.set_string(
                 x,
-                filter.y,
-                "type an expression: 2 + 3 * 4, sin(pi/2), 2^10...",
+                hero.y,
+                "type an expression: 2 + 3 * 4, sin(pi/2), 2^10…",
                 ctx.design.style(TextStyle::Dim),
             );
         } else {
-            ctx.buf.set_string(
-                x,
-                filter.y,
-                self.list.filter(),
-                ctx.design.style(TextStyle::Body),
-            );
+            ctx.buf
+                .set_string(x, hero.y, expr, ctx.design.style(TextStyle::Title));
         }
+
+        if hero.height >= 2 {
+            let y2 = hero.y + 1;
+            if expr.is_empty() {
+                let note = self
+                    .status_note
+                    .as_deref()
+                    .unwrap_or("Live evaluation · Enter saves & copies result to clipboard");
+                ctx.buf
+                    .set_string(hero.x, y2, note, ctx.design.style(TextStyle::Dim));
+            } else {
+                match Self::evaluate(expr) {
+                    Ok(res) => {
+                        let mut rx = draw_badge(
+                            ctx.buf,
+                            hero.x,
+                            y2,
+                            ctx.design,
+                            "= LIVE",
+                            ColorRole::Ok,
+                        );
+                        rx += 2;
+                        ctx.buf
+                            .set_string(rx, y2, &res, ctx.design.style(TextStyle::Title));
+                        if let Ok(iv) = res.parse::<i64>() {
+                            let bases = format!("  (0x{iv:X} · 0b{iv:b})");
+                            let bx = rx + res.chars().count() as u16;
+                            if bx < hero.right() {
+                                ctx.buf.set_string(
+                                    bx,
+                                    y2,
+                                    bases,
+                                    ctx.design.style(TextStyle::Dim),
+                                );
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        ctx.buf.set_string(
+                            hero.x,
+                            y2,
+                            format!("… {err}"),
+                            ctx.design.style(TextStyle::Dim),
+                        );
+                    }
+                }
+            }
+        }
+
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
     }
@@ -170,92 +240,57 @@ impl Screen for CalcScreen {
             return Outcome::Continue;
         }
         let rows_height = self.rows_height.get();
-        if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-            && !key.modifiers.contains(KeyModifiers::CONTROL)
+        if matches!(
+            key.code,
+            KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete | KeyCode::Left | KeyCode::Right
+        ) && !key.modifiers.contains(KeyModifiers::CONTROL)
         {
-            self.list.type_filter(key);
+            let _ = self.input.handle(key);
             return Outcome::Continue;
         }
         match key.code {
             KeyCode::Enter => {
-                let expr = self.list.filter().trim().to_string();
+                let expr = self.input.text().trim().to_string();
                 if !expr.is_empty() {
                     match Self::evaluate(&expr) {
                         Ok(result) => {
                             self.add_to_history(&expr, &result);
-                            if have("wl-copy") {
-                                let _ = std::process::Command::new("wl-copy")
-                                    .arg(&result)
-                                    .stdin(std::process::Stdio::null())
-                                    .stdout(std::process::Stdio::null())
-                                    .stderr(std::process::Stdio::null())
-                                    .status();
-                            }
-                            say(
-                                "Calculator",
-                                format!("{expr} = {result} · copied"),
-                                lazyos_ui::Urgency::Normal,
-                                Glyph::Calculator,
-                            );
-                            self.list.set_filter("");
-                            return Outcome::Done(lazyos_ui::app::exit::OK);
+                            self.copy_result(&expr, &result);
+                            self.input.set("");
+                            return Outcome::Continue;
                         }
                         Err(e) => {
-                            say(
-                                "Calculator",
-                                e,
-                                lazyos_ui::Urgency::Critical,
-                                Glyph::Calculator,
-                            );
+                            self.status_note = Some(format!("Invalid expression: {e}"));
                             return Outcome::Continue;
                         }
                     }
                 } else if let Some(index) = self.list.selected_index() {
-                    if let Some(entry) = self.history.get(index) {
+                    if let Some(entry) = self.history.get(index).cloned() {
                         if let Some(eq_pos) = entry.find(" = ") {
+                            let expr_part = &entry[..eq_pos];
                             let result = &entry[eq_pos + 3..];
-                            if have("wl-copy") {
-                                let _ = std::process::Command::new("wl-copy")
-                                    .arg(result)
-                                    .stdin(std::process::Stdio::null())
-                                    .stdout(std::process::Stdio::null())
-                                    .stderr(std::process::Stdio::null())
-                                    .status();
-                            }
-                            say(
-                                "Calculator",
-                                format!("{entry} · copied"),
-                                lazyos_ui::Urgency::Normal,
-                                Glyph::Calculator,
-                            );
-                            return Outcome::Done(lazyos_ui::app::exit::OK);
+                            self.copy_result(expr_part, result);
+                            return Outcome::Continue;
                         }
                     }
                 }
             }
-            KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+            KeyCode::Esc => {
+                if !self.input.text().is_empty() {
+                    self.input.set("");
+                    return Outcome::Continue;
+                }
+                return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
+            }
             _ => {}
         }
         match self.list.handle(key, rows_height, design) {
             ListAction::Activated(index) => {
-                if let Some(entry) = self.history.get(index) {
+                if let Some(entry) = self.history.get(index).cloned() {
                     if let Some(eq_pos) = entry.find(" = ") {
+                        let expr_part = &entry[..eq_pos];
                         let result = &entry[eq_pos + 3..];
-                        if have("wl-copy") {
-                            let _ = std::process::Command::new("wl-copy")
-                                .arg(result)
-                                .stdin(std::process::Stdio::null())
-                                .stdout(std::process::Stdio::null())
-                                .stderr(std::process::Stdio::null())
-                                .status();
-                        }
-                        say(
-                            "Calculator",
-                            format!("{entry} · copied"),
-                            lazyos_ui::Urgency::Normal,
-                            Glyph::Calculator,
-                        );
-                        return Outcome::Done(lazyos_ui::app::exit::OK);
+                        self.copy_result(expr_part, result);
                     }
                 }
                 Outcome::Continue
@@ -268,24 +303,11 @@ impl Screen for CalcScreen {
         if let Some(row) = row {
             self.list.set_cursor(row);
             if let Some(index) = self.list.selected_index() {
-                if let Some(entry) = self.history.get(index) {
+                if let Some(entry) = self.history.get(index).cloned() {
                     if let Some(eq_pos) = entry.find(" = ") {
+                        let expr_part = &entry[..eq_pos];
                         let result = &entry[eq_pos + 3..];
-                        if have("wl-copy") {
-                            let _ = std::process::Command::new("wl-copy")
-                                .arg(result)
-                                .stdin(std::process::Stdio::null())
-                                .stdout(std::process::Stdio::null())
-                                .stderr(std::process::Stdio::null())
-                                .status();
-                        }
-                        say(
-                            "Calculator",
-                            format!("{entry} · copied"),
-                            lazyos_ui::Urgency::Normal,
-                            Glyph::Calculator,
-                        );
-                        return Outcome::Done(lazyos_ui::app::exit::OK);
+                        self.copy_result(expr_part, result);
                     }
                 }
             }
@@ -294,7 +316,7 @@ impl Screen for CalcScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        let (_, rows) = super::pick::list_layout(area);
+        let (_, rows) = Self::layout(area);
         self.list.hit_row(rows, x, y, design)
     }
 
@@ -305,26 +327,31 @@ impl Screen for CalcScreen {
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }
+
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        Some((740, 460))
+    }
 }
 
 impl CalcScreen {
-    fn list_layout(area: Rect) -> (Rect, Rect) {
+    fn layout(area: Rect) -> (Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
             y: area.y + 1,
             width: area.width.saturating_sub(4),
             height: area.height.saturating_sub(2),
         };
-        let filter = Rect {
-            height: 1.min(inner.height),
+        let hero_h = 2.min(inner.height);
+        let hero = Rect {
+            height: hero_h,
             ..inner
         };
         let rows = Rect {
-            y: inner.y + 2,
-            height: inner.height.saturating_sub(2),
+            y: inner.y + hero_h + 1,
+            height: inner.height.saturating_sub(hero_h + 1),
             ..inner
         };
-        (filter, rows)
+        (hero, rows)
     }
 }
 
@@ -554,13 +581,10 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        say(
+        return Err(crate::Failure::new(
             "Calculator",
             format!("{said} (wl-clipboard)"),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Calculator,
-        );
-        return Ok(3);
+        ));
     }
     let mut screen = CalcScreen::new();
     let code = crate::run_screen(terminal, design, "Calculator", &mut screen)?;

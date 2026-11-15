@@ -116,7 +116,7 @@
         "interval": 21600,
         "signal": 8,
         "tooltip": true,
-        "on-click": "foot --app-id=popup bash -lc 'sudo apt update && sudo apt full-upgrade; echo; echo Press Enter to close; read -r _'"
+        "on-click": "lazyos menu pkg"
     },
     "tray": {
         "icon-size": 14,
@@ -146,7 +146,8 @@
         "interval": 10,
         "signal": 8,
         "tooltip": true,
-        "on-click": "~/.config/bin/bar-key next"
+        "on-click": "~/.config/bin/bar-key next",
+        "on-click-right": "~/.config/bin/rofi-layout"
     },
     "custom/bluetooth": {
         "exec": "~/.config/bin/bar-bt status",
@@ -181,14 +182,15 @@
         "tooltip-format": "{desc} ({volume}%)",
         "scroll-step": 5,
         "max-volume": 100,
-        "on-click": "pactl set-sink-mute @DEFAULT_SINK@ toggle",
-        "on-click-right": "~/.config/bin/bar-audio"
+        "on-click": "~/.config/bin/bar-audio",
+        "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
     },
     "backlight": {
         "device": "backlight-lcd0",
         "format": "<span font_desc='JetBrains Mono 13'>\uf185</span>",
         "tooltip-format": "Brightness {percent}%",
         "interval": 5,
+        "on-click": "~/.config/bin/rofi-display",
         "on-scroll-up": "brightnessctl set 5%+",
         "on-scroll-down": "brightnessctl set 5%-"
     },
@@ -232,9 +234,9 @@
             "\uf241",
             "\uf240"
         ],
-        "tooltip-format": "Battery {capacity}%\nClick for draw, time left and memory",
+        "tooltip-format": "Battery {capacity}%\nClick for power menu",
         "interval": 30,
         "on-click": "~/.config/bin/bar-power",
-        "on-click-right": "~/.config/bin/bar-menu"
+        "on-click-right": "~/.config/bin/rofi-power"
     }
 }

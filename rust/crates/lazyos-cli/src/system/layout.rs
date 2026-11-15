@@ -5,15 +5,15 @@
 //! persisting it to `~/.config/sway/config.d/90-keyboard-layout.conf`.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
-use lazyos_ui::{Design, Glyph, Urgency};
+use lazyos_ui::{Card, Design, Glyph, Urgency};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 use super::pick::{Picker, Question, row};
-use super::{out, say};
+use super::out;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LayoutEntry {
@@ -101,75 +101,58 @@ pub fn menu(
 ) -> Result<i32, crate::Failure> {
     let rules_path = "/usr/share/X11/xkb/rules/evdev.lst";
     let Ok(content) = fs::read_to_string(rules_path) else {
-        say(
-            "Keyboard layout",
-            "evdev.lst is missing (package xkb-data)",
-            Urgency::Critical,
-            Glyph::Keyboard,
-        );
-        return Ok(3);
+        return Err(crate::Failure::new("Keyboard layout", "evdev.lst is missing (package xkb-data)"));
     };
 
     let layouts = parse_evdev_lst(&content);
-    let active = active_layout().unwrap_or_default();
+    let mut status_note: Option<String> = None;
 
-    let mut rows = Vec::new();
-    let mut keys = Vec::new();
+    loop {
+        let active = active_layout().unwrap_or_default();
 
-    for l in &layouts {
-        let is_active = l.name == active || l.code == active;
-        let mark = if is_active { "● " } else { "  " };
-        let detail = if is_active {
-            format!("{} · current", l.code)
-        } else {
-            l.code.clone()
-        };
-        rows.push(row(format!("{}{}", mark, l.name), detail, Glyph::Keyboard));
-        keys.push(l.code.clone());
-    }
+        let mut rows = Vec::new();
+        let mut keys = Vec::new();
 
-    let mut picker = Picker::new(
-        "Keyboard layout",
-        vec![Question::choose(
-            "Keyboard layout",
+        for l in &layouts {
+            let is_active = l.name == active || l.code == active;
+            let mut r = row(&l.name, &l.code, Glyph::Keyboard);
+            if is_active {
+                r = r.value("● current");
+            }
+            rows.push(r);
+            keys.push(l.code.clone());
+        }
+
+        let note = status_note.clone().unwrap_or_else(|| {
             if active.is_empty() {
-                "Enter sets layout · Escape closes".to_string()
+                "Enter sets layout · type to filter · Escape closes".to_string()
             } else {
                 format!("Current: {active} · Enter sets layout · Escape closes")
-            },
-            rows,
-            keys,
-        )],
-    );
+            }
+        });
 
-    let code = crate::run_screen(terminal, design, "Keyboard layout", &mut picker)?;
-    if code != 0 {
-        return Ok(code);
-    }
+        let mut picker = Picker::new(
+            "Keyboard layout",
+            vec![Question::choose("Keyboard layout", note, rows, keys)],
+        );
 
-    let answers = picker.answers();
-    let Some(chosen) = answers.first() else {
-        return Ok(1);
-    };
-
-    match set_layout(chosen) {
-        Ok(()) => {
-            say(
-                "Keyboard layout",
-                format!("Now using {chosen}"),
-                Urgency::Normal,
-                Glyph::Keyboard,
-            );
-            Ok(0)
+        let code = crate::run_screen(terminal, design, "Keyboard layout", &mut picker)?;
+        if code != 0 {
+            return Ok(code);
         }
-        Err(err) => {
-            say(
-                "Keyboard layout",
-                format!("Could not set {chosen}: {err}"),
-                Urgency::Critical,
-                Glyph::Keyboard,
-            );
-            Ok(3)
+
+        let answers = picker.answers();
+        let Some(chosen) = answers.first() else {
+            return Ok(1);
+        };
+
+        match set_layout(chosen) {
+            Ok(()) => {
+                status_note = Some(format!("Active keyboard layout set to {chosen}"));
+            }
+            Err(err) => {
+                status_note = Some(format!("Could not set {chosen}: {err}"));
+            }
         }
     }
 }
