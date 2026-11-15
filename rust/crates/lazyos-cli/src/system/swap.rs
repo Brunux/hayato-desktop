@@ -483,8 +483,7 @@ pub fn menu(
                     vec!["rescan".to_string()],
                 )],
             );
-            let code =
-                crate::run_screen(terminal, design, "Auxiliary swap", &mut empty_picker)?;
+            let code = crate::run_screen(terminal, design, "Auxiliary swap", &mut empty_picker)?;
             if code != 0 {
                 return Ok(code);
             }
@@ -571,8 +570,7 @@ pub fn menu(
         let part = fstab::partition(&dev);
 
         let new_fstab = fstab::with_swap(&fstab_text);
-        fstab::replace(&new_fstab)
-            .map_err(|f| crate::Failure::new("Auxiliary swap", f))?;
+        fstab::replace(&new_fstab).map_err(|f| crate::Failure::new("Auxiliary swap", f))?;
 
         let mut commands = Vec::new();
         for s in partition_steps(&dev, &end) {

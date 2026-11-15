@@ -198,14 +198,8 @@ impl Screen for CalcScreen {
             } else {
                 match Self::evaluate(expr) {
                     Ok(res) => {
-                        let mut rx = draw_badge(
-                            ctx.buf,
-                            hero.x,
-                            y2,
-                            ctx.design,
-                            "= LIVE",
-                            ColorRole::Ok,
-                        );
+                        let mut rx =
+                            draw_badge(ctx.buf, hero.x, y2, ctx.design, "= LIVE", ColorRole::Ok);
                         rx += 2;
                         ctx.buf
                             .set_string(rx, y2, &res, ctx.design.style(TextStyle::Title));
@@ -213,12 +207,8 @@ impl Screen for CalcScreen {
                             let bases = format!("  (0x{iv:X} · 0b{iv:b})");
                             let bx = rx + res.chars().count() as u16;
                             if bx < hero.right() {
-                                ctx.buf.set_string(
-                                    bx,
-                                    y2,
-                                    bases,
-                                    ctx.design.style(TextStyle::Dim),
-                                );
+                                ctx.buf
+                                    .set_string(bx, y2, bases, ctx.design.style(TextStyle::Dim));
                             }
                         }
                     }

@@ -11,8 +11,8 @@ use lazyos_ui::{Card, Design, Glyph, Urgency};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
-use super::pick::{Picker, Question, row};
 use super::out;
+use super::pick::{Picker, Question, row};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FileKind {
@@ -79,8 +79,10 @@ pub fn menu_for_path(
 ) -> Result<i32, crate::Failure> {
     let target = Path::new(path_str);
     if !target.exists() && !target.is_symlink() {
-        return Err(crate::Failure::new("File actions",
-                format!("{} is not there any more", target.display())));
+        return Err(crate::Failure::new(
+            "File actions",
+            format!("{} is not there any more", target.display()),
+        ));
     }
 
     let base = target
@@ -296,8 +298,7 @@ pub fn menu_for_path(
                             let mtext = String::from_utf8_lossy(&mo.stdout);
                             if let Some(at) = mtext.rfind(" at ") {
                                 let mp = mtext[at + 4..].trim().trim_end_matches('.');
-                                let _ =
-                                    Command::new("lazyos").args(["menu", "files", mp]).status();
+                                let _ = Command::new("lazyos").args(["menu", "files", mp]).status();
                                 return Ok(0);
                             }
                         }

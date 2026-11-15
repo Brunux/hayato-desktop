@@ -30,8 +30,8 @@ use lazyos_ui::{Card, Design, Glyph, Urgency};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
-use super::pick::{Picker, Question, row};
 use super::out;
+use super::pick::{Picker, Question, row};
 
 /// What the menu needs before it offers anything.
 pub const NEEDED: &[&str] = &["wayvnc", "ss"];
@@ -220,7 +220,10 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        return Err(crate::Failure::new("Share this screen", format!("{said} (wayvnc, iproute2)")));
+        return Err(crate::Failure::new(
+            "Share this screen",
+            format!("{said} (wayvnc, iproute2)"),
+        ));
     }
 
     let mut status_note: Option<String> = None;

@@ -116,10 +116,12 @@ impl KillScreen {
         } else {
             self.list.set_rows(rows);
         }
-        let status = self
-            .status_note
-            .clone()
-            .unwrap_or_else(|| format!("{} user processes \u{00b7} Enter sends SIGTERM", self.list.len()));
+        let status = self.status_note.clone().unwrap_or_else(|| {
+            format!(
+                "{} user processes \u{00b7} Enter sends SIGTERM",
+                self.list.len()
+            )
+        });
         self.header = Header::new("End a process")
             .subtitle("Process manager")
             .status(status);
@@ -203,10 +205,9 @@ impl Screen for KillScreen {
                 draw_card(ctx.buf, ctx.area, ctx.design, Some("End a process"), true);
                 let (strip, filter, rows) = Self::layout(ctx.area);
                 self.strip.render(strip, ctx.buf, ctx.design);
-                let hint = self
-                    .status_note
-                    .as_deref()
-                    .unwrap_or("Enter sends SIGTERM \u{00b7} type to filter \u{00b7} Ctrl+R refreshes");
+                let hint = self.status_note.as_deref().unwrap_or(
+                    "Enter sends SIGTERM \u{00b7} type to filter \u{00b7} Ctrl+R refreshes",
+                );
                 draw_filter_bar(
                     ctx.buf,
                     filter,

@@ -219,7 +219,9 @@ impl Screen for WindowScreen {
             self.windows.len(),
         );
         if let Some(note) = &self.status_note {
-            let nx = filter.right().saturating_sub(note.chars().count() as u16 + 2);
+            let nx = filter
+                .right()
+                .saturating_sub(note.chars().count() as u16 + 2);
             if nx > filter.x + 24 {
                 ctx.buf
                     .set_string(nx, filter.y, note, ctx.design.style(TextStyle::Title));

@@ -59,9 +59,7 @@ impl Default for PkgScreen {
 
 impl PkgScreen {
     pub fn new() -> Self {
-        let list = ListState::new()
-            .with_empty("no packages matched")
-            .ranked();
+        let list = ListState::new().with_empty("no packages matched").ranked();
         let mut quick_list = ListState::new();
         quick_list.set_rows(vec![
             Row::new("Update package lists")
@@ -499,9 +497,9 @@ impl Screen for PkgScreen {
                         return Outcome::Consumed;
                     }
                     self.stage = PkgStage::Query;
-                    self.header = Header::new("LazyOS")
-                        .subtitle("Packages")
-                        .status("Type a package name and press Enter \u{00b7} or pick an action below");
+                    self.header = Header::new("LazyOS").subtitle("Packages").status(
+                        "Type a package name and press Enter \u{00b7} or pick an action below",
+                    );
                     return Outcome::Consumed;
                 }
                 if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)

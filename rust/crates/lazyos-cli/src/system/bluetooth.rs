@@ -13,8 +13,8 @@ use std::time::Duration;
 use lazyos_ui::widgets::{put, put_trunc};
 use lazyos_ui::{
     ActionItem, ActionRunner, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Design, Glyph,
-    Header, KeyHint, ListAction, ListState, Outcome, Row, Screen, TextStyle, draw_badge,
-    draw_card, draw_empty, draw_filter_bar,
+    Header, KeyHint, ListAction, ListState, Outcome, Row, Screen, TextStyle, draw_badge, draw_card,
+    draw_empty, draw_filter_bar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
@@ -113,16 +113,17 @@ impl BluetoothScreen {
         if self.runner.is_running() {
             return;
         }
-        self.runner.spawn("Scanning for nearby devices\u{2026}", move || {
-            do_scan(secs);
-            let powered = BluetoothScreen::get_powered();
-            let devices = if powered {
-                BluetoothScreen::get_devices()
-            } else {
-                Vec::new()
-            };
-            BtOp::Scanned { powered, devices }
-        });
+        self.runner
+            .spawn("Scanning for nearby devices\u{2026}", move || {
+                do_scan(secs);
+                let powered = BluetoothScreen::get_powered();
+                let devices = if powered {
+                    BluetoothScreen::get_devices()
+                } else {
+                    Vec::new()
+                };
+                BtOp::Scanned { powered, devices }
+            });
         self.sync_chrome();
     }
 
@@ -295,9 +296,8 @@ impl BluetoothScreen {
             actions.push(ActionItem::new("toggle", "^T", "Turn off").glyph(Glyph::Power));
             actions.push(ActionItem::new("ctl", "^B", "bluetoothctl").glyph(Glyph::Terminal));
         } else {
-            actions.push(
-                ActionItem::new("toggle", "^T", "Turn Bluetooth on").glyph(Glyph::Bluetooth),
-            );
+            actions
+                .push(ActionItem::new("toggle", "^T", "Turn Bluetooth on").glyph(Glyph::Bluetooth));
             actions.push(ActionItem::new("ctl", "^B", "bluetoothctl").glyph(Glyph::Terminal));
         }
         self.strip.set_items(actions);
@@ -343,11 +343,12 @@ impl BluetoothScreen {
         } else if !self.powered {
             "Controller is off \u{00b7} Enter or Ctrl+T turns it on".to_string()
         } else {
-            format!("{} devices available \u{00b7} Ctrl+R rescans", self.devices.len())
+            format!(
+                "{} devices available \u{00b7} Ctrl+R rescans",
+                self.devices.len()
+            )
         };
-        self.header = Header::new("Bluetooth")
-            .subtitle("Devices")
-            .status(status);
+        self.header = Header::new("Bluetooth").subtitle("Devices").status(status);
         self.keybar = vec![
             KeyHint::new("Enter", if self.powered { "connect" } else { "turn on" }),
             KeyHint::new("Tab", "actions"),
@@ -412,7 +413,11 @@ impl BluetoothScreen {
             let (badge_txt, role, style) = if notice.is_error {
                 ("ERROR", ColorRole::Danger, design.style(TextStyle::Danger))
             } else {
-                ("\u{2714} DONE", ColorRole::Ok, design.style(TextStyle::Title))
+                (
+                    "\u{2714} DONE",
+                    ColorRole::Ok,
+                    design.style(TextStyle::Title),
+                )
             };
             let x = draw_badge(buf, area.x, y, design, badge_txt, role);
             let _ = put_trunc(
@@ -641,7 +646,10 @@ impl Screen for BluetoothScreen {
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
-                KeyCode::Char('r') | KeyCode::Char('R') | KeyCode::Char('s') | KeyCode::Char('S') => {
+                KeyCode::Char('r')
+                | KeyCode::Char('R')
+                | KeyCode::Char('s')
+                | KeyCode::Char('S') => {
                     return self.run_strip_action("scan");
                 }
                 KeyCode::Char('t') | KeyCode::Char('T') => {

@@ -388,9 +388,9 @@ pub fn menu(
                     Row::new("Export my profile")
                         .glyph(Glyph::Box)
                         .detail("keys, configs and packages, encrypted \u{00b7} to a disk"),
-                    Row::new("Restore a profile")
-                        .glyph(Glyph::Undo)
-                        .detail("from an exported archive \u{00b7} the current files are backed up first"),
+                    Row::new("Restore a profile").glyph(Glyph::Undo).detail(
+                        "from an exported archive \u{00b7} the current files are backed up first",
+                    ),
                     Row::new("Save a diagnostics bundle")
                         .glyph(Glyph::Bug)
                         .detail("the system report and this boot's journal, for a bug report"),
@@ -493,9 +493,8 @@ pub fn menu(
                         }
                         let pw = pw_picker.answers().first().cloned().unwrap_or_default();
                         if pw.is_empty() {
-                            banner = Some(
-                                "A passphrase is required to decrypt the profile".to_string(),
-                            );
+                            banner =
+                                Some("A passphrase is required to decrypt the profile".to_string());
                             continue;
                         }
                         let runtime =
@@ -517,7 +516,8 @@ pub fn menu(
                     }
 
                     let tag = format!("dev-restore-{}", std::process::id());
-                    let step_label = format!("Decrypt, back up current home & restore {archive_path}");
+                    let step_label =
+                        format!("Decrypt, back up current home & restore {archive_path}");
                     let task = Task::start_steps(
                         &tag,
                         "Restore profile",
@@ -665,7 +665,8 @@ pub fn menu(
                         target_dir.to_string(),
                     ];
                     let tag = format!("dev-report-{}", std::process::id());
-                    let step_label = format!("Collect check-system report & boot journal into {target_dir}");
+                    let step_label =
+                        format!("Collect check-system report & boot journal into {target_dir}");
                     let task = Task::start_steps(
                         &tag,
                         format!("Save diagnostics bundle to {target_dir}"),

@@ -237,21 +237,46 @@ impl AppsScreen {
         }
         let icon = entry.icon.as_deref().unwrap_or("").to_lowercase();
         let cats = entry.categories.join(" ").to_lowercase();
-        if icon.contains("browser") || icon.contains("firefox") || icon.contains("chromium") || cats.contains("webbrowser") || cats.contains("network") {
+        if icon.contains("browser")
+            || icon.contains("firefox")
+            || icon.contains("chromium")
+            || cats.contains("webbrowser")
+            || cats.contains("network")
+        {
             Glyph::Globe
         } else if icon.contains("folder") || icon.contains("file") || cats.contains("filemanager") {
             Glyph::Folder
-        } else if icon.contains("code") || icon.contains("nvim") || icon.contains("editor") || cats.contains("development") || cats.contains("texteditor") {
+        } else if icon.contains("code")
+            || icon.contains("nvim")
+            || icon.contains("editor")
+            || cats.contains("development")
+            || cats.contains("texteditor")
+        {
             Glyph::Code
-        } else if icon.contains("audio") || icon.contains("music") || cats.contains("audio") || cats.contains("music") {
+        } else if icon.contains("audio")
+            || icon.contains("music")
+            || cats.contains("audio")
+            || cats.contains("music")
+        {
             Glyph::Music
         } else if icon.contains("video") || icon.contains("mpv") || cats.contains("video") {
             Glyph::Video
-        } else if icon.contains("image") || icon.contains("photo") || icon.contains("imv") || cats.contains("graphics") {
+        } else if icon.contains("image")
+            || icon.contains("photo")
+            || icon.contains("imv")
+            || cats.contains("graphics")
+        {
             Glyph::Image
-        } else if icon.contains("settings") || icon.contains("preferences") || cats.contains("settings") {
+        } else if icon.contains("settings")
+            || icon.contains("preferences")
+            || cats.contains("settings")
+        {
             Glyph::Gear
-        } else if icon.contains("pdf") || icon.contains("book") || icon.contains("zathura") || cats.contains("office") {
+        } else if icon.contains("pdf")
+            || icon.contains("book")
+            || icon.contains("zathura")
+            || cats.contains("office")
+        {
             Glyph::Book
         } else if icon.contains("terminal") || cats.contains("terminalemulator") {
             Glyph::Terminal

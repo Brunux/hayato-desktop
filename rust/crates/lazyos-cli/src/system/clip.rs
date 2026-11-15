@@ -104,8 +104,12 @@ impl ClipScreen {
     fn build_rows(&mut self) {
         self.strip.set_items(vec![
             ActionItem::new("save", "^S", "Save newest image").glyph(Glyph::Image),
-            ActionItem::new("wipe", "^X", format!("Clear history ({})", self.entries.len()))
-                .glyph(Glyph::Trash),
+            ActionItem::new(
+                "wipe",
+                "^X",
+                format!("Clear history ({})", self.entries.len()),
+            )
+            .glyph(Glyph::Trash),
         ]);
 
         let mut rows = Vec::new();
@@ -205,8 +209,7 @@ impl Screen for ClipScreen {
                         .map(|s| s.success())
                         .unwrap_or(false);
                     if deleted {
-                        self.status_note =
-                            Some("Entry deleted from clipboard history".to_string());
+                        self.status_note = Some("Entry deleted from clipboard history".to_string());
                         self.reload();
                     } else {
                         self.status_note = Some("Could not delete that entry".to_string());

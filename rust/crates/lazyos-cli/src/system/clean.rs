@@ -14,8 +14,8 @@ use std::time::Duration;
 use lazyos_ui::widgets::{put, put_trunc};
 use lazyos_ui::{
     ActionItem, ActionRunner, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Design, Glyph,
-    Header, KeyHint, ListAction, ListState, Outcome, Row, Screen, TextStyle, draw_badge,
-    draw_card, draw_filter_bar, draw_gauge,
+    Header, KeyHint, ListAction, ListState, Outcome, Row, Screen, TextStyle, draw_badge, draw_card,
+    draw_filter_bar, draw_gauge,
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -81,7 +81,7 @@ pub fn dir_size(path: &Path) -> u64 {
     if !path.exists() {
         return 0;
     }
-    if let Some( s ) = path.to_str()
+    if let Some(s) = path.to_str()
         && let Some(raw) = out(&["du", "-sb", s])
         && let Some(first) = raw.split_whitespace().next()
         && let Ok(bytes) = first.parse::<u64>()
@@ -517,7 +517,11 @@ impl CleanScreen {
             let (badge_txt, role, style) = if notice.is_error {
                 ("ERROR", ColorRole::Danger, design.style(TextStyle::Danger))
             } else {
-                ("\u{2714} CLEANED", ColorRole::Ok, design.style(TextStyle::Title))
+                (
+                    "\u{2714} CLEANED",
+                    ColorRole::Ok,
+                    design.style(TextStyle::Title),
+                )
             };
             let x = draw_badge(buf, area.x, y, design, badge_txt, role);
             let _ = put_trunc(

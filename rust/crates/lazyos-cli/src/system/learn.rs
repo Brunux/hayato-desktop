@@ -396,14 +396,13 @@ impl LearnScreen {
             .into_iter()
             .map(|l| {
                 let trimmed = l.trim_start();
-                let style = if trimmed.starts_with('│')
-                    || trimmed.starts_with("┌─")
-                    || trimmed == "```"
-                {
-                    TextStyle::Code
-                } else {
-                    TextStyle::Body
-                };
+                let style =
+                    if trimmed.starts_with('│') || trimmed.starts_with("┌─") || trimmed == "```"
+                    {
+                        TextStyle::Code
+                    } else {
+                        TextStyle::Body
+                    };
                 vec![DocSpan { text: l, style }]
             })
             .collect()
@@ -928,10 +927,7 @@ impl LearnScreen {
             height: area.height.saturating_sub(2),
         };
         if inner.height >= 10 {
-            let strip = Rect {
-                height: 1,
-                ..inner
-            };
+            let strip = Rect { height: 1, ..inner };
             let filter = Rect {
                 y: inner.y + 2,
                 height: 1,
@@ -964,7 +960,10 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(&["rg", "apropos", "man"]) {
-        return Err(crate::Failure::new("Learn", format!("{said} (ripgrep, man-db)")));
+        return Err(crate::Failure::new(
+            "Learn",
+            format!("{said} (ripgrep, man-db)"),
+        ));
     }
     let mut screen = LearnScreen::new();
     let code = crate::run_screen(terminal, design, "Learn", &mut screen)?;

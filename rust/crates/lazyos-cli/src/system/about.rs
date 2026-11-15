@@ -644,14 +644,8 @@ impl Screen for AboutScreen {
                         .find(|f| f.label == "Revision")
                         .map(|f| f.value.as_str())
                         .unwrap_or_else(|| crate::version::version());
-                    let mut x = draw_badge(
-                        ctx.buf,
-                        h.x,
-                        h.y,
-                        ctx.design,
-                        "LAZYOS",
-                        ColorRole::Accent,
-                    );
+                    let mut x =
+                        draw_badge(ctx.buf, h.x, h.y, ctx.design, "LAZYOS", ColorRole::Accent);
                     x += 2;
                     ctx.buf
                         .set_string(x, h.y, model, ctx.design.style(TextStyle::Title));
@@ -919,10 +913,7 @@ impl AboutScreen {
             height: area.height.saturating_sub(2),
         };
         if inner.height >= 14 {
-            let hero = Rect {
-                height: 2,
-                ..inner
-            };
+            let hero = Rect { height: 2, ..inner };
             let strip = Rect {
                 y: inner.y + 3,
                 height: 1,

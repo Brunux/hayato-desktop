@@ -69,12 +69,11 @@ pub fn menu(
         let mut keys = Vec::new();
 
         rows.push(
-            row(
-                "ssh.service",
-                "systemd unit boot state",
-                Glyph::Key,
-            )
-            .value(if enabled { "enabled" } else { "disabled" }),
+            row("ssh.service", "systemd unit boot state", Glyph::Key).value(if enabled {
+                "enabled"
+            } else {
+                "disabled"
+            }),
         );
         keys.push("service".to_string());
 
@@ -88,11 +87,7 @@ pub fn menu(
         );
         keys.push("running".to_string());
 
-        rows.push(row(
-            "Copy SSH command",
-            &ssh_cmd,
-            Glyph::Clipboard,
-        ));
+        rows.push(row("Copy SSH command", &ssh_cmd, Glyph::Clipboard));
         keys.push(format!("copy:{ssh_cmd}"));
 
         rows.push(row(

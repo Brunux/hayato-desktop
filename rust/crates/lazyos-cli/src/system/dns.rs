@@ -97,7 +97,10 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        return Err(crate::Failure::new("DNS", format!("{said} (NetworkManager)")));
+        return Err(crate::Failure::new(
+            "DNS",
+            format!("{said} (NetworkManager)"),
+        ));
     }
 
     let mut status_note: Option<String> = None;
@@ -106,14 +109,20 @@ pub fn menu(
         let dev = match active_device() {
             Some(d) => d,
             None => {
-                return Err(crate::Failure::new("DNS", "No connection is up, so there is nothing to change"));
+                return Err(crate::Failure::new(
+                    "DNS",
+                    "No connection is up, so there is nothing to change",
+                ));
             }
         };
 
         let con = match active_connection(&dev) {
             Some(c) => c,
             None => {
-                return Err(crate::Failure::new("DNS", format!("{dev} has no active connection")));
+                return Err(crate::Failure::new(
+                    "DNS",
+                    format!("{dev} has no active connection"),
+                ));
             }
         };
 
@@ -137,8 +146,7 @@ pub fn menu(
         // Automatic (DHCP)
         if auto == "no" && current.is_empty() {
             rows.push(
-                row("Automatic (the network)", "no static servers", Glyph::Cloud)
-                    .value("● in use"),
+                row("Automatic (the network)", "no static servers", Glyph::Cloud).value("● in use"),
             );
         } else if auto == "no" && !current.is_empty() {
             rows.push(row("Automatic (the network)", &current, Glyph::Cloud).value("● in use"));

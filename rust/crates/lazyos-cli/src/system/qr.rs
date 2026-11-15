@@ -103,9 +103,7 @@ pub fn save_qr_png(payload: &str, prefix: &str) -> Result<PathBuf, String> {
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(payload.as_bytes());
     }
-    let status = child
-        .wait()
-        .map_err(|e| format!("qrencode failed: {e}"))?;
+    let status = child.wait().map_err(|e| format!("qrencode failed: {e}"))?;
     if status.success() && file.exists() {
         Ok(file)
     } else {
@@ -164,7 +162,10 @@ pub fn payload_wifi() -> Option<(String, String)> {
     .unwrap_or_default()
     .trim()
     .to_string();
-    Some((format_wifi_payload(&ssid, &psk), format!("Wi-Fi \u{00b7} {ssid}")))
+    Some((
+        format_wifi_payload(&ssid, &psk),
+        format!("Wi-Fi \u{00b7} {ssid}"),
+    ))
 }
 
 fn copy_to_clipboard(text: &str) -> bool {
@@ -233,10 +234,7 @@ impl QrScreen {
                 self.header = Header::new("LazyOS")
                     .subtitle("QR code \u{00b7} Any text")
                     .status("Type text or URL \u{00b7} Enter encodes");
-                self.keybar = vec![
-                    KeyHint::new("Enter", "encode"),
-                    KeyHint::new("Esc", "back"),
-                ];
+                self.keybar = vec![KeyHint::new("Enter", "encode"), KeyHint::new("Esc", "back")];
             }
             QrMode::Viewing { title, .. } => {
                 self.header = Header::new("LazyOS")
@@ -325,7 +323,8 @@ impl QrScreen {
         };
         if let Some(qr) = QrCode::encode(&payload) {
             self.view_strip.set_focused(false);
-            self.status = "s saves PNG \u{00b7} c copies payload \u{00b7} Tab focuses actions".to_string();
+            self.status =
+                "s saves PNG \u{00b7} c copies payload \u{00b7} Tab focuses actions".to_string();
             self.mode = QrMode::Viewing {
                 qr,
                 title,
@@ -345,7 +344,8 @@ impl QrScreen {
         if let Some(qr) = QrCode::encode(&payload) {
             let preview: String = payload.chars().take(42).collect();
             self.view_strip.set_focused(false);
-            self.status = "s saves PNG \u{00b7} c copies payload \u{00b7} Tab focuses actions".to_string();
+            self.status =
+                "s saves PNG \u{00b7} c copies payload \u{00b7} Tab focuses actions".to_string();
             self.mode = QrMode::Viewing {
                 qr,
                 title: "QR code".to_string(),
@@ -672,7 +672,8 @@ impl QrScreen {
                     .map(|s| s.trim().to_string())
                     .unwrap_or_default();
                 if clip.is_empty() {
-                    self.status = "Clipboard is empty \u{00b7} copy text or a URL first".to_string();
+                    self.status =
+                        "Clipboard is empty \u{00b7} copy text or a URL first".to_string();
                     self.sync_chrome();
                 } else {
                     self.open_text_qr(clip);

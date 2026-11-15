@@ -524,8 +524,10 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        return Err(crate::Failure::new("Capture",
-                format!("{said} (grimshot, swappy, tesseract, zbarimg, wf-recorder, slurp, grim)")));
+        return Err(crate::Failure::new(
+            "Capture",
+            format!("{said} (grimshot, swappy, tesseract, zbarimg, wf-recorder, slurp, grim)"),
+        ));
     }
     let mut screen = CaptureScreen::new();
     let code = crate::run_screen(terminal, design, "Capture", &mut screen)?;

@@ -279,7 +279,10 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        return Err(crate::Failure::new("Emoji", format!("{said} (wl-clipboard, wtype)")));
+        return Err(crate::Failure::new(
+            "Emoji",
+            format!("{said} (wl-clipboard, wtype)"),
+        ));
     }
     let mut screen = EmojiScreen::new();
     let code = crate::run_screen(terminal, design, "Emoji", &mut screen)?;

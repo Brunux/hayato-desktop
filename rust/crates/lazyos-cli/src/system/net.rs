@@ -181,7 +181,7 @@ fn query_ipv4() -> Option<String> {
     }
 }
 
-fn scan_wifi(rescan: bool) -> ( bool, Vec<WifiAp>, Option<String> ) {
+fn scan_wifi(rescan: bool) -> (bool, Vec<WifiAp>, Option<String>) {
     let radio = out(&["nmcli", "radio", "wifi"]).unwrap_or_default() == "enabled";
     if !radio {
         return (false, Vec::new(), None);
@@ -307,10 +307,11 @@ impl NetScreen {
     }
 
     fn start_rescan(&mut self) {
-        self.runner.spawn("Scanning Wi-Fi networks\u{2026}", move || {
-            let (radio_on, aps, ip) = scan_wifi(true);
-            NetOp::Scanned { radio_on, aps, ip }
-        });
+        self.runner
+            .spawn("Scanning Wi-Fi networks\u{2026}", move || {
+                let (radio_on, aps, ip) = scan_wifi(true);
+                NetOp::Scanned { radio_on, aps, ip }
+            });
         self.sync_chrome();
     }
 
@@ -379,7 +380,11 @@ impl NetScreen {
                     ap.security.clone()
                 };
                 let detail = if ap.in_use {
-                    format!("{sec} \u{00b7} connected  ({} {:>3}%)", signal_bars(ap.signal), ap.signal)
+                    format!(
+                        "{sec} \u{00b7} connected  ({} {:>3}%)",
+                        signal_bars(ap.signal),
+                        ap.signal
+                    )
                 } else {
                     format!("{sec}  ({} {:>3}%)", signal_bars(ap.signal), ap.signal)
                 };
@@ -414,7 +419,10 @@ impl NetScreen {
                 } else if !self.radio_on {
                     "Wi-Fi radio is off \u{00b7} Enter or Ctrl+T turns it on".to_string()
                 } else {
-                    format!("{} networks available \u{00b7} Ctrl+R rescans", self.aps.len())
+                    format!(
+                        "{} networks available \u{00b7} Ctrl+R rescans",
+                        self.aps.len()
+                    )
                 };
                 self.header = Header::new("Wi-Fi").subtitle("Network").status(status);
                 self.keybar = vec![
@@ -439,7 +447,9 @@ impl NetScreen {
                     .runner
                     .notice()
                     .map(|n| n.text.clone())
-                    .unwrap_or_else(|| "s saves PNG \u{00b7} c copies payload \u{00b7} o opens folder".to_string());
+                    .unwrap_or_else(|| {
+                        "s saves PNG \u{00b7} c copies payload \u{00b7} o opens folder".to_string()
+                    });
                 self.header = Header::new("Wi-Fi").subtitle(title.clone()).status(status);
                 self.keybar = vec![
                     KeyHint::new("s", "save PNG"),
@@ -576,7 +586,11 @@ impl NetScreen {
             let (badge_txt, role, style) = if notice.is_error {
                 ("ERROR", ColorRole::Danger, design.style(TextStyle::Danger))
             } else {
-                ("\u{2714} DONE", ColorRole::Ok, design.style(TextStyle::Title))
+                (
+                    "\u{2714} DONE",
+                    ColorRole::Ok,
+                    design.style(TextStyle::Title),
+                )
             };
             let x = draw_badge(buf, area.x, y, design, badge_txt, role);
             let _ = put_trunc(
@@ -599,7 +613,14 @@ impl NetScreen {
             );
         } else if let Some(active) = self.aps.iter().find(|a| a.in_use) {
             let mut x = draw_badge(buf, area.x, y, design, "\u{25cf} CONNECTED", ColorRole::Ok);
-            x = put(buf, x, y, "  ", area.right().saturating_sub(x), design.style(TextStyle::Body));
+            x = put(
+                buf,
+                x,
+                y,
+                "  ",
+                area.right().saturating_sub(x),
+                design.style(TextStyle::Body),
+            );
             x = put_trunc(
                 buf,
                 x,
@@ -639,14 +660,7 @@ impl NetScreen {
                 );
             }
         } else {
-            let x = draw_badge(
-                buf,
-                area.x,
-                y,
-                design,
-                "DISCONNECTED",
-                ColorRole::Warn,
-            );
+            let x = draw_badge(buf, area.x, y, design, "DISCONNECTED", ColorRole::Warn);
             let _ = put_trunc(
                 buf,
                 x,
@@ -710,8 +724,9 @@ impl Screen for NetScreen {
                         }
                         Err(err) => {
                             // Connection failure overrides auto-hide so the user sees why it failed.
-                            self.runner
-                                .set_persistent_error(format!("Could not connect to {ssid}: {err}"));
+                            self.runner.set_persistent_error(format!(
+                                "Could not connect to {ssid}: {err}"
+                            ));
                         }
                     }
                 }

@@ -1305,9 +1305,7 @@ pub fn draw_filter_bar(
             design.style(TextStyle::Dim),
         );
     }
-    if show_counter
-        && let Ok(counter) = std::str::from_utf8(&scratch[..counter_len])
-    {
+    if show_counter && let Ok(counter) = std::str::from_utf8(&scratch[..counter_len]) {
         let count_style = if active && visible == 0 {
             design.style(TextStyle::Danger)
         } else if active {
@@ -2277,7 +2275,9 @@ impl ActionStrip {
                     .bg(pill_bg)
                     .add_modifier(ratatui::style::Modifier::BOLD)
             } else {
-                Style::default().fg(design.color(ColorRole::Text)).bg(pill_bg)
+                Style::default()
+                    .fg(design.color(ColorRole::Text))
+                    .bg(pill_bg)
             };
             fill(
                 buf,
@@ -2342,13 +2342,7 @@ pub fn signal_bars(signal: u8) -> &'static str {
 
 /// Draw a 4-bar signal strength indicator (`▂▄▆█`) colored by signal quality,
 /// returning the column after the 4 bars.
-pub fn draw_signal_bars(
-    buf: &mut Buffer,
-    x: u16,
-    y: u16,
-    design: &Design,
-    signal: u8,
-) -> u16 {
+pub fn draw_signal_bars(buf: &mut Buffer, x: u16, y: u16, design: &Design, signal: u8) -> u16 {
     const BARS: [&str; 4] = ["\u{2582}", "\u{2584}", "\u{2586}", "\u{2588}"];
     let active_count = match signal {
         0..=9 => 0,
@@ -2368,7 +2362,11 @@ pub fn draw_signal_bars(
     let off_style = Style::default().fg(design.color(ColorRole::SurfaceAlt));
     let mut col = x;
     for (i, sym) in BARS.iter().enumerate() {
-        let style = if i < active_count { on_style } else { off_style };
+        let style = if i < active_count {
+            on_style
+        } else {
+            off_style
+        };
         col = put(buf, col, y, sym, 1, style);
     }
     col
@@ -2505,8 +2503,8 @@ pub fn draw_qr(buf: &mut Buffer, area: Rect, design: &Design, qr: &QrCode) {
 
 /// Ten-frame braille spinner sequence shared across tasks and in-window actions.
 pub const BRAILLE_SPINNER: [&str; 10] = [
-    "\u{280b}", "\u{2819}", "\u{2839}", "\u{2838}", "\u{283c}", "\u{2834}", "\u{2826}",
-    "\u{2827}", "\u{2807}", "\u{280f}",
+    "\u{280b}", "\u{2819}", "\u{2839}", "\u{2838}", "\u{283c}", "\u{2834}", "\u{2826}", "\u{2827}",
+    "\u{2807}", "\u{280f}",
 ];
 
 /// Post-action status notice with an explicit transient vs. persistent lifecycle.
@@ -2611,12 +2609,7 @@ impl<T: Send + 'static> ActionRunner<T> {
     pub fn tick_rate(&self) -> Option<std::time::Duration> {
         if self.is_running() {
             Some(std::time::Duration::from_millis(100))
-        } else if self
-            .notice
-            .as_ref()
-            .and_then(|n| n.expires_at)
-            .is_some()
-        {
+        } else if self.notice.as_ref().and_then(|n| n.expires_at).is_some() {
             Some(std::time::Duration::from_millis(250))
         } else {
             None

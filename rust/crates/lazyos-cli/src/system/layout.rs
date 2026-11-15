@@ -12,8 +12,8 @@ use lazyos_ui::{Card, Design, Glyph, Urgency};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
-use super::pick::{Picker, Question, row};
 use super::out;
+use super::pick::{Picker, Question, row};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LayoutEntry {
@@ -101,7 +101,10 @@ pub fn menu(
 ) -> Result<i32, crate::Failure> {
     let rules_path = "/usr/share/X11/xkb/rules/evdev.lst";
     let Ok(content) = fs::read_to_string(rules_path) else {
-        return Err(crate::Failure::new("Keyboard layout", "evdev.lst is missing (package xkb-data)"));
+        return Err(crate::Failure::new(
+            "Keyboard layout",
+            "evdev.lst is missing (package xkb-data)",
+        ));
     };
 
     let layouts = parse_evdev_lst(&content);

@@ -114,7 +114,8 @@ pub fn entries(surface: Surface, context: &Context) -> Vec<Entry> {
             }
             "dictate" if context.dictate_recording => {
                 entry.label = "Stop dictation".to_string();
-                entry.detail = "\u{25cf} recording \u{00b7} transcribe and type into window".to_string();
+                entry.detail =
+                    "\u{25cf} recording \u{00b7} transcribe and type into window".to_string();
             }
             _ => {}
         }

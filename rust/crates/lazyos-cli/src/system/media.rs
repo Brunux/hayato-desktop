@@ -200,10 +200,7 @@ impl Screen for MediaScreen {
                     .set_string(x, h.y, title, ctx.design.style(TextStyle::Title));
                 if h.height >= 2 {
                     let sub = if !active.artist.is_empty() && !active.album.is_empty() {
-                        format!(
-                            "{} · {} ({})",
-                            active.artist, active.album, active.name
-                        )
+                        format!("{} · {} ({})", active.artist, active.album, active.name)
                     } else if !active.artist.is_empty() {
                         format!("{} ({})", active.artist, active.name)
                     } else {
@@ -378,10 +375,7 @@ impl MediaScreen {
             height: area.height.saturating_sub(2),
         };
         if inner.height >= 12 {
-            let hero = Rect {
-                height: 2,
-                ..inner
-            };
+            let hero = Rect { height: 2, ..inner };
             let filter = Rect {
                 y: inner.y + 3,
                 height: 1,
@@ -414,10 +408,7 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        return Err(crate::Failure::new(
-            "Media",
-            format!("{said} (playerctl)"),
-        ));
+        return Err(crate::Failure::new("Media", format!("{said} (playerctl)")));
     }
     let mut screen = MediaScreen::new();
     let code = crate::run_screen(terminal, design, "Media", &mut screen)?;

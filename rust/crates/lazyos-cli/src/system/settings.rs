@@ -557,7 +557,8 @@ pub fn menu(
                         row((*l).to_string(), detail.to_string(), Glyph::Rotate)
                     })
                     .collect();
-                let r_keys: Vec<String> = choices.iter().map(|(k, _, _)| (*k).to_string()).collect();
+                let r_keys: Vec<String> =
+                    choices.iter().map(|(k, _, _)| (*k).to_string()).collect();
                 let mut r_picker = Picker::new(
                     "Rotation",
                     vec![Question::choose(

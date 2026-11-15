@@ -254,7 +254,11 @@ pub fn menu(
                         Some(acc) => format!("active account: {acc}"),
                         None => "switch or create accounts".to_string(),
                     };
-                    rows.push(row(format!("{} accounts…", agent.name), detail, Glyph::People));
+                    rows.push(row(
+                        format!("{} accounts…", agent.name),
+                        detail,
+                        Glyph::People,
+                    ));
                     keys.push(format!("accounts:{}", agent.binary));
                 }
             } else {
@@ -282,10 +286,7 @@ pub fn menu(
             None => "Enter launches or configures · Escape closes".to_string(),
         };
 
-        let mut picker = Picker::new(
-            "Agents",
-            vec![Question::choose("Agents", note, rows, keys)],
-        );
+        let mut picker = Picker::new("Agents", vec![Question::choose("Agents", note, rows, keys)]);
 
         let code = crate::run_screen(terminal, design, "Agents", &mut picker)?;
         if code != 0 {
@@ -388,7 +389,12 @@ pub fn menu(
                         crate::Failure::new("Agents", format!("Could not start installer: {e}"))
                     })?;
                     let mut view = TaskView::new(task);
-                    let _ = crate::run_screen(terminal, design, &format!("Install {}", agent.name), &mut view)?;
+                    let _ = crate::run_screen(
+                        terminal,
+                        design,
+                        &format!("Install {}", agent.name),
+                        &mut view,
+                    )?;
                     status_note = Some(if view.task().state == TaskState::Done {
                         format!("Installed {}", agent.name)
                     } else {
@@ -484,7 +490,8 @@ pub fn menu(
                             }
                         } else if let Some(acc) = chosen.strip_prefix("use:") {
                             let _ = fs::write(dir.join("default"), acc);
-                            status_note = Some(format!("{}: active account set to {acc}", agent.name));
+                            status_note =
+                                Some(format!("{}: active account set to {acc}", agent.name));
                         }
                     }
                 }

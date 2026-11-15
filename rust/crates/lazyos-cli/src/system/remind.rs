@@ -73,7 +73,11 @@ impl RemindScreen {
             ("In 30 minutes", "one-shot timer (+30m)", "active:30m"),
             ("In 1 hour", "one-shot timer (+1h)", "active:1h"),
             ("In 3 hours", "one-shot timer (+3h)", "active:3h"),
-            ("Every day at 09:00", "repeating daily timer", "cal:*-*-* 09:00:00"),
+            (
+                "Every day at 09:00",
+                "repeating daily timer",
+                "cal:*-*-* 09:00:00",
+            ),
             (
                 "Every weekday at 09:00",
                 "repeating Mon..Fri timer",

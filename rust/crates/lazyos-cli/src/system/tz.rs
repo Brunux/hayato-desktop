@@ -32,7 +32,10 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        return Err(crate::Failure::new("Time zone", format!("{said} (systemd)")));
+        return Err(crate::Failure::new(
+            "Time zone",
+            format!("{said} (systemd)"),
+        ));
     }
 
     let zones = out(&["timedatectl", "list-timezones"]).unwrap_or_default();
@@ -88,8 +91,10 @@ pub fn menu(
             )
         });
 
-        let mut picker =
-            Picker::new("Time zone", vec![Question::choose("Time zone", note, rows, keys)]);
+        let mut picker = Picker::new(
+            "Time zone",
+            vec![Question::choose("Time zone", note, rows, keys)],
+        );
 
         let code = crate::run_screen(terminal, design, "Time zone", &mut picker)?;
         if code != 0 {

@@ -210,7 +210,9 @@ pub fn start_recording(hands_free: bool) -> i32 {
             4000,
             MIC_ICON,
         );
-        crate::system::spawn_detached("exec foot -T 'Dictation \u{00b7} fetching model' -e dictate-model");
+        crate::system::spawn_detached(
+            "exec foot -T 'Dictation \u{00b7} fetching model' -e dictate-model",
+        );
         return 0;
     }
 
@@ -302,13 +304,7 @@ pub fn cancel_recording() -> i32 {
     let _ = fs::remove_file(&wav_file);
     let _ = fs::remove_file(&norm_file);
     clear_bar_busy();
-    send_sync_card(
-        "Dictation",
-        "Recording cancelled",
-        "low",
-        2500,
-        MIC_ICON,
-    );
+    send_sync_card("Dictation", "Recording cancelled", "low", 2500, MIC_ICON);
     0
 }
 
@@ -425,9 +421,7 @@ pub fn stop_and_transcribe() -> i32 {
             raw.lines()
                 .map(|l| l.trim())
                 .filter(|l| {
-                    !l.is_empty()
-                        && !l.starts_with('[')
-                        && !l.eq_ignore_ascii_case("(blank audio)")
+                    !l.is_empty() && !l.starts_with('[') && !l.eq_ignore_ascii_case("(blank audio)")
                 })
                 .collect::<Vec<&str>>()
                 .join(" ")

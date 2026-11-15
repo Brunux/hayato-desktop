@@ -81,7 +81,13 @@ pub fn parse_sinks(output: &str, default: &str) -> Vec<Sink> {
     for raw_line in output.lines() {
         let line = raw_line.trim();
         if raw_line.starts_with("Sink #") {
-            flush(&mut sinks, &mut name, &mut description, &mut muted, &mut volume);
+            flush(
+                &mut sinks,
+                &mut name,
+                &mut description,
+                &mut muted,
+                &mut volume,
+            );
         } else if let Some(rest) = line.strip_prefix("Name: ") {
             name = rest.trim().to_string();
         } else if let Some(rest) = line.strip_prefix("Description: ") {
@@ -96,7 +102,13 @@ pub fn parse_sinks(output: &str, default: &str) -> Vec<Sink> {
             volume = pct;
         }
     }
-    flush(&mut sinks, &mut name, &mut description, &mut muted, &mut volume);
+    flush(
+        &mut sinks,
+        &mut name,
+        &mut description,
+        &mut muted,
+        &mut volume,
+    );
     sinks.sort_by(|a, b| b.is_default.cmp(&a.is_default));
     sinks
 }
@@ -327,7 +339,11 @@ impl AudioScreen {
         if area.height == 0 || area.width < 20 {
             return;
         }
-        let def = self.sinks.iter().find(|s| s.is_default).or(self.sinks.first());
+        let def = self
+            .sinks
+            .iter()
+            .find(|s| s.is_default)
+            .or(self.sinks.first());
         let y0 = area.y;
         if let Some(sink) = def {
             let (badge_text, badge_role) = if sink.muted {
@@ -336,7 +352,14 @@ impl AudioScreen {
                 ("OUTPUT", ColorRole::Ok)
             };
             let mut x = draw_badge(buf, area.x, y0, design, badge_text, badge_role);
-            x = put(buf, x, y0, "  ", area.right().saturating_sub(x), design.style(TextStyle::Body));
+            x = put(
+                buf,
+                x,
+                y0,
+                "  ",
+                area.right().saturating_sub(x),
+                design.style(TextStyle::Body),
+            );
             let gauge_space = 22u16.min(area.width / 2);
             let _ = put_trunc(
                 buf,
@@ -383,7 +406,14 @@ impl AudioScreen {
                 ("INPUT", ColorRole::Accent)
             };
             let mut x = draw_badge(buf, area.x, y1, design, mic_badge, mic_role);
-            x = put(buf, x, y1, "  ", area.right().saturating_sub(x), design.style(TextStyle::Body));
+            x = put(
+                buf,
+                x,
+                y1,
+                "  ",
+                area.right().saturating_sub(x),
+                design.style(TextStyle::Body),
+            );
             let gauge_space = 22u16.min(area.width / 2);
             let _ = put_trunc(
                 buf,

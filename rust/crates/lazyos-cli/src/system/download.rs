@@ -143,7 +143,10 @@ pub fn menu(
             "folder" => {
                 let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
                 let dl = Path::new(&home).join("Downloads");
-                crate::system::spawn_detached(&format!("exec lazyos menu files '{}'", dl.display()));
+                crate::system::spawn_detached(&format!(
+                    "exec lazyos menu files '{}'",
+                    dl.display()
+                ));
                 return Ok(0);
             }
             "stop" => {
@@ -172,9 +175,8 @@ pub fn menu(
                 };
                 let url = raw_url.trim();
                 if !url.starts_with("http://") && !url.starts_with("https://") {
-                    banner = Some(
-                        "Not a valid URL (must start with http:// or https://)".to_string(),
-                    );
+                    banner =
+                        Some("Not a valid URL (must start with http:// or https://)".to_string());
                     continue;
                 }
                 let res = ask_kind_and_download(terminal, design, url)?;

@@ -215,10 +215,7 @@ pub fn menu(
             .clone()
             .unwrap_or_else(|| "Enter opens · type to filter · Escape closes".to_string());
 
-        let mut picker = Picker::new(
-            "Places",
-            vec![Question::choose("Places", note, rows, keys)],
-        );
+        let mut picker = Picker::new("Places", vec![Question::choose("Places", note, rows, keys)]);
 
         let code = crate::run_screen(terminal, design, "Places", &mut picker)?;
         if code != 0 {
@@ -248,7 +245,9 @@ pub fn menu(
             k if k.starts_with("term:") => {
                 let path = &k[5..];
                 let escaped = path.replace('\'', "'\\''");
-                crate::system::spawn_detached(&format!("exec foot --working-directory '{escaped}'"));
+                crate::system::spawn_detached(&format!(
+                    "exec foot --working-directory '{escaped}'"
+                ));
                 return Ok(0);
             }
             k if k.starts_with("open:") => {
