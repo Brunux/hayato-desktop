@@ -170,18 +170,21 @@ impl Screen for CalcScreen {
             "EXPR",
             ColorRole::Accent,
         );
-        x += 2;
-        if expr.is_empty() {
-            ctx.buf.set_string(
-                x,
-                hero.y,
-                "type an expression: 2 + 3 * 4, sin(pi/2), 2^10…",
-                ctx.design.style(TextStyle::Dim),
-            );
-        } else {
-            ctx.buf
-                .set_string(x, hero.y, expr, ctx.design.style(TextStyle::Title));
-        }
+        x += 1;
+        let input_area = Rect {
+            x,
+            y: hero.y,
+            width: hero.right().saturating_sub(x),
+            height: 1,
+        };
+        self.input.render_styled(
+            input_area,
+            ctx.buf,
+            ctx.design,
+            "type an expression: 2 + 3 * 4, 2**10, 17 // 3, sin(pi/2), 0xFF…",
+            ColorRole::Bg,
+            TextStyle::Title,
+        );
 
         if hero.height >= 2 {
             let y2 = hero.y + 1;
@@ -242,11 +245,16 @@ impl Screen for CalcScreen {
         let rows_height = self.rows_height.get();
         if matches!(
             key.code,
-            KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete | KeyCode::Left | KeyCode::Right
-        ) && !key.modifiers.contains(KeyModifiers::CONTROL)
-        {
+            KeyCode::Char(_)
+                | KeyCode::Backspace
+                | KeyCode::Delete
+                | KeyCode::Left
+                | KeyCode::Right
+                | KeyCode::Home
+                | KeyCode::End
+        ) {
             let _ = self.input.handle(key);
-            return Outcome::Continue;
+            return Outcome::Consumed;
         }
         match key.code {
             KeyCode::Enter => {
@@ -257,11 +265,11 @@ impl Screen for CalcScreen {
                             self.add_to_history(&expr, &result);
                             self.copy_result(&expr, &result);
                             self.input.set("");
-                            return Outcome::Continue;
+                            return Outcome::Consumed;
                         }
                         Err(e) => {
                             self.status_note = Some(format!("Invalid expression: {e}"));
-                            return Outcome::Continue;
+                            return Outcome::Consumed;
                         }
                     }
                 } else if let Some(index) = self.list.selected_index() {
@@ -270,7 +278,7 @@ impl Screen for CalcScreen {
                             let expr_part = &entry[..eq_pos];
                             let result = &entry[eq_pos + 3..];
                             self.copy_result(expr_part, result);
-                            return Outcome::Continue;
+                            return Outcome::Consumed;
                         }
                     }
                 }
@@ -278,7 +286,7 @@ impl Screen for CalcScreen {
             KeyCode::Esc => {
                 if !self.input.text().is_empty() {
                     self.input.set("");
-                    return Outcome::Continue;
+                    return Outcome::Consumed;
                 }
                 return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
             }
@@ -382,12 +390,14 @@ impl Parser {
     fn parse_expression(&mut self, min_prec: u8) -> Result<f64, String> {
         let mut lhs = self.parse_prefix()?;
         self.skip_whitespace();
-        while let Some(op) = self.peek_operator() {
+        while let Some((op, token_len)) = self.peek_operator() {
             let (prec, assoc) = op.precedence();
             if prec < min_prec {
                 break;
             }
-            self.advance();
+            for _ in 0..token_len {
+                self.advance();
+            }
             let next_min_prec = if matches!(assoc, Assoc::Right) {
                 prec
             } else {
@@ -429,9 +439,57 @@ impl Parser {
 
     fn parse_number(&mut self) -> Result<f64, String> {
         let start = self.pos;
+        if self.input[start..].starts_with("0x") || self.input[start..].starts_with("0X") {
+            self.advance();
+            self.advance();
+            let hex_start = self.pos;
+            while let Some(c) = self.current_char() {
+                if c.is_ascii_hexdigit() || c == '_' {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            let raw = self.input[hex_start..self.pos].replace('_', "");
+            let v = u64::from_str_radix(&raw, 16)
+                .map_err(|_| format!("invalid hex number: 0x{raw}"))?;
+            return Ok(v as f64);
+        }
+        if self.input[start..].starts_with("0b") || self.input[start..].starts_with("0B") {
+            self.advance();
+            self.advance();
+            let bin_start = self.pos;
+            while let Some(c) = self.current_char() {
+                if c == '0' || c == '1' || c == '_' {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            let raw = self.input[bin_start..self.pos].replace('_', "");
+            let v = u64::from_str_radix(&raw, 2)
+                .map_err(|_| format!("invalid binary number: 0b{raw}"))?;
+            return Ok(v as f64);
+        }
+        if self.input[start..].starts_with("0o") || self.input[start..].starts_with("0O") {
+            self.advance();
+            self.advance();
+            let oct_start = self.pos;
+            while let Some(c) = self.current_char() {
+                if ('0'..='7').contains(&c) || c == '_' {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            let raw = self.input[oct_start..self.pos].replace('_', "");
+            let v = u64::from_str_radix(&raw, 8)
+                .map_err(|_| format!("invalid octal number: 0o{raw}"))?;
+            return Ok(v as f64);
+        }
         let mut has_dot = false;
         while let Some(c) = self.current_char() {
-            if c.is_ascii_digit() {
+            if c.is_ascii_digit() || c == '_' {
                 self.advance();
             } else if c == '.' && !has_dot {
                 has_dot = true;
@@ -440,7 +498,7 @@ impl Parser {
                 break;
             }
         }
-        let s = &self.input[start..self.pos];
+        let s = self.input[start..self.pos].replace('_', "");
         s.parse::<f64>().map_err(|_| format!("invalid number: {s}"))
     }
 
@@ -487,15 +545,22 @@ impl Parser {
         Ok(f(value))
     }
 
-    fn peek_operator(&self) -> Option<Operator> {
+    fn peek_operator(&self) -> Option<(Operator, usize)> {
         self.skip_whitespace_peek();
+        let rest = &self.input[self.pos..];
+        if rest.starts_with("**") {
+            return Some((Operator::Pow, 2));
+        }
+        if rest.starts_with("//") {
+            return Some((Operator::FloorDiv, 2));
+        }
         match self.current_char() {
-            Some('+') => Some(Operator::Add),
-            Some('-') => Some(Operator::Sub),
-            Some('*') => Some(Operator::Mul),
-            Some('/') => Some(Operator::Div),
-            Some('%') => Some(Operator::Mod),
-            Some('^') => Some(Operator::Pow),
+            Some('+') => Some((Operator::Add, 1)),
+            Some('-') => Some((Operator::Sub, 1)),
+            Some('*') => Some((Operator::Mul, 1)),
+            Some('/') => Some((Operator::Div, 1)),
+            Some('%') => Some((Operator::Mod, 1)),
+            Some('^') => Some((Operator::Pow, 1)),
             _ => None,
         }
     }
@@ -538,6 +603,7 @@ enum Operator {
     Sub,
     Mul,
     Div,
+    FloorDiv,
     Mod,
     Pow,
 }
@@ -552,7 +618,7 @@ impl Operator {
     fn precedence(&self) -> (u8, Assoc) {
         match self {
             Operator::Add | Operator::Sub => (1, Assoc::Left),
-            Operator::Mul | Operator::Div | Operator::Mod => (2, Assoc::Left),
+            Operator::Mul | Operator::Div | Operator::FloorDiv | Operator::Mod => (2, Assoc::Left),
             Operator::Pow => (3, Assoc::Right),
         }
     }
@@ -567,6 +633,13 @@ impl Operator {
                     Err("division by zero".into())
                 } else {
                     Ok(lhs / rhs)
+                }
+            }
+            Operator::FloorDiv => {
+                if rhs == 0.0 {
+                    Err("division by zero".into())
+                } else {
+                    Ok((lhs / rhs).floor())
                 }
             }
             Operator::Mod => Ok(lhs % rhs),
@@ -600,6 +673,10 @@ mod tests {
         assert_eq!(CalcScreen::evaluate("2 + 3 * 4").unwrap(), "14");
         assert_eq!(CalcScreen::evaluate("(2 + 3) * 4").unwrap(), "20");
         assert_eq!(CalcScreen::evaluate("2^10").unwrap(), "1024");
+        assert_eq!(CalcScreen::evaluate("2**10").unwrap(), "1024");
+        assert_eq!(CalcScreen::evaluate("17 // 3").unwrap(), "5");
+        assert_eq!(CalcScreen::evaluate("0xFF + 0b1010").unwrap(), "265");
+        assert_eq!(CalcScreen::evaluate("1_000 * 2").unwrap(), "2000");
         assert_eq!(CalcScreen::evaluate("10 / 3").unwrap(), "3.333333333");
     }
 

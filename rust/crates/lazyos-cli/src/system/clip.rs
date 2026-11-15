@@ -15,8 +15,8 @@
 use std::cell::Cell;
 
 use lazyos_ui::{
-    BodyCtx, Card, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row, Screen,
-    Urgency, draw_card, draw_filter_bar,
+    ActionItem, ActionStrip, ActionStripEvent, BodyCtx, Card, Design, Glyph, Header, KeyHint,
+    ListAction, ListState, Outcome, Row, Screen, Urgency, draw_card, draw_empty, draw_filter_bar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
@@ -30,6 +30,7 @@ const NEEDED: &[&str] = &["cliphist", "wl-copy", "wl-paste", "xdg-open", "file"]
 pub struct ClipScreen {
     entries: Vec<ClipEntry>,
     keys: Vec<String>,
+    strip: ActionStrip,
     list: ListState,
     header: Header,
     keybar: Vec<KeyHint>,
@@ -56,13 +57,15 @@ impl ClipScreen {
         let mut screen = Self {
             entries: Vec::new(),
             keys: Vec::new(),
+            strip: ActionStrip::default(),
             list: ListState::new().with_empty("nothing has been copied yet"),
             header: Header::new("LazyOS").subtitle("Clipboard"),
             keybar: vec![
                 KeyHint::new("Enter", "copy back"),
                 KeyHint::new("Alt+1", "delete entry"),
-                KeyHint::new("type", "filter"),
-                KeyHint::new("Esc", "close"),
+                KeyHint::new("Ctrl+S", "save image"),
+                KeyHint::new("Ctrl+X", "clear"),
+                KeyHint::new("Esc", "back"),
             ],
             rows_height: Cell::new(20),
             status_note: None,
@@ -99,44 +102,29 @@ impl ClipScreen {
     }
 
     fn build_rows(&mut self) {
+        self.strip.set_items(vec![
+            ActionItem::new("save", "^S", "Save newest image").glyph(Glyph::Image),
+            ActionItem::new("wipe", "^X", format!("Clear history ({})", self.entries.len()))
+                .glyph(Glyph::Trash),
+        ]);
+
         let mut rows = Vec::new();
         let mut keys = Vec::new();
-        if self.entries.is_empty() {
-            rows.push(
-                Row::new("Nothing has been copied yet")
-                    .glyph(Glyph::Clipboard)
-                    .detail("The history fills as you copy things"),
-            );
-            keys.push("empty".to_string());
-        } else {
-            for e in &self.entries {
-                let (glyph, kind_str) = match e.kind {
-                    ClipKind::Image => (Glyph::Image, "image"),
-                    ClipKind::Link => (Glyph::Link, "link"),
-                    ClipKind::Text => (Glyph::Clipboard, "text"),
-                };
-                let shown: String = e.preview.chars().take(58).collect();
-                let shown = if e.preview.chars().count() > 58 {
-                    format!("{shown}…")
-                } else {
-                    shown
-                };
-                rows.push(Row::new(shown).glyph(glyph).value(kind_str));
-                keys.push(e.id.clone());
-            }
+        for e in &self.entries {
+            let (glyph, kind_str) = match e.kind {
+                ClipKind::Image => (Glyph::Image, "image"),
+                ClipKind::Link => (Glyph::Link, "link"),
+                ClipKind::Text => (Glyph::Clipboard, "text"),
+            };
+            let shown: String = e.preview.chars().take(58).collect();
+            let shown = if e.preview.chars().count() > 58 {
+                format!("{shown}…")
+            } else {
+                shown
+            };
+            rows.push(Row::new(shown).glyph(glyph).value(kind_str));
+            keys.push(e.id.clone());
         }
-        rows.push(
-            Row::new("Save the newest image")
-                .glyph(Glyph::Image)
-                .detail("to ~/Pictures/clipboard and open it"),
-        );
-        keys.push("save".to_string());
-        rows.push(
-            Row::new("Clear the history")
-                .glyph(Glyph::Trash)
-                .detail(format!("{} entries", self.entries.len())),
-        );
-        keys.push("wipe".to_string());
         self.keys = keys;
         self.list.update_rows(rows);
     }
@@ -145,13 +133,14 @@ impl ClipScreen {
 impl Screen for ClipScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Clipboard"), true);
-        let (filter, rows) = Self::list_layout(ctx.area);
+        let (strip, filter, rows) = Self::list_layout(ctx.area);
+        self.strip.render(strip, ctx.buf, ctx.design);
         let msg = if let Some(note) = &self.status_note {
             note.as_str()
         } else if self.entries.is_empty() {
-            "Clipboard history is empty · Escape closes"
+            "Clipboard history is empty · Esc backs out"
         } else {
-            "Enter copies back · Alt+1 deletes entry · type to filter"
+            "Enter copies back · Alt+1 deletes entry · Tab focuses actions"
         };
         draw_filter_bar(
             ctx.buf,
@@ -159,16 +148,43 @@ impl Screen for ClipScreen {
             ctx.design,
             self.list.filter(),
             msg,
-            self.list.len(),
+            self.list.visible_len(),
             self.entries.len(),
         );
         self.rows_height.set(rows.height);
-        self.list.render(rows, ctx.buf, ctx.design, true);
+        if self.entries.is_empty() {
+            draw_empty(
+                ctx.buf,
+                rows,
+                ctx.design,
+                "Nothing has been copied yet",
+                "Clipboard entries appear here automatically as you copy text or images",
+            );
+        } else {
+            self.list
+                .render(rows, ctx.buf, ctx.design, !self.strip.is_focused());
+        }
     }
 
     fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
+        }
+        match self.strip.handle(key) {
+            ActionStripEvent::Activated(id) => return self.run_strip_action(id),
+            ActionStripEvent::Consumed => return Outcome::Consumed,
+            ActionStripEvent::Ignored => {}
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    return self.run_strip_action("save");
+                }
+                KeyCode::Char('x') | KeyCode::Char('X') => {
+                    return self.run_strip_action("wipe");
+                }
+                _ => {}
+            }
         }
         let rows_height = self.rows_height.get();
         let is_alt1 = key.code == KeyCode::Char('1') && key.modifiers.contains(KeyModifiers::ALT);
@@ -176,7 +192,12 @@ impl Screen for ClipScreen {
             if let Some(index) = self.list.selected_index() {
                 if index < self.entries.len() {
                     let deleted = std::process::Command::new("sh")
-                        .args(["-c", "printf '%s\\n' \"$1\" | cliphist delete", "--", &self.entries[index].id])
+                        .args([
+                            "-c",
+                            "printf '%s\\n' \"$1\" | cliphist delete",
+                            "--",
+                            &self.entries[index].id,
+                        ])
                         .stdin(Stdio::null())
                         .stdout(Stdio::null())
                         .stderr(Stdio::null())
@@ -184,20 +205,21 @@ impl Screen for ClipScreen {
                         .map(|s| s.success())
                         .unwrap_or(false);
                     if deleted {
-                        self.status_note = Some("Entry deleted from clipboard history".to_string());
+                        self.status_note =
+                            Some("Entry deleted from clipboard history".to_string());
                         self.reload();
                     } else {
                         self.status_note = Some("Could not delete that entry".to_string());
                     }
                 }
-                return Outcome::Continue;
+                return Outcome::Consumed;
             }
         }
         match key.code {
             KeyCode::Esc => {
                 if !self.list.filter().is_empty() {
                     self.list.set_filter("");
-                    return Outcome::Continue;
+                    return Outcome::Consumed;
                 }
                 return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
             }
@@ -211,7 +233,7 @@ impl Screen for ClipScreen {
                     && !key.modifiers.contains(KeyModifiers::ALT)
                     && self.list.type_filter(key) =>
             {
-                return Outcome::Continue;
+                return Outcome::Consumed;
             }
             _ => {}
         }
@@ -224,6 +246,14 @@ impl Screen for ClipScreen {
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
         if let Some(r) = row {
+            if r >= 10_000 {
+                let strip_idx = r - 10_000;
+                if let Some(item) = self.strip.items().get(strip_idx) {
+                    return self.run_strip_action(item.id);
+                }
+                return Outcome::Consumed;
+            }
+            self.strip.set_focused(false);
             self.list.set_cursor(r);
             if let Some(index) = self.list.selected_index() {
                 return self.activate(index);
@@ -233,7 +263,20 @@ impl Screen for ClipScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        let (_, rows) = Self::list_layout(area);
+        let (strip, _, rows) = Self::list_layout(area);
+        if y == strip.y && x >= strip.x && x < strip.right() {
+            let mut col = strip.x;
+            for (idx, item) in self.strip.items().iter().enumerate() {
+                let w = 4
+                    + item.key.len() as u16
+                    + item.label.len() as u16
+                    + item.glyph.map(|_| 2).unwrap_or(0);
+                if x >= col && x < col + w {
+                    return Some(10_000 + idx);
+                }
+                col += w + 1;
+            }
+        }
         self.list.hit_row(rows, x, y, design)
     }
 
@@ -247,30 +290,37 @@ impl Screen for ClipScreen {
 }
 
 impl ClipScreen {
-    fn list_layout(area: Rect) -> (Rect, Rect) {
+    fn list_layout(area: Rect) -> (Rect, Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
             y: area.y + 1,
             width: area.width.saturating_sub(4),
             height: area.height.saturating_sub(2),
         };
-        let filter = Rect {
+        let strip = Rect {
+            x: inner.x,
+            y: inner.y,
+            width: inner.width,
             height: 1.min(inner.height),
-            ..inner
         };
+        let filter = Rect {
+            x: inner.x,
+            y: inner.y.saturating_add(2).min(inner.bottom()),
+            width: inner.width,
+            height: 1.min(inner.height.saturating_sub(2)),
+        };
+        let rows_y = inner.y.saturating_add(4).min(inner.bottom());
         let rows = Rect {
-            y: inner.y + 2,
-            height: inner.height.saturating_sub(2),
-            ..inner
+            x: inner.x,
+            y: rows_y,
+            width: inner.width,
+            height: inner.bottom().saturating_sub(rows_y),
         };
-        (filter, rows)
+        (strip, filter, rows)
     }
 
-    fn activate(&mut self, index: usize) -> Outcome {
-        let Some(key) = self.keys.get(index).cloned() else {
-            return Outcome::Continue;
-        };
-        match key.as_str() {
+    fn run_strip_action(&mut self, id: &'static str) -> Outcome {
+        match id {
             "save" => {
                 let img_entry = self.entries.iter().find(|e| e.kind == ClipKind::Image);
                 if let Some(entry) = img_entry {
@@ -290,7 +340,7 @@ impl ClipScreen {
                     Outcome::Done(lazyos_ui::app::exit::OK)
                 } else {
                     self.status_note = Some("No image in clipboard history".to_string());
-                    Outcome::Continue
+                    Outcome::Consumed
                 }
             }
             "wipe" => {
@@ -303,25 +353,29 @@ impl ClipScreen {
                     .status();
                 self.status_note = Some(format!("Cleared clipboard history ({count} entries)"));
                 self.reload();
-                Outcome::Continue
+                Outcome::Consumed
             }
-            "empty" | "" => Outcome::Continue,
-            id => {
-                let copied = std::process::Command::new("sh")
-                    .args(["-c", "cliphist decode \"$1\" | wl-copy", "--", id])
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status()
-                    .map(|s| s.success())
-                    .unwrap_or(false);
-                if copied {
-                    Outcome::Done(lazyos_ui::app::exit::OK)
-                } else {
-                    self.status_note = Some("Could not copy that entry back".to_string());
-                    Outcome::Continue
-                }
-            }
+            _ => Outcome::Consumed,
+        }
+    }
+
+    fn activate(&mut self, index: usize) -> Outcome {
+        let Some(key) = self.keys.get(index).cloned() else {
+            return Outcome::Continue;
+        };
+        let copied = std::process::Command::new("sh")
+            .args(["-c", "cliphist decode \"$1\" | wl-copy", "--", &key])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if copied {
+            Outcome::Done(lazyos_ui::app::exit::OK)
+        } else {
+            self.status_note = Some("Could not copy that entry back".to_string());
+            Outcome::Consumed
         }
     }
 }

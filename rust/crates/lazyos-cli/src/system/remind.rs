@@ -13,8 +13,9 @@
 use std::cell::Cell;
 
 use lazyos_ui::{
-    BodyCtx, Card, ColorRole, Design, Glyph, Header, Input, KeyHint, ListAction, ListState,
-    Outcome, Row, Screen, TextStyle, Urgency, draw_badge, draw_card, draw_filter_bar,
+    ActionItem, ActionStrip, ActionStripEvent, BodyCtx, Card, ColorRole, Design, Glyph, Header,
+    Input, KeyHint, ListAction, ListState, Outcome, Row, Screen, TextStyle, Urgency, draw_badge,
+    draw_card, draw_empty, draw_filter_bar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
@@ -43,6 +44,7 @@ enum RemindMode {
 pub struct RemindScreen {
     reminders: Vec<Reminder>,
     actions: Vec<String>,
+    strip: ActionStrip,
     list: ListState,
     when_list: ListState,
     when_keys: Vec<(&'static str, &'static str)>,
@@ -87,9 +89,13 @@ impl RemindScreen {
         );
         let when_keys = presets.into_iter().map(|(l, _, k)| (l, k)).collect();
 
+        let strip = ActionStrip::new(vec![
+            ActionItem::new("new", "^N", "New reminder").glyph(Glyph::Bell),
+        ]);
         let mut screen = Self {
             reminders: Vec::new(),
             actions: Vec::new(),
+            strip,
             list: ListState::new().with_empty("no reminders waiting"),
             when_list,
             when_keys,
@@ -98,8 +104,9 @@ impl RemindScreen {
             header: Header::new("LazyOS").subtitle("Reminders"),
             keybar: vec![
                 KeyHint::new("Enter", "new / cancel"),
-                KeyHint::new("type", "filter"),
-                KeyHint::new("Esc", "close"),
+                KeyHint::new("Ctrl+N", "new reminder"),
+                KeyHint::new("Tab", "actions"),
+                KeyHint::new("Esc", "back"),
             ],
             rows_height: Cell::new(20),
             status_note: None,
@@ -256,60 +263,74 @@ impl RemindScreen {
             .unwrap_or_default()
             .as_secs();
 
-        rows.push(
-            Row::new("New reminder")
-                .glyph(Glyph::Bell)
-                .detail("say what and when to be reminded"),
-        );
-        actions.push("new".to_string());
-
-        if self.reminders.is_empty() {
-            rows.push(
-                Row::new("No reminders waiting")
-                    .glyph(Glyph::Clock)
-                    .detail("Press Enter on 'New reminder' above to schedule one"),
-            );
-            actions.push("new".to_string());
-        } else {
-            for r in &self.reminders {
-                let words = r
-                    .calendar
-                    .as_ref()
-                    .and_then(|c| Self::repeat_words(c))
-                    .unwrap_or_else(|| Self::left(r.when.saturating_sub(now)));
-                let time_str = chrono::DateTime::from_timestamp(r.when as i64, 0)
-                    .map(|d| d.format("%a %d %b %H:%M").to_string())
-                    .unwrap_or_default();
-                let mut detail = format!("{words} · Enter cancels");
-                if !r.note.is_empty() {
-                    detail = format!("{} · {}", Self::trim(&r.note, 40), detail);
-                }
-                rows.push(
-                    Row::new(Self::trim(&r.title, 72))
-                        .glyph(Glyph::Clock)
-                        .detail(detail)
-                        .value(time_str),
-                );
-                actions.push(format!("cancel:{}", r.unit));
+        for r in &self.reminders {
+            let words = r
+                .calendar
+                .as_ref()
+                .and_then(|c| Self::repeat_words(c))
+                .unwrap_or_else(|| Self::left(r.when.saturating_sub(now)));
+            let time_str = chrono::DateTime::from_timestamp(r.when as i64, 0)
+                .map(|d| d.format("%a %d %b %H:%M").to_string())
+                .unwrap_or_default();
+            let mut detail = format!("{words} · Enter cancels");
+            if !r.note.is_empty() {
+                detail = format!("{} · {}", Self::trim(&r.note, 40), detail);
             }
+            rows.push(
+                Row::new(Self::trim(&r.title, 72))
+                    .glyph(Glyph::Clock)
+                    .detail(detail)
+                    .value(time_str),
+            );
+            actions.push(format!("cancel:{}", r.unit));
         }
         self.actions = actions;
         self.list.update_rows(rows);
+    }
+
+    fn layout(area: Rect) -> (Rect, Rect, Rect) {
+        let inner = Rect {
+            x: area.x + 2,
+            y: area.y + 1,
+            width: area.width.saturating_sub(4),
+            height: area.height.saturating_sub(2),
+        };
+        let strip = Rect {
+            x: inner.x,
+            y: inner.y,
+            width: inner.width,
+            height: 1.min(inner.height),
+        };
+        let filter = Rect {
+            x: inner.x,
+            y: inner.y.saturating_add(2).min(inner.bottom()),
+            width: inner.width,
+            height: 1.min(inner.height.saturating_sub(2)),
+        };
+        let rows_y = inner.y.saturating_add(4).min(inner.bottom());
+        let rows = Rect {
+            x: inner.x,
+            y: rows_y,
+            width: inner.width,
+            height: inner.bottom().saturating_sub(rows_y),
+        };
+        (strip, filter, rows)
     }
 }
 
 impl Screen for RemindScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Reminders"), true);
-        let (filter, rows) = super::pick::list_layout(ctx.area);
 
         match &self.mode {
             RemindMode::List => {
+                let (strip, filter, rows) = Self::layout(ctx.area);
+                self.strip.render(strip, ctx.buf, ctx.design);
                 let default_msg = if self.reminders.is_empty() {
-                    "Enter schedules a reminder · Escape closes".to_string()
+                    "Press Enter or Ctrl+N to schedule a reminder · Esc backs out".to_string()
                 } else {
                     format!(
-                        "{} waiting · Enter schedules or cancels · type to filter",
+                        "{} waiting · Enter cancels · Ctrl+N schedules new",
                         self.reminders.len()
                     )
                 };
@@ -320,13 +341,25 @@ impl Screen for RemindScreen {
                     ctx.design,
                     self.list.filter(),
                     msg,
-                    self.list.len(),
+                    self.list.visible_len(),
                     self.reminders.len(),
                 );
                 self.rows_height.set(rows.height);
-                self.list.render(rows, ctx.buf, ctx.design, true);
+                if self.reminders.is_empty() {
+                    draw_empty(
+                        ctx.buf,
+                        rows,
+                        ctx.design,
+                        "No reminders waiting",
+                        "Press Enter or Ctrl+N to schedule a new reminder",
+                    );
+                } else {
+                    self.list
+                        .render(rows, ctx.buf, ctx.design, !self.strip.is_focused());
+                }
             }
             RemindMode::NewTitle => {
+                let (filter, rows) = super::pick::list_layout(ctx.area);
                 let mut x = draw_badge(
                     ctx.buf,
                     filter.x,
@@ -339,7 +372,7 @@ impl Screen for RemindScreen {
                 ctx.buf.set_string(
                     x,
                     filter.y,
-                    "Type reminder message and press Enter (Esc cancels)",
+                    "Type reminder message and press Enter (Esc returns to list)",
                     ctx.design.style(TextStyle::Title),
                 );
                 let input_rect = Rect {
@@ -352,6 +385,7 @@ impl Screen for RemindScreen {
                     .render(input_rect, ctx.buf, ctx.design, "Remind me to…");
             }
             RemindMode::NewWhen(title) => {
+                let (filter, rows) = super::pick::list_layout(ctx.area);
                 let mut x = draw_badge(
                     ctx.buf,
                     filter.x,
@@ -364,7 +398,7 @@ impl Screen for RemindScreen {
                 ctx.buf.set_string(
                     x,
                     filter.y,
-                    format!("“{title}” · pick when it fires"),
+                    format!("“{title}” · pick when it fires (Esc edits message)"),
                     ctx.design.style(TextStyle::Title),
                 );
                 self.rows_height.set(rows.height);
@@ -383,32 +417,32 @@ impl Screen for RemindScreen {
             RemindMode::NewTitle => match key.code {
                 KeyCode::Esc => {
                     self.mode = RemindMode::List;
-                    return Outcome::Continue;
+                    return Outcome::Consumed;
                 }
                 KeyCode::Enter => {
                     let t = self.title_input.text().trim().to_string();
                     if !t.is_empty() {
                         self.mode = RemindMode::NewWhen(t);
                     }
-                    return Outcome::Continue;
+                    return Outcome::Consumed;
                 }
                 _ => {
                     let _ = self.title_input.handle(key);
-                    return Outcome::Continue;
+                    return Outcome::Consumed;
                 }
             },
             RemindMode::NewWhen(title) => {
                 let title = title.clone();
                 match key.code {
                     KeyCode::Esc => {
-                        self.mode = RemindMode::List;
-                        return Outcome::Continue;
+                        self.mode = RemindMode::NewTitle;
+                        return Outcome::Consumed;
                     }
                     KeyCode::Enter => {
                         if let Some(idx) = self.when_list.selected_index() {
                             self.schedule_reminder(&title, idx);
                         }
-                        return Outcome::Continue;
+                        return Outcome::Consumed;
                     }
                     _ => {
                         if let ListAction::Activated(idx) =
@@ -416,22 +450,47 @@ impl Screen for RemindScreen {
                         {
                             self.schedule_reminder(&title, idx);
                         }
-                        return Outcome::Continue;
+                        return Outcome::Consumed;
                     }
                 }
             }
             RemindMode::List => {}
         }
 
+        match self.strip.handle(key) {
+            ActionStripEvent::Activated("new") => {
+                self.title_input.set("");
+                self.mode = RemindMode::NewTitle;
+                return Outcome::Consumed;
+            }
+            ActionStripEvent::Activated(_) | ActionStripEvent::Consumed => {
+                return Outcome::Consumed;
+            }
+            ActionStripEvent::Ignored => {}
+        }
+
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('n') | KeyCode::Char('N'))
+        {
+            self.title_input.set("");
+            self.mode = RemindMode::NewTitle;
+            return Outcome::Consumed;
+        }
+
         match key.code {
             KeyCode::Esc => {
                 if !self.list.filter().is_empty() {
                     self.list.set_filter("");
-                    return Outcome::Continue;
+                    return Outcome::Consumed;
                 }
                 return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
             }
             KeyCode::Enter => {
+                if self.reminders.is_empty() {
+                    self.title_input.set("");
+                    self.mode = RemindMode::NewTitle;
+                    return Outcome::Consumed;
+                }
                 if let Some(index) = self.list.selected_index() {
                     return self.activate(index);
                 }
@@ -441,7 +500,7 @@ impl Screen for RemindScreen {
                     && !key.modifiers.contains(KeyModifiers::ALT)
                     && self.list.type_filter(key) =>
             {
-                return Outcome::Continue;
+                return Outcome::Consumed;
             }
             _ => {}
         }
@@ -455,6 +514,12 @@ impl Screen for RemindScreen {
         if let Some(row) = row {
             match &self.mode {
                 RemindMode::List => {
+                    if row == 10_000 {
+                        self.title_input.set("");
+                        self.mode = RemindMode::NewTitle;
+                        return Outcome::Consumed;
+                    }
+                    self.strip.set_focused(false);
                     self.list.set_cursor(row);
                     if let Some(index) = self.list.selected_index() {
                         return self.activate(index);
@@ -474,10 +539,18 @@ impl Screen for RemindScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        let (_, rows) = super::pick::list_layout(area);
         match self.mode {
-            RemindMode::List => self.list.hit_row(rows, x, y, design),
-            RemindMode::NewWhen(_) => self.when_list.hit_row(rows, x, y, design),
+            RemindMode::List => {
+                let (strip, _, rows) = Self::layout(area);
+                if y == strip.y && x >= strip.x && x < strip.right() {
+                    return Some(10_000);
+                }
+                self.list.hit_row(rows, x, y, design)
+            }
+            RemindMode::NewWhen(_) => {
+                let (_, rows) = super::pick::list_layout(area);
+                self.when_list.hit_row(rows, x, y, design)
+            }
             RemindMode::NewTitle => None,
         }
     }

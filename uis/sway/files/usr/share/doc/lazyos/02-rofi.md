@@ -23,7 +23,7 @@ after its window closes (there is no daemon). For backwards compatibility, legac
 | **Alt+Ctrl+O** | `lazyos menu settings` (`rofi-quick`) | **Settings**: the switches (Wi-Fi and Bluetooth radios, night light, do-not-disturb, touchpad, tablet mode, rotation, display arrangement, screen sharing, auto-mount of USB drives) and the panels, in one list |
 | **Alt+Ctrl+P** or **Alt+Escape** | `lazyos menu power` (`rofi-power`) | **power**: lock, suspend, hibernate, log out, reboot, shut down - the last three ask once more |
 | **Alt+Ctrl+N** | `lazyos menu notify` (`rofi-notify`) | the notification history, with do-not-disturb and "copy this notification" |
-| **Alt+Ctrl+Q** | `lazyos menu calc` (`rofi-calc`) | a calculator: type `(3*4)/2`, Enter copies `6` |
+| **Alt+C** or **Alt+Ctrl+Q** | `lazyos menu calc` (`rofi-calc`) | a calculator: type `(3*4)/2` or `2**8`, Enter copies the result |
 | **Alt+Ctrl+V** | `lazyos menu clip` (`rofi-clip`) | **clipboard history**: what was copied, Enter puts it back, Alt+1 deletes that entry |
 | **Alt+Ctrl+E** | `lazyos menu emoji` (`rofi-emoji`) | **emoji**: type a name, Enter inserts the glyph at the cursor, Alt+1 only copies it |
 | **Alt+Ctrl+T** | `lazyos menu translate` (`translate`) | **translate** the selected text (or the clipboard) into the language Settings sets, English until it is set; the answer is copied, and a long one opens in a read window |
@@ -414,7 +414,7 @@ next to the table pins that font's SHA256 and family, which is how
 `check-system.sh` notices that a font upgrade made the table stale - re-running
 the script on a build host with `fontconfig` and the font rebuilds it.
 
-Enter inserts the glyph at the cursor the way Omarchy does it: the glyph goes to
+Enter inserts the glyph at the cursor: the glyph goes to
 the clipboard and a virtual **Shift+Insert** is typed with `wtype`, which every
 toolkit here understands as paste. Typing the character itself would need a
 keysym for its codepoint, and most emoji have none in the current keymap. Alt+1

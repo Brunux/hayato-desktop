@@ -232,12 +232,18 @@ pub fn menu(
 
         match key.as_str() {
             "action:swap" => {
-                crate::system::spawn_detached("exec lazyos menu swap");
-                return Ok(0);
+                let res = super::swap::menu(terminal, design)?;
+                if res == lazyos_ui::app::exit::ESCAPE {
+                    continue;
+                }
+                return Ok(res);
             }
             "action:format" => {
-                crate::system::spawn_detached("exec lazyos menu format");
-                return Ok(0);
+                let res = super::format::menu(terminal, design)?;
+                if res == lazyos_ui::app::exit::ESCAPE {
+                    continue;
+                }
+                return Ok(res);
             }
             k if k.starts_with("term:") => {
                 let path = &k[5..];

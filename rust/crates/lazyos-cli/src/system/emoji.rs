@@ -194,7 +194,7 @@ impl Screen for EmojiScreen {
             KeyCode::Esc => {
                 if !self.list.filter().is_empty() {
                     self.list.set_filter("");
-                    return Outcome::Continue;
+                    return Outcome::Consumed;
                 }
                 return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
             }

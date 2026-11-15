@@ -629,6 +629,10 @@ impl Screen for MenuScreen {
         Some(&self.header)
     }
 
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        Some((860, 560))
+    }
+
     fn needs_tick(&self) -> Option<Duration> {
         match &self.mode {
             Mode::Answer(answer) => answer.needs_tick(),

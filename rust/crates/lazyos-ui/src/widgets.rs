@@ -1825,6 +1825,7 @@ pub enum InputAction {
 #[derive(Clone, Debug, Default)]
 pub struct Input {
     text: String,
+    cursor: usize,
     masked: bool,
 }
 
@@ -1834,8 +1835,11 @@ impl Input {
     }
 
     pub fn with_text(text: impl Into<String>) -> Self {
+        let text = text.into();
+        let cursor = text.len();
         Self {
-            text: text.into(),
+            text,
+            cursor,
             masked: false,
         }
     }
@@ -1857,21 +1861,94 @@ impl Input {
         &self.text
     }
 
+    pub fn cursor(&self) -> usize {
+        self.cursor.min(self.text.len())
+    }
+
     pub fn set(&mut self, text: impl Into<String>) {
         self.text = text.into();
+        self.cursor = self.text.len();
+    }
+
+    fn prev_boundary(&self, pos: usize) -> usize {
+        let pos = pos.min(self.text.len());
+        self.text[..pos]
+            .char_indices()
+            .next_back()
+            .map_or(0, |(idx, _)| idx)
+    }
+
+    fn next_boundary(&self, pos: usize) -> usize {
+        let pos = pos.min(self.text.len());
+        let mut iter = self.text[pos..].char_indices();
+        let _ = iter.next();
+        iter.next().map_or(self.text.len(), |(off, _)| pos + off)
     }
 
     pub fn handle(&mut self, key: KeyEvent) -> InputAction {
         if key.kind != ratatui::crossterm::event::KeyEventKind::Press {
             return InputAction::Ignored;
         }
+        self.cursor = self.cursor.min(self.text.len());
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
             KeyCode::Esc => InputAction::Cancelled,
             KeyCode::Enter if self.text.trim().is_empty() => InputAction::Ignored,
             KeyCode::Enter => InputAction::Submitted,
+            KeyCode::Left => {
+                if self.cursor > 0 {
+                    self.cursor = self.prev_boundary(self.cursor);
+                    InputAction::Changed
+                } else {
+                    InputAction::Ignored
+                }
+            }
+            KeyCode::Right => {
+                if self.cursor < self.text.len() {
+                    self.cursor = self.next_boundary(self.cursor);
+                    InputAction::Changed
+                } else {
+                    InputAction::Ignored
+                }
+            }
+            KeyCode::Home => {
+                if self.cursor > 0 {
+                    self.cursor = 0;
+                    InputAction::Changed
+                } else {
+                    InputAction::Ignored
+                }
+            }
+            KeyCode::End => {
+                if self.cursor < self.text.len() {
+                    self.cursor = self.text.len();
+                    InputAction::Changed
+                } else {
+                    InputAction::Ignored
+                }
+            }
+            KeyCode::Char('a') if control => {
+                self.cursor = 0;
+                InputAction::Changed
+            }
+            KeyCode::Char('e') if control => {
+                self.cursor = self.text.len();
+                InputAction::Changed
+            }
             KeyCode::Backspace => {
-                if self.text.pop().is_some() {
+                if self.cursor > 0 {
+                    let prev = self.prev_boundary(self.cursor);
+                    self.text.drain(prev..self.cursor);
+                    self.cursor = prev;
+                    InputAction::Changed
+                } else {
+                    InputAction::Ignored
+                }
+            }
+            KeyCode::Delete => {
+                if self.cursor < self.text.len() {
+                    let next = self.next_boundary(self.cursor);
+                    self.text.drain(self.cursor..next);
                     InputAction::Changed
                 } else {
                     InputAction::Ignored
@@ -1879,18 +1956,22 @@ impl Input {
             }
             KeyCode::Char('u') if control => {
                 self.text.clear();
+                self.cursor = 0;
                 InputAction::Changed
             }
             KeyCode::Char('w') if control => {
-                let kept = self.text.trim_end().len();
-                let start = self.text[..kept]
+                let before = &self.text[..self.cursor];
+                let kept = before.trim_end().len();
+                let start = before[..kept]
                     .rfind(char::is_whitespace)
                     .map_or(0, |space| space + 1);
-                self.text.truncate(start);
+                self.text.drain(start..self.cursor);
+                self.cursor = start;
                 InputAction::Changed
             }
             KeyCode::Char(ch) if !control && !key.modifiers.contains(KeyModifiers::ALT) => {
-                self.text.push(ch);
+                self.text.insert(self.cursor, ch);
+                self.cursor += ch.len_utf8();
                 InputAction::Changed
             }
             _ => InputAction::Ignored,
@@ -1901,15 +1982,35 @@ impl Input {
     /// wider than the field shows its tail, because the end is where the
     /// person is typing.
     pub fn render(&self, area: Rect, buf: &mut Buffer, design: &Design, placeholder: &str) {
+        self.render_styled(
+            area,
+            buf,
+            design,
+            placeholder,
+            ColorRole::Surface,
+            TextStyle::Body,
+        );
+    }
+
+    /// Render the input field with a custom background role and text style,
+    /// drawing the active cursor at `self.cursor` with zero heap allocations.
+    pub fn render_styled(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        design: &Design,
+        placeholder: &str,
+        bg_role: ColorRole,
+        text_style: TextStyle,
+    ) {
         if area.width < 2 || area.height == 0 {
             return;
         }
+        let bg = design.color(bg_role);
         fill(
             buf,
             Rect { height: 1, ..area },
-            Style::default()
-                .bg(design.color(ColorRole::Surface))
-                .fg(design.color(ColorRole::Text)),
+            Style::default().bg(bg).fg(design.color(ColorRole::Text)),
         );
         let room = area.width.saturating_sub(2);
         let x = area.x + 1;
@@ -1920,13 +2021,13 @@ impl Input {
                 area.y,
                 placeholder,
                 room.saturating_sub(1),
-                design
-                    .style(TextStyle::Dim)
-                    .bg(design.color(ColorRole::Surface)),
+                design.style(TextStyle::Dim).bg(bg),
             );
             put(buf, x, area.y, " ", 1, design.style(TextStyle::Key));
             return;
         }
+        let normal_style = design.style(text_style).bg(bg);
+        let cursor_style = design.style(TextStyle::Key);
         if self.masked {
             const STARS: &str = "****************************************************************************************************";
             let count = self.text.chars().count();
@@ -1936,19 +2037,11 @@ impl Input {
             } else {
                 &STARS[..STARS.len()]
             };
-            let end = put(
-                buf,
-                x,
-                area.y,
-                stars_slice,
-                room,
-                design
-                    .style(TextStyle::Body)
-                    .bg(design.color(ColorRole::Surface)),
-            );
-            put(buf, end, area.y, " ", 1, design.style(TextStyle::Key));
+            let end = put(buf, x, area.y, stars_slice, room, normal_style);
+            put(buf, end, area.y, " ", 1, cursor_style);
             return;
         }
+        let cur = self.cursor.min(self.text.len());
         // The tail that fits, measured in cells from the end.
         let mut start = self.text.len();
         let mut width = 0u16;
@@ -1960,17 +2053,275 @@ impl Input {
             width += w;
             start = index;
         }
-        let end = put(
-            buf,
-            x,
-            area.y,
-            &self.text[start..],
-            room,
-            design
-                .style(TextStyle::Body)
-                .bg(design.color(ColorRole::Surface)),
-        );
-        put(buf, end, area.y, " ", 1, design.style(TextStyle::Key));
+        if cur < start {
+            start = cur;
+        }
+        if cur >= self.text.len() {
+            let end = put(buf, x, area.y, &self.text[start..], room, normal_style);
+            put(buf, end, area.y, " ", 1, cursor_style);
+        } else {
+            let next = self.next_boundary(cur);
+            let before = &self.text[start..cur];
+            let cur_str = &self.text[cur..next];
+            let after = &self.text[next..];
+            let c1 = put(buf, x, area.y, before, room, normal_style);
+            let used1 = c1.saturating_sub(x);
+            let c2 = put(
+                buf,
+                c1,
+                area.y,
+                cur_str,
+                room.saturating_sub(used1),
+                cursor_style,
+            );
+            let used2 = c2.saturating_sub(x);
+            put(
+                buf,
+                c2,
+                area.y,
+                after,
+                room.saturating_sub(used2),
+                normal_style,
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ActionStrip — Separating Tool Actions from Results
+// ---------------------------------------------------------------------------
+
+/// A single action pill inside an [`ActionStrip`].
+#[derive(Clone, Debug)]
+pub struct ActionItem {
+    pub id: &'static str,
+    pub key: &'static str,
+    pub label: String,
+    pub glyph: Option<Glyph>,
+}
+
+impl ActionItem {
+    pub fn new(id: &'static str, key: &'static str, label: impl Into<String>) -> Self {
+        Self {
+            id,
+            key,
+            label: label.into(),
+            glyph: None,
+        }
+    }
+
+    pub fn glyph(mut self, glyph: Glyph) -> Self {
+        self.glyph = Some(glyph);
+        self
+    }
+
+    fn pill_width(&self) -> u16 {
+        let g_w = self
+            .glyph
+            .map(|g| UnicodeWidthStr::width(g.cell()) as u16 + 1)
+            .unwrap_or(0);
+        let k_w = UnicodeWidthStr::width(self.key) as u16;
+        let l_w = UnicodeWidthStr::width(self.label.as_str()) as u16;
+        // " [key] glyph label "
+        2 + k_w + 1 + g_w + l_w + 1
+    }
+}
+
+/// What happened when an [`ActionStrip`] handled a key event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActionStripEvent {
+    Ignored,
+    Consumed,
+    Activated(&'static str),
+}
+
+/// Horizontal bar of action pills separating tool-level operations (Rescan,
+/// Toggle Radio, Clean All, Pick Pixel, etc.) from the scrollable domain
+/// results list.
+///
+/// Users can either:
+/// - Press `Tab` to focus the strip, use `Left`/`Right` to select a pill, and
+///   press `Enter`/`Space` to activate it (`Down`/`Tab`/`Esc` returns focus to
+///   the results list),
+/// - Click any pill directly with the mouse, or
+/// - Trigger actions anytime via their direct shortcut (`Ctrl+R`, `Ctrl+T`, etc.).
+#[derive(Clone, Debug, Default)]
+pub struct ActionStrip {
+    items: Vec<ActionItem>,
+    cursor: usize,
+    focused: bool,
+}
+
+impl ActionStrip {
+    pub fn new(items: Vec<ActionItem>) -> Self {
+        Self {
+            items,
+            cursor: 0,
+            focused: false,
+        }
+    }
+
+    pub fn set_items(&mut self, items: Vec<ActionItem>) {
+        self.items = items;
+        if self.cursor >= self.items.len() && !self.items.is_empty() {
+            self.cursor = self.items.len() - 1;
+        }
+    }
+
+    pub fn items(&self) -> &[ActionItem] {
+        &self.items
+    }
+
+    pub fn is_focused(&self) -> bool {
+        self.focused
+    }
+
+    pub fn set_focused(&mut self, focused: bool) {
+        self.focused = focused;
+    }
+
+    /// Handle keyboard navigation when `Tab` toggles focus or when the strip is focused.
+    pub fn handle(&mut self, key: KeyEvent) -> ActionStripEvent {
+        if key.kind != ratatui::crossterm::event::KeyEventKind::Press || self.items.is_empty() {
+            return ActionStripEvent::Ignored;
+        }
+        if matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
+            self.focused = !self.focused;
+            return ActionStripEvent::Consumed;
+        }
+        if !self.focused {
+            return ActionStripEvent::Ignored;
+        }
+        match key.code {
+            KeyCode::Left | KeyCode::Char('h') => {
+                if self.cursor > 0 {
+                    self.cursor -= 1;
+                } else {
+                    self.cursor = self.items.len() - 1;
+                }
+                ActionStripEvent::Consumed
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                self.cursor = (self.cursor + 1) % self.items.len();
+                ActionStripEvent::Consumed
+            }
+            KeyCode::Down | KeyCode::Up | KeyCode::Esc => {
+                self.focused = false;
+                ActionStripEvent::Consumed
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                let id = self.items[self.cursor].id;
+                self.focused = false;
+                ActionStripEvent::Activated(id)
+            }
+            _ => ActionStripEvent::Ignored,
+        }
+    }
+
+    /// Map a mouse click at `(col, row)` inside `area` to an action ID.
+    pub fn hit(&self, area: Rect, col: u16, row: u16) -> Option<&'static str> {
+        self.hit_index(area, col, row).map(|idx| self.items[idx].id)
+    }
+
+    /// Map a mouse click at `(col, row)` inside `area` to an action index.
+    pub fn hit_index(&self, area: Rect, col: u16, row: u16) -> Option<usize> {
+        if area.height == 0 || row != area.y || col < area.x || col >= area.right() {
+            return None;
+        }
+        let mut x = area.x;
+        for (idx, item) in self.items.iter().enumerate() {
+            let w = item.pill_width();
+            if x + w > area.right() {
+                break;
+            }
+            if col >= x && col < x + w {
+                return Some(idx);
+            }
+            x += w + 1;
+        }
+        None
+    }
+
+    /// Render the action strip on a single row with zero heap allocations.
+    pub fn render(&self, area: Rect, buf: &mut Buffer, design: &Design) {
+        if area.width < 8 || area.height == 0 || self.items.is_empty() {
+            return;
+        }
+        let y = area.y;
+        let mut x = area.x;
+        for (idx, item) in self.items.iter().enumerate() {
+            let w = item.pill_width();
+            if x + w > area.right() {
+                break;
+            }
+            let selected = self.focused && idx == self.cursor;
+            let pill_bg = if selected {
+                design.color(ColorRole::Accent)
+            } else {
+                design.color(ColorRole::SurfaceAlt)
+            };
+            let key_style = if selected {
+                Style::default()
+                    .fg(design.color(ColorRole::Bg))
+                    .bg(pill_bg)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(design.color(ColorRole::Accent))
+                    .bg(pill_bg)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
+            };
+            let label_style = if selected {
+                Style::default()
+                    .fg(design.color(ColorRole::Bg))
+                    .bg(pill_bg)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
+            } else {
+                Style::default().fg(design.color(ColorRole::Text)).bg(pill_bg)
+            };
+            fill(
+                buf,
+                Rect {
+                    x,
+                    y,
+                    width: w,
+                    height: 1,
+                },
+                label_style,
+            );
+            let mut col = put(buf, x, y, " ", 1, label_style);
+            col = put(buf, col, y, item.key, w, key_style);
+            col = put(buf, col, y, " ", 1, label_style);
+            if let Some(g) = item.glyph {
+                col = put(buf, col, y, g.cell(), 4, label_style);
+                col = put(buf, col, y, " ", 1, label_style);
+            }
+            put(
+                buf,
+                col,
+                y,
+                &item.label,
+                (x + w).saturating_sub(col + 1),
+                label_style,
+            );
+            x += w + 1;
+        }
+        let hint = if self.focused {
+            "[\u{2190}/\u{2192}] move  [Enter] run  [Esc] list"
+        } else {
+            "[Tab] actions"
+        };
+        let hint_w = UnicodeWidthStr::width(hint) as u16;
+        if x + hint_w < area.right() {
+            put(
+                buf,
+                area.right() - hint_w,
+                y,
+                hint,
+                hint_w,
+                design.style(TextStyle::Dim),
+            );
+        }
     }
 }
 
@@ -2158,12 +2509,30 @@ pub const BRAILLE_SPINNER: [&str; 10] = [
     "\u{2827}", "\u{2807}", "\u{280f}",
 ];
 
+/// Post-action status notice with an explicit transient vs. persistent lifecycle.
+///
+/// - **Routine discovery** (Wi-Fi/Bluetooth/Clean rescan) clears status immediately
+///   upon completion (`clear_status()`), so `"Scanning..."` disappears as soon as
+///   fresh results arrive.
+/// - **Positive state transitions** (connected, toggled radio, paired) show a
+///   **transient** notice (`set_transient`) that automatically disappears after 3s.
+/// - **Action failures or critical summaries** where the user *must* know the last
+///   triggered outcome override auto-dismissal (`set_persistent_error` /
+///   `set_persistent_info`) and stay visible until the next action is triggered.
+#[derive(Clone, Debug)]
+pub struct ActionNotice {
+    pub text: String,
+    pub is_error: bool,
+    pub expires_at: Option<std::time::Instant>,
+}
+
 /// Non-blocking background action runner for interactive `Screen`s (1–8s operations
 /// like Wi-Fi rescan/connect, Bluetooth toggle/pair, DNS switch, cache cleanup).
 pub struct ActionRunner<T> {
     label: String,
     rx: Option<std::sync::mpsc::Receiver<T>>,
     frame: usize,
+    notice: Option<ActionNotice>,
 }
 
 impl<T: Send + 'static> ActionRunner<T> {
@@ -2172,15 +2541,17 @@ impl<T: Send + 'static> ActionRunner<T> {
             label: String::new(),
             rx: None,
             frame: 0,
+            notice: None,
         }
     }
 
-    /// Spawn a background closure and immediately enter the spinning state.
+    /// Spawn a background closure, clear any previous notice, and enter the spinning state.
     pub fn spawn(&mut self, label: impl Into<String>, f: impl FnOnce() -> T + Send + 'static) {
         let (tx, rx) = std::sync::mpsc::channel();
         self.label = label.into();
         self.rx = Some(rx);
         self.frame = 0;
+        self.notice = None;
         std::thread::spawn(move || {
             let _ = tx.send(f());
         });
@@ -2198,17 +2569,71 @@ impl<T: Send + 'static> ActionRunner<T> {
         BRAILLE_SPINNER[self.frame % BRAILLE_SPINNER.len()]
     }
 
+    /// Clear any post-action notice immediately (used when routine scans finish).
+    pub fn clear_status(&mut self) {
+        self.notice = None;
+    }
+
+    /// Show a transient confirmation notice that automatically disappears after 3 seconds.
+    pub fn set_transient(&mut self, text: impl Into<String>) {
+        self.notice = Some(ActionNotice {
+            text: text.into(),
+            is_error: false,
+            expires_at: Some(std::time::Instant::now() + std::time::Duration::from_secs(3)),
+        });
+    }
+
+    /// Show a persistent error notice (overrides auto-hide because the user must know why
+    /// the last triggered action failed).
+    pub fn set_persistent_error(&mut self, text: impl Into<String>) {
+        self.notice = Some(ActionNotice {
+            text: text.into(),
+            is_error: true,
+            expires_at: None,
+        });
+    }
+
+    /// Show a persistent informational summary (used when the user must read a final
+    /// measurement such as total freed disk space).
+    pub fn set_persistent_info(&mut self, text: impl Into<String>) {
+        self.notice = Some(ActionNotice {
+            text: text.into(),
+            is_error: false,
+            expires_at: None,
+        });
+    }
+
+    /// Active post-action notice (if not running and not expired).
+    pub fn notice(&self) -> Option<&ActionNotice> {
+        self.notice.as_ref()
+    }
+
     pub fn tick_rate(&self) -> Option<std::time::Duration> {
-        self.is_running()
-            .then_some(std::time::Duration::from_millis(100))
+        if self.is_running() {
+            Some(std::time::Duration::from_millis(100))
+        } else if self
+            .notice
+            .as_ref()
+            .and_then(|n| n.expires_at)
+            .is_some()
+        {
+            Some(std::time::Duration::from_millis(250))
+        } else {
+            None
+        }
     }
 
+    /// Advance spinner, expire transient notices, and poll for completion;
+    /// returns `Some(result)` once the background closure finishes.
     pub fn poll(&mut self) -> Option<T> {
-        self.tick()
-    }
-
-    /// Advance spinner and poll for completion; returns `Some(result)` once finished.
-    pub fn tick(&mut self) -> Option<T> {
+        if self
+            .notice
+            .as_ref()
+            .and_then(|n| n.expires_at)
+            .is_some_and(|exp| std::time::Instant::now() >= exp)
+        {
+            self.notice = None;
+        }
         let rx = self.rx.as_ref()?;
         self.frame = (self.frame + 1) % BRAILLE_SPINNER.len();
         match rx.try_recv() {

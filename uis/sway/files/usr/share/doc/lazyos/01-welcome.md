@@ -144,10 +144,9 @@ after a boot that behaved strangely, and keep the output when you ask for help.
 
 * **Lock key** (top row, right-most): locks the screen, and systemd-logind
   suspends the machine a moment later. That path needs no polkit and no session
-  state, which is why it always works. **Alt+Ctrl+L** locks without suspending
-  (Omarchy's `Super+Ctrl+L`).
-* **Alt+Escape** opens the same system panel as the battery module (Omarchy's
-  `Super+Escape` system menu): lock, suspend, log out, reboot and power off.
+  state, which is why it always works. **Alt+Ctrl+L** locks without suspending.
+* **Alt+Escape** (or **Alt+Ctrl+P**) opens the power menu: lock, suspend,
+  hibernate, log out, reboot and power off.
 * **Alt+Shift+Escape**: lock, then suspend. **Alt+Ctrl+Escape**: suspend without
   locking.
 * The bar's battery module opens the power panel (charge, draw, time left,

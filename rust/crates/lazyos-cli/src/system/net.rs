@@ -15,9 +15,10 @@ use std::time::Duration;
 
 use lazyos_ui::widgets::{put, put_trunc};
 use lazyos_ui::{
-    ActionRunner, BodyCtx, ColorRole, Design, Glyph, Header, Input, InputAction, KeyHint,
-    ListAction, ListState, Outcome, QrCode, Row, Screen, TextStyle, draw_badge, draw_card,
-    draw_filter_bar, draw_qr, draw_signal_bars, signal_bars,
+    ActionItem, ActionRunner, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Design, Glyph,
+    Header, Input, InputAction, KeyHint, ListAction, ListState, Outcome, QrCode, Row, Screen,
+    TextStyle, draw_badge, draw_card, draw_empty, draw_filter_bar, draw_qr, draw_signal_bars,
+    signal_bars,
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -240,7 +241,6 @@ enum NetOp {
         radio_on: bool,
         aps: Vec<WifiAp>,
         ip: Option<String>,
-        explicit: bool,
     },
     Connected {
         ssid: String,
@@ -270,24 +270,14 @@ enum NetMode {
     },
 }
 
-#[derive(Clone, Debug)]
-enum NetAction {
-    Connect(String),
-    ToggleRadio,
-    Rescan,
-    ShowQr,
-    Nmtui,
-}
-
 pub struct NetScreen {
     radio_on: bool,
     aps: Vec<WifiAp>,
     active_ip: Option<String>,
-    actions: Vec<NetAction>,
+    strip: ActionStrip,
     list: ListState,
     mode: NetMode,
     runner: ActionRunner<NetOp>,
-    banner: Option<(String, ColorRole)>,
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
@@ -300,32 +290,26 @@ impl NetScreen {
             radio_on,
             aps,
             active_ip,
-            actions: Vec::new(),
+            strip: ActionStrip::default(),
             list: ListState::new(),
             mode: NetMode::List,
             runner: ActionRunner::new(),
-            banner: None,
             header: Header::new("Wi-Fi"),
             keybar: Vec::new(),
             rows_height: Cell::new(16),
         };
         screen.rebuild_rows(false);
         if radio_on {
-            screen.start_rescan(false);
+            screen.start_rescan();
         }
         screen.sync_chrome();
         screen
     }
 
-    fn start_rescan(&mut self, explicit: bool) {
+    fn start_rescan(&mut self) {
         self.runner.spawn("Scanning Wi-Fi networks\u{2026}", move || {
             let (radio_on, aps, ip) = scan_wifi(true);
-            NetOp::Scanned {
-                radio_on,
-                aps,
-                ip,
-                explicit,
-            }
+            NetOp::Scanned { radio_on, aps, ip }
         });
         self.sync_chrome();
     }
@@ -340,8 +324,17 @@ impl NetScreen {
         self.runner.spawn(label, move || {
             let arg = if target_on { "on" } else { "off" };
             let _ = Command::new("nmcli").args(["radio", "wifi", arg]).status();
-            let (radio_on, aps, ip) = scan_wifi(target_on);
-            NetOp::RadioToggled { radio_on, aps, ip }
+            if target_on {
+                std::thread::sleep(Duration::from_millis(500));
+                let (radio_on, aps, ip) = scan_wifi(true);
+                NetOp::RadioToggled { radio_on, aps, ip }
+            } else {
+                NetOp::RadioToggled {
+                    radio_on: false,
+                    aps: Vec::new(),
+                    ip: None,
+                }
+            }
         });
         self.sync_chrome();
     }
@@ -363,23 +356,22 @@ impl NetScreen {
     }
 
     fn rebuild_rows(&mut self, preserve: bool) {
-        let mut rows = Vec::new();
         let mut actions = Vec::new();
-
-        if !self.radio_on {
-            rows.push(
-                Row::new("Turn Wi-Fi on")
-                    .glyph(Glyph::Wifi)
-                    .detail("enable wireless radio and scan channels"),
-            );
-            actions.push(NetAction::ToggleRadio);
-            rows.push(
-                Row::new("Network settings (nmtui)")
-                    .glyph(Glyph::Gear)
-                    .detail("manage connections in terminal"),
-            );
-            actions.push(NetAction::Nmtui);
+        if self.radio_on {
+            actions.push(ActionItem::new("rescan", "^R", "Rescan").glyph(Glyph::Sync));
+            actions.push(ActionItem::new("toggle", "^T", "Turn off").glyph(Glyph::Power));
+            if self.aps.iter().any(|a| a.in_use) {
+                actions.push(ActionItem::new("qr", "^Q", "Share QR").glyph(Glyph::Qr));
+            }
+            actions.push(ActionItem::new("nmtui", "^N", "nmtui").glyph(Glyph::Gear));
         } else {
+            actions.push(ActionItem::new("toggle", "^T", "Turn Wi-Fi on").glyph(Glyph::Wifi));
+            actions.push(ActionItem::new("nmtui", "^N", "nmtui").glyph(Glyph::Gear));
+        }
+        self.strip.set_items(actions);
+
+        let mut rows = Vec::new();
+        if self.radio_on {
             for ap in &self.aps {
                 let sec = if ap.security.is_empty() || ap.security == "--" {
                     "open".to_string()
@@ -387,53 +379,20 @@ impl NetScreen {
                     ap.security.clone()
                 };
                 let detail = if ap.in_use {
-                    format!("{sec} \u{00b7} connected")
+                    format!("{sec} \u{00b7} connected  ({} {:>3}%)", signal_bars(ap.signal), ap.signal)
                 } else {
-                    sec
+                    format!("{sec}  ({} {:>3}%)", signal_bars(ap.signal), ap.signal)
                 };
-                let meter = format!("{} {:>3}%", signal_bars(ap.signal), ap.signal);
                 let glyph = if ap.in_use { Glyph::Check } else { Glyph::Wifi };
                 rows.push(
                     Row::new(ap.ssid.clone())
                         .glyph(glyph)
                         .detail(detail)
-                        .value(meter),
+                        .value(ap.ssid.clone()),
                 );
-                actions.push(NetAction::Connect(ap.ssid.clone()));
             }
-
-            rows.push(
-                Row::new("Rescan networks")
-                    .glyph(Glyph::Sync)
-                    .detail("scan all Wi-Fi channels now (r)"),
-            );
-            actions.push(NetAction::Rescan);
-
-            if self.aps.iter().any(|a| a.in_use) {
-                rows.push(
-                    Row::new("Show the password as a QR")
-                        .glyph(Glyph::Qr)
-                        .detail("render Wi-Fi credentials QR in this window (Ctrl+Q)"),
-                );
-                actions.push(NetAction::ShowQr);
-            }
-
-            rows.push(
-                Row::new("Turn Wi-Fi off")
-                    .glyph(Glyph::Power)
-                    .detail("disable wireless radio"),
-            );
-            actions.push(NetAction::ToggleRadio);
-
-            rows.push(
-                Row::new("Network settings (nmtui)")
-                    .glyph(Glyph::Gear)
-                    .detail("manage connections in terminal"),
-            );
-            actions.push(NetAction::Nmtui);
         }
 
-        self.actions = actions;
         if preserve {
             self.list.update_rows(rows);
         } else {
@@ -450,19 +409,20 @@ impl NetScreen {
                         self.runner.spinner(),
                         self.runner.label().unwrap_or("Working\u{2026}")
                     )
-                } else if let Some((msg, _)) = &self.banner {
-                    msg.clone()
+                } else if let Some(notice) = self.runner.notice() {
+                    notice.text.clone()
                 } else if !self.radio_on {
-                    "Wi-Fi radio is off \u{00b7} Enter turns it on".to_string()
+                    "Wi-Fi radio is off \u{00b7} Enter or Ctrl+T turns it on".to_string()
                 } else {
-                    format!("{} networks available \u{00b7} r rescans", self.aps.len())
+                    format!("{} networks available \u{00b7} Ctrl+R rescans", self.aps.len())
                 };
                 self.header = Header::new("Wi-Fi").subtitle("Network").status(status);
                 self.keybar = vec![
-                    KeyHint::new("Enter", "connect / run"),
-                    KeyHint::new("r", "rescan"),
-                    KeyHint::new("Ctrl+Q", "Wi-Fi QR"),
-                    KeyHint::new("Esc", "close"),
+                    KeyHint::new("Enter", if self.radio_on { "connect" } else { "turn on" }),
+                    KeyHint::new("Tab", "actions"),
+                    KeyHint::new("Ctrl+R", "rescan"),
+                    KeyHint::new("Ctrl+T", "radio"),
+                    KeyHint::new("Esc", "back"),
                 ];
             }
             NetMode::Password { ssid, .. } => {
@@ -476,9 +436,9 @@ impl NetScreen {
             }
             NetMode::WifiQr { title, .. } => {
                 let status = self
-                    .banner
-                    .as_ref()
-                    .map(|(m, _)| m.clone())
+                    .runner
+                    .notice()
+                    .map(|n| n.text.clone())
                     .unwrap_or_else(|| "Scan with a phone camera \u{00b7} c copies payload".to_string());
                 self.header = Header::new("Wi-Fi").subtitle(title.clone()).status(status);
                 self.keybar = vec![
@@ -491,15 +451,13 @@ impl NetScreen {
 
     fn open_inline_qr(&mut self) {
         let Some((payload, title)) = super::qr::payload_wifi() else {
-            self.banner = Some((
-                "Not connected to a Wi-Fi network".to_string(),
-                ColorRole::Warning,
-            ));
+            self.runner
+                .set_persistent_error("Not connected to a Wi-Fi network");
             self.sync_chrome();
             return;
         };
         if let Some(qr) = QrCode::encode(&payload) {
-            self.banner = None;
+            self.runner.clear_status();
             self.mode = NetMode::WifiQr {
                 qr,
                 title,
@@ -508,57 +466,60 @@ impl NetScreen {
             };
             self.sync_chrome();
         } else {
-            self.banner = Some(("Could not encode QR: payload too large".to_string(), ColorRole::Danger));
+            self.runner
+                .set_persistent_error("Could not encode QR: payload too large");
             self.sync_chrome();
         }
     }
 
-    fn activate(&mut self, index: usize) -> Outcome {
+    fn run_strip_action(&mut self, id: &'static str) -> Outcome {
         if self.runner.is_running() {
             return Outcome::Consumed;
         }
-        let Some(action) = self.actions.get(index).cloned() else {
-            return Outcome::Continue;
-        };
-        match action {
-            NetAction::ToggleRadio => {
-                self.banner = None;
+        match id {
+            "toggle" => {
                 self.start_toggle_radio();
                 Outcome::Consumed
             }
-            NetAction::Rescan => {
-                self.banner = None;
-                self.start_rescan(true);
-                Outcome::Consumed
-            }
-            NetAction::ShowQr => {
-                self.open_inline_qr();
-                Outcome::Consumed
-            }
-            NetAction::Nmtui => {
-                crate::system::spawn_detached("exec foot --app-id=popup nmtui");
-                Outcome::Done(lazyos_ui::app::exit::OK)
-            }
-            NetAction::Connect(ssid) => {
-                let target_ap = self.aps.iter().find(|a| a.ssid == ssid);
-                let is_open =
-                    target_ap.is_some_and(|a| a.security.is_empty() || a.security == "--");
-                if is_open || has_saved_connection(&ssid) {
-                    self.banner = None;
-                    self.start_connect(ssid, None);
-                } else {
-                    self.mode = NetMode::Password {
-                        ssid,
-                        input: Input::new().with_masked(true),
-                    };
-                    self.sync_chrome();
+            "rescan" => {
+                if self.radio_on {
+                    self.start_rescan();
                 }
                 Outcome::Consumed
             }
+            "qr" => {
+                self.open_inline_qr();
+                Outcome::Consumed
+            }
+            "nmtui" => {
+                crate::system::spawn_detached("exec foot --app-id=popup nmtui");
+                Outcome::Done(lazyos_ui::app::exit::OK)
+            }
+            _ => Outcome::Consumed,
         }
     }
 
-    fn layout(area: Rect) -> (Rect, Rect, Rect) {
+    fn activate_ap(&mut self, index: usize) -> Outcome {
+        if self.runner.is_running() {
+            return Outcome::Consumed;
+        }
+        let Some(ap) = self.aps.get(index).cloned() else {
+            return Outcome::Continue;
+        };
+        let is_open = ap.security.is_empty() || ap.security == "--";
+        if is_open || has_saved_connection(&ap.ssid) {
+            self.start_connect(ap.ssid, None);
+        } else {
+            self.mode = NetMode::Password {
+                ssid: ap.ssid,
+                input: Input::new().with_masked(true),
+            };
+            self.sync_chrome();
+        }
+        Outcome::Consumed
+    }
+
+    fn layout(area: Rect) -> (Rect, Rect, Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
             y: area.y + 1,
@@ -571,20 +532,26 @@ impl NetScreen {
             width: inner.width,
             height: 2.min(inner.height),
         };
-        let filter = Rect {
+        let strip = Rect {
             x: inner.x,
             y: inner.y.saturating_add(2).min(inner.bottom()),
             width: inner.width,
             height: 1.min(inner.height.saturating_sub(2)),
         };
-        let rows_y = inner.y.saturating_add(4).min(inner.bottom());
+        let filter = Rect {
+            x: inner.x,
+            y: inner.y.saturating_add(4).min(inner.bottom()),
+            width: inner.width,
+            height: 1.min(inner.height.saturating_sub(4)),
+        };
+        let rows_y = inner.y.saturating_add(6).min(inner.bottom());
         let rows = Rect {
             x: inner.x,
             y: rows_y,
             width: inner.width,
             height: inner.bottom().saturating_sub(rows_y),
         };
-        (hero, filter, rows)
+        (hero, strip, filter, rows)
     }
 
     fn draw_hero(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
@@ -592,17 +559,42 @@ impl NetScreen {
             return;
         }
         let y = area.y;
-        if !self.radio_on {
-            let mut x = draw_badge(buf, area.x, y, design, "RADIO OFF", ColorRole::Warn);
-            x = put(
+        if self.runner.is_running() {
+            let badge = format!("{} WORKING", self.runner.spinner());
+            let x = draw_badge(buf, area.x, y, design, &badge, ColorRole::Accent);
+            let _ = put_trunc(
+                buf,
+                x + 2,
+                y,
+                self.runner.label().unwrap_or("Working\u{2026}"),
+                area.right().saturating_sub(x + 2),
+                design.style(TextStyle::Title),
+            );
+        } else if let Some(notice) = self.runner.notice() {
+            let (badge_txt, role, style) = if notice.is_error {
+                ("ERROR", ColorRole::Danger, design.style(TextStyle::Danger))
+            } else {
+                ("\u{2714} DONE", ColorRole::Ok, design.style(TextStyle::Title))
+            };
+            let x = draw_badge(buf, area.x, y, design, badge_txt, role);
+            let _ = put_trunc(
+                buf,
+                x + 2,
+                y,
+                &notice.text,
+                area.right().saturating_sub(x + 2),
+                style,
+            );
+        } else if !self.radio_on {
+            let x = draw_badge(buf, area.x, y, design, "RADIO OFF", ColorRole::Warn);
+            let _ = put(
                 buf,
                 x,
                 y,
-                "  Wireless radio is disabled",
+                "  Wireless radio is disabled \u{00b7} press Enter or Ctrl+T to turn on",
                 area.right().saturating_sub(x),
                 design.style(TextStyle::Dim),
             );
-            let _ = x;
         } else if let Some(active) = self.aps.iter().find(|a| a.in_use) {
             let mut x = draw_badge(buf, area.x, y, design, "\u{25cf} CONNECTED", ColorRole::Ok);
             x = put(buf, x, y, "  ", area.right().saturating_sub(x), design.style(TextStyle::Body));
@@ -645,7 +637,7 @@ impl NetScreen {
                 );
             }
         } else {
-            let mut x = draw_badge(
+            let x = draw_badge(
                 buf,
                 area.x,
                 y,
@@ -689,25 +681,15 @@ impl Screen for NetScreen {
     }
 
     fn tick(&mut self) -> Outcome {
-        self.runner.tick();
         if let Some(op) = self.runner.poll() {
             match op {
-                NetOp::Scanned {
-                    radio_on,
-                    aps,
-                    ip,
-                    explicit,
-                } => {
+                NetOp::Scanned { radio_on, aps, ip } => {
                     self.radio_on = radio_on;
                     self.aps = aps;
                     self.active_ip = ip;
                     self.rebuild_rows(true);
-                    if explicit {
-                        self.banner = Some((
-                            format!("Found {} Wi-Fi networks", self.aps.len()),
-                            ColorRole::Ok,
-                        ));
-                    }
+                    // Routine discovery clears the status banner immediately on completion.
+                    self.runner.clear_status();
                 }
                 NetOp::Connected {
                     ssid,
@@ -722,14 +704,12 @@ impl Screen for NetScreen {
                     self.rebuild_rows(true);
                     match result {
                         Ok(()) => {
-                            self.banner =
-                                Some((format!("Connected to {ssid}"), ColorRole::Ok));
+                            self.runner.set_transient(format!("Connected to {ssid}"));
                         }
                         Err(err) => {
-                            self.banner = Some((
-                                format!("Could not connect to {ssid}: {err}"),
-                                ColorRole::Danger,
-                            ));
+                            // Connection failure overrides auto-hide so the user sees why it failed.
+                            self.runner
+                                .set_persistent_error(format!("Could not connect to {ssid}: {err}"));
                         }
                     }
                 }
@@ -739,19 +719,17 @@ impl Screen for NetScreen {
                     self.active_ip = ip;
                     self.rebuild_rows(false);
                     let msg = if radio_on {
-                        "Wi-Fi turned on".to_string()
+                        "Wi-Fi turned on"
                     } else {
-                        "Wi-Fi turned off".to_string()
+                        "Wi-Fi turned off"
                     };
-                    self.banner = Some((msg, ColorRole::Ok));
+                    self.runner.set_transient(msg);
                 }
             }
             self.sync_chrome();
             return Outcome::Continue;
         }
-        if self.runner.is_running() {
-            self.sync_chrome();
-        }
+        self.sync_chrome();
         Outcome::Continue
     }
 
@@ -804,14 +782,13 @@ impl Screen for NetScreen {
             }
             NetMode::List => {
                 draw_card(ctx.buf, ctx.area, ctx.design, Some("Wi-Fi"), true);
-                let (hero, filter, rows) = Self::layout(ctx.area);
+                let (hero, strip, filter, rows) = Self::layout(ctx.area);
                 self.draw_hero(ctx.buf, hero, ctx.design);
-                let hint = if self.runner.is_running() {
-                    self.runner.label().unwrap_or("Scanning\u{2026}")
-                } else if let Some((msg, _)) = &self.banner {
-                    msg.as_str()
+                self.strip.render(strip, ctx.buf, ctx.design);
+                let hint = if !self.radio_on {
+                    "Wi-Fi radio is off \u{00b7} press Enter or Ctrl+T to enable"
                 } else {
-                    "type to filter networks \u{00b7} Enter connects \u{00b7} r rescans"
+                    "type to filter networks \u{00b7} Enter connects \u{00b7} Tab focuses actions"
                 };
                 draw_filter_bar(
                     ctx.buf,
@@ -823,7 +800,30 @@ impl Screen for NetScreen {
                     self.list.len(),
                 );
                 self.rows_height.set(rows.height);
-                self.list.render(rows, ctx.buf, ctx.design, true);
+                if !self.radio_on {
+                    draw_empty(
+                        ctx.buf,
+                        rows,
+                        ctx.design,
+                        "Wi-Fi radio is off",
+                        "Press Enter or Ctrl+T to turn Wi-Fi on and scan for networks",
+                    );
+                } else if self.aps.is_empty() {
+                    draw_empty(
+                        ctx.buf,
+                        rows,
+                        ctx.design,
+                        if self.runner.is_running() {
+                            "Scanning Wi-Fi channels\u{2026}"
+                        } else {
+                            "No Wi-Fi networks found"
+                        },
+                        "Press Ctrl+R to rescan nearby channels",
+                    );
+                } else {
+                    self.list
+                        .render(rows, ctx.buf, ctx.design, !self.strip.is_focused());
+                }
             }
         }
     }
@@ -845,17 +845,15 @@ impl Screen for NetScreen {
                             let _ = stdin.write_all(payload.as_bytes());
                         }
                         let _ = child.wait();
-                        self.banner = Some((
-                            "Copied Wi-Fi QR payload to clipboard".to_string(),
-                            ColorRole::Ok,
-                        ));
+                        self.runner
+                            .set_transient("Copied Wi-Fi QR payload to clipboard");
                     }
                     self.sync_chrome();
                     Outcome::Consumed
                 }
                 KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => {
                     self.mode = NetMode::List;
-                    self.banner = None;
+                    self.runner.clear_status();
                     self.sync_chrome();
                     Outcome::Consumed
                 }
@@ -881,6 +879,11 @@ impl Screen for NetScreen {
                 _ => Outcome::Consumed,
             },
             NetMode::List => {
+                match self.strip.handle(key) {
+                    ActionStripEvent::Activated(id) => return self.run_strip_action(id),
+                    ActionStripEvent::Consumed => return Outcome::Consumed,
+                    ActionStripEvent::Ignored => {}
+                }
                 if key.code == KeyCode::Esc {
                     if !self.list.filter().is_empty() {
                         self.list.set_filter("");
@@ -888,18 +891,25 @@ impl Screen for NetScreen {
                     }
                     return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
                 }
-                if key.modifiers.contains(KeyModifiers::CONTROL)
-                    && matches!(key.code, KeyCode::Char('q') | KeyCode::Char('Q'))
-                {
-                    self.open_inline_qr();
-                    return Outcome::Consumed;
-                }
-                if self.list.filter().is_empty() && key.code == KeyCode::Char('r') {
-                    if !self.runner.is_running() && self.radio_on {
-                        self.banner = None;
-                        self.start_rescan(true);
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    match key.code {
+                        KeyCode::Char('r') | KeyCode::Char('R') => {
+                            return self.run_strip_action("rescan");
+                        }
+                        KeyCode::Char('t') | KeyCode::Char('T') => {
+                            return self.run_strip_action("toggle");
+                        }
+                        KeyCode::Char('q') | KeyCode::Char('Q') => {
+                            return self.run_strip_action("qr");
+                        }
+                        KeyCode::Char('n') | KeyCode::Char('N') => {
+                            return self.run_strip_action("nmtui");
+                        }
+                        _ => {}
                     }
-                    return Outcome::Consumed;
+                }
+                if !self.radio_on && key.code == KeyCode::Enter {
+                    return self.run_strip_action("toggle");
                 }
                 let typed = matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
                     && !key.modifiers.contains(KeyModifiers::CONTROL);
@@ -908,7 +918,7 @@ impl Screen for NetScreen {
                     return Outcome::Consumed;
                 }
                 match self.list.handle(key, self.rows_height.get(), design) {
-                    ListAction::Activated(index) => self.activate(index),
+                    ListAction::Activated(index) => self.activate_ap(index),
                     _ => Outcome::Continue,
                 }
             }
@@ -922,9 +932,17 @@ impl Screen for NetScreen {
         let Some(row) = row else {
             return Outcome::Continue;
         };
+        if row >= 10_000 {
+            let strip_idx = row - 10_000;
+            if let Some(item) = self.strip.items().get(strip_idx) {
+                return self.run_strip_action(item.id);
+            }
+            return Outcome::Consumed;
+        }
+        self.strip.set_focused(false);
         self.list.set_cursor(row);
         if let Some(index) = self.list.selected_index() {
-            return self.activate(index);
+            return self.activate_ap(index);
         }
         Outcome::Continue
     }
@@ -933,7 +951,20 @@ impl Screen for NetScreen {
         if !matches!(self.mode, NetMode::List) {
             return None;
         }
-        let (_, _, rows) = Self::layout(area);
+        let (_, strip, _, rows) = Self::layout(area);
+        if y == strip.y && x >= strip.x && x < strip.right() {
+            let mut col = strip.x;
+            for (idx, item) in self.strip.items().iter().enumerate() {
+                let w = 4
+                    + item.key.len() as u16
+                    + item.label.len() as u16
+                    + item.glyph.map(|_| 2).unwrap_or(0);
+                if x >= col && x < col + w {
+                    return Some(10_000 + idx);
+                }
+                col += w + 1;
+            }
+        }
         self.list.hit_row(rows, x, y, design)
     }
 

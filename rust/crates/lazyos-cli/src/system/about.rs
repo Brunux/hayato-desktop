@@ -12,24 +12,30 @@ use std::fs;
 use std::path::Path;
 
 use lazyos_ui::{
-    BodyCtx, Card, ColorRole, Design, Glyph, Header, KeyHint, ListState, Outcome, Row, Screen,
-    TextStyle, Urgency, draw_badge, draw_card, draw_filter_bar, draw_scrollbar,
+    ActionItem, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Design, Glyph, Header, KeyHint,
+    ListState, Outcome, Row, Screen, TextStyle, draw_badge, draw_card, draw_filter_bar,
+    draw_scrollbar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 
 use crate::system::{have, missing, out, print};
 
+const ACTION_BASE: usize = 10_000;
+const DETAIL_WRAP_WIDTH: usize = 96;
+
 /// The about screen state.
 pub struct AboutScreen {
     facts: Vec<Fact>,
     list: ListState,
+    strip: ActionStrip,
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
     view_mode: AboutMode,
     detail_title: String,
     content: String,
+    content_lines: Vec<String>,
     content_scroll: Cell<u16>,
     detail_keyhints: Vec<KeyHint>,
     status_note: Option<String>,
@@ -83,21 +89,31 @@ impl AboutScreen {
         let facts = Self::load_facts();
         let mut list = ListState::new().with_empty("no facts available").ranked();
         list.set_rows(facts.iter().map(Self::fact_row).collect());
+        let strip = ActionStrip::new(vec![
+            ActionItem::new("copy", "^C", "Copy summary").glyph(Glyph::Clipboard),
+            ActionItem::new("errors", "^E", "Errors").glyph(Glyph::Bug),
+            ActionItem::new("boot", "^B", "Boot time").glyph(Glyph::Clock),
+            ActionItem::new("devices", "^D", "Devices").glyph(Glyph::Chip),
+            ActionItem::new("fastfetch", "^F", "Fastfetch").glyph(Glyph::Terminal),
+        ]);
 
         Self {
             facts,
             list,
+            strip,
             header: Header::new("LazyOS").subtitle("About"),
             keybar: vec![
                 KeyHint::new("Enter", "inspect / copy"),
+                KeyHint::new("^C", "copy summary"),
+                KeyHint::new("Tab", "actions"),
                 KeyHint::new("type", "filter"),
-                KeyHint::new("\u{2191}\u{2193}", "move"),
                 KeyHint::new("Esc", "close"),
             ],
             rows_height: Cell::new(20),
             view_mode: AboutMode::List,
             detail_title: String::new(),
             content: String::new(),
+            content_lines: Vec::new(),
             content_scroll: Cell::new(0),
             detail_keyhints: vec![
                 KeyHint::new("\u{2191}\u{2193}/PgUp/PgDn", "scroll"),
@@ -469,19 +485,6 @@ impl AboutScreen {
             value: format!("{} PCI · {} USB", pci, usb),
             action: Some(FactAction::Devices),
         });
-        facts.push(Fact {
-            icon: "clipboard".to_string(),
-            label: "Copy summary".to_string(),
-            value: "the same lines as text".to_string(),
-            action: Some(FactAction::CopySummary),
-        });
-        facts.push(Fact {
-            icon: "terminal".to_string(),
-            label: "Full picture".to_string(),
-            value: "fastfetch, until you close it".to_string(),
-            action: Some(FactAction::Fastfetch),
-        });
-
         facts
     }
 
@@ -492,7 +495,7 @@ impl AboutScreen {
         if fact.action.is_some() {
             let existing_detail = row.detail.clone();
             let existing_detail = existing_detail.as_deref().unwrap_or("");
-            row = row.detail(&format!("{} · enter acts", existing_detail));
+            row = row.detail(&format!("{} · enter inspects", existing_detail));
         }
         row
     }
@@ -514,6 +517,39 @@ impl AboutScreen {
             "terminal" => Glyph::Terminal,
             _ => Glyph::Info,
         }
+    }
+
+    fn wrap_content(content: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for line in content.lines() {
+            if line.is_empty() || line.chars().count() <= DETAIL_WRAP_WIDTH {
+                out.push(line.to_string());
+                continue;
+            }
+            let mut cur = String::new();
+            let mut count = 0usize;
+            for ch in line.chars() {
+                if count >= DETAIL_WRAP_WIDTH {
+                    out.push(std::mem::take(&mut cur));
+                    cur.push_str("  ");
+                    count = 2;
+                }
+                cur.push(ch);
+                count += 1;
+            }
+            if !cur.is_empty() {
+                out.push(cur);
+            }
+        }
+        out
+    }
+
+    fn set_detail(&mut self, title: &str, content: String) {
+        self.detail_title = title.to_string();
+        self.content_lines = Self::wrap_content(&content);
+        self.content = content;
+        self.content_scroll.set(0);
+        self.view_mode = AboutMode::Detail;
     }
 
     fn run_action(&mut self, action: &FactAction) {
@@ -538,43 +574,48 @@ impl AboutScreen {
                 let logs = out(&["sudo", "-n", "journalctl", "-p", "err", "-b", "--no-pager"])
                     .or_else(|| out(&["journalctl", "-p", "err", "-b", "--no-pager"]))
                     .unwrap_or_default();
-                self.detail_title = "Errors this boot (journalctl -p err -b)".to_string();
-                self.content = if logs.trim().is_empty() {
+                let content = if logs.trim().is_empty() {
                     "No errors logged at priority err for this boot.".to_string()
                 } else {
                     logs
                 };
-                self.content_scroll.set(0);
-                self.view_mode = AboutMode::Detail;
+                self.set_detail("Errors this boot (journalctl -p err -b)", content);
             }
             FactAction::BootTime => {
                 let summary = out(&["systemd-analyze"]).unwrap_or_default();
                 let blame = out(&["systemd-analyze", "blame", "--no-pager"]).unwrap_or_default();
-                self.detail_title = "Boot time (systemd-analyze blame)".to_string();
-                self.content = format!("{}\n{}", summary.trim(), blame);
-                self.content_scroll.set(0);
-                self.view_mode = AboutMode::Detail;
+                let content = format!("{}\n{}", summary.trim(), blame);
+                self.set_detail("Boot time (systemd-analyze blame)", content);
             }
             FactAction::Devices => {
                 let pci = out(&["lspci"]).unwrap_or_default();
                 let usb = out(&["lsusb"]).unwrap_or_default();
-                self.detail_title = "Hardware Devices (lspci & lsusb)".to_string();
-                self.content = format!("=== PCI ===\n{}\n=== USB ===\n{}", pci.trim(), usb.trim());
-                self.content_scroll.set(0);
-                self.view_mode = AboutMode::Detail;
+                let content = format!("=== PCI ===\n{}\n=== USB ===\n{}", pci.trim(), usb.trim());
+                self.set_detail("Hardware Devices (lspci & lsusb)", content);
             }
             FactAction::Fastfetch => {
                 if have("fastfetch") {
                     let ff = out(&["fastfetch", "--pipe"]).unwrap_or_default();
-                    self.detail_title = "Fastfetch Overview".to_string();
-                    self.content = ff;
-                    self.content_scroll.set(0);
-                    self.view_mode = AboutMode::Detail;
+                    self.set_detail("Fastfetch Overview", ff);
                 } else {
                     self.status_note =
                         Some("fastfetch is not installed (packages/tools.list)".to_string());
                 }
             }
+        }
+    }
+
+    fn trigger_strip_action(&mut self, id: &str) {
+        let action = match id {
+            "copy" => Some(FactAction::CopySummary),
+            "errors" => Some(FactAction::Errors),
+            "boot" => Some(FactAction::BootTime),
+            "devices" => Some(FactAction::Devices),
+            "fastfetch" => Some(FactAction::Fastfetch),
+            _ => None,
+        };
+        if let Some(a) = action {
+            self.run_action(&a);
         }
     }
 }
@@ -589,7 +630,7 @@ impl Screen for AboutScreen {
 
         match self.view_mode {
             AboutMode::List => {
-                let (hero, filter, rows) = Self::list_layout(ctx.area);
+                let (hero, strip_rect, filter, rows) = Self::list_layout(ctx.area);
                 if let Some(h) = hero {
                     let model = self
                         .facts
@@ -623,10 +664,13 @@ impl Screen for AboutScreen {
                         );
                     }
                 }
+                if let Some(sr) = strip_rect {
+                    self.strip.render(sr, ctx.buf, ctx.design);
+                }
                 let note = self
                     .status_note
                     .as_deref()
-                    .unwrap_or("Enter inspects or copies · type to filter");
+                    .unwrap_or("Enter inspects row · type to filter · Tab focuses actions");
                 draw_filter_bar(
                     ctx.buf,
                     filter,
@@ -637,7 +681,8 @@ impl Screen for AboutScreen {
                     self.facts.len(),
                 );
                 self.rows_height.set(rows.height);
-                self.list.render(rows, ctx.buf, ctx.design, true);
+                self.list
+                    .render(rows, ctx.buf, ctx.design, !self.strip.is_focused());
             }
             AboutMode::Detail => {
                 let inner = Rect {
@@ -646,9 +691,8 @@ impl Screen for AboutScreen {
                     width: ctx.area.width.saturating_sub(4),
                     height: ctx.area.height.saturating_sub(2),
                 };
-                let lines: Vec<&str> = self.content.lines().collect();
                 let scroll = self.content_scroll.get() as usize;
-                for (i, line) in lines.iter().skip(scroll).enumerate() {
+                for (i, line) in self.content_lines.iter().skip(scroll).enumerate() {
                     if i as u16 >= inner.height {
                         break;
                     }
@@ -665,7 +709,7 @@ impl Screen for AboutScreen {
                     ctx.design,
                     scroll,
                     inner.height as usize,
-                    lines.len(),
+                    self.content_lines.len(),
                     true,
                 );
             }
@@ -679,6 +723,46 @@ impl Screen for AboutScreen {
 
         match self.view_mode {
             AboutMode::List => {
+                if self.strip.is_focused() {
+                    match self.strip.handle(key) {
+                        ActionStripEvent::Activated(id) => {
+                            self.strip.set_focused(false);
+                            self.trigger_strip_action(id);
+                            return Outcome::Consumed;
+                        }
+                        ActionStripEvent::Consumed => return Outcome::Consumed,
+                        ActionStripEvent::Ignored => {}
+                    }
+                }
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    match key.code {
+                        KeyCode::Char('c') | KeyCode::Char('C') => {
+                            self.trigger_strip_action("copy");
+                            return Outcome::Consumed;
+                        }
+                        KeyCode::Char('e') | KeyCode::Char('E') => {
+                            self.trigger_strip_action("errors");
+                            return Outcome::Consumed;
+                        }
+                        KeyCode::Char('b') | KeyCode::Char('B') => {
+                            self.trigger_strip_action("boot");
+                            return Outcome::Consumed;
+                        }
+                        KeyCode::Char('d') | KeyCode::Char('D') => {
+                            self.trigger_strip_action("devices");
+                            return Outcome::Consumed;
+                        }
+                        KeyCode::Char('f') | KeyCode::Char('F') => {
+                            self.trigger_strip_action("fastfetch");
+                            return Outcome::Consumed;
+                        }
+                        _ => {}
+                    }
+                }
+                if matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
+                    self.strip.set_focused(!self.strip.is_focused());
+                    return Outcome::Consumed;
+                }
                 let rows_height = self.rows_height.get();
                 match key.code {
                     KeyCode::Enter => {
@@ -689,12 +773,12 @@ impl Screen for AboutScreen {
                                 self.run_action(&action);
                             }
                         }
-                        return Outcome::Continue;
+                        return Outcome::Consumed;
                     }
                     KeyCode::Esc => {
                         if !self.list.filter().is_empty() {
                             self.list.set_filter("");
-                            return Outcome::Continue;
+                            return Outcome::Consumed;
                         }
                         return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
                     }
@@ -703,7 +787,8 @@ impl Screen for AboutScreen {
                             && !key.modifiers.contains(KeyModifiers::ALT)
                             && self.list.type_filter(key) =>
                     {
-                        return Outcome::Continue;
+                        self.status_note = None;
+                        return Outcome::Consumed;
                     }
                     _ => {}
                 }
@@ -711,9 +796,9 @@ impl Screen for AboutScreen {
                 Outcome::Continue
             }
             AboutMode::Detail => match key.code {
-                KeyCode::Esc => {
+                KeyCode::Esc | KeyCode::Char('q') => {
                     self.view_mode = AboutMode::List;
-                    Outcome::Continue
+                    Outcome::Consumed
                 }
                 KeyCode::Char('c') => {
                     let _ = std::process::Command::new("wl-copy")
@@ -723,43 +808,43 @@ impl Screen for AboutScreen {
                         .stderr(std::process::Stdio::null())
                         .status();
                     self.status_note = Some(format!("Copied {} to clipboard", self.detail_title));
-                    Outcome::Continue
+                    Outcome::Consumed
                 }
                 KeyCode::Up | KeyCode::Char('k') => {
                     let scroll = self.content_scroll.get();
                     if scroll > 0 {
                         self.content_scroll.set(scroll - 1);
                     }
-                    Outcome::Continue
+                    Outcome::Consumed
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
                     let scroll = self.content_scroll.get() as usize;
-                    let total = self.content.lines().count();
+                    let total = self.content_lines.len();
                     if scroll + 1 < total {
                         self.content_scroll.set((scroll + 1) as u16);
                     }
-                    Outcome::Continue
+                    Outcome::Consumed
                 }
                 KeyCode::PageUp => {
                     let scroll = self.content_scroll.get();
                     self.content_scroll.set(scroll.saturating_sub(15));
-                    Outcome::Continue
+                    Outcome::Consumed
                 }
                 KeyCode::PageDown => {
                     let scroll = self.content_scroll.get() as usize;
-                    let total = self.content.lines().count();
+                    let total = self.content_lines.len();
                     let next = (scroll + 15).min(total.saturating_sub(1));
                     self.content_scroll.set(next as u16);
-                    Outcome::Continue
+                    Outcome::Consumed
                 }
                 KeyCode::Home => {
                     self.content_scroll.set(0);
-                    Outcome::Continue
+                    Outcome::Consumed
                 }
                 KeyCode::End => {
-                    let total = self.content.lines().count();
+                    let total = self.content_lines.len();
                     self.content_scroll.set(total.saturating_sub(1) as u16);
-                    Outcome::Continue
+                    Outcome::Consumed
                 }
                 _ => Outcome::Continue,
             },
@@ -771,6 +856,18 @@ impl Screen for AboutScreen {
             return Outcome::Continue;
         }
         if let Some(row) = row {
+            if row >= ACTION_BASE {
+                let id = match row - ACTION_BASE {
+                    0 => "copy",
+                    1 => "errors",
+                    2 => "boot",
+                    3 => "devices",
+                    4 => "fastfetch",
+                    _ => "",
+                };
+                self.trigger_strip_action(id);
+                return Outcome::Consumed;
+            }
             self.list.set_cursor(row);
             if let Some(index) = self.list.selected_index() {
                 if let Some(action) = self.facts.get(index).and_then(|f| f.action.clone()) {
@@ -778,14 +875,19 @@ impl Screen for AboutScreen {
                 }
             }
         }
-        Outcome::Continue
+        Outcome::Consumed
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
         if self.view_mode != AboutMode::List {
             return None;
         }
-        let (_, _, rows) = Self::list_layout(area);
+        let (_, strip_rect, _, rows) = Self::list_layout(area);
+        if let Some(sr) = strip_rect {
+            if let Some(idx) = self.strip.hit_index(sr, x, y) {
+                return Some(ACTION_BASE + idx);
+            }
+        }
         self.list.hit_row(rows, x, y, design)
     }
 
@@ -809,29 +911,34 @@ impl Screen for AboutScreen {
 }
 
 impl AboutScreen {
-    fn list_layout(area: Rect) -> (Option<Rect>, Rect, Rect) {
+    fn list_layout(area: Rect) -> (Option<Rect>, Option<Rect>, Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
             y: area.y + 1,
             width: area.width.saturating_sub(4),
             height: area.height.saturating_sub(2),
         };
-        if inner.height >= 12 {
+        if inner.height >= 14 {
             let hero = Rect {
                 height: 2,
                 ..inner
             };
-            let filter = Rect {
+            let strip = Rect {
                 y: inner.y + 3,
                 height: 1,
                 ..inner
             };
-            let rows = Rect {
+            let filter = Rect {
                 y: inner.y + 5,
-                height: inner.height.saturating_sub(5),
+                height: 1,
                 ..inner
             };
-            (Some(hero), filter, rows)
+            let rows = Rect {
+                y: inner.y + 7,
+                height: inner.height.saturating_sub(7),
+                ..inner
+            };
+            (Some(hero), Some(strip), filter, rows)
         } else {
             let filter = Rect {
                 height: 1.min(inner.height),
@@ -842,7 +949,7 @@ impl AboutScreen {
                 height: inner.height.saturating_sub(2),
                 ..inner
             };
-            (None, filter, rows)
+            (None, None, filter, rows)
         }
     }
 }

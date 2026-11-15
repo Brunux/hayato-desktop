@@ -1156,6 +1156,13 @@ impl Screen for TaskView {
             0u16
         };
         if progress_height > 0 && y + progress_height <= card_inner.bottom() {
+            // Avoid drawing a second braille spinner on the progress bar when the
+            // active checklist step right above already renders one.
+            let progress_label = if self.task.steps.is_empty() {
+                self.task.spinner.running_label()
+            } else {
+                "running"
+            };
             draw_progress(
                 ctx.buf,
                 Rect {
@@ -1166,7 +1173,7 @@ impl Screen for TaskView {
                 },
                 ctx.design,
                 self.task.progress,
-                self.task.spinner.running_label(),
+                progress_label,
                 ColorRole::Accent,
             );
             y += progress_height * stride;

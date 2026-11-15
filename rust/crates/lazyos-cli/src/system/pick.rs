@@ -407,7 +407,13 @@ impl Screen for Picker {
         };
         match question {
             Question::Choose { .. } | Question::Rows { .. } => match key.code {
-                KeyCode::Esc => self.back(),
+                KeyCode::Esc => {
+                    if !self.list.filter().is_empty() {
+                        self.list.set_filter("");
+                        return Outcome::Consumed;
+                    }
+                    self.back()
+                }
                 _ => {
                     let typed = matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
                         && !key

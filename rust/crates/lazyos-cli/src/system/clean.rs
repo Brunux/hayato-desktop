@@ -13,8 +13,9 @@ use std::time::Duration;
 
 use lazyos_ui::widgets::{put, put_trunc};
 use lazyos_ui::{
-    ActionRunner, BodyCtx, ColorRole, Design, Glyph, Header, KeyHint, ListAction, ListState,
-    Outcome, Row, Screen, TextStyle, draw_badge, draw_card, draw_filter_bar, draw_gauge,
+    ActionItem, ActionRunner, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Design, Glyph,
+    Header, KeyHint, ListAction, ListState, Outcome, Row, Screen, TextStyle, draw_badge,
+    draw_card, draw_filter_bar, draw_gauge,
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -75,14 +76,28 @@ fn mini_bar(bytes: u64, max_bytes: u64) -> String {
     s
 }
 
-/// Recursively sum size of files in a directory.
+/// Fast directory size via `du -sb`, with recursive Rust fallback.
 pub fn dir_size(path: &Path) -> u64 {
+    if !path.exists() {
+        return 0;
+    }
+    if let Some( s ) = path.to_str()
+        && let Some(raw) = out(&["du", "-sb", s])
+        && let Some(first) = raw.split_whitespace().next()
+        && let Ok(bytes) = first.parse::<u64>()
+    {
+        return bytes;
+    }
+    dir_size_walk(path)
+}
+
+fn dir_size_walk(path: &Path) -> u64 {
     let mut total = 0;
     if let Ok(entries) = fs::read_dir(path) {
         for entry in entries.flatten() {
             if let Ok(ft) = entry.file_type() {
                 if ft.is_dir() {
-                    total += dir_size(&entry.path());
+                    total += dir_size_walk(&entry.path());
                 } else if let Ok(meta) = entry.metadata() {
                     total += meta.len();
                 }
@@ -128,9 +143,7 @@ pub fn calculate_reclaimable() -> Reclaimable {
     let apt_bytes = dir_size(apt_path);
     let cache_bytes = dir_size(&cache_path);
 
-    let journal_raw = out(&["journalctl", "--disk-usage"])
-        .or_else(|| sudo(&["journalctl", "--disk-usage"]).ok())
-        .unwrap_or_default();
+    let journal_raw = out(&["journalctl", "--disk-usage"]).unwrap_or_default();
     let journal_bytes = parse_journal_usage(&journal_raw);
 
     let df_out = out(&["df", "-h", "--output=avail,size,pcent", "/"]).unwrap_or_default();
@@ -187,15 +200,13 @@ enum CleanTarget {
     Apt,
     Journal,
     AllSafe,
-    InspectCache,
-    Rescan,
 }
 
 pub struct CleanScreen {
     rec: Option<Reclaimable>,
     targets: Vec<CleanTarget>,
+    strip: ActionStrip,
     runner: ActionRunner<CleanOp>,
-    banner: Option<(String, ColorRole)>,
     list: ListState,
     header: Header,
     keybar: Vec<KeyHint>,
@@ -213,14 +224,16 @@ impl CleanScreen {
         let mut screen = Self {
             rec: None,
             targets: Vec::new(),
+            strip: ActionStrip::default(),
             runner: ActionRunner::new(),
-            banner: None,
             list: ListState::new(),
             header: Header::new("Free space").subtitle("Disk cleaner"),
             keybar: vec![
-                KeyHint::new("Enter", "clean / open"),
-                KeyHint::new("r", "rescan"),
-                KeyHint::new("Esc", "close"),
+                KeyHint::new("Enter", "clean item"),
+                KeyHint::new("Tab", "actions"),
+                KeyHint::new("Ctrl+A", "clean all safe"),
+                KeyHint::new("Ctrl+R", "rescan"),
+                KeyHint::new("Esc", "back"),
             ],
             rows_height: Cell::new(16),
         };
@@ -244,7 +257,6 @@ impl CleanScreen {
             CleanTarget::Apt => "Cleaning APT package cache\u{2026}",
             CleanTarget::Journal => "Vacuuming systemd journal to 100 MB\u{2026}",
             CleanTarget::AllSafe => "Cleaning trash, thumbnails, APT & journal\u{2026}",
-            CleanTarget::InspectCache | CleanTarget::Rescan => return,
         };
         let before = self
             .rec
@@ -282,7 +294,6 @@ impl CleanScreen {
                     let _ = sudo(&["apt-get", "clean"]);
                     let _ = sudo(&["journalctl", "--vacuum-size=100M"]);
                 }
-                CleanTarget::InspectCache | CleanTarget::Rescan => {}
             }
             let rec = calculate_reclaimable();
             let after = rec.safe_reclaimable_bytes();
@@ -291,7 +302,9 @@ impl CleanScreen {
                 format!("Cleanup error: {err_msg}")
             } else {
                 match target {
-                    CleanTarget::Trash => format!("Trash emptied \u{00b7} freed {}", format_bytes(freed)),
+                    CleanTarget::Trash => {
+                        format!("Trash emptied \u{00b7} freed {}", format_bytes(freed))
+                    }
                     CleanTarget::Thumbnails => {
                         format!("Thumbnails removed \u{00b7} freed {}", format_bytes(freed))
                     }
@@ -302,7 +315,6 @@ impl CleanScreen {
                     CleanTarget::AllSafe => {
                         format!("Cleaned safe caches \u{00b7} freed {}", format_bytes(freed))
                     }
-                    _ => "Done".to_string(),
                 }
             };
             CleanOp::Cleaned { message, ok, rec }
@@ -311,6 +323,23 @@ impl CleanScreen {
     }
 
     fn rebuild_rows(&mut self, preserve: bool) {
+        let safe_label = match &self.rec {
+            Some(rec) => format!(
+                "Clean all safe ({})",
+                format_bytes(rec.safe_reclaimable_bytes())
+            ),
+            None => "Clean all safe".to_string(),
+        };
+        let cache_label = match &self.rec {
+            Some(rec) => format!("Inspect ~/.cache ({})", format_bytes(rec.cache_bytes)),
+            None => "Inspect ~/.cache".to_string(),
+        };
+        self.strip.set_items(vec![
+            ActionItem::new("all", "^A", safe_label).glyph(Glyph::Sparkles),
+            ActionItem::new("rescan", "^R", "Rescan").glyph(Glyph::Sync),
+            ActionItem::new("inspect", "^O", cache_label).glyph(Glyph::Folder),
+        ]);
+
         let mut rows = Vec::new();
         let mut targets = Vec::new();
 
@@ -320,24 +349,14 @@ impl CleanScreen {
                 rec.thumb_bytes,
                 rec.apt_bytes,
                 rec.journal_bytes,
-                rec.cache_bytes,
             ]
             .into_iter()
             .max()
             .unwrap_or(1)
             .max(1);
 
-            let safe_total = rec.safe_reclaimable_bytes();
             rows.push(
-                Row::new("Clean all safe caches")
-                    .glyph(Glyph::Sparkles)
-                    .detail("trash + thumbnails + apt archives + journal > 100 MB")
-                    .value(format_bytes(safe_total)),
-            );
-            targets.push(CleanTarget::AllSafe);
-
-            rows.push(
-                Row::new("Empty the trash")
+                Row::new("Trash")
                     .glyph(Glyph::Trash)
                     .detail(format!(
                         "{}  ~/.local/share/Trash",
@@ -348,7 +367,7 @@ impl CleanScreen {
             targets.push(CleanTarget::Trash);
 
             rows.push(
-                Row::new("Remove thumbnails")
+                Row::new("Thumbnails")
                     .glyph(Glyph::Image)
                     .detail(format!(
                         "{}  ~/.cache/thumbnails",
@@ -359,7 +378,7 @@ impl CleanScreen {
             targets.push(CleanTarget::Thumbnails);
 
             rows.push(
-                Row::new("Clean the package cache")
+                Row::new("APT package cache")
                     .glyph(Glyph::Box)
                     .detail(format!(
                         "{}  /var/cache/apt/archives",
@@ -370,77 +389,45 @@ impl CleanScreen {
             targets.push(CleanTarget::Apt);
 
             rows.push(
-                Row::new("Shrink journal to 100 MB")
+                Row::new("Systemd journal logs")
                     .glyph(Glyph::Book)
                     .detail(format!(
-                        "{}  systemd journal logs",
+                        "{}  shrink to \u{2264} 100 MB",
                         mini_bar(rec.journal_bytes, max_cat)
                     ))
                     .value(format_bytes(rec.journal_bytes)),
             );
             targets.push(CleanTarget::Journal);
-
-            rows.push(
-                Row::new("Your cache (~/.cache)")
-                    .glyph(Glyph::Folder)
-                    .detail(format!(
-                        "{}  open in file browser to inspect",
-                        mini_bar(rec.cache_bytes, max_cat)
-                    ))
-                    .value(format_bytes(rec.cache_bytes)),
-            );
-            targets.push(CleanTarget::InspectCache);
-
-            rows.push(
-                Row::new("Rescan disk usage")
-                    .glyph(Glyph::Sync)
-                    .detail("recalculate directory sizes (r)"),
-            );
-            targets.push(CleanTarget::Rescan);
         } else {
             let calc = "calculating\u{2026}";
             rows.push(
-                Row::new("Clean all safe caches")
-                    .glyph(Glyph::Sparkles)
-                    .detail("trash + thumbnails + apt archives + journal > 100 MB")
-                    .value(calc),
-            );
-            targets.push(CleanTarget::AllSafe);
-            rows.push(
-                Row::new("Empty the trash")
+                Row::new("Trash")
                     .glyph(Glyph::Trash)
                     .detail("~/.local/share/Trash")
                     .value(calc),
             );
             targets.push(CleanTarget::Trash);
             rows.push(
-                Row::new("Remove thumbnails")
+                Row::new("Thumbnails")
                     .glyph(Glyph::Image)
                     .detail("~/.cache/thumbnails")
                     .value(calc),
             );
             targets.push(CleanTarget::Thumbnails);
             rows.push(
-                Row::new("Clean the package cache")
+                Row::new("APT package cache")
                     .glyph(Glyph::Box)
                     .detail("/var/cache/apt/archives")
                     .value(calc),
             );
             targets.push(CleanTarget::Apt);
             rows.push(
-                Row::new("Shrink journal to 100 MB")
+                Row::new("Systemd journal logs")
                     .glyph(Glyph::Book)
-                    .detail("systemd journal logs")
+                    .detail("shrink to \u{2264} 100 MB")
                     .value(calc),
             );
             targets.push(CleanTarget::Journal);
-            rows.push(
-                Row::new("Your cache (~/.cache)")
-                    .glyph(Glyph::Folder)
-                    .detail("open in file browser to inspect")
-                    .value(calc),
-            );
-            targets.push(CleanTarget::InspectCache);
         }
 
         self.targets = targets;
@@ -458,8 +445,8 @@ impl CleanScreen {
                 self.runner.spinner(),
                 self.runner.label().unwrap_or("Scanning\u{2026}")
             )
-        } else if let Some((msg, _)) = &self.banner {
-            msg.clone()
+        } else if let Some(notice) = self.runner.notice() {
+            notice.text.clone()
         } else if let Some(rec) = &self.rec {
             format!(
                 "{} free of {} \u{00b7} {} reclaimable",
@@ -475,7 +462,7 @@ impl CleanScreen {
             .status(status);
     }
 
-    fn layout(area: Rect) -> (Rect, Rect, Rect) {
+    fn layout(area: Rect) -> (Rect, Rect, Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
             y: area.y + 1,
@@ -488,20 +475,26 @@ impl CleanScreen {
             width: inner.width,
             height: 2.min(inner.height),
         };
-        let filter = Rect {
+        let strip = Rect {
             x: inner.x,
             y: inner.y.saturating_add(2).min(inner.bottom()),
             width: inner.width,
             height: 1.min(inner.height.saturating_sub(2)),
         };
-        let rows_y = inner.y.saturating_add(4).min(inner.bottom());
+        let filter = Rect {
+            x: inner.x,
+            y: inner.y.saturating_add(4).min(inner.bottom()),
+            width: inner.width,
+            height: 1.min(inner.height.saturating_sub(4)),
+        };
+        let rows_y = inner.y.saturating_add(6).min(inner.bottom());
         let rows = Rect {
             x: inner.x,
             y: rows_y,
             width: inner.width,
             height: inner.bottom().saturating_sub(rows_y),
         };
-        (hero, filter, rows)
+        (hero, strip, filter, rows)
     }
 
     fn draw_hero(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
@@ -509,7 +502,33 @@ impl CleanScreen {
             return;
         }
         let y = area.y;
-        if let Some(rec) = &self.rec {
+        if self.runner.is_running() {
+            let badge = format!("{} WORKING", self.runner.spinner());
+            let x = draw_badge(buf, area.x, y, design, &badge, ColorRole::Accent);
+            let _ = put_trunc(
+                buf,
+                x + 2,
+                y,
+                self.runner.label().unwrap_or("Working\u{2026}"),
+                area.right().saturating_sub(x + 2),
+                design.style(TextStyle::Title),
+            );
+        } else if let Some(notice) = self.runner.notice() {
+            let (badge_txt, role, style) = if notice.is_error {
+                ("ERROR", ColorRole::Danger, design.style(TextStyle::Danger))
+            } else {
+                ("\u{2714} CLEANED", ColorRole::Ok, design.style(TextStyle::Title))
+            };
+            let x = draw_badge(buf, area.x, y, design, badge_txt, role);
+            let _ = put_trunc(
+                buf,
+                x + 2,
+                y,
+                &notice.text,
+                area.right().saturating_sub(x + 2),
+                style,
+            );
+        } else if let Some(rec) = &self.rec {
             let role = if rec.used_ratio >= 90 {
                 ColorRole::Danger
             } else if rec.used_ratio >= 75 {
@@ -574,15 +593,20 @@ impl CleanScreen {
         }
     }
 
-    fn activate(&mut self, index: usize) -> Outcome {
+    fn run_strip_action(&mut self, id: &'static str) -> Outcome {
         if self.runner.is_running() {
             return Outcome::Consumed;
         }
-        let Some(&target) = self.targets.get(index) else {
-            return Outcome::Continue;
-        };
-        match target {
-            CleanTarget::InspectCache => {
+        match id {
+            "all" => {
+                self.start_clean(CleanTarget::AllSafe);
+                Outcome::Consumed
+            }
+            "rescan" => {
+                self.start_scan();
+                Outcome::Consumed
+            }
+            "inspect" => {
                 let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
                 let cache_dir = Path::new(&home).join(".cache");
                 crate::system::spawn_detached(&format!(
@@ -591,17 +615,19 @@ impl CleanScreen {
                 ));
                 Outcome::Done(lazyos_ui::app::exit::OK)
             }
-            CleanTarget::Rescan => {
-                self.banner = None;
-                self.start_scan();
-                Outcome::Consumed
-            }
-            _ => {
-                self.banner = None;
-                self.start_clean(target);
-                Outcome::Consumed
-            }
+            _ => Outcome::Consumed,
         }
+    }
+
+    fn activate(&mut self, index: usize) -> Outcome {
+        if self.runner.is_running() {
+            return Outcome::Consumed;
+        }
+        let Some(&target) = self.targets.get(index) else {
+            return Outcome::Continue;
+        };
+        self.start_clean(target);
+        Outcome::Consumed
     }
 }
 
@@ -615,42 +641,39 @@ impl Screen for CleanScreen {
     }
 
     fn tick(&mut self) -> Outcome {
-        self.runner.tick();
         if let Some(op) = self.runner.poll() {
             match op {
                 CleanOp::Measured(rec) => {
                     self.rec = Some(rec);
                     self.rebuild_rows(true);
+                    // Routine measurement clears the scanning banner immediately.
+                    self.runner.clear_status();
                 }
                 CleanOp::Cleaned { message, ok, rec } => {
                     self.rec = Some(rec);
                     self.rebuild_rows(true);
-                    self.banner = Some((
-                        message,
-                        if ok { ColorRole::Ok } else { ColorRole::Danger },
-                    ));
+                    // Override auto-hide after cleanup so the user sees how much space was freed
+                    // (or why cleanup failed) until the next action.
+                    if ok {
+                        self.runner.set_persistent_info(message);
+                    } else {
+                        self.runner.set_persistent_error(message);
+                    }
                 }
             }
             self.sync_chrome();
             return Outcome::Continue;
         }
-        if self.runner.is_running() {
-            self.sync_chrome();
-        }
+        self.sync_chrome();
         Outcome::Continue
     }
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Free space"), true);
-        let (hero, filter, rows) = Self::layout(ctx.area);
+        let (hero, strip, filter, rows) = Self::layout(ctx.area);
         self.draw_hero(ctx.buf, hero, ctx.design);
-        let hint = if self.runner.is_running() {
-            self.runner.label().unwrap_or("Working\u{2026}")
-        } else if let Some((msg, _)) = &self.banner {
-            msg.as_str()
-        } else {
-            "Enter cleans selected cache \u{00b7} r rescans \u{00b7} Escape closes"
-        };
+        self.strip.render(strip, ctx.buf, ctx.design);
+        let hint = "Enter cleans selected category \u{00b7} Tab focuses actions \u{00b7} Ctrl+A cleans all safe";
         draw_filter_bar(
             ctx.buf,
             filter,
@@ -661,12 +684,18 @@ impl Screen for CleanScreen {
             self.list.len(),
         );
         self.rows_height.set(rows.height);
-        self.list.render(rows, ctx.buf, ctx.design, true);
+        self.list
+            .render(rows, ctx.buf, ctx.design, !self.strip.is_focused());
     }
 
     fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
+        }
+        match self.strip.handle(key) {
+            ActionStripEvent::Activated(id) => return self.run_strip_action(id),
+            ActionStripEvent::Consumed => return Outcome::Consumed,
+            ActionStripEvent::Ignored => {}
         }
         if key.code == KeyCode::Esc {
             if !self.list.filter().is_empty() {
@@ -675,12 +704,19 @@ impl Screen for CleanScreen {
             }
             return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
         }
-        if self.list.filter().is_empty() && key.code == KeyCode::Char('r') {
-            if !self.runner.is_running() {
-                self.banner = None;
-                self.start_scan();
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('a') | KeyCode::Char('A') => {
+                    return self.run_strip_action("all");
+                }
+                KeyCode::Char('r') | KeyCode::Char('R') => {
+                    return self.run_strip_action("rescan");
+                }
+                KeyCode::Char('o') | KeyCode::Char('O') => {
+                    return self.run_strip_action("inspect");
+                }
+                _ => {}
             }
-            return Outcome::Consumed;
         }
         let typed = matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
             && !key.modifiers.contains(KeyModifiers::CONTROL);
@@ -696,6 +732,14 @@ impl Screen for CleanScreen {
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
         if let Some(row) = row {
+            if row >= 10_000 {
+                let strip_idx = row - 10_000;
+                if let Some(item) = self.strip.items().get(strip_idx) {
+                    return self.run_strip_action(item.id);
+                }
+                return Outcome::Consumed;
+            }
+            self.strip.set_focused(false);
             self.list.set_cursor(row);
             if let Some(index) = self.list.selected_index() {
                 return self.activate(index);
@@ -705,7 +749,20 @@ impl Screen for CleanScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        let (_, _, rows) = Self::layout(area);
+        let (_, strip, _, rows) = Self::layout(area);
+        if y == strip.y && x >= strip.x && x < strip.right() {
+            let mut col = strip.x;
+            for (idx, item) in self.strip.items().iter().enumerate() {
+                let w = 4
+                    + item.key.len() as u16
+                    + item.label.len() as u16
+                    + item.glyph.map(|_| 2).unwrap_or(0);
+                if x >= col && x < col + w {
+                    return Some(10_000 + idx);
+                }
+                col += w + 1;
+            }
+        }
         self.list.hit_row(rows, x, y, design)
     }
 

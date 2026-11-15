@@ -11,8 +11,9 @@ use std::cell::Cell;
 
 use lazyos_theme::Rgb;
 use lazyos_ui::{
-    BodyCtx, Card, ColorRole, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row,
-    Screen, TextStyle, Urgency, draw_badge, draw_card, draw_filter_bar, draw_gauge,
+    ActionItem, ActionStrip, ActionStripEvent, BodyCtx, Card, ColorRole, Design, Glyph, Header,
+    KeyHint, ListAction, ListState, Outcome, Row, Screen, TextStyle, Urgency, draw_badge,
+    draw_card, draw_filter_bar, draw_gauge,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
@@ -25,6 +26,7 @@ const NEEDED: &[&str] = &["slurp", "grim", "ffmpeg"];
 /// The colour screen: dual-pane truecolor swatch inspector + searchable palette list.
 pub struct ColourScreen {
     picked: Option<Colour>,
+    strip: ActionStrip,
     list: ListState,
     header: Header,
     keybar: Vec<KeyHint>,
@@ -73,15 +75,20 @@ impl Colour {
 
 impl ColourScreen {
     pub fn new() -> Self {
-        let list = ListState::new().with_empty("pick a pixel to see its colour");
+        let list = ListState::new().with_empty("no matching palette swatches");
+        let strip = ActionStrip::new(vec![
+            ActionItem::new("pick", "^P", "Pick a pixel").glyph(Glyph::Brush),
+        ]);
         Self {
             picked: None,
+            strip,
             list,
             header: Header::new("LazyOS").subtitle("Colour"),
             keybar: vec![
-                KeyHint::new("Enter", "copy / pick"),
-                KeyHint::new("type", "filter"),
-                KeyHint::new("Esc", "close"),
+                KeyHint::new("Enter", "copy hex"),
+                KeyHint::new("Ctrl+P", "pick pixel"),
+                KeyHint::new("Tab", "actions"),
+                KeyHint::new("Esc", "back"),
             ],
             rows_height: Cell::new(20),
             status_note: None,
@@ -171,12 +178,6 @@ notify-send -a LazyOS -i color-picker "Colour" "$hex copied to the clipboard (${
 
     fn build_rows(&mut self) {
         let mut rows = Vec::new();
-        rows.push(
-            Row::new("Pick a pixel")
-                .glyph(Glyph::Brush)
-                .detail("the colour under the pointer, to the clipboard")
-                .value("pick"),
-        );
         if let Some(c) = &self.picked {
             rows.push(
                 Row::new(format!("Picked: {}", c.hex))
@@ -222,7 +223,7 @@ notify-send -a LazyOS -i color-picker "Colour" "$hex copied to the clipboard (${
 impl Screen for ColourScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Colour"), true);
-        let (left_pane, filter, rows) = Self::layout(ctx.area);
+        let (left_pane, strip_rect, filter, rows) = Self::layout(ctx.area);
 
         if let Some(lp) = left_pane {
             let c = self.selected_colour();
@@ -323,33 +324,51 @@ impl Screen for ColourScreen {
             }
         }
 
+        self.strip.render(strip_rect, ctx.buf, ctx.design);
         let note = self
             .status_note
             .as_deref()
-            .unwrap_or("Enter copies or picks a pixel · type to filter");
+            .unwrap_or("Enter copies hex · Ctrl+P picks pixel · type to filter");
         draw_filter_bar(
             ctx.buf,
             filter,
             ctx.design,
             self.list.filter(),
             note,
+            self.list.visible_len(),
             self.list.len(),
-            self.list.rows().len(),
         );
         self.rows_height.set(rows.height);
-        self.list.render(rows, ctx.buf, ctx.design, true);
+        self.list
+            .render(rows, ctx.buf, ctx.design, !self.strip.is_focused());
     }
 
     fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
         }
+        match self.strip.handle(key) {
+            ActionStripEvent::Activated("pick") => {
+                Self::pick_detached();
+                return Outcome::Done(lazyos_ui::app::exit::OK);
+            }
+            ActionStripEvent::Activated(_) | ActionStripEvent::Consumed => {
+                return Outcome::Consumed;
+            }
+            ActionStripEvent::Ignored => {}
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('p') | KeyCode::Char('P'))
+        {
+            Self::pick_detached();
+            return Outcome::Done(lazyos_ui::app::exit::OK);
+        }
         let rows_height = self.rows_height.get();
         match key.code {
             KeyCode::Esc => {
                 if !self.list.filter().is_empty() {
                     self.list.set_filter("");
-                    return Outcome::Continue;
+                    return Outcome::Consumed;
                 }
                 return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
             }
@@ -363,7 +382,7 @@ impl Screen for ColourScreen {
                     && !key.modifiers.contains(KeyModifiers::ALT)
                     && self.list.type_filter(key) =>
             {
-                return Outcome::Continue;
+                return Outcome::Consumed;
             }
             _ => {}
         }
@@ -375,6 +394,11 @@ impl Screen for ColourScreen {
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
         if let Some(row) = row {
+            if row == 10_000 {
+                Self::pick_detached();
+                return Outcome::Done(lazyos_ui::app::exit::OK);
+            }
+            self.strip.set_focused(false);
             self.list.set_cursor(row);
             if let Some(index) = self.list.selected_index() {
                 return self.activate(index);
@@ -384,7 +408,10 @@ impl Screen for ColourScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        let (_, _, rows) = Self::layout(area);
+        let (_, strip, _, rows) = Self::layout(area);
+        if y == strip.y && x >= strip.x && x < strip.right() {
+            return Some(10_000);
+        }
         self.list.hit_row(rows, x, y, design)
     }
 
@@ -402,41 +429,52 @@ impl Screen for ColourScreen {
 }
 
 impl ColourScreen {
-    fn layout(area: Rect) -> (Option<Rect>, Rect, Rect) {
+    fn layout(area: Rect) -> (Option<Rect>, Rect, Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
             y: area.y + 1,
             width: area.width.saturating_sub(4),
             height: area.height.saturating_sub(2),
         };
-        if inner.width >= 60 && inner.height >= 10 {
+        let (left, right) = if inner.width >= 60 && inner.height >= 10 {
             let left_w = 26;
-            let left = Rect {
-                x: inner.x,
-                y: inner.y,
-                width: left_w,
-                height: inner.height,
-            };
-            let right = Rect {
-                x: inner.x + left_w + 2,
-                y: inner.y,
-                width: inner.width.saturating_sub(left_w + 2),
-                height: inner.height,
-            };
-            let filter = Rect {
-                height: 1.min(right.height),
-                ..right
-            };
-            let rows = Rect {
-                y: right.y + 2,
-                height: right.height.saturating_sub(2),
-                ..right
-            };
-            (Some(left), filter, rows)
+            (
+                Some(Rect {
+                    x: inner.x,
+                    y: inner.y,
+                    width: left_w,
+                    height: inner.height,
+                }),
+                Rect {
+                    x: inner.x + left_w + 2,
+                    y: inner.y,
+                    width: inner.width.saturating_sub(left_w + 2),
+                    height: inner.height,
+                },
+            )
         } else {
-            let (filter, rows) = super::pick::list_layout(area);
-            (None, filter, rows)
-        }
+            (None, inner)
+        };
+        let strip = Rect {
+            x: right.x,
+            y: right.y,
+            width: right.width,
+            height: 1.min(right.height),
+        };
+        let filter = Rect {
+            x: right.x,
+            y: right.y.saturating_add(2).min(right.bottom()),
+            width: right.width,
+            height: 1.min(right.height.saturating_sub(2)),
+        };
+        let rows_y = right.y.saturating_add(4).min(right.bottom());
+        let rows = Rect {
+            x: right.x,
+            y: rows_y,
+            width: right.width,
+            height: right.bottom().saturating_sub(rows_y),
+        };
+        (left, strip, filter, rows)
     }
 
     fn activate(&mut self, index: usize) -> Outcome {
@@ -447,10 +485,7 @@ impl ColourScreen {
         let Some(key) = row.value.as_deref() else {
             return Outcome::Continue;
         };
-        if key == "pick" {
-            Self::pick_detached();
-            Outcome::Done(lazyos_ui::app::exit::OK)
-        } else if let Some(hex) = key.strip_prefix("hex:").map(|s| s.to_uppercase()) {
+        if let Some(hex) = key.strip_prefix("hex:").map(|s| s.to_uppercase()) {
             let _ = std::process::Command::new("wl-copy")
                 .arg(&hex)
                 .stdin(std::process::Stdio::null())
@@ -458,7 +493,7 @@ impl ColourScreen {
                 .stderr(std::process::Stdio::null())
                 .status();
             self.status_note = Some(format!("Copied {hex} to the clipboard"));
-            Outcome::Continue
+            Outcome::Consumed
         } else {
             Outcome::Continue
         }
@@ -490,9 +525,10 @@ mod tests {
     fn colour_palette_is_complete() {
         let mut screen = ColourScreen::new();
         screen.build_rows();
-        // 1 pick row + 16 solarized palette swatches = 17 rows
-        assert_eq!(screen.list.rows().len(), 17);
-        assert_eq!(screen.list.rows()[0].value.as_deref(), Some("pick"));
-        assert_eq!(screen.list.rows()[1].value.as_deref(), Some("hex:#002b36"));
+        // Pick action lives in ActionStrip; list contains strictly the 16 solarized palette swatches.
+        assert_eq!(screen.strip.items().len(), 1);
+        assert_eq!(screen.strip.items()[0].id, "pick");
+        assert_eq!(screen.list.rows().len(), 16);
+        assert_eq!(screen.list.rows()[0].value.as_deref(), Some("hex:#002b36"));
     }
 }

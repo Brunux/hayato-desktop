@@ -43,11 +43,11 @@ pub use design::{Border, ColorRole, Density, Design, GLYPHS, Space, TextStyle};
 pub use glyphs::Glyph;
 pub use task::{Step, StepState, Task, TaskState, TaskView};
 pub use widgets::{
-    ActionRunner, BRAILLE_SPINNER, Confirm, ConfirmAction, Header, Input, InputAction, KeyHint,
-    ListAction, ListState, LogPane, QrCode, Row, Tier, centered, draw_badge, draw_card,
-    draw_card_with, draw_empty, draw_failure, draw_filter_bar, draw_gauge, draw_header,
-    draw_keybar, draw_progress, draw_qr, draw_scrollbar, draw_signal_bars, list_layout,
-    signal_bars,
+    ActionItem, ActionNotice, ActionRunner, ActionStrip, ActionStripEvent, BRAILLE_SPINNER,
+    Confirm, ConfirmAction, Header, Input, InputAction, KeyHint, ListAction, ListState, LogPane,
+    QrCode, Row, Tier, centered, draw_badge, draw_card, draw_card_with, draw_empty, draw_failure,
+    draw_filter_bar, draw_gauge, draw_header, draw_keybar, draw_progress, draw_qr, draw_scrollbar,
+    draw_signal_bars, list_layout, signal_bars,
 };
 
 /// A buffer as text, one line per row, for tests that want to read the screen

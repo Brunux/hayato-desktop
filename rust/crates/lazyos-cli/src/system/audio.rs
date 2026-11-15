@@ -11,8 +11,9 @@ use std::process::{Command, Stdio};
 
 use lazyos_ui::widgets::{put, put_trunc};
 use lazyos_ui::{
-    BodyCtx, ColorRole, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row,
-    Screen, TextStyle, draw_badge, draw_card, draw_filter_bar, draw_gauge,
+    ActionItem, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Design, Glyph, Header, KeyHint,
+    ListAction, ListState, Outcome, Row, Screen, TextStyle, draw_badge, draw_card, draw_filter_bar,
+    draw_gauge,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
@@ -107,6 +108,7 @@ pub struct AudioScreen {
     source_volume: u8,
     source_muted: bool,
     status: String,
+    strip: ActionStrip,
     list: ListState,
     header: Header,
     keybar: Vec<KeyHint>,
@@ -128,15 +130,17 @@ impl AudioScreen {
             default_sink: String::new(),
             source_volume: 0,
             source_muted: false,
-            status: "Enter switches default \u{00b7} \u{2190}/\u{2192} adjusts volume \u{00b7} m mutes"
+            status: "Enter switches default \u{00b7} \u{2190}/\u{2192} adjusts volume \u{00b7} Tab focuses actions"
                 .to_string(),
+            strip: ActionStrip::default(),
             list: ListState::new(),
             header: Header::new("LazyOS").subtitle("Audio output"),
             keybar: vec![
-                KeyHint::new("Enter", "switch / run"),
+                KeyHint::new("Enter", "switch output"),
                 KeyHint::new("\u{2190}/\u{2192}", "volume \u{00b1}5%"),
-                KeyHint::new("m", "mute"),
-                KeyHint::new("Esc", "close"),
+                KeyHint::new("Tab", "actions"),
+                KeyHint::new("Ctrl+M", "mute"),
+                KeyHint::new("Esc", "back"),
             ],
             rows_height: Cell::new(16),
         };
@@ -163,6 +167,27 @@ impl AudioScreen {
     }
 
     fn build_rows(&mut self, preserve: bool) {
+        let out_muted = self
+            .sinks
+            .iter()
+            .find(|s| s.is_default)
+            .is_some_and(|s| s.muted);
+        let out_label = if out_muted {
+            "Unmute output"
+        } else {
+            "Mute output"
+        };
+        let mic_label = if self.source_muted {
+            "Unmute mic"
+        } else {
+            "Mute mic"
+        };
+        self.strip.set_items(vec![
+            ActionItem::new("mute-sink", "^M", out_label).glyph(Glyph::Volume),
+            ActionItem::new("mute-source", "^I", mic_label).glyph(Glyph::Mic),
+            ActionItem::new("pavucontrol", "^P", "Mixer (pavucontrol)").glyph(Glyph::Sliders),
+        ]);
+
         let mut rows = Vec::new();
         let mut keys = Vec::new();
         if self.sinks.is_empty() {
@@ -195,38 +220,6 @@ impl AudioScreen {
                 );
             }
         }
-        keys.push("mute-sink".to_string());
-        let sink_mute_val = if self.sinks.iter().find(|s| s.is_default).is_some_and(|s| s.muted) {
-            "muted"
-        } else {
-            "active"
-        };
-        rows.push(
-            Row::new("Mute / unmute output")
-                .glyph(Glyph::Volume)
-                .detail("toggle the default sink mute (or press m)")
-                .value(sink_mute_val),
-        );
-
-        keys.push("mute-source".to_string());
-        let mic_val = if self.source_muted {
-            "muted"
-        } else {
-            "active"
-        };
-        rows.push(
-            Row::new("Mute / unmute microphone")
-                .glyph(Glyph::Mic)
-                .detail("toggle the default input source mute")
-                .value(mic_val),
-        );
-
-        keys.push("pavucontrol".to_string());
-        rows.push(
-            Row::new("Volume per application")
-                .glyph(Glyph::Sliders)
-                .detail("open pavucontrol for per-stream volume, ports, and profiles"),
-        );
 
         self.keys = keys;
         if preserve {
@@ -295,7 +288,7 @@ impl AudioScreen {
         self.reload(true);
     }
 
-    fn layout(area: Rect) -> (Rect, Rect, Rect) {
+    fn layout(area: Rect) -> (Rect, Rect, Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
             y: area.y + 1,
@@ -308,20 +301,26 @@ impl AudioScreen {
             width: inner.width,
             height: 3.min(inner.height),
         };
-        let filter = Rect {
+        let strip = Rect {
             x: inner.x,
             y: inner.y.saturating_add(3).min(inner.bottom()),
             width: inner.width,
             height: 1.min(inner.height.saturating_sub(3)),
         };
-        let rows_y = inner.y.saturating_add(5).min(inner.bottom());
+        let filter = Rect {
+            x: inner.x,
+            y: inner.y.saturating_add(5).min(inner.bottom()),
+            width: inner.width,
+            height: 1.min(inner.height.saturating_sub(5)),
+        };
+        let rows_y = inner.y.saturating_add(7).min(inner.bottom());
         let rows = Rect {
             x: inner.x,
             y: rows_y,
             width: inner.width,
             height: inner.bottom().saturating_sub(rows_y),
         };
-        (hero, filter, rows)
+        (hero, strip, filter, rows)
     }
 
     fn draw_hero(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
@@ -432,8 +431,9 @@ impl Screen for AudioScreen {
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Audio output"), true);
-        let (hero, filter, rows) = Self::layout(ctx.area);
+        let (hero, strip, filter, rows) = Self::layout(ctx.area);
         self.draw_hero(ctx.buf, hero, ctx.design);
+        self.strip.render(strip, ctx.buf, ctx.design);
         draw_filter_bar(
             ctx.buf,
             filter,
@@ -444,12 +444,32 @@ impl Screen for AudioScreen {
             self.list.len(),
         );
         self.rows_height.set(rows.height);
-        self.list.render(rows, ctx.buf, ctx.design, true);
+        self.list
+            .render(rows, ctx.buf, ctx.design, !self.strip.is_focused());
     }
 
     fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
+        }
+        match self.strip.handle(key) {
+            ActionStripEvent::Activated(id) => return self.run_strip_action(id),
+            ActionStripEvent::Consumed => return Outcome::Consumed,
+            ActionStripEvent::Ignored => {}
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('m') | KeyCode::Char('M') => {
+                    return self.run_strip_action("mute-sink");
+                }
+                KeyCode::Char('i') | KeyCode::Char('I') => {
+                    return self.run_strip_action("mute-source");
+                }
+                KeyCode::Char('p') | KeyCode::Char('P') => {
+                    return self.run_strip_action("pavucontrol");
+                }
+                _ => {}
+            }
         }
         let rows_height = self.rows_height.get();
         match key.code {
@@ -466,10 +486,6 @@ impl Screen for AudioScreen {
             }
             KeyCode::Right | KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.adjust_volume(5);
-                return Outcome::Consumed;
-            }
-            KeyCode::Char('m') if self.list.filter().is_empty() => {
-                self.toggle_selected_mute();
                 return Outcome::Consumed;
             }
             KeyCode::Enter => {
@@ -493,6 +509,14 @@ impl Screen for AudioScreen {
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
         if let Some(row) = row {
+            if row >= 10_000 {
+                let strip_idx = row - 10_000;
+                if let Some(item) = self.strip.items().get(strip_idx) {
+                    return self.run_strip_action(item.id);
+                }
+                return Outcome::Consumed;
+            }
+            self.strip.set_focused(false);
             self.list.set_cursor(row);
             if let Some(index) = self.list.selected_index() {
                 return self.activate(index);
@@ -502,7 +526,20 @@ impl Screen for AudioScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        let (_, _, rows) = Self::layout(area);
+        let (_, strip, _, rows) = Self::layout(area);
+        if y == strip.y && x >= strip.x && x < strip.right() {
+            let mut col = strip.x;
+            for (idx, item) in self.strip.items().iter().enumerate() {
+                let w = 4
+                    + item.key.len() as u16
+                    + item.label.len() as u16
+                    + item.glyph.map(|_| 2).unwrap_or(0);
+                if x >= col && x < col + w {
+                    return Some(10_000 + idx);
+                }
+                col += w + 1;
+            }
+        }
         self.list.hit_row(rows, x, y, design)
     }
 
@@ -516,6 +553,38 @@ impl Screen for AudioScreen {
 }
 
 impl AudioScreen {
+    fn run_strip_action(&mut self, id: &'static str) -> Outcome {
+        match id {
+            "pavucontrol" => {
+                crate::system::spawn_detached("exec pavucontrol");
+                Outcome::Done(lazyos_ui::app::exit::OK)
+            }
+            "mute-sink" => {
+                let _ = Command::new("pactl")
+                    .args(["set-sink-mute", "@DEFAULT_SINK@", "toggle"])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+                self.status = "Toggled default output mute".to_string();
+                self.reload(true);
+                Outcome::Consumed
+            }
+            "mute-source" => {
+                let _ = Command::new("pactl")
+                    .args(["set-source-mute", "@DEFAULT_SOURCE@", "toggle"])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+                self.status = "Toggled default microphone mute".to_string();
+                self.reload(true);
+                Outcome::Consumed
+            }
+            _ => Outcome::Consumed,
+        }
+    }
+
     fn activate(&mut self, index: usize) -> Outcome {
         let rows = self.list.rows();
         if index >= rows.len() {

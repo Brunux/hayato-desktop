@@ -177,11 +177,19 @@ pub fn menu(
                     );
                     continue;
                 }
-                return ask_kind_and_download(terminal, design, url);
+                let res = ask_kind_and_download(terminal, design, url)?;
+                if res == lazyos_ui::app::exit::ESCAPE {
+                    continue;
+                }
+                return Ok(res);
             }
             act if act.starts_with("clip:") => {
                 let url = &act[5..];
-                return ask_kind_and_download(terminal, design, url);
+                let res = ask_kind_and_download(terminal, design, url)?;
+                if res == lazyos_ui::app::exit::ESCAPE {
+                    continue;
+                }
+                return Ok(res);
             }
             _ => return Ok(0),
         }

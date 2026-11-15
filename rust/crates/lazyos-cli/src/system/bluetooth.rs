@@ -12,8 +12,9 @@ use std::time::Duration;
 
 use lazyos_ui::widgets::{put, put_trunc};
 use lazyos_ui::{
-    ActionRunner, BodyCtx, ColorRole, Design, Glyph, Header, KeyHint, ListAction, ListState,
-    Outcome, Row, Screen, TextStyle, draw_badge, draw_card, draw_filter_bar,
+    ActionItem, ActionRunner, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Design, Glyph,
+    Header, KeyHint, ListAction, ListState, Outcome, Row, Screen, TextStyle, draw_badge,
+    draw_card, draw_empty, draw_filter_bar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
@@ -45,15 +46,6 @@ struct Device {
     connected: bool,
 }
 
-#[derive(Clone, Debug)]
-enum BtAction {
-    PowerOn,
-    PowerOff,
-    Scan,
-    ToggleDevice(Device),
-    OpenCtl,
-}
-
 enum BtOp {
     Scanned {
         powered: bool,
@@ -72,13 +64,13 @@ enum BtOp {
     },
 }
 
-/// The bluetooth screen.
+/// The bluetooth screen, sharing the same visual structure and action-strip
+/// separation as `NetScreen` (`menu net`).
 pub struct BluetoothScreen {
     devices: Vec<Device>,
     powered: bool,
-    actions: Vec<BtAction>,
+    strip: ActionStrip,
     runner: ActionRunner<BtOp>,
-    banner: Option<(String, ColorRole)>,
     list: ListState,
     header: Header,
     keybar: Vec<KeyHint>,
@@ -102,16 +94,11 @@ impl BluetoothScreen {
         let mut screen = Self {
             devices,
             powered,
-            actions: Vec::new(),
+            strip: ActionStrip::default(),
             runner: ActionRunner::new(),
-            banner: None,
             list: ListState::new(),
-            header: Header::new("LazyOS").subtitle("Bluetooth"),
-            keybar: vec![
-                KeyHint::new("Enter", "connect / toggle"),
-                KeyHint::new("Ctrl+S", "scan"),
-                KeyHint::new("Esc", "close"),
-            ],
+            header: Header::new("Bluetooth").subtitle("Devices"),
+            keybar: Vec::new(),
             rows_height: Cell::new(16),
         };
         screen.build_rows(false);
@@ -136,13 +123,12 @@ impl BluetoothScreen {
             };
             BtOp::Scanned { powered, devices }
         });
-        self.build_rows(true);
         self.sync_chrome();
     }
 
     fn start_power_on(&mut self) {
         self.runner
-            .spawn("Powering on Bluetooth & scanning\u{2026}", move || {
+            .spawn("Turning Bluetooth on & scanning\u{2026}", move || {
                 let _ = Command::new("bluetoothctl")
                     .args(["power", "on"])
                     .stdin(Stdio::null())
@@ -162,7 +148,7 @@ impl BluetoothScreen {
     }
 
     fn start_power_off(&mut self) {
-        self.runner.spawn("Powering off Bluetooth\u{2026}", move || {
+        self.runner.spawn("Turning Bluetooth off\u{2026}", move || {
             let _ = Command::new("bluetoothctl")
                 .args(["power", "off"])
                 .stdin(Stdio::null())
@@ -303,76 +289,41 @@ impl BluetoothScreen {
     }
 
     fn build_rows(&mut self, preserve: bool) {
-        let mut rows = Vec::new();
         let mut actions = Vec::new();
-        if !self.powered {
-            rows.push(
-                Row::new("Turn Bluetooth on")
-                    .glyph(Glyph::Bluetooth)
-                    .detail("power on controller and scan for devices"),
-            );
-            actions.push(BtAction::PowerOn);
-            rows.push(
-                Row::new("Open bluetoothctl")
-                    .glyph(Glyph::Terminal)
-                    .detail("pairing keys, trust, remove, agent"),
-            );
-            actions.push(BtAction::OpenCtl);
+        if self.powered {
+            actions.push(ActionItem::new("scan", "^R", "Rescan").glyph(Glyph::Sync));
+            actions.push(ActionItem::new("toggle", "^T", "Turn off").glyph(Glyph::Power));
+            actions.push(ActionItem::new("ctl", "^B", "bluetoothctl").glyph(Glyph::Terminal));
         } else {
+            actions.push(
+                ActionItem::new("toggle", "^T", "Turn Bluetooth on").glyph(Glyph::Bluetooth),
+            );
+            actions.push(ActionItem::new("ctl", "^B", "bluetoothctl").glyph(Glyph::Terminal));
+        }
+        self.strip.set_items(actions);
+
+        let mut rows = Vec::new();
+        if self.powered {
             for d in &self.devices {
                 let glyph = if d.connected {
                     Glyph::Check
                 } else {
                     Glyph::Bluetooth
                 };
-                let state = if d.connected {
-                    "\u{25cf} connected"
+                let detail = if d.connected {
+                    format!("{} \u{00b7} connected", d.mac)
                 } else {
-                    "available"
+                    format!("{} \u{00b7} available", d.mac)
                 };
                 rows.push(
                     Row::new(d.name.clone())
                         .glyph(glyph)
-                        .detail(d.mac.clone())
-                        .value(state),
+                        .detail(detail)
+                        .value(d.mac.clone()),
                 );
-                actions.push(BtAction::ToggleDevice(d.clone()));
             }
-
-            let (scan_label, scan_detail) = if self.runner.is_running() {
-                (
-                    "Scanning for devices\u{2026}",
-                    "discovery in progress \u{00b7} list updates automatically",
-                )
-            } else {
-                (
-                    "Scan for devices",
-                    "discover nearby Bluetooth devices (Ctrl+S)",
-                )
-            };
-            rows.push(
-                Row::new(scan_label)
-                    .glyph(Glyph::Sync)
-                    .detail(scan_detail),
-            );
-            actions.push(BtAction::Scan);
-
-            rows.push(
-                Row::new("Turn Bluetooth off")
-                    .glyph(Glyph::Power)
-                    .detail("power off the controller"),
-            );
-            actions.push(BtAction::PowerOff);
-
-            rows.push(
-                Row::new("Open bluetoothctl")
-                    .glyph(Glyph::Terminal)
-                    .detail("pairing keys, trust, remove, agent"),
-            );
-            actions.push(BtAction::OpenCtl);
         }
 
-        self.actions = actions;
         if preserve {
             self.list.update_rows(rows);
         } else {
@@ -387,19 +338,26 @@ impl BluetoothScreen {
                 self.runner.spinner(),
                 self.runner.label().unwrap_or("Working\u{2026}")
             )
-        } else if let Some((msg, _)) = &self.banner {
-            msg.clone()
+        } else if let Some(notice) = self.runner.notice() {
+            notice.text.clone()
         } else if !self.powered {
-            "Controller is off \u{00b7} Enter turns it on".to_string()
+            "Controller is off \u{00b7} Enter or Ctrl+T turns it on".to_string()
         } else {
-            format!("{} devices known \u{00b7} Ctrl+S scans", self.devices.len())
+            format!("{} devices available \u{00b7} Ctrl+R rescans", self.devices.len())
         };
-        self.header = Header::new("LazyOS")
-            .subtitle("Bluetooth")
+        self.header = Header::new("Bluetooth")
+            .subtitle("Devices")
             .status(status);
+        self.keybar = vec![
+            KeyHint::new("Enter", if self.powered { "connect" } else { "turn on" }),
+            KeyHint::new("Tab", "actions"),
+            KeyHint::new("Ctrl+R", "rescan"),
+            KeyHint::new("Ctrl+T", "power"),
+            KeyHint::new("Esc", "back"),
+        ];
     }
 
-    fn layout(area: Rect) -> (Rect, Rect, Rect) {
+    fn layout(area: Rect) -> (Rect, Rect, Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
             y: area.y + 1,
@@ -412,20 +370,26 @@ impl BluetoothScreen {
             width: inner.width,
             height: 2.min(inner.height),
         };
-        let filter = Rect {
+        let strip = Rect {
             x: inner.x,
             y: inner.y.saturating_add(2).min(inner.bottom()),
             width: inner.width,
             height: 1.min(inner.height.saturating_sub(2)),
         };
-        let rows_y = inner.y.saturating_add(4).min(inner.bottom());
+        let filter = Rect {
+            x: inner.x,
+            y: inner.y.saturating_add(4).min(inner.bottom()),
+            width: inner.width,
+            height: 1.min(inner.height.saturating_sub(4)),
+        };
+        let rows_y = inner.y.saturating_add(6).min(inner.bottom());
         let rows = Rect {
             x: inner.x,
             y: rows_y,
             width: inner.width,
             height: inner.bottom().saturating_sub(rows_y),
         };
-        (hero, filter, rows)
+        (hero, strip, filter, rows)
     }
 
     fn draw_hero(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
@@ -433,45 +397,79 @@ impl BluetoothScreen {
             return;
         }
         let y = area.y;
-        if !self.powered {
-            let x = draw_badge(buf, area.x, y, design, "POWERED OFF", ColorRole::Warn);
+        if self.runner.is_running() {
+            let badge = format!("{} WORKING", self.runner.spinner());
+            let x = draw_badge(buf, area.x, y, design, &badge, ColorRole::Accent);
+            let _ = put_trunc(
+                buf,
+                x + 2,
+                y,
+                self.runner.label().unwrap_or("Working\u{2026}"),
+                area.right().saturating_sub(x + 2),
+                design.style(TextStyle::Title),
+            );
+        } else if let Some(notice) = self.runner.notice() {
+            let (badge_txt, role, style) = if notice.is_error {
+                ("ERROR", ColorRole::Danger, design.style(TextStyle::Danger))
+            } else {
+                ("\u{2714} DONE", ColorRole::Ok, design.style(TextStyle::Title))
+            };
+            let x = draw_badge(buf, area.x, y, design, badge_txt, role);
+            let _ = put_trunc(
+                buf,
+                x + 2,
+                y,
+                &notice.text,
+                area.right().saturating_sub(x + 2),
+                style,
+            );
+        } else if !self.powered {
+            let x = draw_badge(buf, area.x, y, design, "RADIO OFF", ColorRole::Warn);
             let _ = put_trunc(
                 buf,
                 x,
                 y,
-                "  Press Enter on 'Turn Bluetooth on' to enable & scan",
+                "  Bluetooth controller is disabled \u{00b7} press Enter or Ctrl+T to turn on",
+                area.right().saturating_sub(x),
+                design.style(TextStyle::Dim),
+            );
+        } else if let Some(active) = self.devices.iter().find(|d| d.connected) {
+            let mut x = draw_badge(buf, area.x, y, design, "\u{25cf} CONNECTED", ColorRole::Ok);
+            x = put(
+                buf,
+                x,
+                y,
+                "  ",
+                area.right().saturating_sub(x),
+                design.style(TextStyle::Body),
+            );
+            x = put_trunc(
+                buf,
+                x,
+                y,
+                &active.name,
+                area.right().saturating_sub(x + 22),
+                design.style(TextStyle::Title),
+            );
+            let meta = format!("  \u{00b7}  {}", active.mac);
+            let _ = put_trunc(
+                buf,
+                x,
+                y,
+                &meta,
                 area.right().saturating_sub(x),
                 design.style(TextStyle::Dim),
             );
         } else {
-            let mut x = draw_badge(buf, area.x, y, design, "POWERED ON", ColorRole::Ok);
-            let connected: Vec<&str> = self
-                .devices
-                .iter()
-                .filter(|d| d.connected)
-                .map(|d| d.name.as_str())
-                .collect();
-            if connected.is_empty() {
-                x = put_trunc(
-                    buf,
-                    x,
-                    y,
-                    "  No active audio/input device connected",
-                    area.right().saturating_sub(x),
-                    design.style(TextStyle::Dim),
-                );
-            } else {
-                let summary = format!("  \u{25cf} {}", connected.join(", "));
-                x = put_trunc(
-                    buf,
-                    x,
-                    y,
-                    &summary,
-                    area.right().saturating_sub(x),
-                    design.style(TextStyle::Title),
-                );
-            }
-            let _ = x;
+            let x = draw_badge(buf, area.x, y, design, "DISCONNECTED", ColorRole::Warn);
+            let _ = put_trunc(
+                buf,
+                x,
+                y,
+                "  Select a device below to connect or pair",
+                area.right().saturating_sub(x),
+                design.style(TextStyle::Dim),
+            );
         }
         if area.height >= 2 {
             let rule_y = area.y + 1;
@@ -484,42 +482,48 @@ impl BluetoothScreen {
         }
     }
 
-    fn activate(&mut self, index: usize) -> Outcome {
+    fn run_strip_action(&mut self, id: &'static str) -> Outcome {
         if self.runner.is_running() {
             return Outcome::Consumed;
         }
-        let Some(action) = self.actions.get(index).cloned() else {
+        match id {
+            "scan" => {
+                if self.powered {
+                    self.start_scan(3);
+                }
+                Outcome::Consumed
+            }
+            "toggle" => {
+                if self.powered {
+                    self.start_power_off();
+                } else {
+                    self.start_power_on();
+                }
+                Outcome::Consumed
+            }
+            "ctl" => {
+                crate::system::spawn_detached("exec foot --app-id=popup bluetoothctl");
+                Outcome::Done(lazyos_ui::app::exit::OK)
+            }
+            _ => Outcome::Consumed,
+        }
+    }
+
+    fn activate_device(&mut self, index: usize) -> Outcome {
+        if self.runner.is_running() {
+            return Outcome::Consumed;
+        }
+        let Some(d) = self.devices.get(index).cloned() else {
             return Outcome::Continue;
         };
-        match action {
-            BtAction::Scan => {
-                self.banner = None;
-                self.start_scan(3);
-            }
-            BtAction::PowerOn => {
-                self.banner = None;
-                self.start_power_on();
-            }
-            BtAction::PowerOff => {
-                self.banner = None;
-                self.start_power_off();
-            }
-            BtAction::OpenCtl => {
-                crate::system::spawn_detached("exec foot --app-id=popup bluetoothctl");
-                return Outcome::Done(lazyos_ui::app::exit::OK);
-            }
-            BtAction::ToggleDevice(d) => {
-                self.banner = None;
-                self.start_toggle_device(d);
-            }
-        }
+        self.start_toggle_device(d);
         Outcome::Consumed
     }
 }
 
 impl Screen for BluetoothScreen {
     fn desired_size(&self) -> Option<(u16, u16)> {
-        Some((840, 520))
+        Some((860, 560))
     }
 
     fn needs_tick(&self) -> Option<Duration> {
@@ -527,29 +531,26 @@ impl Screen for BluetoothScreen {
     }
 
     fn tick(&mut self) -> Outcome {
-        self.runner.tick();
         if let Some(op) = self.runner.poll() {
             match op {
                 BtOp::Scanned { powered, devices } => {
                     self.powered = powered;
                     self.devices = devices;
                     self.build_rows(true);
-                    self.banner = Some((
-                        format!("Discovery finished \u{00b7} {} devices", self.devices.len()),
-                        ColorRole::Ok,
-                    ));
+                    // Routine discovery clears the status banner immediately on completion.
+                    self.runner.clear_status();
                 }
                 BtOp::PoweredOn { powered, devices } => {
                     self.powered = powered;
                     self.devices = devices;
                     self.build_rows(false);
-                    self.banner = Some(("Bluetooth powered on".to_string(), ColorRole::Ok));
+                    self.runner.set_transient("Bluetooth turned on");
                 }
                 BtOp::PoweredOff => {
                     self.powered = false;
                     self.devices.clear();
                     self.build_rows(false);
-                    self.banner = Some(("Bluetooth powered off".to_string(), ColorRole::Warn));
+                    self.runner.set_transient("Bluetooth turned off");
                 }
                 BtOp::DeviceResult {
                     message,
@@ -560,33 +561,30 @@ impl Screen for BluetoothScreen {
                     self.powered = powered;
                     self.devices = devices;
                     self.build_rows(true);
-                    self.banner = Some((
-                        message,
-                        if ok { ColorRole::Ok } else { ColorRole::Danger },
-                    ));
+                    if ok {
+                        self.runner.set_transient(message);
+                    } else {
+                        // Connection/pairing failure overrides auto-hide so the user knows why.
+                        self.runner.set_persistent_error(message);
+                    }
                 }
             }
             self.sync_chrome();
             return Outcome::Continue;
         }
-        if self.runner.is_running() {
-            self.sync_chrome();
-        }
+        self.sync_chrome();
         Outcome::Continue
     }
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Bluetooth"), true);
-        let (hero, filter, rows) = Self::layout(ctx.area);
+        let (hero, strip, filter, rows) = Self::layout(ctx.area);
         self.draw_hero(ctx.buf, hero, ctx.design);
-        let hint = if self.runner.is_running() {
-            self.runner.label().unwrap_or("Scanning\u{2026}")
-        } else if let Some((msg, _)) = &self.banner {
-            msg.as_str()
-        } else if !self.powered {
-            "Bluetooth is off \u{00b7} Enter turns it on"
+        self.strip.render(strip, ctx.buf, ctx.design);
+        let hint = if !self.powered {
+            "Bluetooth radio is off \u{00b7} press Enter or Ctrl+T to enable"
         } else {
-            "type to filter devices \u{00b7} Enter connects \u{00b7} Ctrl+S scans"
+            "type to filter devices \u{00b7} Enter connects \u{00b7} Tab focuses actions"
         };
         let _ = put;
         draw_filter_bar(
@@ -599,12 +597,40 @@ impl Screen for BluetoothScreen {
             self.list.len(),
         );
         self.rows_height.set(rows.height);
-        self.list.render(rows, ctx.buf, ctx.design, true);
+        if !self.powered {
+            draw_empty(
+                ctx.buf,
+                rows,
+                ctx.design,
+                "Bluetooth controller is off",
+                "Press Enter or Ctrl+T to turn Bluetooth on and scan for devices",
+            );
+        } else if self.devices.is_empty() {
+            draw_empty(
+                ctx.buf,
+                rows,
+                ctx.design,
+                if self.runner.is_running() {
+                    "Scanning for nearby devices\u{2026}"
+                } else {
+                    "No Bluetooth devices found"
+                },
+                "Put your device in pairing mode and press Ctrl+R to rescan",
+            );
+        } else {
+            self.list
+                .render(rows, ctx.buf, ctx.design, !self.strip.is_focused());
+        }
     }
 
     fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
+        }
+        match self.strip.handle(key) {
+            ActionStripEvent::Activated(id) => return self.run_strip_action(id),
+            ActionStripEvent::Consumed => return Outcome::Consumed,
+            ActionStripEvent::Ignored => {}
         }
         if key.code == KeyCode::Esc {
             if !self.list.filter().is_empty() {
@@ -613,15 +639,22 @@ impl Screen for BluetoothScreen {
             }
             return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
         }
-        if (key.modifiers.contains(KeyModifiers::CONTROL)
-            && matches!(key.code, KeyCode::Char('s') | KeyCode::Char('S')))
-            || (self.list.filter().is_empty() && key.code == KeyCode::Char('s'))
-        {
-            if self.powered && !self.runner.is_running() {
-                self.banner = None;
-                self.start_scan(3);
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('r') | KeyCode::Char('R') | KeyCode::Char('s') | KeyCode::Char('S') => {
+                    return self.run_strip_action("scan");
+                }
+                KeyCode::Char('t') | KeyCode::Char('T') => {
+                    return self.run_strip_action("toggle");
+                }
+                KeyCode::Char('b') | KeyCode::Char('B') => {
+                    return self.run_strip_action("ctl");
+                }
+                _ => {}
             }
-            return Outcome::Consumed;
+        }
+        if !self.powered && key.code == KeyCode::Enter {
+            return self.run_strip_action("toggle");
         }
         let typed = matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
             && !key.modifiers.contains(KeyModifiers::CONTROL);
@@ -631,23 +664,44 @@ impl Screen for BluetoothScreen {
         }
         let rows_height = self.rows_height.get();
         match self.list.handle(key, rows_height, design) {
-            ListAction::Activated(index) => self.activate(index),
+            ListAction::Activated(index) => self.activate_device(index),
             _ => Outcome::Continue,
         }
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
         if let Some(row) = row {
+            if row >= 10_000 {
+                let strip_idx = row - 10_000;
+                if let Some(item) = self.strip.items().get(strip_idx) {
+                    return self.run_strip_action(item.id);
+                }
+                return Outcome::Consumed;
+            }
+            self.strip.set_focused(false);
             self.list.set_cursor(row);
             if let Some(index) = self.list.selected_index() {
-                return self.activate(index);
+                return self.activate_device(index);
             }
         }
         Outcome::Continue
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        let (_, _, rows) = Self::layout(area);
+        let (_, strip, _, rows) = Self::layout(area);
+        if y == strip.y && x >= strip.x && x < strip.right() {
+            let mut col = strip.x;
+            for (idx, item) in self.strip.items().iter().enumerate() {
+                let w = 4
+                    + item.key.len() as u16
+                    + item.label.len() as u16
+                    + item.glyph.map(|_| 2).unwrap_or(0);
+                if x >= col && x < col + w {
+                    return Some(10_000 + idx);
+                }
+                col += w + 1;
+            }
+        }
         self.list.hit_row(rows, x, y, design)
     }
 

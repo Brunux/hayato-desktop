@@ -208,11 +208,29 @@ impl QrScreen {
     }
 
     fn build_rows(&mut self) {
+        let clip_detail = out(&["wl-paste", "--no-newline"])
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                let first = s.lines().next().unwrap_or("");
+                let short: String = first.chars().take(44).collect();
+                if first.chars().count() > 44 {
+                    format!("{short}\u{2026}")
+                } else {
+                    short
+                }
+            })
+            .unwrap_or_else(|| "encode current clipboard text".to_string());
+
         let rows = vec![
             Row::new("Wi-Fi network")
                 .glyph(Glyph::Wifi)
                 .detail(self.wifi_detail.clone())
                 .value("wifi"),
+            Row::new("From the clipboard")
+                .glyph(Glyph::Clipboard)
+                .detail(clip_detail)
+                .value("clipboard"),
             Row::new("Any text")
                 .glyph(Glyph::Qr)
                 .detail("type it, and it becomes a code")
@@ -458,6 +476,18 @@ impl QrScreen {
                 self.open_wifi_qr(false);
                 Outcome::Consumed
             }
+            "clipboard" => {
+                let clip = out(&["wl-paste", "--no-newline"])
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_default();
+                if clip.is_empty() {
+                    self.status = "Clipboard is empty \u{00b7} copy text or a URL first".to_string();
+                    self.sync_chrome();
+                } else {
+                    self.open_text_qr(clip);
+                }
+                Outcome::Consumed
+            }
             "text" => {
                 self.text_qr();
                 Outcome::Consumed
@@ -522,7 +552,11 @@ mod tests {
     fn text_row_opens_input_and_esc_returns_to_list() {
         let mut screen = QrScreen::new();
         screen.build_rows();
-        assert_eq!(screen.activate(1), Outcome::Consumed);
+        assert_eq!(screen.list.rows().len(), 3);
+        assert_eq!(screen.list.rows()[0].value.as_deref(), Some("wifi"));
+        assert_eq!(screen.list.rows()[1].value.as_deref(), Some("clipboard"));
+        assert_eq!(screen.list.rows()[2].value.as_deref(), Some("text"));
+        assert_eq!(screen.activate(2), Outcome::Consumed);
         assert!(matches!(screen.mode, QrMode::Typing(_)));
         let design = Design::solarized();
         let esc = KeyEvent::from(KeyCode::Esc);
