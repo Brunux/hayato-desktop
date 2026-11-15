@@ -233,6 +233,7 @@ fn no_icon_sends_no_picture_and_a_bad_percentage_sends_nothing() {
 /// A session bus of our own. Dropping it stops the daemon.
 struct Bus {
     daemon: Child,
+    _stdout: std::process::ChildStdout,
     address: String,
     dir: PathBuf,
 }
@@ -253,52 +254,81 @@ impl Bus {
         }
         let dir = scratch(&format!("bus-{name}"));
         let config = dir.join("bus.conf");
+        let socket = dir.join("bus");
         std::fs::write(
             &config,
             format!(
                 "<!DOCTYPE busconfig PUBLIC \"-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN\" \
                  \"http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd\">\n\
-                 <busconfig>\n  <type>session</type>\n  <listen>unix:tmpdir={}</listen>\n  \
-                 <auth>EXTERNAL</auth>\n  <policy context=\"default\">\n    \
+                 <busconfig>\n  <type>session</type>\n  <listen>unix:path={}</listen>\n  \
+                 <auth>EXTERNAL</auth>\n  <apparmor mode=\"disabled\"/>\n  <policy context=\"default\">\n    \
                  <allow send_destination=\"*\"/>\n    \
                  <allow receive_sender=\"*\"/>\n    \
                  <allow eavesdrop=\"true\"/>\n    <allow own=\"*\"/>\n  </policy>\n</busconfig>\n",
-                dir.display()
+                socket.display()
             ),
         )
         .unwrap();
+        let daemon_err = std::fs::File::create(dir.join("daemon.stderr")).unwrap();
         let mut daemon = Command::new("dbus-daemon")
             .arg(format!("--config-file={}", config.display()))
             .arg("--print-address=1")
             .arg("--nofork")
+            .arg("--nopidfile")
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::from(daemon_err))
             .spawn()
             .ok()?;
+        let stdout = daemon.stdout.take()?;
+        let mut reader = BufReader::new(stdout);
         let mut line = String::new();
-        BufReader::new(daemon.stdout.take()?)
-            .read_line(&mut line)
-            .ok()?;
+        reader.read_line(&mut line).ok()?;
+        let stdout = reader.into_inner();
         let address = line.trim().to_string();
         if address.is_empty() {
             let _ = daemon.kill();
-            return None;
+            let _ = daemon.wait();
+            let err = std::fs::read_to_string(dir.join("daemon.stderr")).unwrap_or_default();
+            panic!("dbus-daemon printed no address: {err}");
         }
         Some(Self {
             daemon,
+            _stdout: stdout,
             address,
             dir,
         })
     }
 
+    fn diagnostics(&mut self) -> String {
+        let daemon_state = match self.daemon.try_wait() {
+            Ok(Some(status)) => format!("exited({status})"),
+            Ok(None) => "running".to_string(),
+            Err(err) => format!("try_wait_error({err})"),
+        };
+        let daemon_err =
+            std::fs::read_to_string(self.dir.join("daemon.stderr")).unwrap_or_default();
+        let monitor_err =
+            std::fs::read_to_string(self.dir.join("monitor.stderr")).unwrap_or_default();
+        let socket_exists = self.dir.join("bus").exists();
+        format!(
+            "address={}, socket_exists={}, daemon={}, daemon_stderr={:?}, monitor_stderr={:?}",
+            self.address,
+            socket_exists,
+            daemon_state,
+            daemon_err.trim(),
+            monitor_err.trim(),
+        )
+    }
+
     /// Run `lazyos notify ARGS` on this bus while a monitor records the traffic.
-    fn notify(&self, args: &[&str]) -> (Output, String) {
+    fn notify(&mut self, args: &[&str]) -> (Output, String) {
+        let monitor_err = std::fs::File::create(self.dir.join("monitor.stderr")).unwrap();
         let mut monitor = Command::new("dbus-monitor")
             .arg("--address")
             .arg(&self.address)
             .arg("type='method_call',interface='org.freedesktop.Notifications'")
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::from(monitor_err))
             .spawn()
             .expect("dbus-monitor starts");
         // The monitor's match has to be in place before the call.
@@ -308,6 +338,9 @@ impl Bus {
             .arg("notify")
             .args(args)
             .env("DBUS_SESSION_BUS_ADDRESS", &self.address)
+            .env_remove("DBUS_STARTER_ADDRESS")
+            .env_remove("DBUS_STARTER_BUS_TYPE")
+            .env("NOTIFY_IGNORE_PORTAL", "1")
             // The card takes its picture from the installed theme, and this test
             // runs on machines that have no image: the binary's default roots are
             // `/usr/share/icons/LazyOS`, which exists only on the device, so the
@@ -369,22 +402,23 @@ fn have(tool: &str) -> bool {
 
 #[test]
 fn the_card_is_addressed_to_the_notification_service_on_the_session_bus() {
-    let Some(bus) = Bus::start("route") else {
+    let Some(mut bus) = Bus::start("route") else {
         eprintln!(
             "skipped: dbus-daemon, dbus-monitor or notify-send (libnotify-bin) is not installed"
         );
         return;
     };
     let (out, transcript) = bus.notify(&["progress", "osd", "40", "Volume", "40%"]);
+    let diag = bus.diagnostics();
     assert_eq!(
         out.status.code(),
         Some(3),
-        "no daemon answers: the card is refused"
+        "no daemon answers: the card is refused ({diag})"
     );
     let stderr = text(&out.stderr);
     assert!(
         stderr.contains("no notification daemon"),
-        "the refusal is said in words: {stderr}"
+        "the refusal is said in words: {stderr} ({diag})"
     );
     // The picture resolves against the checkout's theme, so a card that came out
     // text here means the icon path broke - and that failure is silent on the
@@ -396,6 +430,6 @@ fn the_card_is_addressed_to_the_notification_service_on_the_session_bus() {
     assert!(
         transcript.contains("destination=org.freedesktop.Notifications")
             && transcript.contains("member=GetServerInformation"),
-        "the call goes to the notification service on the session bus: {transcript}"
+        "the call goes to the notification service on the session bus: {transcript} ({diag})"
     );
 }
