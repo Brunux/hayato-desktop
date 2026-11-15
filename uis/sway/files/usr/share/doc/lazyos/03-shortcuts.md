@@ -220,15 +220,24 @@ not a mixer in the bar, and nothing starts it until the row is picked.
 
 A saved screenshot goes to **`~/Pictures/Screenshots/<today>/`**, under the name
 grimshot generates (`2026-10-21T18-04-11.png`), which is the name the
-notification shows. The capture menu's last row opens that folder.
+notification shows. Generated QR codes (**Make a QR code** or **Share QR** in
+Wi-Fi) save to the same daily folder (`qr-<timestamp>.png` or
+`wifi-qr-<timestamp>.png`) when you press **`s`** or **`Ctrl+S`**, and **`o`**
+opens the saved file or folder. The capture menu's last row opens that folder.
 
-Dictation (`Alt+Ctrl+X`) records up to 60 seconds and types what it heard into
-the focused window. It says what it is doing: the notification stays up while it
-records ("Alt+Ctrl+X stops it"), becomes "Transcribing…" while whisper works, and
-turns into the text it typed - or the reason it could not. Pressing the key again
-**stops and transcribes**, and the root menu's **Dictation** row does the same
-from the mouse. The text is also left on the clipboard, because a few surfaces
-(a launcher, a fullscreen game) refuse typed input.
+Dictation (`Alt+Ctrl+X`) supports both **push-to-talk** and **hands-free**
+capture without ever stealing focus from the window where the text will be typed:
+* **Hold `Alt+Ctrl+X`** while speaking and **release** to immediately transcribe
+  on the four Cortex-A76 performance cores (`taskset -c 4-7 whisper-cli -t 4`)
+  and type the result into the focused window.
+* **Tap `Alt+Ctrl+X` briefly** or pick **Dictation** from the root menu
+  (`Alt+Space`) to record hands-free. Stop and transcribe at any time by
+  clicking **`Stop & Transcribe`** (or **`Cancel`**) on the persistent
+  notification card, clicking the **`⠋ Dictation · Recording`** spinner on the
+  top bar, picking **Stop dictation** in the root menu, or pressing
+  `Alt+Ctrl+X` again. The notification morphs in-place from *Recording* to
+  *Transcribing…* and finally to the text it typed (also copied to the
+  clipboard).
 
 The top row of this keyboard sends action keys, not F1-F12: keyd turns
 **Ctrl+Alt+top row** into virtual terminals 1-10 and **Search+top row** into

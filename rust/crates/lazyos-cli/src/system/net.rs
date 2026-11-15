@@ -439,11 +439,13 @@ impl NetScreen {
                     .runner
                     .notice()
                     .map(|n| n.text.clone())
-                    .unwrap_or_else(|| "Scan with a phone camera \u{00b7} c copies payload".to_string());
+                    .unwrap_or_else(|| "s saves PNG \u{00b7} c copies payload \u{00b7} o opens folder".to_string());
                 self.header = Header::new("Wi-Fi").subtitle(title.clone()).status(status);
                 self.keybar = vec![
+                    KeyHint::new("s", "save PNG"),
                     KeyHint::new("c", "copy payload"),
-                    KeyHint::new("Enter/Esc", "back to networks"),
+                    KeyHint::new("o", "open"),
+                    KeyHint::new("Esc", "back to networks"),
                 ];
             }
         }
@@ -834,7 +836,40 @@ impl Screen for NetScreen {
         }
         match &mut self.mode {
             NetMode::WifiQr { payload, .. } => match key.code {
-                KeyCode::Char('c') => {
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    match super::qr::save_qr_png(payload, "wifi-qr") {
+                        Ok(path) => {
+                            let name = path
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string();
+                            let day = path
+                                .parent()
+                                .and_then(|p| p.file_name())
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string();
+                            self.runner
+                                .set_persistent_info(format!("Saved Screenshots/{day}/{name}"));
+                        }
+                        Err(err) => {
+                            self.runner.set_persistent_error(err);
+                        }
+                    }
+                    self.sync_chrome();
+                    Outcome::Consumed
+                }
+                KeyCode::Char('o') | KeyCode::Char('O') => {
+                    let target = super::qr::save_qr_png(payload, "wifi-qr")
+                        .unwrap_or_else(|_| super::qr::qr_target_dir());
+                    crate::system::spawn_detached(&format!("exec xdg-open '{}'", target.display()));
+                    self.runner
+                        .set_transient(format!("Opened {}", target.display()));
+                    self.sync_chrome();
+                    Outcome::Consumed
+                }
+                KeyCode::Char('c') | KeyCode::Char('C') => {
                     if let Ok(mut child) = Command::new("wl-copy")
                         .stdin(Stdio::piped())
                         .stdout(Stdio::null())

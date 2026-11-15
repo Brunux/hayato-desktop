@@ -442,7 +442,7 @@ fn run_direct(resolved: &Resolved) -> i32 {
         "mcp" => mcp::run(resolved),
         "task stop" => task_cmd::stop(resolved),
         "open" => open_path(resolved),
-        "menu dictate" => system::dictate::toggle(),
+        "menu dictate" => system::dictate::run(&resolved.args),
         other => {
             eprintln!("lazyos {other}: this command has no direct handler");
             EXIT_USAGE
@@ -535,7 +535,7 @@ fn execute(
         "menu layout" => system::layout::menu(terminal, design),
         "menu file-actions" => system::file_actions::menu(&resolved.args, terminal, design),
         "menu translate" => system::translate::menu(&resolved.args, terminal, design),
-        "menu dictate" => system::dictate::menu(),
+        "menu dictate" => system::dictate::menu_with_args(&resolved.args),
         "menu theme" => system::theme_picker::menu(terminal, design),
         "task attach" => task_cmd::attach(resolved, terminal, design),
         "installer" => {
