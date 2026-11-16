@@ -118,10 +118,24 @@ if have sway; then
 	# display, and it ships in mesa-utils (already a package here).
 	if have eglinfo; then
 		_gpu_renderer="$(eglinfo -B 2>/dev/null | awk -F': ' '/OpenGL ES profile renderer/ { print $2; exit }')"
+		_dev_codename="$(tr -d ' \t\r\n' </etc/lazyos/device 2>/dev/null || echo google-asurada)"
 		case "$_gpu_renderer" in
 		*Panfrost*) ok "GPU renderer is $_gpu_renderer" ;;
 		"") warn "eglinfo reported no renderer: cannot confirm the GPU driver" ;;
-		*) fail "GPU renderer is '$_gpu_renderer', not Panfrost: the session is drawing on software (check LIBGL_ALWAYS_SOFTWARE and the GPU firmware)" ;;
+		*llvmpipe*|*swrast*|*softpipe*)
+			if [ "$_dev_codename" = "google-asurada" ]; then
+				fail "GPU renderer is '$_gpu_renderer', not Panfrost: the session is drawing on software (check LIBGL_ALWAYS_SOFTWARE and the GPU firmware)"
+			else
+				warn "GPU renderer is software '$_gpu_renderer' (normal under VM/simpledrm without 3D accel)"
+			fi
+			;;
+		*)
+			if [ "$_dev_codename" = "google-asurada" ]; then
+				fail "GPU renderer is '$_gpu_renderer', not Panfrost: the session is drawing on software (check LIBGL_ALWAYS_SOFTWARE and the GPU firmware)"
+			else
+				ok "GPU renderer is $_gpu_renderer"
+			fi
+			;;
 		esac
 	else
 		skip "eglinfo is missing (mesa-utils): cannot confirm the GPU driver"
@@ -1111,7 +1125,13 @@ _cands=$(
 	lazyos menu format --candidates 2>/dev/null
 	lazyos menu swap --candidates 2>/dev/null
 ) || _fmt_guard=
-if printf '%s\n' "$_cands" | grep -qE '^/dev/(mmcblk0|mtd|zram)'; then
+if printf '%s\n' "$_cands" | grep -qE '^/dev/(mtd|zram)'; then
+	_fmt_guard=
+fi
+_inst_tgt="$(sed -n 's/^deviceinfo_install_target="\([^"]*\)"$/\1/p' /etc/lazyos/deviceinfo 2>/dev/null | head -n1)"
+if [ -n "$_inst_tgt" ] && printf '%s\n' "$_cands" | grep -qxF "$_inst_tgt"; then
+	_fmt_guard=
+elif [ -z "$_inst_tgt" ] && [ "$(tr -d ' \t\r\n' </etc/lazyos/device 2>/dev/null || echo google-asurada)" = "google-asurada" ] && printf '%s\n' "$_cands" | grep -qE '^/dev/mmcblk0$'; then
 	_fmt_guard=
 fi
 if [ -n "$_fmt_guard" ]; then
@@ -1241,14 +1261,22 @@ else
 	skip "lazyos binary not installed: installer checks skipped"
 fi
 
+_inst_boot_type="$(sed -n 's/^deviceinfo_boot_type="\([^"]*\)"$/\1/p' /etc/lazyos/deviceinfo 2>/dev/null | head -n1)"
+[ -n "$_inst_boot_type" ] || _inst_boot_type="depthcharge"
+_inst_req="rsync parted mkfs.ext4 blkid blockdev lsblk partx udevadm e2fsck"
+case "$_inst_boot_type" in
+	depthcharge) _inst_req="$_inst_req cgpt depthchargectl futility mkfs.ext2" ;;
+	uefi)        _inst_req="$_inst_req mkfs.vfat" ;;
+	extlinux)    _inst_req="$_inst_req mkfs.ext2" ;;
+esac
 _install=""
-for _c in rsync parted cgpt depthchargectl mkfs.ext2 mkfs.ext4 blkid blockdev partx; do
+for _c in $_inst_req; do
 	have "$_c" || _install="$_install $_c"
 done
 if [ -z "$_install" ]; then
-	ok "installer backend utilities available (rsync, parted, cgpt, depthchargectl, mkfs)"
+	ok "installer backend utilities available for $_inst_boot_type ($_inst_req)"
 else
-	fail "installer utilities incomplete:$_install"
+	fail "installer utilities incomplete for $_inst_boot_type:$_install"
 fi
 
 menu_label 'Install LazyOS' && menu_runs rofi-install &&

@@ -1,17 +1,33 @@
-//! Configuration data structures, validation rules, and serialization for the LazyOS installer.
+//! Configuration data structures, validation rules, and safe serialization for the LazyOS installer.
+
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+/// Installation mode: interactive customization (`Fresh`) or headless live clone (`Clone`).
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum InstallMode {
+    #[default]
+    Fresh,
+    Clone,
+}
+
 /// Target configuration for a complete LazyOS installation onto storage.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InstallConfig {
+    /// Whether to apply new identity/locale/password (`Fresh`) or clone live user (`Clone`).
+    #[serde(default)]
+    pub mode: InstallMode,
     /// Full display name of the primary user (e.g., "Bruno").
     pub fullname: String,
     /// POSIX username for system login and home directory (e.g., "brunux").
     pub username: String,
-    /// Plaintext password to set on the target user account.
+    /// Plaintext password kept out of serialization/logs; transferred transiently over stdin pipe.
+    #[serde(default, skip_serializing)]
     pub password: String,
-    /// Confirmation password for interactive validation.
+    /// Confirmation password kept out of serialization/logs.
+    #[serde(default, skip_serializing)]
     pub password_confirm: String,
     /// System hostname (default "lazyos").
     pub hostname: String,
@@ -19,19 +35,50 @@ pub struct InstallConfig {
     pub timezone: String,
     /// Selected system locale (default "en_US.UTF-8").
     pub locale: String,
-    /// Selected console and X11 keyboard layout (default "us").
+    /// Selected console and X11/Wayland keyboard layout (default "us").
     pub keymap: String,
     /// Whether to erase inherited machine identity and generate fresh SSH host keys.
     pub regenerate_ssh_keys: bool,
-    /// Target block device path (default "/dev/mmcblk0").
+    /// Target block device path (e.g., "/dev/mmcblk0" or "/dev/nvme0n1").
     pub target_disk: String,
     /// Whether to run in non-destructive dry-run simulation mode.
     pub dry_run: bool,
+    /// Explicit shared IPC/log directory (used by elevated worker `/run/lazyos-install`).
+    #[serde(default)]
+    pub state_dir: Option<String>,
+}
+
+/// Private transient stdin payload sent from the unprivileged TUI to root `lazyos installer apply --stdin`.
+#[derive(Serialize, Deserialize)]
+pub struct ApplyRequest {
+    pub config: InstallConfig,
+    #[serde(default)]
+    pub secret_password: Option<String>,
+}
+
+impl fmt::Debug for InstallConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InstallConfig")
+            .field("mode", &self.mode)
+            .field("fullname", &self.fullname)
+            .field("username", &self.username)
+            .field("password", &"<redacted>")
+            .field("hostname", &self.hostname)
+            .field("timezone", &self.timezone)
+            .field("locale", &self.locale)
+            .field("keymap", &self.keymap)
+            .field("regenerate_ssh_keys", &self.regenerate_ssh_keys)
+            .field("target_disk", &self.target_disk)
+            .field("dry_run", &self.dry_run)
+            .field("state_dir", &self.state_dir)
+            .finish()
+    }
 }
 
 impl Default for InstallConfig {
     fn default() -> Self {
         Self {
+            mode: InstallMode::Fresh,
             fullname: "LazyOS User".to_string(),
             username: "brunux".to_string(),
             password: String::new(),
@@ -43,6 +90,7 @@ impl Default for InstallConfig {
             regenerate_ssh_keys: true,
             target_disk: "/dev/mmcblk0".to_string(),
             dry_run: false,
+            state_dir: None,
         }
     }
 }
@@ -55,6 +103,15 @@ impl InstallConfig {
         validate_hostname(&self.hostname)?;
         Ok(())
     }
+}
+
+/// Derive short confirmation token from block device path (e.g., `/dev/nvme0n1` -> `nvme0n1`).
+pub fn target_short_name(target_disk: &str) -> &str {
+    target_disk
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or(target_disk)
 }
 
 /// Validate username against strict POSIX rules: `^[a-z_][a-z0-9_-]{0,31}$`.
@@ -203,11 +260,31 @@ mod tests {
     #[test]
     fn confirmation_gate_matching() {
         assert!(validate_confirmation("mmcblk0", "mmcblk0"));
-        assert!(validate_confirmation("  mmcblk0  ", "mmcblk0"));
+        assert!(validate_confirmation("  nvme0n1  ", "nvme0n1"));
         assert!(validate_confirmation("DESTROY", "mmcblk0"));
-        assert!(validate_confirmation("destroy", "mmcblk0"));
+        assert!(validate_confirmation("destroy", "nvme0n1"));
         assert!(!validate_confirmation("", "mmcblk0"));
         assert!(!validate_confirmation("sda", "mmcblk0"));
         assert!(!validate_confirmation("yes", "mmcblk0"));
+    }
+
+    #[test]
+    fn secrets_never_leak_into_debug_or_serialized_config() {
+        let cfg = InstallConfig {
+            password: "ultra-secret-password".to_string(),
+            password_confirm: "ultra-secret-password".to_string(),
+            ..Default::default()
+        };
+        let debug = format!("{cfg:?}");
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(!debug.contains("ultra-secret-password"));
+        assert!(!json.contains("ultra-secret-password"));
+    }
+
+    #[test]
+    fn target_short_name_handles_all_block_paths() {
+        assert_eq!(target_short_name("/dev/mmcblk0"), "mmcblk0");
+        assert_eq!(target_short_name("/dev/nvme0n1"), "nvme0n1");
+        assert_eq!(target_short_name("/dev/vda/"), "vda");
     }
 }

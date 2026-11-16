@@ -45,9 +45,14 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
 8. **Version invariant**: `VERSION` at the repo root is compiled into `lazyos --version` via
    `include_str!`. Keep it valid semver `x.y.z` matching releases.
 
-## Cross-Repo Boundaries (No Hardcoded Paths!)
+## Cross-Repo Boundaries & Pure-Rust Installer (No Hardcoded Paths!)
 - Never put device-specific keymaps, udev rules, IRQ tuning, or board hacks into `uis/sway/files/`.
-- When desktop binaries invoke `lazyos-core` system scripts (`install-emmc.sh`, `install-boot.sh`),
+- Pure-Rust installer (`lazyos installer` / `lazyos installer apply` under `src/installer/`) reads
+  `/etc/lazyos/deviceinfo` & `/etc/lazyos/kernel-cmdline*.conf` directly (`BootType::{Depthcharge, Uefi, Extlinux}`),
+  spawns detached root work via `sudo -n setsid systemd-inhibit ... apply --stdin --state-dir /run/lazyos-install`
+  with secrets passed solely over stdin, enforces the `first_write` cancel gate, and writes `/etc/lazyos/installation`
+  last. `core/scripts/install-emmc.sh` stays intact only as a Hayato manual/debug fallback.
+- When desktop binaries invoke `lazyos-core` system scripts (`install-boot.sh`, `backup-system.sh`),
   resolve `/usr/libexec/lazyos/<script>` first, then `$LAZYOS_CORE_DIR/scripts/`, then umbrella/sibling fallbacks.
 - Guard optional hardware resume hooks in Sway configs (e.g., `[ -x /usr/local/bin/lazyos-dp-resume ]`).
 

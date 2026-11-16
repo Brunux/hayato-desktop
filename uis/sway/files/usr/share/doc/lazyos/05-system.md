@@ -321,70 +321,74 @@ partition's size and not how much of it is in use.
 
 ## The microSD and the firmware
 
-The internal eMMC and the microSD are written the same way
-(`scripts/write-sd.sh`, `scripts/install-emmc.sh`), so a card is a full rescue
+The internal eMMC and the microSD are written with matching layouts
+(`scripts/write-sd.sh`, `lazyos installer`, or fallback `scripts/install-emmc.sh`), so a card is a full rescue
 system: the same three partitions, the same signed kpart, the same session. The
 stock firmware's developer-mode menu picks **internal disk** (the eMMC) or
 **external disk** (the card), so a broken install on the eMMC is recoverable by
 booting the card and running the installer again.
 
-## Install LazyOS (The Full TUI Installer)
+## Install LazyOS (The Pure-Rust TUI & Headless Installer)
 
-Installing LazyOS to the internal eMMC (`/dev/mmcblk0`) is driven by the native full-screen
-TUI installer wizard:
+Installing LazyOS onto internal storage (`/dev/mmcblk0`, `/dev/nvme0n1`, etc.) is driven
+natively in pure Rust by `lazyos installer` across **all supported boot architectures**
+(`depthcharge` on Hayato Chromebooks, `uefi` with `systemd-boot`, and `extlinux` on U-Boot SBCs):
 
 ```sh
-lazyos installer              # interactive full-screen wizard in foot
-lazyos installer --check      # headless verification of hardware and disk safety
-lazyos installer --dry-run    # non-destructive simulation of the full wizard
+lazyos installer                                        # interactive full-screen wizard in foot
+lazyos installer --check                                # headless verification of boot type & disk safety
+lazyos installer --dry-run                              # non-destructive simulation of the full wizard
+sudo lazyos installer apply --clone --confirm           # headless live-clone install (auto-selected target)
 ```
 
-`rofi-install` is a symlink to `/usr/bin/lazyos`, preserving existing key bindings, the root menu
-entry (*Install LazyOS*), and the launcher desktop shortcut (`org.lazyos.install.desktop`).
+For Google Hayato emergency recovery or shell debugging, `/usr/libexec/lazyos/install-emmc.sh`
+remains preserved intact as a manual fallback. `rofi-install` resolves to `/usr/bin/lazyos`,
+keeping all key bindings, the root menu (*Install LazyOS*), and `org.lazyos.install.desktop`.
 
 ### The 6 Wizard Steps
 
 1. **Welcome & Pre-Flight**:
-   Inspects hardware facts (MediaTek MT8192 on Google Hayato, RAM, power supply, active root source,
-   and internal eMMC target `/dev/mmcblk0`). Evaluates the **strict safety invariant**: if the system
-   is already running from internal eMMC (`findmnt /` on `/dev/mmcblk0*`), the wizard displays a
-   prominent red danger card, refuses to advance, and permits only exit.
+   Reads `/etc/lazyos/deviceinfo` without sourcing a shell (`depthcharge`, `uefi`, or `extlinux`),
+   detects Devicetree or DMI SMBIOS hardware identity, evaluates target storage candidates, and
+   verifies required tools per boot type. Evaluates the **strict safety invariant**: running from
+   any partition on the target disk fails closed and prevents overwriting active storage.
 2. **Localization, Timezone & Keyboard**:
-   Searchable timezone picker filtering IANA zones as you type with case folding, system locale
-   picker (`en_US.UTF-8`, `es_ES.UTF-8`, etc.), and keyboard layout selector (`us`, `es`, `latam`, etc.)
-   featuring an interactive live keypress test field to verify symbols (`@`, `#`, `~`, `|`).
+   Searchable IANA timezone picker, system locale selector (`locale-gen` + `/etc/default/locale`),
+   and keyboard layout selector (`/etc/default/keyboard` + `~/.config/sway/config.d/90-keyboard-layout.conf`)
+   with a live keypress preview box.
 3. **User Account & Host Identity**:
-   Full name, POSIX-validated username (`^[a-z_][a-z0-9_-]{0,31}$`, rejecting `root` or invalid chars),
-   password entry with masked asterisks (`*`) and mismatch validation, network hostname, and a toggle
-   to regenerate fresh SSH host keys on first boot.
+   Full name, POSIX username, masked password confirmation (passed over stdin pipe to `chpasswd`,
+   never via argv or temp files), hostname, and SSH host-key regeneration toggle. When renaming
+   the live account, desktop session configs and `.desktop` paths migrate automatically.
 4. **Target Storage & Partition Review (Gated Confirmation)**:
-   Visual ASCII diagram of the ChromeOS GPT layout:
-   * `p1` (128 MiB): ChromeOS signed FIT kernel partition (`pmOS_kernel`)
-   * `p2` (512 MiB): Boot partition (`pmOS_boot`, ext2 mounted on `/boot`)
-   * `p3` (Remaining ~57.6 GiB): Root partition (`pmOS_root`, ext4 mounted on `/`)
-   Carries a prominent danger warning banner. **Confirmation Gate**: Cursor focus starts by default
-   on `[ Cancel / Back ]` so a stray Enter never formats storage; the `[ Erase Disk & Install ]` action
-   is strictly disabled until `"mmcblk0"` or `"DESTROY"` is typed into the confirmation box.
+   Displays the boot-specific GPT layout (`pmOS_kernel`/`pmOS_boot`/`pmOS_root` for `depthcharge`,
+   `lazyos_efi`/`lazyos_root` for `uefi`, `lazyos_boot`/`lazyos_root` for `extlinux`), switches
+   candidates when multiple non-active disks exist, starts cursor focus safely on `[ Cancel / Back ]`,
+   and locks `[ Erase Disk & Install ]` until the target short name (e.g., `mmcblk0`, `nvme0n1`)
+   or `DESTROY` is entered.
 5. **TaskView Installation Progress**:
-   Displays an overall progress gauge (`0%` to `100%`), sequential phase checklist with live spinner
-   indicators, and a streaming real-time log pane:
-   * Phase 1: Partitioning storage (`cgpt` ChromeOS GPT)
-   * Phase 2: Formatting filesystems (`mkfs.ext2`, `mkfs.ext4`)
-   * Phase 3: Copying root filesystem (`rsync` with byte transfer tracking)
-   * Phase 4: Applying user account, timezone, fstab, and locale configuration
-   * Phase 5: Generating signed depthcharge FIT kernel partition (`depthchargectl` / `make-kpart.sh`)
-   * Phase 6: Verifying vboot signature (`futility show`)
-   The worker engine is detached under `setsid` via `sudo -n`, writing state to `/run/lazyos-install/state.json`.
+   Spawns `sudo -n setsid systemd-inhibit ... /usr/bin/lazyos installer apply --stdin --state-dir /run/lazyos-install`,
+   streaming `rsync --info=progress2` progress, pausing `swayidle`, and enforcing the `first_write`
+   cancellation lock once GPT partitioning begins (`Esc` detaches while the worker finishes in background).
 6. **Completion**:
-   Green success screen detailing how to boot internal storage (selecting "internal disk" in the Chromebook
-   developer menu), with quick action buttons to `[ Reboot System Now ]` or `[ Stay in Live Session ]`.
+   Writes `/etc/lazyos/installation` last, verifies root ext4 cleanly with `e2fsck -f -n`, and
+   displays boot instructions tailored to Depthcharge, UEFI (`systemd-boot`), or `extlinux`.
 
-## Updating
+## Kernel Updates & Boot Targets
+
+* **`google-asurada` (`depthcharge`)**: uses the custom `mediatek-mt81` (`7.2.7`) kernel with
+  Hayato optimizations (`HZ=1000`, MGLRU, `schedutil`). Rewrite the active ChromeOS kernel partition
+  after a kernel update with `CONFIRM=yes sudo /usr/libexec/lazyos/install-boot.sh`.
+* **`arm64-uefi` & `arm64-extlinux` (`debian-arm64`)**: use Debian `forky`'s packaged
+  `linux-image-arm64` kernel plus broad multi-vendor firmware. Whenever `apt upgrade` updates the
+  kernel, `/etc/kernel/postinst.d/zz-lazyos-boot` automatically syncs `/usr/lib/linux-image-*`
+  DTBs into `/boot/dtbs/` and refreshes `/boot/efi/loader/entries/lazyos.conf` or
+  `/boot/extlinux/extlinux.conf` via `/usr/libexec/lazyos/install-boot.sh`.
 
 ```sh
 sudo apt update && sudo apt full-upgrade
-sudo ~/Dev/LazyOS/scripts/install-kpart.sh   # if the kernel changed
-check-system.sh ~/Dev/LazyOS
+sudo /usr/libexec/lazyos/install-boot.sh     # manual boot config/kpart refresh if needed
+check-system.sh
 ```
 
 The image itself is a snapshot: it is rebuilt from the repository, not upgraded

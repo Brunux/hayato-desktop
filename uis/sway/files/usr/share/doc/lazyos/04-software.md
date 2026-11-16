@@ -454,8 +454,8 @@ list below says why.
   wiped - and it asks twice with Cancel first. The filesystem is exFAT (`LAZYOS`,
   for a camera, a TV or another computer: Windows, macOS and Linux all read it,
   and unlike FAT32 it has no 4 GB file limit) or ext4 (for a Linux machine), and
-  the whole disk becomes one partition. The internal eMMC is only written by
-  `scripts/install-emmc.sh`; this menu is for sticks and cards. It is not
+  the whole disk becomes one partition. Internal system installation uses `lazyos installer`
+  (with `scripts/install-emmc.sh` preserved as a manual fallback); this menu is for sticks and cards. It is not
   stoppable: a killed `mkfs` leaves a disk that looks formatted and is not.
 * A failed mount says why in the notification, in udisks' own words: "not
   authorized" is a policy problem, "already mounted" means it is already in the

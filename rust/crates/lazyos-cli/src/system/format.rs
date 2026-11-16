@@ -195,7 +195,7 @@ pub fn menu(
         return Err(crate::Failure::new(
             "Format a disk",
             format!(
-                "{dev} is built into this machine or is the disk this system runs from: never formatted here (install-emmc.sh writes the eMMC)"
+                "{dev} is built into this machine or is the disk this system runs from: never formatted here (use lazyos installer)"
             ),
         ));
     }
