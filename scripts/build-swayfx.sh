@@ -16,7 +16,16 @@
 # Usage: build-swayfx.sh
 # Output: $COMPOSITOR_STAGE/*.deb   (installed by install-swayfx.sh)
 set -euo pipefail
-. "$(dirname "$0")/lib.sh"
+_here="$(cd "$(dirname "$0")" && pwd)"
+if [ -n "${LAZYOS_CORE_DIR:-}" ] && [ -f "$LAZYOS_CORE_DIR/scripts/lib.sh" ]; then
+	. "$LAZYOS_CORE_DIR/scripts/lib.sh"
+elif [ -f "$_here/../../core/scripts/lib.sh" ]; then
+	. "$_here/../../core/scripts/lib.sh"
+elif [ -f "$_here/../../lazyos-core/scripts/lib.sh" ]; then
+	. "$_here/../../lazyos-core/scripts/lib.sh"
+else
+	. "$_here/lib-desktop.sh"
+fi
 
 [ -f "$COMPOSITOR_DIR/SHA256SUMS" ] || die "no SHA256SUMS in $COMPOSITOR_DIR"
 

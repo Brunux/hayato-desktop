@@ -192,14 +192,14 @@ impl Hibernate {
             None => Some(
                 "The kernel command line has no resume=, so a hibernated session could not be \
                  restored. Add it once with CONFIRM=yes RESUME=yes \
-                 ~/Dev/LazyOS/scripts/install-kpart.sh (it rebuilds the kernel partition and keeps \
+                 /usr/libexec/lazyos/install-boot.sh (it updates boot config and keeps \
                  resume= across later kernel updates)."
                     .into(),
             ),
             Some("") => Some(
                 "The kernel command line has an empty resume=, so a hibernated session could not \
-                 be restored. Rebuild the kernel partition without it: CONFIRM=yes RESUME=no \
-                 ~/Dev/LazyOS/scripts/install-kpart.sh."
+                 be restored. Rebuild the boot configuration without it: CONFIRM=yes RESUME=no \
+                 /usr/libexec/lazyos/install-boot.sh."
                     .into(),
             ),
             Some(spec) if self.resume_broken => {
@@ -213,7 +213,7 @@ impl Hibernate {
                     "The kernel command line says resume={spec}, but no device carries that name \
                      now, so the next boot could not find the hibernation image. {fix} the kernel \
                      partition without it: CONFIRM=yes RESUME=no \
-                     ~/Dev/LazyOS/scripts/install-kpart.sh."
+                     /usr/libexec/lazyos/install-boot.sh."
                 ))
             }
             Some(_) => None,

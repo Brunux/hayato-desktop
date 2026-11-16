@@ -13,20 +13,30 @@
 #
 # Usage: build-lazyos.sh
 set -euo pipefail
-. "$(dirname "$0")/lib.sh"
+_here="$(cd "$(dirname "$0")" && pwd)"
+DESKTOP_DIR="${DESKTOP_DIR:-$(cd "$_here/.." && pwd)}"
+if [ -n "${LAZYOS_CORE_DIR:-}" ] && [ -f "$LAZYOS_CORE_DIR/scripts/lib.sh" ]; then
+	. "$LAZYOS_CORE_DIR/scripts/lib.sh"
+elif [ -f "$_here/../../core/scripts/lib.sh" ]; then
+	. "$_here/../../core/scripts/lib.sh"
+elif [ -f "$_here/../../lazyos-core/scripts/lib.sh" ]; then
+	. "$_here/../../lazyos-core/scripts/lib.sh"
+else
+	. "$_here/lib-desktop.sh"
+fi
 
 command -v cargo >/dev/null 2>&1 || die "cargo is not installed (run scripts/00-deps.sh)"
 
 log "Building the session framework (lazyos)"
-cargo build --release --locked --manifest-path "$REPO_DIR/rust/Cargo.toml"
+cargo build --release --locked --manifest-path "$DESKTOP_DIR/rust/Cargo.toml"
 
-BIN="$REPO_DIR/rust/target/release/lazyos"
+BIN="$DESKTOP_DIR/rust/target/release/lazyos"
 [ -x "$BIN" ] || die "cargo finished but $BIN is missing"
-NOTIFY_BIN="$REPO_DIR/rust/target/release/lazyos-notify"
+NOTIFY_BIN="$DESKTOP_DIR/rust/target/release/lazyos-notify"
 [ -x "$NOTIFY_BIN" ] || die "cargo finished but $NOTIFY_BIN is missing"
 # A binary that cannot report its version is not the one the image should
 # carry: the check is one process and it catches a broken include_str!.
-VERSION="$(cat "$REPO_DIR/VERSION")"
+VERSION="$(cat "$DESKTOP_DIR/VERSION")"
 REPORTED="$("$BIN" --version)"
 [ "$REPORTED" = "$VERSION" ] ||
 	die "lazyos reports '$REPORTED' but VERSION is '$VERSION'"

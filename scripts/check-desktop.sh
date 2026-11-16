@@ -1,0 +1,3758 @@
+#!/bin/bash
+# LazyOS desktop & framework checks (/usr/libexec/lazyos/check/30-desktop.sh).
+# Can run standalone (./scripts/check-desktop.sh [DESKTOP_REPO]) or sourced by check-system.sh.
+
+_STANDALONE_DESKTOP=0
+if [ "${_CHECK_SYSTEM_SOURCED:-0}" != 1 ]; then
+	_STANDALONE_DESKTOP=1
+	set -u
+	PASS=0 WARN=0 FAIL=0 SECTION="" SUMMARY_ONLY=0
+	PRIV=no
+	if [ "$(id -u)" -eq 0 ] || sudo -n true 2>/dev/null; then
+		PRIV=yes
+	fi
+	if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+		C_OK='\033[1;32m' C_WARN='\033[1;33m' C_FAIL='\033[1;31m'
+		C_INFO='\033[0;36m' C_DIM='\033[2m' C_HEAD='\033[1;37m' C_OFF='\033[0m'
+	else
+		C_OK="" C_WARN="" C_FAIL="" C_INFO="" C_DIM="" C_HEAD="" C_OFF=""
+	fi
+	if [ "${1:-}" = "--summary" ]; then SUMMARY_ONLY=1; shift; fi
+	section() { SECTION="$1"; [ "$SUMMARY_ONLY" = 1 ] || printf '\n%s==> %s%s\n' "$C_HEAD" "$1" "$C_OFF"; }
+	ok()   { PASS=$((PASS + 1)); [ "$SUMMARY_ONLY" = 1 ] || printf "  ${C_OK}%-4s${C_OFF}  %s\n" OK "$*"; }
+	warn() { WARN=$((WARN + 1)); printf "  ${C_WARN}%-4s${C_OFF}  [%s] %s\n" WARN "$SECTION" "$*"; }
+	fail() { FAIL=$((FAIL + 1)); printf "  ${C_FAIL}%-4s${C_OFF}  [%s] %s\n" FAIL "$SECTION" "$*"; }
+	skip() { [ "$SUMMARY_ONLY" = 1 ] || printf "  ${C_DIM}%-4s${C_OFF}  %s\n" SKIP "$*"; }
+	info() { [ "$SUMMARY_ONLY" = 1 ] || printf "  ${C_INFO}%-4s${C_OFF}  %s\n" INFO "$*"; }
+	have() { command -v "$1" >/dev/null 2>&1; }
+	asroot() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi; }
+	check_svc() {
+		local u="$1" desc="${2:-$1 is active}"
+		if ! have systemctl; then skip "no systemctl ($u)"; return 0; fi
+		if systemctl is-active --quiet "$u" 2>/dev/null; then ok "$desc"
+		else warn "$u is not active"; fi
+	}
+	_self_d="$(cd "$(dirname "$0")" && pwd)"
+	DESKTOP_REPO="${1:-${LAZYOS_DESKTOP_DIR:-$(cd "$_self_d/.." 2>/dev/null && pwd)}}"
+	if [ -z "$DESKTOP_REPO" ] || [ ! -d "$DESKTOP_REPO/uis" ]; then
+		DESKTOP_REPO=""
+	fi
+	if [ -n "$DESKTOP_REPO" ]; then
+		if [ -x "$DESKTOP_REPO/rust/target/release/lazyos" ]; then
+			PATH="$DESKTOP_REPO/rust/target/release:$PATH"
+		elif [ -x "$DESKTOP_REPO/rust/target/debug/lazyos" ]; then
+			PATH="$DESKTOP_REPO/rust/target/debug:$PATH"
+		fi
+	fi
+	REPO="${REPO:-$DESKTOP_REPO}"
+	SETTINGS_ROWS="$(lazyos menu settings --rows 2>/dev/null || true)"
+	settings_runs() { awk -F'\t' -v want="$1" '$3 == want { found = 1 } END { exit !found }' <<<"$SETTINGS_ROWS"; }
+else
+	if [ -z "${DESKTOP_REPO:-}" ]; then
+		if [ -n "${LAZYOS_DESKTOP_DIR:-}" ] && [ -d "$LAZYOS_DESKTOP_DIR/uis" ]; then
+			DESKTOP_REPO="$LAZYOS_DESKTOP_DIR"
+		elif [ -n "${REPO:-}" ] && [ -d "$REPO/desktop/uis" ]; then
+			DESKTOP_REPO="$REPO/desktop"
+		elif [ -n "${REPO:-}" ] && [ -d "$REPO/uis" ]; then
+			DESKTOP_REPO="$REPO"
+		else
+			DESKTOP_REPO=""
+		fi
+	fi
+fi
+
+section "Session"
+# ---------------------------------------------------------------------------
+check_svc greetd "greetd is active"
+if [ -r /etc/greetd/config.toml ]; then
+	# Debian's greetd creates the _greetd user and its unit conflicts with
+	# getty@tty7, so vt must be 7; with any other name the service dies and the
+	# machine falls back to a console login (AGENTS.md).
+	_vt="$(sed -n 's/^vt *= *//p' /etc/greetd/config.toml | tr -d '"')"
+	_user="$(sed -n 's/^user *= *//p' /etc/greetd/config.toml | tr -d '"')"
+	[ "$_vt" = 7 ] && ok "greeter vt = 7" ||
+		fail "greeter vt = ${_vt:-unset} (must be 7: greetd conflicts with getty@tty7)"
+	getent passwd "$_user" >/dev/null 2>&1 && ok "greeter user $_user exists" ||
+		fail "greeter user '${_user:-unset}' does not exist: greetd exits and the greeter never shows"
+	grep -qs 'lazyos-greeter' /etc/greetd/config.toml 2>/dev/null &&
+		ok "greetd invokes native lazyos-greeter" ||
+		warn "/etc/greetd/config.toml does not invoke lazyos-greeter yet"
+else
+	fail "/etc/greetd/config.toml is missing"
+fi
+if have lazyos-greeter; then
+	ok "lazyos-greeter is installed"
+	lazyos-greeter --check >/dev/null 2>&1 &&
+		ok "lazyos-greeter --check passes" ||
+		fail "lazyos-greeter --check failed"
+	printf '%s\n' "$SETTINGS_ROWS" | grep -q '^greeter	' &&
+		ok "Settings exposes Login screen (Greeter) defaults" ||
+		fail "Settings (lazyos menu settings) lost the 'greeter' row: greeter defaults are unreachable"
+else
+	fail "lazyos-greeter is not installed (run scripts/build-lazyos.sh && scripts/install-lazyos.sh)"
+fi
+# greetd hands the session only the PAM environment, so pam_env is what puts the
+# locale there; without it every terminal warns "'C' is not a UTF-8 locale" and
+# sorting/matching run on the C locale.
+case "${LANG:-}" in
+*UTF-8* | *utf8*) ok "session locale is UTF-8 (${LANG})" ;;
+*) fail "session LANG is '${LANG:-unset}': greetd needs pam_env in /etc/pam.d/greetd (terminals warn and sorting is C)" ;;
+esac
+if have sway; then
+	# The session runs the wlroots fork built by scripts/build-swayfx.sh, not
+	# Debian's plain sway: 26-swayfx.conf needs it (corners, shadows, the blur
+	# tuning and the layer_effects).  The version string is the only cheap way to
+	# tell the two /usr/bin/sway binaries apart, and plain sway would start but
+	# silently ignore the effects.
+	_sway_version="$(sway --version 2>/dev/null | head -n1)"
+	case "$_sway_version" in
+	*swayfx*) ok "compositor is $_sway_version" ;;
+	*) fail "compositor is '${_sway_version:-unknown}', not swayfx: rounded corners and shadows are missing (run scripts/install-swayfx.sh)" ;;
+	esac
+	# The renderer the session actually got. PanVK has no Mali-G57 support
+	# ("vulkaninfo: Mali-G57 not supported") and SceneFX only implements a GLES
+	# renderer, so panfrost through EGL is the whole stack. A forced
+	# LIBGL_ALWAYS_SOFTWARE, a broken firmware load or a Mesa regression would
+	# silently drop the session onto llvmpipe/swrast, where every frame and the
+	# blur are drawn on the CPU - eglinfo reports the renderer without needing a
+	# display, and it ships in mesa-utils (already a package here).
+	if have eglinfo; then
+		_gpu_renderer="$(eglinfo -B 2>/dev/null | awk -F': ' '/OpenGL ES profile renderer/ { print $2; exit }')"
+		case "$_gpu_renderer" in
+		*Panfrost*) ok "GPU renderer is $_gpu_renderer" ;;
+		"") warn "eglinfo reported no renderer: cannot confirm the GPU driver" ;;
+		*) fail "GPU renderer is '$_gpu_renderer', not Panfrost: the session is drawing on software (check LIBGL_ALWAYS_SOFTWARE and the GPU firmware)" ;;
+		esac
+	else
+		skip "eglinfo is missing (mesa-utils): cannot confirm the GPU driver"
+	fi
+	if XDG_RUNTIME_DIR="$RUNTIME" WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 \
+		sway -C -c /etc/sway/config >/dev/null 2>&1; then
+		ok "sway configuration is valid"
+	else
+		fail "sway -C rejected /etc/sway/config"
+	fi
+	# sway starts Xwayland itself (it is not in the configuration), so a missing
+	# package shows up only as two red lines in the journal and as X11 programs
+	# that cannot launch (see AGENTS.md).
+	if grep -rqsE '^[[:space:]]*xwayland[[:space:]]+disable' /etc/sway/config /etc/sway/config.d 2>/dev/null; then
+		skip "Xwayland disabled in the sway configuration"
+	elif [ -x /usr/bin/Xwayland ]; then
+		ok "Xwayland present (X11 programs can run)"
+	else
+		warn "Xwayland is missing: sway logs a startup error and X11 programs cannot run"
+	fi
+fi
+_missing_cmds=""
+for _c in waybar foot swaylock swaynag swaybg brightnessctl grimshot wlsunset wpctl pactl lazyos-notify; do
+	have "$_c" || _missing_cmds="$_missing_cmds $_c"
+done
+if [ -z "$_missing_cmds" ]; then
+	ok "every command the sway configuration invokes is installed"
+else
+	warn "commands referenced by the sway configuration are missing:$_missing_cmds"
+fi
+
+# Workspace icons: workstyle renames every workspace to "<number>: <icons>" and
+# the bar draws that name back ("format": "{value}"). Four things have to hold at
+# once, and each one of them fails silently on its own: the binary, the exec line
+# that starts it, a pill that is not trimmed back to its number, and glyphs that
+# the menus' own alphabet carries (a codepoint from nowhere else is a tofu box in
+# the pill, and nothing logs it).
+if [ ! -x /usr/bin/workstyle ]; then
+	fail "/usr/bin/workstyle is missing: every pill keeps its bare number and the workspace names stay bare (run scripts/install-workstyle.sh)"
+else
+	ok "workstyle installed ($(/usr/bin/workstyle --version 2>/dev/null | head -n1))"
+	if grep -rqsE '^[[:space:]]*exec(_always)?[[:space:]]+.*workstyle' \
+		/etc/sway/config /etc/sway/config.d 2>/dev/null; then
+		ok "the sway configuration starts workstyle"
+	else
+		fail "no exec line starts workstyle (/etc/sway/config.d/02-workstyle.conf): the workspace names are never rewritten"
+	fi
+	if pgrep -x workstyle >/dev/null 2>&1; then
+		ok "workstyle is running"
+	else
+		warn "workstyle is not running: the workspace names stay as they are until it starts (swaymsg reload starts it again)"
+	fi
+	_bar_cfg="$HOME/.config/waybar/config.jsonc"
+	if grep -A 14 '"sway/workspaces"' "$_bar_cfg" 2>/dev/null | grep -q 'persistent-workspaces'; then
+		warn "the bar's workspaces module still carries persistent-workspaces: it is matched by workspace *name*, so every renamed workspace draws a duplicate pill beside it"
+	fi
+	if grep -A 14 '"sway/workspaces"' "$_bar_cfg" 2>/dev/null | grep -q '"format": "{value}"'; then
+		ok "the bar draws the whole workspace name (number and icons)"
+	elif [ -r "$_bar_cfg" ]; then
+		warn "the bar's workspaces format is not \"{value}\": {name} keeps only what is after the colon, so the number disappears from the pill"
+	fi
+	_ws_conf="$HOME/.config/workstyle/config.toml"
+	if [ ! -r "$_ws_conf" ]; then
+		fail "$_ws_conf is missing: workstyle writes its own default there, which knows none of this session's apps"
+	else
+		# The glyphs are \uXXXX escapes, so the file stays ASCII (a literal
+		# private-use character does not survive every editor, which is how an
+		# earlier glyph table in this repository shipped as empty spans).
+		_ws_hexes="$(sed -n 's/.*"\\u\([0-9a-fA-F]\{4\}\)".*/\1/p' "$_ws_conf" | tr 'A-F' 'a-f' | sort -u)"
+		if [ -z "$_ws_hexes" ]; then
+			fail "no glyph parsed from $_ws_conf (every pill would show a bare number)"
+		else
+			ok "workspace icons use $(printf '%s\n' $_ws_hexes | wc -l) codepoints in workstyle configuration"
+		fi
+		# A line this check cannot read is either a typo or a construct the daemon
+		# parses differently. A TOML parse error is loud in the journal (one retry
+		# per second) and silent in the bar (the old names stay), so it is worth
+		# saying once here.
+		_ws_bad="$(grep -vE '^[[:space:]]*(#|$)' "$_ws_conf" |
+			grep -cvE '^("[^"]*"[[:space:]]*=[[:space:]]*"\\u[0-9a-fA-F]{4}"|\[other\]|[a-z_]+[[:space:]]*=[[:space:]]*("[^"]*"|true|false))[[:space:]]*(#.*)?$' ||
+			true)"
+		[ "${_ws_bad:-0}" -eq 0 ] ||
+			warn "$_ws_bad line(s) of $_ws_conf do not look like \"pattern\" = \"\\uXXXX\": a parse error leaves workstyle retrying once a second"
+	fi
+fi
+# workstyle renames workspaces, so a command that names one ("workspace 3")
+# targets a name that is about to change; `workspace number 3` is the form that
+# keeps working, and it is what this configuration already uses everywhere.
+_ws_named="$(grep -rnE '^[[:space:]]*[^#[:space:]][^#]*workspace[[:space:]]+[0-9]' \
+	/etc/sway/config /etc/sway/config.d 2>/dev/null | head -n 3 || true)"
+if [ -z "$_ws_named" ]; then
+	ok "sway addresses workspaces by number, so renaming them does not break a binding"
+else
+	fail "a command names a workspace instead of its number: $(printf '%s' "$_ws_named" | tr '\n' ' ')(workstyle renames workspaces, so that name will not exist)"
+fi
+
+# kitty is the optional second terminal: nothing in the session starts it (foot is
+# $term, the bar's popups, and every menu that needs a terminal) and no package
+# list installs it, but the image ships its configuration so that `apt install
+# kitty` does not put a second, unthemed palette on the wallpaper.  A kitty with a
+# broken configuration looks *fine*: an unknown key is only a stderr line
+# ("Ignoring unknown config key") and a value that does not parse - a mistyped
+# colour, a font size that is not a number - is dropped in favour of the default.
+# So the check asks kitty's own parser what the file resolves to, with no window
+# (kitty +runpy, ~0.1 s, writes nothing), and compares that with the theme rather
+# than grepping the file for the keys it is supposed to have.
+if ! have kitty; then
+	skip "kitty is not installed (the session terminal is foot)"
+elif [ ! -r "$HOME/.config/kitty/kitty.conf" ]; then
+	fail "$HOME/.config/kitty/kitty.conf is missing: kitty opens on its own palette beside a solarized foot"
+else
+	_kitty_out=$(LZY_KITTY_CONF="$HOME/.config/kitty/kitty.conf" kitty +runpy '
+import os
+from kitty.config import load_config
+bad = []
+o = load_config(os.environ["LZY_KITTY_CONF"], accumulate_bad_lines=bad)
+print("bad=%d" % len(bad))
+print("bg=%06x" % o.background.rgb)
+print("fg=%06x" % o.foreground.rgb)
+print("opacity=%s" % o.background_opacity)
+# `font_family` resolves to a FontSpec namedtuple (family, system, postscript
+# name, ...), so ask it for .system: a bare %s of the spec is a TypeError and the
+# report then says the font is missing when it is right there.
+print("font=%s" % o.font_family.system)
+print("symbols=%d" % len(o.symbol_map))
+for b in bad:
+    print("badline=%d %s: %s" % (b.number, b.line, b.exception))
+' 2>"$RUNTIME/kitty.err")
+	_kitty_rc=$?
+	_kitty_unknown=$(sed -n 's/.*Ignoring unknown config key: *//p' "$RUNTIME/kitty.err" | paste -sd, -)
+	_kitty_badlines=$(sed -n 's/^bad=//p' <<<"$_kitty_out")
+	_kitty_first=$(sed -n 's/^badline=[0-9]* //p' <<<"$_kitty_out" | head -n 1)
+	if [ "$_kitty_rc" -ne 0 ] && [ -z "$_kitty_out" ]; then
+		warn "kitty +runpy failed, cannot confirm the configuration: $(head -n 1 "$RUNTIME/kitty.err")"
+	elif [ "${_kitty_badlines:-?}" != 0 ] || [ -n "$_kitty_unknown" ]; then
+		fail "kitty ignores part of its configuration:${_kitty_unknown:+ unknown key(s) $_kitty_unknown;} ${_kitty_first:-no value reported} (the default is used instead, so the palette or the alpha is not what the theme says)"
+	else
+		_kitty_bg=$(sed -n 's/^bg=//p' <<<"$_kitty_out")
+		_kitty_fg=$(sed -n 's/^fg=//p' <<<"$_kitty_out")
+		_kitty_op=$(sed -n 's/^opacity=//p' <<<"$_kitty_out")
+		_kitty_font=$(sed -n 's/^font=//p' <<<"$_kitty_out")
+		_kitty_sym=$(sed -n 's/^symbols=//p' <<<"$_kitty_out")
+		_kitty_off=
+		[ "$_kitty_bg" = 002b36 ] ||
+			_kitty_off="$_kitty_off background=#$_kitty_bg (not solarized base03)"
+		[ "$_kitty_fg" = 93a1a1 ] ||
+			_kitty_off="$_kitty_off foreground=#$_kitty_fg (not base1)"
+		awk -v o="$_kitty_op" 'BEGIN { exit !(o > 0 && o < 1) }' ||
+			_kitty_off="$_kitty_off opacity=$_kitty_op (opaque: swayfx has no blur to draw behind it)"
+		[ "$_kitty_font" = "JetBrains Mono" ] ||
+			_kitty_off="$_kitty_off font=$_kitty_font (not the theme's type)"
+		[ "${_kitty_sym:-0}" -ge 2 ] ||
+			_kitty_off="$_kitty_off symbol_maps=$_kitty_sym (Nerd Font glyphs render double width)"
+		if [ -z "$_kitty_off" ]; then
+			ok "kitty carries the session palette (solarized base03/base1, alpha $_kitty_op, $_kitty_font, $_kitty_sym symbol map(s))"
+		else
+			fail "kitty is not themed like the session:$_kitty_off"
+		fi
+	fi
+fi
+
+# Notifications: lazyos-notify owns org.freedesktop.Notifications on the session bus. If
+# the daemon is not running (crashed, or never started) nothing logs it and
+# every application's notifications silently disappear, so ask the bus.
+if have busctl; then
+	_notify_name="$(busctl --user list --no-legend 2>/dev/null | awk '$1 == "org.freedesktop.Notifications" { print $1 }')"
+	if [ -n "$_notify_name" ]; then
+		ok "a notification daemon owns org.freedesktop.Notifications (lazyos-notify)"
+	else
+		warn "no notification daemon on the session bus: lazyos-notify is not running, notifications are lost"
+	fi
+else
+	skip "busctl is not installed"
+fi
+
+# A notification icon is a name looked up in the theme or rendered as a glyph.
+# The names are verified against lazyos --icon-names.
+if command -v lazyos >/dev/null 2>&1 && [ -d /usr/share/icons/LazyOS ]; then
+	_missing_icon=
+	for _n in $(lazyos --icon-names 2>/dev/null); do
+		ls /usr/share/icons/LazyOS/*/apps/"$_n".png >/dev/null 2>&1 ||
+			_missing_icon="$_missing_icon $_n"
+	done
+	[ -z "$_missing_icon" ] &&
+		ok "notification icons resolve in the LazyOS theme (lazyos --icon-names)" ||
+		warn "notification icon(s) missing from /usr/share/icons/LazyOS:$_missing_icon (scripts/make-icons.sh)"
+fi
+
+# The other half of the same rule: a name only draws if the call asks for one.
+# A `notify-send -a APP` without `-i` is a text-only card with no log line, and
+# the file browser's eight messages were the last ones without a picture.
+_notify_calls=$(grep -rn 'notify-send .*-a [A-Za-z]' "$HOME/.config/bin" 2>/dev/null || true)
+_notify_noicon=$(printf '%s\n' "$_notify_calls" | grep -v -- ' -i ' || true)
+if [ -z "$_notify_noicon" ]; then
+	ok "every notification in ~/.config/bin carries an icon"
+else
+	warn "notification(s) without -i, so a text-only card: $(printf '%s\n' "$_notify_noicon" | sed 's#.*/bin/##' | tr '\n' ' ')"
+fi
+
+if have lazyos-notify; then
+	ok "notifications can carry a picture (lazyos-notify native rendering)"
+	[ -f /usr/share/dbus-1/services/org.freedesktop.Notifications.service ] &&
+		ok "D-Bus service auto-activation is configured for lazyos-notify"
+elif [ -r "$HOME/.config/mako/config" ]; then
+	_mako_icons=$(sed -n 's/^icons=//p' "$HOME/.config/mako/config" | head -1)
+	_mako_path=$(sed -n 's/^icon-path=//p' "$HOME/.config/mako/config" | head -1)
+	if [ "$_mako_icons" = 1 ] && [ -n "$_mako_path" ] && [ -d "$_mako_path" ]; then
+		ok "notifications can carry a picture (icons=1, icon-path=$_mako_path)"
+	else
+		warn "mako draws no picture: icons=1 and an existing icon-path are missing from ~/.config/mako/config"
+	fi
+fi
+
+# The bar's menus are the whole port of Deboma's panels: each indicator draws
+# from waybar and runs ~/.config/bin/bar-* on click.  A missing script or a
+# missing tool does not log anything - the indicator still appears and every
+# click is a silent no-op - so this is a FAIL, not a warning.
+_missing_bar=""
+for _c in jq nmcli bluetoothctl pactl brightnessctl foot lazyos; do
+	have "$_c" || _missing_bar="$_missing_bar $_c"
+done
+for _s in bar-menu bar-net bar-bt bar-key bar-audio bar-updates bar-power \
+	bar-busy busy; do
+	[ -r "$HOME/.config/bin/$_s" ] || _missing_bar="$_missing_bar bin/$_s"
+done
+if [ -z "$_missing_bar" ]; then
+	ok "bar menus complete (framework plus nmcli, bluetoothctl, jq)"
+else
+	fail "bar menus broken:$_missing_bar (clicking those indicators does nothing)"
+fi
+
+# The bar's busy card is also the stop button: config.jsonc's custom/busy
+# on-click runs `bar-busy stop`, and a lost key leaves a spinner that draws and
+# does nothing when clicked - which is indistinguishable from "this action
+# cannot be stopped", the answer the card gives on purpose. Read the module
+# object out of the file (it is JSON with comments, so jq cannot parse it): the
+# block starts at its key and ends at the first line that is only `}`.
+_busy_mod=""
+[ -r "$HOME/.config/waybar/config.jsonc" ] &&
+	_busy_mod=$(awk '/"custom\/busy"[[:space:]]*:[[:space:]]*\{/ { f = 1 }
+		f && /^[[:space:]]*\}/ { print; exit }
+		f' "$HOME/.config/waybar/config.jsonc" 2>/dev/null || true)
+case $_busy_mod in
+*'on-click'*bar-busy*stop*)
+	ok "the bar's busy card is the stop button (custom/busy on-click)" ;;
+'')
+	warn "custom/busy is not readable in ~/.config/waybar/config.jsonc: the spinner may not be clickable" ;;
+*)
+	warn "custom/busy has no on-click stop: the spinner cannot be clicked" ;;
+esac
+
+# Both ends share one protocol, exercised here for real because it is invisible
+# until it fails: `busy start` records BUSY_STOP - a shell line, not a pid - in
+# <tag>.stop (0600, since something executes it), `bar-busy stop` removes the
+# card and runs it, and `busy cancelled` then answers 0 so the producer reports
+# nothing instead of half a result. The probe is one file in the runtime
+# directory and it is removed before this block ends.
+_busy_rt=${XDG_RUNTIME_DIR:-/tmp}/lazyos-busy
+_busy_bin="$HOME/.config/bin/busy"
+if [ ! -d "${XDG_RUNTIME_DIR:-/tmp}" ] || [ ! -w "${XDG_RUNTIME_DIR:-/tmp}" ]; then
+	skip "no writable runtime directory: the busy/stop protocol cannot be exercised here"
+else
+	if BUSY_STOP=: "$_busy_bin" start check-system Probe 'probe' >/dev/null 2>&1 &&
+		[ -f "$_busy_rt/check-system.stop" ] &&
+		[ "$(stat -c %a "$_busy_rt/check-system.stop" 2>/dev/null)" = 600 ]; then
+		ok "busy records the stop command (mode 0600) the spinner runs"
+		if "$_busy_bin" cancelled check-system >/dev/null 2>&1; then
+			warn "busy cancelled says a running card is already gone (a stopped lookup looks finished)"
+		else
+			ok "busy cancelled tells a running task from a stopped one"
+		fi
+	else
+		warn "busy does not record a stop command in $_busy_rt: the spinner cannot stop its task"
+	fi
+	"$_busy_bin" stop check-system >/dev/null 2>&1 || true
+	if "$_busy_bin" cancelled check-system >/dev/null 2>&1; then
+		ok "after a stop, busy says the task was cancelled (the producer reports nothing)"
+	else
+		warn "busy cancelled still sees the card after busy stop (the producer would report a half result)"
+	fi
+fi
+
+# The idle screen is a foot window running ~/.config/bin/lazyos-screensaver: a
+# loop of tte effects over the LazyOS wordmark, started by swayidle at 150 s.
+# Each piece fails silently on its own: without tte or the art the static frame
+# stays (the loop, which is the point of the entry, is gone), without the
+# launcher the screen never appears, without the lock helper the 300 s timer
+# does nothing, and without swayidle nothing starts at all.
+_saver=""
+have tte || _saver="$_saver tte"
+have swayidle || _saver="$_saver swayidle"
+[ -s "$HOME/.config/lazyos/screensaver.txt" ] || _saver="$_saver .config/lazyos/screensaver.txt"
+[ -x "$HOME/.config/bin/lazyos-screensaver" ] || _saver="$_saver bin/lazyos-screensaver"
+[ -x "$HOME/.config/bin/sway-lock" ] || _saver="$_saver bin/sway-lock"
+[ -r "$HOME/.config/foot/screensaver.ini" ] || _saver="$_saver .config/foot/screensaver.ini"
+if [ -z "$_saver" ]; then
+	ok "idle screen complete (tte, LazyOS art, launcher, sway-lock, terminal profile)"
+else
+	fail "idle screen incomplete:$_saver (the idle screen is blank or never starts)"
+fi
+
+# And the pointer has to end it.  A pty forwards the mouse only when the program
+# inside asks for it, so the dismissal on a mouse move is one escape: DECSET 1003
+# (all motion) with 1006 (the SGR encoding it is read in).  Without the first,
+# the loop sees key bytes only - motion and clicks stay foot's own business (a
+# click starts a selection) and the wordmark keeps animating with no log line
+# anywhere, which is what the card reported.  Leaving the mode on is the other
+# half: a `--run` in a real shell would then write escape sequences into the
+# prompt for the rest of the session.
+_saver_bin="$HOME/.config/bin/lazyos-screensaver"
+if [ -x "$_saver_bin" ]; then
+	_saver_ptr=""
+	grep -q '?1003h' "$_saver_bin" || _saver_ptr="no-1003h"
+	grep -q '?1003l' "$_saver_bin" || _saver_ptr="$_saver_ptr no-1003l"
+	case $_saver_ptr in
+	'') ok "idle screen ends on the pointer too (mouse reporting on, and off again on exit)" ;;
+	*no-1003h*)
+		fail "idle screen does not ask the terminal for the mouse (?1003h): motion and clicks cannot end it" ;;
+	*) warn "idle screen leaves mouse reporting on (?1003l): --run in a shell writes escapes into the prompt" ;;
+	esac
+fi
+
+# Hiding the pointer while the idle screen is up is a session-wide seat setting,
+# not a property of the window: sway offers no IPC read for it (get_seats
+# reports only name, capabilities, focus and devices), so the value in effect
+# before the saver is recovered from the merged config and the EXIT trap puts it
+# back.  Without the restore, the seat keeps hiding the pointer after foot
+# closes - the desktop pointer vanishing after every movement is the report this
+# port got ("the mouse pointer disappears quickly").  Note sway clamps any
+# non-zero timeout under 100 up to 100 ms, so `hide_cursor 1` is really 100.
+if [ -x "$_saver_bin" ]; then
+	_saver_cur=""
+	grep -q 'hide_cursor 1' "$_saver_bin" || _saver_cur="$_saver_cur no-hide"
+	grep -q 'prev_hide_cursor=' "$_saver_bin" || _saver_cur="$_saver_cur no-capture"
+	grep -qF 'hide_cursor "$prev_hide_cursor"' "$_saver_bin" || _saver_cur="$_saver_cur no-restore"
+	case $_saver_cur in
+	'') ok "idle screen restores the pointer on exit (captures the prior hide_cursor and puts it back)" ;;
+	*no-restore*)
+		fail "idle screen hides the seat cursor and never resets it: the desktop pointer disappears after the saver" ;;
+	*) warn "idle screen pointer-hide/restore drifted (capture or restore line changed)" ;;
+	esac
+fi
+
+# The 150 s command has to return at once, or the rest of the chain never runs.
+# swayidle runs it with `-w`, which blocks its whole event loop until the command
+# exits (main.c, cmd_exec: waitpid), and a saver held in the foreground would
+# keep the 300 s lock, the 360 s DPMS, the resume lines and before-sleep waiting
+# for as long as the wordmark animated: the session would never lock, the panel
+# would never go dark, and a lid close would sleep after logind's inhibitor
+# timeout without the lock in front of it.  The stub foot sleeps, so a launcher
+# that detaches returns in milliseconds and a foreground one cannot.  (Measured,
+# not assumed: with `-w` a `timeout 1 'sleep 100'` kept a 2 s timeout from firing
+# within 5 s; without `-w` it fired at 2 s.)
+_saver_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-saver.XXXXXX" 2>/dev/null || true)
+if [ -n "$_saver_tmp" ] && [ -x "$_saver_bin" ]; then
+	if pgrep -x swaylock >/dev/null 2>&1 || pgrep -f '[o]rg.lazyos.screensaver' >/dev/null 2>&1; then
+		# Both make the launcher return before it reaches foot, which would be
+		# an OK for the wrong reason.
+		warn "idle screen launcher not tested: a lock or an idle screen is already up"
+	else
+		printf '%s\n' '#!/bin/sh' 'sleep 30' >"$_saver_tmp/foot"
+		chmod +x "$_saver_tmp/foot"
+		if PATH="$_saver_tmp:$PATH" timeout 5 "$_saver_bin" >/dev/null 2>&1; then
+			ok "idle screen launcher returns at once (swayidle -w reaches the 300 s lock)"
+		else
+			fail "idle screen launcher stays in the foreground: with swayidle -w the lock, the panel-off timer and resume never run"
+		fi
+	fi
+	pkill -f "$_saver_tmp/foot" 2>/dev/null || true
+	rm -rf "$_saver_tmp"
+fi
+
+# The chain itself, read from the drop-in that owns it: a missing line means the
+# screen never appears (150 s), the session never locks (300 s), the panel stays
+# lit after the lock (360 s), the panel never comes back (resume) or the machine
+# suspends before the lock is covered (before-sleep).  The numbers are compared,
+# because a different timeout is the same as none.  The resume half is asked for
+# twice on purpose: swayidle's own `resume` covers an idle period, and
+# `after-resume` covers a suspend, which is not an idle timeout and would
+# otherwise wake to a black panel that nothing turns back on.
+_idle_cfg=/etc/sway/config.d/23-lazyos-screensaver.conf
+_idle=""
+[ -r "$_idle_cfg" ] || _idle=" $_idle_cfg"
+if [ -r "$_idle_cfg" ]; then
+	grep -q "timeout 150 .*lazyos-screensaver" "$_idle_cfg" || _idle="$_idle no-150s-screen"
+	grep -q "timeout 300 .*sway-lock" "$_idle_cfg" || _idle="$_idle no-300s-lock"
+	grep -q "timeout 360 .*power off" "$_idle_cfg" || _idle="$_idle no-360s-dpms"
+	grep -q "^[[:space:]]*resume .*power on" "$_idle_cfg" || _idle="$_idle no-dpms-resume"
+	grep -q "after-resume .*power on" "$_idle_cfg" || _idle="$_idle no-dpms-after-resume"
+	grep -q "after-resume .*lazyos-dp-resume" "$_idle_cfg" || _idle="$_idle no-external-display-after-resume"
+	grep -q "before-sleep .*sway-lock --wait" "$_idle_cfg" || _idle="$_idle no-lock-before-sleep"
+fi
+pgrep -x swayidle >/dev/null 2>&1 || _idle="$_idle swayidle-not-running"
+if [ -z "$_idle" ]; then
+	ok "idle chain armed (150 s idle screen, 300 s lock, 360 s panel off, lock before sleep)"
+else
+	fail "idle chain broken:$_idle"
+fi
+
+# A fullscreen film or presentation must not be interrupted by the lock, and
+# mpv asks the compositor for that itself (zwp_idle_inhibitor_v1); Firefox and
+# papers ask org.freedesktop.portal.Inhibit instead, which this image has no
+# backend for, so the compositor holds the inhibitor on their behalf.  Without
+# those lines the screen locks in the middle of a video, with no error anywhere.
+# The bar's coffee cup is the manual override (waybar's own idle_inhibitor
+# module); a missing module leaves the "keep awake" toggle unreachable, which is
+# a warning rather than a failure because the automatic rules still work.
+_inhib_cfg=/etc/sway/config.d/32-idle-inhibit.conf
+_inhib=""
+if [ -r "$_inhib_cfg" ]; then
+	grep -qs 'firefox.*inhibit_idle fullscreen' "$_inhib_cfg" ||
+		_inhib="$_inhib no-firefox"
+	grep -qs 'Papers.*inhibit_idle fullscreen' "$_inhib_cfg" ||
+		_inhib="$_inhib no-papers"
+	grep -qs 'mpv.*inhibit_idle visible' "$_inhib_cfg" ||
+		_inhib="$_inhib no-mpv"
+else
+	_inhib="$_inhib $_inhib_cfg"
+fi
+if [ -z "$_inhib" ]; then
+	ok "fullscreen video inhibits the idle chain (Firefox, papers, mpv)"
+else
+	fail "idle inhibition incomplete:$_inhib (the lock interrupts a film)"
+fi
+if ! grep -qs '"idle_inhibitor"' "$HOME/.config/waybar/config.jsonc"; then
+	warn "the bar has no idle_inhibitor module: there is no way to keep the screen awake by hand"
+elif ! grep -qs 'idle_inhibitor\.activated' "$HOME/.config/waybar/style.css"; then
+	warn "style.css has no #idle_inhibitor.activated rule: the coffee cup does not show whether it is on"
+else
+	ok "the bar carries a keep-awake toggle (idle_inhibitor, yellow when on)"
+fi
+
+# The on-screen display the volume and brightness keys draw.  The keys used to
+# change the value and say nothing, and the only feedback was the bar's 12 px
+# number - which a fullscreen window covers.  Three things break it silently: the
+# helper loses its executable bit (the key presses and nothing appears), a
+# binding goes back to the raw pactl/brightnessctl call (the value changes with
+# no card), or the theme loses one of the three volume icons (the card is
+# text-only, with no log line).  The mako side is asked too: without `icons=1`
+# the icon is not drawn at all, and without a progress-color the `value` hint
+# draws no bar.
+_osd=""
+[ -x "$HOME/.config/bin/osd" ] || _osd="$_osd bin/osd"
+have notify-send || _osd="$_osd notify-send"
+grep -qs 'bin/osd volume' /etc/sway/config.d/21-volume.conf ||
+	_osd="$_osd config.d/21-volume.conf"
+grep -qs 'bin/osd brightness' /etc/sway/config.d/20-brightness.conf ||
+	_osd="$_osd config.d/20-brightness.conf"
+for _i in audio-volume-muted audio-volume-low audio-volume-high display-brightness; do
+	[ -r "/usr/share/icons/LazyOS/48x48/apps/$_i.png" ] || _osd="$_osd icon:$_i"
+done
+if [ -z "$_osd" ]; then
+	ok "volume and brightness keys draw an overlay (bin/osd, three volume icons, the theme's brightness icon)"
+else
+	fail "the volume/brightness overlay is incomplete:$_osd"
+fi
+if have lazyos-notify; then
+	ok "the overlay can carry its icon and its level bar (lazyos-notify)"
+elif [ -r "$HOME/.config/mako/config" ]; then
+	if grep -qs '^icons=1' "$HOME/.config/mako/config" &&
+		grep -qs '^progress-color=' "$HOME/.config/mako/config"; then
+		ok "the overlay can carry its icon and its level bar (mako icons=1, progress-color)"
+	else
+		warn "mako/config loses icons=1 or progress-color: the overlay shows text only"
+	fi
+fi
+
+# Both steps have to be in a form brightnessctl accepts.  A delta written with a
+# leading hyphen is read by its getopt as an option ("invalid option -- '5'"), so
+# `osd brightness down` returns 1, changes nothing and raises the error card while
+# `up` works: one direction only, and the helper reads perfectly.  The stub
+# records the arguments the helper really passes, so nothing is written and the
+# helper's own code is what runs.
+_osd_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-osd.XXXXXX" 2>/dev/null || true)
+if [ -n "$_osd_tmp" ] && [ -x "$HOME/.config/bin/osd" ]; then
+	printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$*" >>"$OSD_TEST_LOG"' >"$_osd_tmp/brightnessctl"
+	printf '%s\n' '#!/bin/sh' 'exit 0' >"$_osd_tmp/notify-send"
+	chmod +x "$_osd_tmp/brightnessctl" "$_osd_tmp/notify-send"
+	(
+		export PATH="$_osd_tmp:$PATH" OSD_TEST_LOG="$_osd_tmp/args"
+		: >"$_osd_tmp/args"
+		"$HOME/.config/bin/osd" brightness down >/dev/null 2>&1 || true
+		"$HOME/.config/bin/osd" brightness up >/dev/null 2>&1 || true
+	)
+	_osd_steps=$(grep -- '^set ' "$_osd_tmp/args" | tr '\n' ' ')
+	_osd_steps=${_osd_steps% }
+	if grep -q -- '^set -' "$_osd_tmp/args"; then
+		fail "bin/osd passes brightnessctl a step starting with a hyphen ($_osd_steps): getopt reads it as an option, so that direction does nothing"
+	elif [ "$(grep -c -- '^set ' "$_osd_tmp/args")" -lt 2 ]; then
+		fail "bin/osd asks brightnessctl for fewer than two steps (${_osd_steps:-none}): a key changes nothing"
+	else
+		ok "both brightness directions pass a step brightnessctl accepts ($_osd_steps)"
+	fi
+	rm -rf "$_osd_tmp"
+fi
+
+# The night light is one helper now: the login line, the Settings switch and
+# the after-resume hook all ask it, so a raw `exec wlsunset` and the switch's own
+# copy of the coordinates are both regressions. The resume has to run after the
+# screensaver kill, and that kill has to be bracketed: swayidle runs the chain
+# with `/bin/sh -c`, whose own command line contains the pattern, so
+# `pkill -f org.lazyos.screensaver` kills the shell before `night-light resume`
+# runs and the screen wakes at daylight colour while the switch says on.
+_nl_cfg=/etc/sway/config.d/23-lazyos-screensaver.conf
+_night_light=""
+[ -x "$HOME/.config/bin/night-light" ] || _night_light="$_night_light bin/night-light"
+grep -qs '^exec .*/night-light login' /etc/sway/config ||
+	_night_light="$_night_light config(night-light-login)"
+grep -qs 'after-resume .*night-light resume' "$_nl_cfg" ||
+	_night_light="$_night_light config.d/23-lazyos-screensaver.conf(resume)"
+settings_runs 'night-light start' ||
+	_night_light="$_night_light settings(start)"
+if [ -x "$HOME/.config/bin/night-light" ]; then
+	case $("$HOME/.config/bin/night-light" status 2>/dev/null || true) in
+	on\ *|off|off\ *) ;;
+	*) _night_light="$_night_light bin/night-light(status)" ;;
+	esac
+fi
+if [ -z "$_night_light" ]; then
+	ok "night light wired (helper, login line, after-resume, Settings switch)"
+else
+	fail "night light incomplete:$_night_light (the screen never warms, or it stays at daylight after a resume)"
+fi
+if grep -qs '^exec .*wlsunset' /etc/sway/config; then
+	fail "/etc/sway/config starts wlsunset directly (the night-light helper is bypassed: the switch and the after-resume hook do not know the mode)"
+fi
+if grep -q 'after-resume .*pkill -f org\.lazyos\.screensaver' "$_nl_cfg" 2>/dev/null; then
+	fail "idle chain uses an unbracketed pkill -f org.lazyos.screensaver (it matches its own sh -c and kills the chain before night-light resume)"
+fi
+
+# The bug the guard in lazyos-screensaver exists for: a saver left running under
+# an active lock animates to nobody and spends CPU (it used to do exactly that
+# for the 150 s between the two timers).
+if pgrep -x swaylock >/dev/null 2>&1 && pgrep -f org.lazyos.screensaver >/dev/null 2>&1; then
+	warn "the idle screen is running under swaylock (invisible CPU; it should have refused)"
+fi
+
+# The CLI tools of packages/tools.list, wired by /etc/profile.d/90-cli-tools.sh
+# and ~/.bashrc.  A missing binary is the quietest kind of breakage: the alias is
+# simply not defined and `ls` silently falls back to coreutils, so this is a FAIL
+# and not a warning.
+_missing_tools=""
+for _c in eza bat fd rg fzf zoxide starship tldr btop fastfetch inxi tmux \
+	lazygit gum curl unzip whois socat inotifywait qrencode zbarimg tesseract \
+	ffmpeg node npm col man; do
+	have "$_c" || _missing_tools="$_missing_tools $_c"
+done
+[ -r "$HOME/.bashrc" ] || _missing_tools="$_missing_tools .bashrc"
+[ -r /etc/profile.d/90-cli-tools.sh ] || _missing_tools="$_missing_tools profile.d/90-cli-tools.sh"
+[ -r "$HOME/.config/starship.toml" ] || _missing_tools="$_missing_tools .config/starship.toml"
+if [ -z "$_missing_tools" ]; then
+	ok "CLI tools complete (eza, bat, fd, rg, fzf, zoxide, starship, btop, ...)"
+else
+	fail "CLI tools incomplete:$_missing_tools"
+fi
+
+# The prompt is a page of private-use codepoints, and a glyph no installed font
+# draws is a missing-glyph box in the terminal - no log line, no error, and the
+# same prompt can look whole in one emulator and broken in another.  That is not
+# hypothetical: the `$os` block of the upstream prompt asked for Nerd Fonts v3
+# `nf-md` glyphs (Linux U+F033D, Debian U+F08DA, ...), which live in plane 15 and
+# which no package in forky provides because fonts-nerd-symbols is DFSG-stripped;
+# 14 of its 44 codepoints had no font at all.  The quieter half is the second
+# question: a codepoint that only some *other* family has is drawn from
+# fontconfig's dynamic fallback at that family's size, so the icon comes out
+# smaller than the cell next to it (foot draws the listed fonts first, in order).
+# Both are asked of fontconfig, per codepoint, against the chain foot is given.
+if [ ! -r "$HOME/.config/starship.toml" ]; then
+	: # the CLI tools check above already FAILs on the missing file
+elif ! have fc-list || ! have perl; then
+	skip "fc-list or perl is missing: cannot confirm that every prompt glyph has a font"
+else
+	_star_cps=$(perl -CSD -ne 'while (/([\x{E000}-\x{F8FF}\x{F0000}-\x{FFFFD}])/g) { printf "%X\n", ord($1) }' \
+		"$HOME/.config/starship.toml" 2>/dev/null | sort -u)
+	_star_footfonts=$(sed -n 's/^[[:space:]]*font[[:space:]]*=[[:space:]]*//p' "$HOME/.config/foot/foot.ini" 2>/dev/null |
+		tr ',' '\n' | sed 's/:.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+	_star_nofont= _star_offchain= _star_count=0
+	for _cp in $_star_cps; do
+		_star_count=$((_star_count + 1))
+		_star_fams=$(fc-list ":charset=$_cp" family 2>/dev/null | cut -d, -f1 | sort -u)
+		if [ -z "$_star_fams" ]; then
+			_star_nofont="$_star_nofont U+$_cp"
+			continue
+		fi
+		_star_listed=no
+		while IFS= read -r _f; do
+			[ -n "$_f" ] || continue
+			if grep -qxF -- "$_f" <<<"$_star_fams"; then
+				_star_listed=yes
+				break
+			fi
+		done <<<"$_star_footfonts"
+		[ "$_star_listed" = yes ] ||
+			_star_offchain="$_star_offchain U+$_cp($(paste -sd/ - <<<"$_star_fams"))"
+	done
+	if [ -n "$_star_nofont" ]; then
+		fail "the prompt asks for glyph(s) no installed font draws:$_star_nofont (fc-list :charset= answers nothing, so the terminal can only draw a missing-glyph box)"
+	elif [ -n "$_star_offchain" ]; then
+		warn "prompt glyph(s)$_star_offchain come from a family $HOME/.config/foot/foot.ini does not list: foot draws them from fontconfig's fallback at that family's size, so they render small (add the family to font=)"
+	else
+		ok "all $_star_count private-use glyphs of the prompt are drawn by fonts foot is given"
+	fi
+fi
+
+if [ -r "$HOME/.config/foot/foot.ini" ]; then
+	if grep -rqsE '^[[:space:]]*selection-target[[:space:]]*=[[:space:]]*(both|clipboard)' "$HOME/.config/foot/foot.ini"; then
+		ok "foot automatically copies selection to clipboard (selection-target=both)"
+	else
+		fail "foot does not auto-copy selection: selection-target=both is missing from $HOME/.config/foot/foot.ini"
+	fi
+fi
+
+# Non-Latin coverage in one question.  A file name, a web page or an EPUB in
+# Arabic is a row of boxes when no installed font claims the script, and nothing
+# logs it.  fonts-noto-core is the package that answers for Arabic, Hebrew,
+# Devanagari, Thai and the rest of the non-CJK set; CJK is a documented
+# `apt install` in 04-software.md (fonts-noto-cjk is 91 MB), so its absence is
+# not a failure here.
+if have fc-list; then
+	_nl=$(fc-list :lang=ar 2>/dev/null)
+	if [ -n "$_nl" ]; then
+		ok "non-Latin text has a font (Arabic, Hebrew, Indic; CJK is an install away)"
+	else
+		warn "fc-list :lang=ar finds nothing: Arabic, Hebrew and Indic text render as boxes (package fonts-noto-core)"
+	fi
+fi
+
+# The editors. /usr/bin/vi is the part that goes missing on its own: it is an
+# update-alternatives link that vim's postinst registers, so a `vim` installed
+# without its postinst running leaves `vim` working and `vi` absent, which only
+# the script that calls vi notices.
+_editors=""
+for _c in nvim vim vi nano; do
+	have "$_c" || _editors="$_editors $_c"
+done
+if [ -z "$_editors" ]; then
+	ok "editors installed (nvim, vim, vi, nano)"
+else
+	fail "editor(s) missing:$_editors"
+fi
+# $EDITOR is what eff, `git commit` and `crontab -e` open, and it comes from
+# /etc/profile.d/90-cli-tools.sh - which a session started by greetd does not
+# source, so the question is asked of a login shell instead of this environment.
+_editor=$(bash -lc 'printf %s "${EDITOR:-}"' 2>/dev/null || true)
+if [ "$_editor" = nvim ]; then
+	ok "EDITOR is nvim (eff, git commit, crontab -e)"
+else
+	warn "a login shell has EDITOR='${_editor:-unset}': eff and git open nano instead of nvim"
+fi
+
+# `ls` is the one people notice.  Ask an interactive bash what the alias is -
+# that also proves ~/.bashrc is read at all - and match with a case statement:
+# `producer | grep -q` is the pipefail trap this script documents at the top.
+_ls_alias="$(bash -ic 'alias ls' 2>/dev/null || true)"
+case "$_ls_alias" in
+	*eza*) ok "ls is eza in an interactive shell" ;;
+	*) warn "ls is not eza (alias: ${_ls_alias:-none}); ~/.bashrc is not being read" ;;
+esac
+# zoxide appends its hook to PROMPT_COMMAND and starship replaces it, so the
+# init has to come last or the first `cd -` prints "zoxide: detected a possible
+# configuration issue" and no jump is recorded. awk exits on the first match
+# instead of feeding a pipe, so the script's pipefail rule is not at risk.
+_zhook=$(awk '/zoxide init bash/ { print NR; exit }' "$HOME/.bashrc" 2>/dev/null || true)
+_zstarship=$(awk '/starship init bash/ { print NR; exit }' "$HOME/.bashrc" 2>/dev/null || true)
+if [ -n "$_zhook" ] && [ -n "$_zstarship" ] && [ "$_zhook" -gt "$_zstarship" ] &&
+	grep -qs 'builtin cd -' "$HOME/.bashrc"; then
+	ok "zoxide initialises after starship and cd - stays bash's (hook survives)"
+else
+	warn "~/.bashrc initialises zoxide before starship or lost zd's cd -: zoxide's hook is dropped"
+fi
+
+# The launcher is lazyos menu apps (spec 012), the window switcher is
+# lazyos menu window, and the command palette is lazyos menu run.
+# Rofi has been retired from the shipping image (spec 014).
+if command -v lazyos >/dev/null 2>&1; then
+	ok "launcher complete (native framework: lazyos menu apps/window/run)"
+else
+	fail "launcher incomplete: lazyos binary is missing"
+fi
+
+# The Search key is the launcher and Alt+Search is the file search; they used to
+# be the other way around, so a key that goes back to the other menu no longer
+# does what the manual says. The file search needs both press paths of the
+# chord (keyd turns Alt-first into F20; the release binding catches
+# Search-first); the --search mode itself is the binary's (spec 009, checked
+# with the other file surfaces below).
+if grep -qs 'Super_L exec .*\$launcher' "$HOME/.config/sway/config"; then
+	ok "the Search key opens the applications launcher (\$launcher)"
+else
+	fail "the Search key does not run '\$launcher' in ~/.config/sway/config (it opens the file search, or nothing)"
+fi
+if grep -qs 'F20 exec .*rofi-files --search' "$HOME/.config/sway/config" &&
+	grep -qs 'Super_L+Mod1 exec .*rofi-files --search' "$HOME/.config/sway/config"; then
+	ok "Alt+Search opens the file search (rofi-files --search)"
+else
+	fail "Alt+Search is missing its F20 press binding or its Super_L+Mod1 release fallback in ~/.config/sway/config"
+fi
+
+# Alt+D stays the launcher even though the Search key opens the same menu: an
+# overlay that unbinds it takes away the launcher key that does not go through
+# keyd, and it reads as a key that does nothing.
+if grep -qs '^unbindsym Mod1+d' "$HOME/.config/sway/config"; then
+	fail "~/.config/sway/config still unbinds Alt+d: the launcher is gone"
+else
+	ok "Alt+d is not unbound (the launcher stays on \$mod+d)"
+fi
+grep -qs 'bindsym \$mod+d exec' /etc/sway/config.d/19-launcher.conf ||
+	fail "/etc/sway/config.d/19-launcher.conf has no \$mod+d binding: Alt+d has nothing to run"
+
+# The three search questions and the opener are the binary (spec 009): the
+# list (Alt+Ctrl+F, Alt+Search), the walk (Search+Shift), the text inside the
+# files (Alt+Ctrl+G) and what a double click or xdg-open runs. The old script
+# names are links to /usr/bin/lazyos, so the keys did not change - and a name
+# that is a script again, or a link to something else, is the old surface
+# back with a different opener table. Grepping a link to an ELF would match
+# strings in the binary and prove nothing, so the binary is asked instead:
+# `--help` lists the commands and `--symlinks` the links it installs.
+_fs_help=$(lazyos --help 2>/dev/null || :)
+_fs_links=$(lazyos --symlinks 2>/dev/null || :)
+for _fs in "rofi-files:menu files" "lazyos-find:menu find" "rofi-grep:menu grep" "lazyos-view:open"; do
+	_fs_name=${_fs%%:*}
+	_fs_cmd=${_fs#*:}
+	if ! grep -q "^  $_fs_cmd  " <<<"$_fs_help"; then
+		fail "lazyos has no \`$_fs_cmd\` (lazyos --help): $_fs_name has nothing to run"
+	elif [ "$(readlink -f "$HOME/.config/bin/$_fs_name" 2>/dev/null)" != /usr/bin/lazyos ]; then
+		fail "~/.config/bin/$_fs_name is not a link to /usr/bin/lazyos: the old script, or nothing, answers it"
+	elif ! grep -q "^$_fs_name	$_fs_cmd\$" <<<"$_fs_links"; then
+		fail "lazyos --symlinks does not install $_fs_name -> $_fs_cmd"
+	else
+		ok "$_fs_name is \`lazyos $_fs_cmd\` (spec 009)"
+	fi
+done
+# The walk and the list's --search need fd; without it both say so in the
+# window, which still reads as a search that found nothing.
+if have fd || have fdfind; then
+	ok "file search available (fd), which the list's --search and the walk run"
+else
+	fail "fd is missing (package fd-find): Alt+Search and Search+Shift have nothing to walk with"
+fi
+# The preview's pictures are the XDG large thumbnails (256 px). A cache that
+# cannot be written is a pane that says "making the thumbnail" for ever.
+# The report changes nothing, so a cache that does not exist yet is judged by
+# the nearest folder that does: the thumbnailer creates the rest.
+_fs_cache="${XDG_CACHE_HOME:-$HOME/.cache}/thumbnails/large"
+_fs_dir=$_fs_cache
+while [ ! -d "$_fs_dir" ] && [ "$_fs_dir" != / ]; do _fs_dir=$(dirname "$_fs_dir"); done
+if [ -w "$_fs_dir" ]; then
+	ok "the preview's thumbnail cache is writable ($_fs_cache)"
+else
+	fail "$_fs_cache is not writable: the file preview can never show a picture"
+fi
+
+# Search+Shift is the walk: every file under $HOME, filtered while fd runs.
+if grep -qs 'Super_L+Shift exec .*lazyos-find' "$HOME/.config/sway/config"; then
+	ok "Search+Shift opens the terminal file search (lazyos-find)"
+else
+	fail "no 'Super_L+Shift exec ...lazyos-find' binding in ~/.config/sway/config: the key does nothing"
+fi
+if [ -f /etc/keyd/default.conf ]; then
+	if grep -qs '^leftmeta = f20$' /etc/keyd/default.conf; then
+		ok "keyd maps Alt+Search to F20"
+	else
+		fail "/etc/keyd/default.conf does not map leftmeta = f20: holding Alt and tapping Search does nothing"
+	fi
+else
+	skip "/etc/keyd/default.conf not installed (board-specific keyboard mapping)"
+fi
+
+# Search inside files (Alt+Ctrl+G) is the other half of the file search (Alt+Search):
+# the list finds a file by its name, grep by what is written in it. Two things
+# take it away and neither says so - a missing binding (the key does nothing)
+# or a missing ripgrep (the window says so, and it reads as "no matches").
+if grep -rqs 'Ctrl+g exec .*rofi-grep' /etc/sway/config.d/; then
+	ok "Alt+Ctrl+G searches inside the files (rofi-grep)"
+else
+	fail "no 'Ctrl+g exec ...rofi-grep' binding in /etc/sway/config.d/: the key does nothing"
+fi
+have rg && ok "ripgrep present, which the search inside files runs" ||
+	fail "ripgrep is missing (package ripgrep): Alt+Ctrl+G finds nothing"
+
+# Download (the root menu and the launcher) is yt-dlp plus the two things that
+# make it useful: ffmpeg to merge a video stream with its audio, and node as the
+# JavaScript runtime /etc/yt-dlp.conf names for YouTube's challenges. Without node
+# yt-dlp still runs and warns that "some formats may be missing", which reads as a
+# site problem instead of a missing package.
+_missing_dl=""
+for _c in yt-dlp ffmpeg node; do have "$_c" || _missing_dl="$_missing_dl $_c"; done
+[ -x "$HOME/.config/bin/rofi-download" ] || _missing_dl="$_missing_dl bin/rofi-download"
+if [ -z "$_missing_dl" ]; then
+	ok "download complete (yt-dlp, ffmpeg, node, rofi-download)"
+else
+	fail "download incomplete:$_missing_dl (the row opens a menu that cannot fetch)"
+fi
+grep -qs 'js-runtimes node' /etc/yt-dlp.conf && ok "yt-dlp is told to use node (JS runtimes)" ||
+	warn "/etc/yt-dlp.conf does not name node: yt-dlp logs 'JS runtimes: none' and YouTube may withhold formats"
+
+# The home folders the manual and the menus name (Documents, Downloads, Music,
+# Videos) are created by rootfs-setup.sh rather than shipped in the tree, because
+# git cannot carry an empty directory. A missing Downloads only moves the download
+# (rofi-download creates it), so this warns instead of failing.
+_missing_home=""
+for _d in Documents Downloads Music Videos; do
+	[ -d "$HOME/$_d" ] || _missing_home="$_missing_home $_d"
+done
+[ -z "$_missing_home" ] && ok "the home folders are there (Documents, Downloads, Music, Videos)" ||
+	warn "home folders missing:$_missing_home (rootfs-setup.sh creates them; a download recreates Downloads)"
+
+# The file list's Tab (Alt+1 where it arrives) hands the row to
+# bin/rofi-file-actions, which is still a script: without it the key says the
+# actions menu did not start.
+_missing_actions=""
+for _c in tar unzip ffmpeg udisksctl; do have "$_c" || _missing_actions="$_missing_actions $_c"; done
+[ -x "$HOME/.config/bin/rofi-file-actions" ] || _missing_actions="$_missing_actions bin/rofi-file-actions"
+if [ -z "$_missing_actions" ]; then
+	ok "the file actions have their tools (tar, unzip, ffmpeg, udisksctl)"
+else
+	fail "file actions incomplete:$_missing_actions (Alt+1 offers rows that cannot run)"
+fi
+
+# The Developer menu (Alt+Ctrl+D, rofi-dev, the root menu's Developer row and
+# org.lazyos.dev.desktop) exports ~/.ssh, ~/.gnupg and the dotfiles into an
+# encrypted archive, restores one, and writes a diagnostics bundle. Every piece
+# is needed at a different moment: a missing gpg fails after the passphrase, a
+# missing tar/zstd fails before it, and a missing udisksctl means a stick that is
+# not mounted yet cannot be offered.
+_missing_dev=""
+for _c in tar zstd gpg udisksctl; do have "$_c" || _missing_dev="$_missing_dev $_c"; done
+for _s in rofi-dev lazyos-profile; do
+	[ -x "$HOME/.config/bin/$_s" ] || _missing_dev="$_missing_dev bin/$_s"
+done
+if [ -z "$_missing_dev" ]; then
+	ok "developer menu complete (tar, zstd, gpg, udisksctl, rofi-dev, lazyos-profile)"
+else
+	fail "developer menu incomplete:$_missing_dev (Alt+Ctrl+D loses those actions)"
+fi
+
+# The passphrase pipeline is the one part that can break without a binary going
+# missing: gpg 2.1 and later ignore --passphrase-fd unless the pinentry is told
+# to loop back, and the symptom is a gpg that waits for an agent dialog that
+# nobody is there to answer. This runs the exact command the menu runs - AES256,
+# passphrase through fd 3 - on a throwaway passphrase and two bytes, so the
+# encryption is proven without touching the account's keys.
+if have gpg && _dev_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-gpg.XXXXXX"); then
+	_dev_agent=
+	if have systemctl; then
+		[ "$(systemctl --user is-active gpg-agent.service 2>/dev/null)" = active ] && _dev_agent=was
+	fi
+	(umask 077; printf 'lazyos-check\n' >"$_dev_tmp/pass")
+	printf 'lazyos' >"$_dev_tmp/plain"
+	_dev_gpg=ok
+	gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+		--cipher-algo AES256 --s2k-digest-algo SHA512 -c \
+		-o "$_dev_tmp/plain.gpg" "$_dev_tmp/plain" 3<"$_dev_tmp/pass" 2>/dev/null || _dev_gpg=
+	gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+		-d -o "$_dev_tmp/plain.out" "$_dev_tmp/plain.gpg" 3<"$_dev_tmp/pass" 2>/dev/null || _dev_gpg=
+	[ "$(cat "$_dev_tmp/plain.out" 2>/dev/null)" = lazyos ] || _dev_gpg=
+	if [ -n "$_dev_gpg" ]; then
+		ok "gpg round-trips the Developer menu's passphrase pipeline (AES256, fd 3)"
+	else
+		fail "gpg cannot round-trip with --pinentry-mode loopback --passphrase-fd: the profile export would hang"
+	fi
+	rm -rf "$_dev_tmp"
+	# Only when this check started it: an agent the user was already running
+	# (a signed commit, an ssh-agent session) is theirs to keep.
+	if [ -z "$_dev_agent" ] && have gpgconf; then
+		gpgconf --kill gpg-agent >/dev/null 2>&1 || :
+	fi
+fi
+
+# The two lists the export is built from are the feature: the paths travel in
+# the tar, and the dry run prints them without writing anything. A path that
+# leaves the list stops being saved, silently.
+if [ -x "$HOME/.config/bin/lazyos-profile" ]; then
+	_dev_paths=ok
+	grep -qsxF '.ssh' "$HOME/.config/bin/lazyos-profile" || _dev_paths=
+	grep -qsxF '.gnupg' "$HOME/.config/bin/lazyos-profile" || _dev_paths=
+	if [ -n "$_dev_paths" ]; then
+		ok "the profile export still includes ~/.ssh and ~/.gnupg (ENTRIES)"
+	else
+		fail "bin/lazyos-profile ENTRIES no longer names ~/.ssh and ~/.gnupg: the keys would stop travelling"
+	fi
+	# The file manager's settings are the entry that went stale once already: the
+	# manager was replaced by favnyr and the list kept naming ~/.config/pcmanfm,
+	# a directory that does not exist, so an export omitted the file manager in
+	# silence and a restore came back to a default window.  Its two roots are
+	# asked separately because they hold different things (the configuration and
+	# the curated favourites/workspaces). The test reads the script, like the
+	# agents' below, because the dry run indents every path.
+	_dev_fm=ok
+	for _p in .config/favnyr .local/share/favnyr; do
+		grep -qsxF -- "$_p" "$HOME/.config/bin/lazyos-profile" || _dev_fm=
+	done
+	if [ -n "$_dev_fm" ]; then
+		ok "the profile export includes the file manager (favnyr settings and workspaces)"
+	else
+		fail "bin/lazyos-profile no longer exports ~/.config/favnyr or ~/.local/share/favnyr: a restored profile has a default file manager"
+	fi
+	grep -qsxF -- '.config/pcmanfm' "$HOME/.config/bin/lazyos-profile" &&
+		fail "bin/lazyos-profile still lists ~/.config/pcmanfm, which favnyr never writes: the entry travels and saves nothing"
+	# The agents are half of what "the account" means now: the menu's account
+	# directories and the CLIs' own homes. The inclusion test is a whole-line
+	# fixed-string match, because the exclusions below it also name the path and a
+	# substring test would pass with the entry gone.
+	_dev_agents=ok
+	for _p in .claude .codex .gemini .copilot .config/github-copilot \
+		.local/share/lazyos/agents .config/opencode; do
+		grep -qsxF -- "$_p" "$HOME/.config/bin/lazyos-profile" || _dev_agents=
+	done
+	grep -qsF -- "--exclude='.claude/projects'" "$HOME/.config/bin/lazyos-profile" ||
+		_dev_agents=
+	if [ -n "$_dev_agents" ]; then
+		ok "the profile export covers the agents' homes and account directories (transcripts excluded)"
+	else
+		fail "bin/lazyos-profile lost an agent path or its transcript excludes: sign-ins or 100s of MB of history"
+	fi
+	# Firefox is the other half of "the account": bookmarks, passwords and
+	# add-ons travel, the site data (202 MB here), the session and the SQLite
+	# checkpoints do not. Both roots are in ENTRIES because the XDG path is what
+	# Debian's Firefox uses here and MOZ_LEGACY_HOME=1 moves it to ~/.mozilla; one
+	# `*mozilla/firefox/*` exclude pattern covers either.
+	_dev_ff=ok
+	for _p in .config/mozilla .mozilla; do
+		grep -qsxF -- "$_p" "$HOME/.config/bin/lazyos-profile" || _dev_ff=
+	done
+	grep -qsF -- "--exclude='*mozilla/firefox/*/storage'" "$HOME/.config/bin/lazyos-profile" || _dev_ff=
+	if [ -n "$_dev_ff" ]; then
+		ok "the profile export covers the Firefox profile (site data, session and caches excluded)"
+	else
+		fail "bin/lazyos-profile lost the Firefox profile or its storage/cache excludes: bookmarks and passwords or 200 MB of site data"
+	fi
+	# A passphrase prompt that lands on the VT is worse than no prompt at all:
+	# the session shows a busy card and nothing ever asks. `[ -t 0 ]` alone was
+	# that bug - sway's exec inherits /dev/tty7 - so the foreground-group test
+	# and the rofi fallback are part of the feature, not an implementation
+	# detail.
+	if grep -qs 'tpgid' "$HOME/.config/bin/lazyos-profile" &&
+		grep -qs 'in_session' "$HOME/.config/bin/lazyos-profile"; then
+		ok "the passphrase prompt cannot land on an invisible terminal (tpgid test, rofi fallback)"
+	else
+		fail "bin/lazyos-profile asks the passphrase with a bare [ -t 0 ]: from a key the prompt goes to the VT and the export hangs"
+	fi
+fi
+
+# Three places reach the menu and one is enough to lose: the root menu's row
+# (`lazyos menu --rows`), the key (24-keys.conf) and the launcher entry (whose
+# Exec is a $HOME script, so its execute bit is also part of it).
+_dev_reach=ok
+menu_runs rofi-dev || _dev_reach=
+grep -rqs 'Ctrl+d exec .*rofi-dev' /etc/sway/config.d/ || _dev_reach=
+[ -r /usr/share/applications/org.lazyos.dev.desktop ] || _dev_reach=
+if [ -n "$_dev_reach" ]; then
+	ok "the Developer menu is reachable three ways (root menu, Alt+Ctrl+D, launcher)"
+else
+	fail "the Developer menu lost the root-menu row, the Alt+Ctrl+D binding or org.lazyos.dev.desktop"
+fi
+grep -qs 'Icon=applications-development' /usr/share/applications/org.lazyos.dev.desktop 2>/dev/null &&
+	[ -r /usr/share/icons/LazyOS/48x48/apps/applications-development.png ] &&
+	ok "the Developer launcher entry asks for a picture the theme carries" ||
+	warn "org.lazyos.dev.desktop has no applications-development icon: the launcher row is a hole"
+
+# The manual is where the passphrase recipe and the restore steps live; the
+# section is one heading, and losing it makes the feature undiscoverable from a
+# terminal.
+grep -qs 'Your profile, on a stick' /usr/share/doc/lazyos/04-software.md &&
+	ok "the manual has the profile section (04-software.md)" ||
+	warn "04-software.md lost 'Your profile, on a stick': the export and restore are undocumented"
+
+# Format a disk writes a partition table and an exFAT or ext4 filesystem, so both
+# halves have to be there before the menu is allowed to list anything - and the
+# menu is reached from Places, where a missing script is a row that does nothing.
+# The list is also the safety (system::disk), so the guard is
+# witnessed below: without it the internal eMMC is offered again.
+_missing_fmt=""
+for _c in parted mkfs.exfat mkfs.ext4; do have "$_c" || _missing_fmt="$_missing_fmt $_c"; done
+[ -x "$HOME/.config/bin/rofi-format" ] || _missing_fmt="$_missing_fmt bin/rofi-format"
+if [ -z "$_missing_fmt" ]; then
+	ok "format a disk complete (parted, mkfs.exfat, mkfs.ext4, rofi-format)"
+else
+	fail "format a disk incomplete:$_missing_fmt (the Places row does nothing)"
+fi
+
+# A fixed disk and the disk the system runs from must never be offered.
+# `lazyos` (`system::disk`, tested on fixtures by `system::disk::tests`
+# and asked live here via `--candidates`) guards format and swap.
+_fmt_guard=ok
+_cands=$(
+	lazyos menu format --candidates 2>/dev/null
+	lazyos menu swap --candidates 2>/dev/null
+) || _fmt_guard=
+if printf '%s\n' "$_cands" | grep -qE '^/dev/(mmcblk0|mtd|zram)'; then
+	_fmt_guard=
+fi
+if [ -n "$_fmt_guard" ]; then
+	ok "format a disk refuses fixed storage and the disk this system runs from (system::disk)"
+else
+	fail "the disk guard in lazyos menu format/swap failed: the internal eMMC can be offered for formatting"
+fi
+
+# The two disk menus test their tools before they draw a row, and greetd's
+# session does not export the sbin directories: lazyos main() ensures
+# /usr/sbin and /sbin are on PATH so parted, mkswap, swapon, swapoff and
+# blkid are all resolved even on a machine started with a stripped PATH.
+# This asks lazyos in a session-shaped stripped environment to verify PATH resolution.
+if ! have mkswap; then
+	skip "disk menu PATH not asked (mkswap is not installed; the next check fails)"
+elif env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin \
+	lazyos menu format --candidates >/dev/null 2>&1 &&
+	env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin \
+	lazyos menu swap --candidates >/dev/null 2>&1; then
+	ok "Auxiliary swap and Format a disk resolve the sbin tools (lazyos ensures /usr/sbin:/sbin PATH)"
+else
+	fail "lazyos disk menus failed to resolve sbin tools with stripped PATH"
+fi
+
+# Auxiliary swap (rofi-swap) writes a swap partition and the fstab block that
+# activates it at boot. parted, mkswap, swapon/swapoff and blkid are the commands
+# it runs; a missing one is a menu that fails halfway, and the two rows that reach
+# it (Places and the root menu) are plain text that would still be drawn.
+_missing_aux=""
+for _c in parted mkswap swapon swapoff blkid; do
+	have "$_c" || _missing_aux="$_missing_aux $_c"
+done
+[ -x "$HOME/.config/bin/rofi-swap" ] || _missing_aux="$_missing_aux bin/rofi-swap"
+if [ -z "$_missing_aux" ]; then
+	ok "auxiliary swap complete (parted, mkswap, swapon, blkid, rofi-swap)"
+else
+	fail "auxiliary swap incomplete:$_missing_aux (the menu cannot prepare or activate a card)"
+fi
+
+# The card is optional, so no block is OK, not a FAIL. When there is one, the
+# options that keep a missing card from holding the boot are witnessed here:
+# nofail and a device timeout. The priority has to stay below zram's 100, or the
+# kernel round-robins between compressed RAM and the much slower card.
+_aux_opts=$(awk '$1 == "LABEL=lazyos_swap" && $3 == "swap" { print $4; exit }' /etc/fstab 2>/dev/null)
+if [ -z "$_aux_opts" ]; then
+	ok "no auxiliary swap configured"
+else
+	_aux_bad=""
+	case ",$_aux_opts," in *,nofail,*) ;; *) _aux_bad="$_aux_bad nofail" ;; esac
+	case ",$_aux_opts," in
+	*,x-systemd.device-timeout=*) ;;
+	*) _aux_bad="$_aux_bad x-systemd.device-timeout" ;;
+	esac
+	_aux_pri=
+	case ",$_aux_opts," in
+	*,pri=*)
+		_aux_pri=${_aux_opts#*pri=}
+		_aux_pri=${_aux_pri%%,*}
+		;;
+	esac
+	case ${_aux_pri:-} in
+	'' | *[!0-9]*) _aux_bad="$_aux_bad pri=" ;;
+	*) [ "$_aux_pri" -lt 100 ] || _aux_bad="$_aux_bad pri<100" ;;
+	esac
+	if [ -z "$_aux_bad" ]; then
+		ok "auxiliary swap fstab block is safe for a missing card (nofail, device timeout, priority $_aux_pri < 100)"
+	else
+		warn "auxiliary swap fstab options unsafe:$_aux_bad (a boot without the card waits, or zram stops winning)"
+	fi
+	_aux_dev=$(asroot blkid -L lazyos_swap 2>/dev/null)
+	if [ -z "$_aux_dev" ]; then
+		skip "auxiliary swap configured, card not inserted (nofail keeps the boot clean)"
+	else
+		# One line per device and zram comes first, so join them before `case`:
+		# a newline is not the space the pattern needs (this reported an active
+		# card as inactive).
+		_aux_swaps=$(swapon --show=NAME --noheadings 2>/dev/null | tr '\n' ' ' || true)
+		case " $_aux_swaps " in
+		*" $_aux_dev "*) ok "auxiliary swap active on $_aux_dev" ;;
+		*) warn "auxiliary swap configured on $_aux_dev but not active: open Auxiliary swap and set it up again" ;;
+		esac
+	fi
+fi
+
+# The two entry points are static rows, so they can outlive the script. Places is
+# the documented way in (the root menu's row is the second copy).
+if [ -r "$HOME/.config/bin/rofi-places" ]; then
+	if [ -L "$HOME/.config/bin/rofi-places" ] && [ "$(readlink -f "$HOME/.config/bin/rofi-places")" = "/usr/bin/lazyos" ]; then
+		lazyos menu places --rows 2>/dev/null | grep -q 'action:swap' &&
+			ok "Places lists the Auxiliary swap row (lazyos menu places)" ||
+			fail "lazyos menu places has no Auxiliary swap row: the disk menu is unreachable from Places"
+	else
+		grep -qs 'rofi-swap' "$HOME/.config/bin/rofi-places" &&
+			ok "Places lists the Auxiliary swap row" ||
+			fail "bin/rofi-places has no Auxiliary swap row: the disk menu is unreachable from Places"
+	fi
+fi
+
+# Install LazyOS (the full TUI installer wizard, spec 018: lazyos installer)
+# Replaces rofi-install, lazyos-install-run, and lazyos-install-log.
+# The TUI wizard provides pre-flight hardware inspection, timezone selection,
+# POSIX user account generation, partition diagrams, gated confirmation,
+# real-time progress gauge, and detached worker execution.
+if have lazyos; then
+	if lazyos --help 2>&1 | grep -qs "installer"; then
+		ok "lazyos installer registered in lazyos --help (spec 018)"
+	else
+		fail "lazyos installer missing from lazyos --help"
+	fi
+
+	if lazyos --symlinks 2>&1 | grep -qs "rofi-install[[:space:]]*installer"; then
+		ok "rofi-install resolves to lazyos installer in symlinks table"
+	else
+		fail "rofi-install does not resolve to installer in lazyos --symlinks"
+	fi
+
+	_inst_check="$(lazyos installer --check 2>&1 || true)"
+	case "$_inst_check" in
+		ok:*|unsafe:*)
+			ok "lazyos installer --check evaluates hardware & disk safety ($_inst_check)"
+			;;
+		*)
+			fail "lazyos installer --check failed or returned unexpected output: $_inst_check"
+			;;
+	esac
+else
+	skip "lazyos binary not installed: installer checks skipped"
+fi
+
+_install=""
+for _c in rsync parted cgpt depthchargectl mkfs.ext2 mkfs.ext4 blkid blockdev partx; do
+	have "$_c" || _install="$_install $_c"
+done
+if [ -z "$_install" ]; then
+	ok "installer backend utilities available (rsync, parted, cgpt, depthchargectl, mkfs)"
+else
+	fail "installer utilities incomplete:$_install"
+fi
+
+menu_label 'Install LazyOS' && menu_runs rofi-install &&
+	ok "root menu has the Install LazyOS row" ||
+	fail "the root menu has no Install LazyOS row"
+
+[ -r /usr/share/icons/LazyOS/48x48/apps/system-software-install.png ] &&
+	ok "the install icon is in the LazyOS theme (system-software-install)" ||
+	warn "the LazyOS theme has no system-software-install.png: the launcher row and the install card have no picture"
+
+# The Learn menu's second row is the machine's own documentation: apropos searches
+# the whatis database man-db builds, and man renders the page. Without man-db both
+# are absent and the row reports a search that found nothing.
+if have apropos && have man; then
+	ok "manual pages searchable (apropos, man), which the Learn menu's second row opens"
+else
+	fail "man-db is missing (apropos/man): the Learn menu cannot show a program's own manual"
+fi
+
+# Password (the root menu) is openssl's random bytes, and a missing openssl is a
+# row that answers "openssl is not installed" instead of a password.
+have openssl && ok "openssl present, which the Password row generates with" ||
+	fail "openssl is missing (package openssl): the Password row cannot generate anything"
+
+# dig is the first step of every DNS problem in the manual, and there is no
+# resolvectl here (the resolver is NetworkManager's, not systemd-resolved's), so
+# without bind9-dnsutils that section begins with "command not found".
+if have dig; then
+	ok "dig present (bind9-dnsutils), which DNS troubleshooting asks for"
+else
+	fail "dig is missing (package bind9-dnsutils): 06-troubleshooting.md's DNS section cannot run"
+fi
+
+# The manual, the key view, dictation and hibernate. The first two are pure
+# scripts (a missing one is invisible: the menu entry just does nothing); the
+# last two depend on hardware and packages, so they warn instead of failing.
+_learn_pages=$(ls /usr/share/doc/lazyos/*.md 2>/dev/null | wc -l)
+if [ "$_learn_pages" -ge 6 ] && [ -x "$HOME/.config/bin/rofi-learn" ]; then
+	ok "manual installed ($_learn_pages pages) and rofi-learn present"
+else
+	fail "manual incomplete: $_learn_pages page(s) in /usr/share/doc/lazyos, rofi-learn $( [ -x "$HOME/.config/bin/rofi-learn" ] && echo present || echo missing)"
+fi
+[ -x "$HOME/.config/bin/rofi-keys" ] && ok "keybindings view (rofi-keys) is executable" ||
+	fail "bin/rofi-keys is missing: the key view has no script"
+[ -x "$HOME/.config/bin/rofi-files" ] && ok "file browser (rofi-files) is executable" ||
+	fail "bin/rofi-files is missing: Alt+Ctrl+F and the Files menu entry do nothing"
+# The translate key is taught in one place, the shortcuts page, and the Settings
+# row only says what it does - not that it exists.  A manual that lost the row
+# is a key nobody finds.
+grep -qs 'Alt+Ctrl+T' /usr/share/doc/lazyos/03-shortcuts.md ||
+	fail "03-shortcuts.md does not name Alt+Ctrl+T (the only place the translate key is taught)"
+
+# Every menu behind the root menu is a command or script in `~/.config/bin`
+# (the ported surfaces are symlinks to `/usr/bin/lazyos`). A missing one is the
+# quietest failure in the session: the row is still listed (the menu draws it
+# from a static table) and choosing it does nothing at all.
+_missing_menus=""
+for _s in rofi-quick rofi-notify rofi-clean rofi-kill rofi-tz rofi-places \
+	rofi-media rofi-calc rofi-layout rofi-power rofi-about rofi-dns \
+	rofi-pkg rofi-color rofi-remind rofi-theme; do
+	[ -r "$HOME/.config/bin/$_s" ] || _missing_menus="$_missing_menus bin/$_s"
+done
+if [ -z "$_missing_menus" ]; then
+	ok "session menus complete (settings, notifications, free space, processes, time zone, places, media, calculator, layout, power, about, DNS, packages, colour, reminders, theme)"
+else
+	fail "session menus missing:$_missing_menus (those root-menu rows do nothing)"
+fi
+
+# Presence is not enough: a script in bin/ without the execute bit makes its key
+# do nothing at all, and nothing logs it (sway's `exec` gets EACCES and the line
+# goes to the journal). Three menus of the batch that answered the card's report
+# shipped that way - including this menu list, which passed because it asked for
+# -r - so every file in bin/ is asked for -x here, once, instead of in each list
+# above.
+_noexec=""
+for _s in "$HOME"/.config/bin/*; do
+	[ -f "$_s" ] || continue
+	[ -x "$_s" ] || _noexec="$_noexec ${_s##*/}"
+done
+if [ -z "$_noexec" ]; then
+	ok "every script in ~/.config/bin is executable"
+else
+	fail "not executable:$_noexec (the key or menu row that runs them does nothing)"
+fi
+
+# Reminders (Alt+Space > Reminders) are systemd transient timers, so what can
+# silently take half the menu away is a missing systemd-analyze (every custom
+# date is then refused while the five delays keep working) and a missing
+# notification icon (the card has no picture and nothing logs it).
+# Note: `rofi-remind` is now `lazyos menu remind` (unit-tested in
+# `system::remind::tests`).
+_reminder=""
+have systemd-analyze || _reminder="$_reminder systemd-analyze"
+have notify-send || _reminder="$_reminder notify-send"
+have jq || _reminder="$_reminder jq"
+[ -r /usr/share/icons/LazyOS/48x48/apps/preferences-system-time.png ] ||
+	_reminder="$_reminder preferences-system-time.png"
+[ -x "$HOME/.config/bin/rofi-remind" ] || _reminder="$_reminder bin/rofi-remind"
+if [ -z "$_reminder" ]; then
+	ok "reminders complete (systemd-analyze, notify-send, jq, the clock icon)"
+else
+	fail "reminders incomplete:$_reminder (custom dates or the notification icon disappear)"
+fi
+
+# A repeat is a calendar expression handed to the timer itself, so the parser that
+# has to read it is worth one call: this is the exact expression the menu writes
+# for "every weekday", and a systemd without calendar support is a menu that
+# refuses every date.
+if have systemd-analyze; then
+	if LC_ALL=C systemd-analyze calendar --iterations=1 'Mon..Fri *-*-* 08:30:00' >/dev/null 2>&1; then
+		ok "systemd parses the calendar expressions the reminder menu writes"
+	else
+		fail "systemd-analyze cannot read 'Mon..Fri *-*-* 08:30:00' (repeating reminders would be refused)"
+	fi
+fi
+
+# 02-rofi.md sends a reader to the root menu for DNS, Packages, Colour, About and
+# Reminders. A row that goes missing is a documented keypress that answers
+# nothing - Colour was the one that had neither the row nor the `case` arm.
+if [ -n "$MENU_ROWS" ]; then
+	_root_missing=
+	for _m in rofi-dns rofi-pkg rofi-color rofi-about rofi-remind rofi-swap rofi-format rofi-display rofi-tz rofi-vnc rofi-quick rofi-ssh; do
+		menu_runs "$_m" || menu_runs "lazyos menu ${_m#rofi-}" || menu_runs "lazyos menu colour" || _root_missing="$_root_missing ${_m#rofi-}"
+	done
+	[ -z "$_root_missing" ] &&
+		ok "root menu reaches DNS, Packages, Colour, About, Reminders, Auxiliary swap, Format, Display, Time zone, VNC, Settings and SSH" ||
+		fail "root menu has no entry for:$_root_missing (lazyos menu --rows)"
+fi
+
+# A root-menu row cannot lack an action any more - it is an enum in the table
+# (spec 007), and a test refuses one without a program - but the program it
+# names can still be missing from this machine, and then the row closes the
+# menu and nothing opens. The first word of each row's command is a session
+# script or a program on PATH; `menu:*` is something the menu does itself.
+if [ -n "$MENU_ROWS" ]; then
+	_dead_rows=
+	while IFS='	' read -r _key _ _ _runs; do
+		_prog=${_runs%% *}
+		case $_prog in menu:*|'') continue ;; esac
+		[ -x "$HOME/.config/bin/$_prog" ] || have "$_prog" || _dead_rows="$_dead_rows $_key($_prog)"
+	done <<<"$MENU_ROWS"
+	[ -z "$_dead_rows" ] && ok "every root-menu row runs a program that is installed" ||
+		fail "root-menu rows whose program is missing (the row does nothing):$_dead_rows"
+fi
+
+# The key view (`rofi-keys` -> `lazyos menu keys`, spec 012) is now a TUI in
+# `lazyos`: each row draws `Glyph::Key` (verified by `lazyos --glyphs` in the
+# framework section) and parses `/etc/sway/config` + `/etc/sway/config.d/*.conf`
+# (unit-tested in `system::keys::tests`). Verify that `--rows` returns bindings
+# from the live config with no empty description column.
+_keys_rows=$(lazyos menu keys --rows 2>/dev/null || :)
+if [ -n "$_keys_rows" ] && ! awk -F'\t' '$1 == "" || $2 == "" { exit 1 }' <<<"$_keys_rows"; then
+	fail "lazyos menu keys --rows emitted an empty key or description column"
+elif [ -n "$_keys_rows" ]; then
+	ok "lazyos menu keys parses the sway configuration ($(printf '%s\n' "$_keys_rows" | wc -l) bindings, no empty rows)"
+else
+	fail "lazyos menu keys --rows returned no bindings"
+fi
+
+# fastfetch exits when it has drawn, so without --hold the About window flashes
+# and closes - which reads as "the row does nothing". And the footer must name
+# a close key this keyboard answers (`Alt+Q`, not `Ctrl+Shift+W`). Read from
+# `lazyos menu about --views` (unit-tested in `system::about::tests`).
+_about_views=$(lazyos menu about --views 2>/dev/null || :)
+if printf '%s\n' "$_about_views" | grep -qs -- '--hold'; then
+	ok "lazyos menu about holds its popup windows open (--hold)"
+else
+	warn "lazyos menu about no longer passes --hold: the fastfetch picture flashes and closes"
+fi
+_about_footer=$(printf '%s\n' "$_about_views" | grep -c 'close this window with Alt+Q' || true)
+if [ "${_about_footer:-0}" -eq 3 ] && ! printf '%s\n' "$_about_views" | grep -qs 'Ctrl+Shift+W'; then
+	ok "the About windows name a close key this keyboard answers (Alt+Q)"
+else
+	warn "lazyos menu about footers do not all say 'close this window with Alt+Q' (found ${_about_footer:-0}/3)"
+fi
+
+# The capture menu (Alt+Ctrl+C) is a list over external tools: grimshot for the
+# screenshot, swappy to annotate, tesseract and zbarimg to read a region, and
+# wf-recorder for the one action that outlives the menu. A missing binary is a
+# row that does nothing when chosen, and a missing script is a key that does
+# nothing at all, so both are FAILs.
+_missing_capture=""
+for _c in grimshot grim slurp tesseract zbarimg qrencode swappy wf-recorder; do
+	have "$_c" || _missing_capture="$_missing_capture $_c"
+done
+for _s in rofi-capture rofi-qr screenshot; do
+	[ -x "$HOME/.config/bin/$_s" ] || _missing_capture="$_missing_capture bin/$_s"
+done
+if [ -z "$_missing_capture" ]; then
+	ok "capture menu complete (grimshot, swappy, tesseract, zbarimg, wf-recorder, qrencode)"
+else
+	fail "capture menu incomplete:$_missing_capture (Alt+Ctrl+C loses those rows)"
+fi
+
+# Screenshots land in ~/Pictures/Screenshots/<date>/, and grimshot only knows that
+# when it is called through bin/screenshot: grimshot itself writes to $HOME on this
+# image (there is no user-dirs.dirs), so one key that calls it directly drops the
+# picture among the dotfiles again - which was the report.
+# (`lazyos menu capture`'s `screenshot_argv` is verified by
+# `system::capture::tests::screenshot_uses_wrapper_in_config_bin`.)
+grep -qs 'bin/screenshot' /etc/sway/config.d/90-screenshot-shortcuts.conf &&
+	ok "the screenshot keys go through bin/screenshot" ||
+	fail "90-screenshot-shortcuts.conf does not call bin/screenshot: the files land in \$HOME"
+[ -z "$(grep -rs '^[[:space:]]*bindsym.*exec grimshot' /etc/sway/config.d/)" ] &&
+	ok "no key calls grimshot directly" ||
+	fail "a key calls grimshot directly: that screenshot lands in \$HOME"
+if [ -r /usr/share/applications/org.lazyos.screenshot-area.desktop ]; then
+	grep -qs 'Exec=.*bin/screenshot' /usr/share/applications/org.lazyos.screenshot-area.desktop &&
+		ok "the Screenshot (area) launcher entry uses bin/screenshot" ||
+		fail "org.lazyos.screenshot-area.desktop still runs grimshot: that entry saves into \$HOME"
+fi
+
+# Screen sharing (Settings > Share this screen, and the root menu) is wayvnc
+# served on the loopback address (`lazyos menu vnc`, unit-tested in
+# `system::vnc::tests`). `--command` prints the exact wayvnc argv and the ssh
+# tunnel command without opening a window.
+_missing_vnc=""
+have wayvnc || _missing_vnc="$_missing_vnc wayvnc"
+[ -x "$HOME/.config/bin/rofi-vnc" ] || _missing_vnc="$_missing_vnc bin/rofi-vnc"
+if [ -z "$_missing_vnc" ]; then
+	ok "screen sharing complete (wayvnc, bin/rofi-vnc)"
+else
+	fail "screen sharing incomplete:$_missing_vnc (wayvnc is the server, bin/rofi-vnc is the menu)"
+fi
+_vnc_cmd=$(lazyos menu vnc --command 2>/dev/null || :)
+if [ -n "$_vnc_cmd" ]; then
+	if printf '%s\n' "$_vnc_cmd" | grep -qs -- '--disable-input'; then
+		ok "screen sharing is read-only (wayvnc --disable-input)"
+	else
+		fail "lazyos menu vnc no longer passes --disable-input: a viewer could type into this session"
+	fi
+	if printf '%s\n' "$_vnc_cmd" | grep -qs '127\.0\.0\.1' &&
+		! printf '%s\n' "$_vnc_cmd" | grep -qs '0\.0\.0\.0'; then
+		ok "screen sharing listens on the loopback address only"
+	else
+		fail "lazyos menu vnc does not bind 127.0.0.1 only: that is an unauthenticated desktop on the network"
+	fi
+	if printf '%s\n' "$_vnc_cmd" | grep -qs 'ssh -L' &&
+		grep -qs 'ssh -L 5900:127.0.0.1:5900' /usr/share/doc/lazyos/05-system.md; then
+		ok "the ssh tunnel command is on the menu row and in the manual (5900, loopback)"
+	else
+		warn "the tunnel command is missing from lazyos menu vnc or from 05-system.md: the way in is undocumented"
+	fi
+fi
+# A row and its arm, in both menus: a row whose key has no arm closes the list
+# and does nothing, which is the quietest failure a menu can have.
+settings_runs rofi-vnc &&
+	ok "Settings carries the Share this screen row" ||
+	fail "Settings (lazyos menu settings) has no Share this screen row: the only way in would be the root menu"
+menu_runs rofi-vnc &&
+	ok "the root menu reaches Share this screen" ||
+	fail "the root menu has no Share this screen row"
+# The bar's eye is a module over a state file, so the two halves that can be
+# dropped are its place in modules-right (the module then never runs) and the
+# .empty rule (a card stays on the bar saying nothing).  A missing .empty is a
+# cosmetic warning; a module that does not run is the indicator that never
+# appears while the screen is being served.
+if [ -r "$HOME/.config/waybar/config.jsonc" ]; then
+	grep -qs '"custom/vnc"' "$HOME/.config/waybar/config.jsonc" &&
+		ok "the bar has the screen-sharing indicator (custom/vnc)" ||
+		fail "waybar config.jsonc has no custom/vnc: nothing on the bar says the screen is being shared"
+fi
+if [ -r "$HOME/.config/waybar/style.css" ]; then
+	grep -qs '#custom-vnc.empty' "$HOME/.config/waybar/style.css" &&
+		ok "the sharing indicator collapses when nothing is shared" ||
+		warn "style.css has no #custom-vnc.empty: an empty card is left on the bar"
+fi
+# Nothing starts it by itself.  A wayvnc in the session's startup - or one left
+# behind by a script - is a screen served to whoever asks, and the menu would
+# then offer to start a second one on a port already taken.  `status` is the
+# same read the Settings row makes, so this compares the process with the state
+# the menu reports instead of guessing.
+_vnc_pid=$(pgrep -x wayvnc 2>/dev/null || true)
+if [ -n "$_vnc_pid" ]; then
+	_vnc_state=$("$HOME/.config/bin/rofi-vnc" status 2>/dev/null | head -n 1 || true)
+	if [ "$_vnc_state" = off ]; then
+		warn "wayvnc is running but rofi-vnc does not own it: the menu says off while the screen is being served (pid $_vnc_pid)"
+	else
+		info "the screen is being shared: $_vnc_state"
+	fi
+fi
+
+# Clipboard history (Alt+Ctrl+V) and the emoji picker (Alt+Ctrl+E): each is a
+# script over one tool and one file, and every half of it fails quietly. Without
+# cliphist the list says so; without the watcher the list is simply empty and
+# reads as "nothing was copied"; without the emoji table the picker refuses to
+# open; without wtype the glyph reaches the clipboard but never the cursor.
+_missing_clip=""
+for _c in cliphist wl-paste wl-copy wtype; do
+	have "$_c" || _missing_clip="$_missing_clip $_c"
+done
+[ -r "$HOME/.config/emojis.tsv" ] || _missing_clip="$_missing_clip .config/emojis.tsv"
+for _s in rofi-emoji rofi-clip; do
+	[ -x "$HOME/.config/bin/$_s" ] || _missing_clip="$_missing_clip bin/$_s"
+done
+if [ -z "$_missing_clip" ]; then
+	ok "clipboard history and emoji picker complete (cliphist, wl-clipboard, wtype, emojis.tsv)"
+else
+	fail "clipboard/emoji incomplete:$_missing_clip (Alt+Ctrl+V and Alt+Ctrl+E fail or insert nothing)"
+fi
+# The watcher is the one part a binary cannot prove: it either is running or
+# nothing is being stored.  `-fx` and not `-f`: pgrep -f matches this script's
+# own command line, which contains the pattern, and would always answer "yes".
+if pgrep -fx 'wl-paste --watch cliphist store' >/dev/null 2>&1; then
+	ok "clipboard watcher running (wl-paste --watch cliphist store)"
+else
+	warn "the cliphist watcher is not running: the clipboard list stays empty (config.d/27-clipboard.conf starts it with the session)"
+fi
+# "Save the newest image" names the file after the type `file` reports, and
+# without it the picture is written with no extension at all - the viewer then
+# refuses it, which reads as a broken clipboard rather than a missing package.
+if have file; then
+	ok "file(1) is installed (a clipboard image is saved with its extension)"
+else
+	warn "file(1) is missing (package file): an image saved from the clipboard has no extension"
+fi
+# An inserted emoji needs a colour font; fc-match says what would draw it.
+if have fc-match; then
+	_emoji_font=$(fc-match -f '%{family}' 'emoji' 2>/dev/null || true)
+	case ${_emoji_font:-} in
+	*Emoji*) ok "a colour emoji font is installed ($_emoji_font)" ;;
+	*) fail "no colour emoji font (fc-match emoji -> '${_emoji_font:-none}'): every inserted emoji renders as tofu" ;;
+	esac
+else
+	skip "fc-match is not installed"
+fi
+# The table is filtered against the font that draws it, and ~/.config/emojis.font
+# pins the font it was built from. A font upgrade does not break an existing row,
+# but the table stops offering the glyphs the new font added, and the pin is the
+# only place that difference is visible.
+if have fc-match && have sha256sum; then
+	if [ ! -r "$HOME/.config/emojis.font" ]; then
+		warn "$HOME/.config/emojis.font is missing: the emoji table cannot be compared with the font (regenerate it with scripts/make-emojis.sh)"
+	else
+		_emoji_file=$(fc-match -f '%{file}' emoji 2>/dev/null || true)
+		_emoji_pin=$(sed -n 's/^sha256=//p' "$HOME/.config/emojis.font" 2>/dev/null || true)
+		_emoji_sum=""
+		if [ -n "$_emoji_file" ] && [ -r "$_emoji_file" ]; then
+			_emoji_sum=$(sha256sum "$_emoji_file" 2>/dev/null || true)
+			_emoji_sum=${_emoji_sum%% *}
+		fi
+		if [ -n "$_emoji_sum" ] && [ "$_emoji_sum" = "$_emoji_pin" ]; then
+			ok "the emoji table matches the font it was filtered against"
+		else
+			warn "the emoji font changed since ~/.config/emojis.font was written: re-run scripts/make-emojis.sh on the build host to pick up its new glyphs"
+		fi
+	fi
+else
+	skip "fc-match or sha256sum is not installed"
+fi
+
+# The touchpad's three-finger swipes. The two vertical ones are the only place
+# this port *types for the person*: sway has no command that hands a key to the
+# focused client, so `wtype` drives the virtual keyboard protocol and the window
+# receives a real Ctrl+Tab. Without it the swipe completes, sway logs
+# `Command not found` and the tab does not change - the gesture looks broken
+# while the binding is exactly as written. The two workspace swipes are checked
+# with it because one file holds all four.
+#
+# The vertical two also carry the Firefox filter, and that half is checked too:
+# `con_id="__focused__"` is what keeps the keys out of every other window (a
+# criteria without it matches a window of that app even when it is not focused,
+# measured), and it is sway's own check in-process - nothing is started when
+# another application is focused. A binding that loses the criteria would type
+# Ctrl+Tab into whatever is focused and look like a broken gesture everywhere
+# else, so this FAILs when it goes missing.
+_gest_cfg=/etc/sway/config.d/22-workspace-gestures.conf
+_gest=""
+[ -r "$_gest_cfg" ] || _gest="$_gest config.d/22-workspace-gestures.conf"
+for _g in 'swipe:3:left workspace next_on_output' \
+	'swipe:3:right workspace prev_on_output' \
+	'swipe:3:up [app_id="(?i)^firefox" con_id="__focused__"] exec wtype -M ctrl -k Tab -m ctrl' \
+	'swipe:3:down [app_id="(?i)^firefox" con_id="__focused__"] exec wtype -M ctrl -M shift -k Tab -m shift -m ctrl'; do
+	grep -qsF "$_g" "$_gest_cfg" 2>/dev/null || _gest="$_gest ${_g%% *}"
+done
+have wtype || _gest="$_gest wtype"
+if [ -z "$_gest" ]; then
+	ok "touchpad swipes wired (3-finger left/right workspaces, up/down Ctrl+Tab / Ctrl+Shift+Tab in Firefox)"
+else
+	fail "touchpad swipes incomplete:$_gest (the swipe completes and nothing happens)"
+fi
+
+# A duplicate bindgesture is *not* a silent override the way a duplicate bindsym
+# is. Measured on the maintainer's session: the same gesture in a user drop-in
+# and in the system one still applies, and away from a running session nothing
+# complains (`sway -C` accepts the files, and so does a fresh sway) - but a
+# `swaymsg reload` counts it as a config error and puts the red "There are
+# errors in your config file" bar across the top of the screen, where the only
+# visible cause is a line that looks correct. That is how the temporary
+# diagnostic behind the vertical swipes was found. It is a WARN and not a FAIL:
+# the bindings work, the bar is the whole symptom.
+_user_gestures=""
+for _f in "$HOME/.config/sway/config" "$HOME"/.config/sway/config.d/*.conf; do
+	[ -r "$_f" ] || continue
+	while read -r _k; do
+		[ -n "$_k" ] || continue
+		grep -rqsF "bindgesture $_k " /etc/sway/config.d/ &&
+			_user_gestures="$_user_gestures $_k(${_f##*/})"
+	done <<<"$(sed -n 's/^[[:space:]]*bindgesture[[:space:]]\{1,\}\([^[:space:]]*\).*/\1/p' "$_f")"
+done
+if [ -z "$_user_gestures" ]; then
+	ok "no user drop-in repeats a system bindgesture (a duplicate raises the red config-error bar on reload)"
+else
+	warn "a user drop-in repeats a system bindgesture:$_user_gestures - sway counts that as a config error and shows 'There are errors in your config file' on reload while 'sway -C' accepts it; edit the system file instead"
+fi
+
+# Tablet mode: the keyboard folded back. Four pieces have to be there for it to
+# do anything - the switch, the script, the on-screen keyboard and the
+# accelerometer - and each missing half is silent: no bindswitch means detaching
+# the keyboard changes nothing, no wvkbd means the screen has no way to type, no
+# accelerometer means the screen stays sideways. The accelerometer is read the
+# same way the poller reads it (cros-ec-accel, in_accel_*_raw), so a kernel that
+# renames or reorganises the devices is noticed here.
+_tablet=""
+have wvkbd-mobintl || _tablet="$_tablet wvkbd-mobintl"
+[ -x "$HOME/.config/bin/tablet-mode" ] || _tablet="$_tablet bin/tablet-mode"
+grep -rqs 'bindswitch tablet:' /etc/sway/config.d/ ||
+	_tablet="$_tablet config.d/28-tablet.conf(bindswitch)"
+if [ -z "$_tablet" ]; then
+	ok "tablet mode wired (wvkbd-mobintl, tablet-mode, bindswitch tablet:on/off)"
+else
+	fail "tablet mode incomplete:$_tablet (detaching the keyboard does nothing, or the screen cannot type)"
+fi
+_accel=""
+for _d in /sys/bus/iio/devices/iio:device*; do
+	[ -r "$_d/name" ] || continue
+	[ "$(cat "$_d/name" 2>/dev/null)" = cros-ec-accel ] || continue
+	[ -r "$_d/in_accel_x_raw" ] && _accel=$_d && break
+done
+if [ -n "$_accel" ]; then
+	ok "accelerometer present ($_accel, cros-ec-accel) for tablet rotation"
+else
+	for _d in /sys/bus/iio/devices/iio:device*; do
+		[ -r "$_d/in_accel_x_raw" ] && _accel=$_d && break
+	done
+	if [ -n "$_accel" ]; then
+		ok "accelerometer present ($_accel) for tablet rotation"
+	else
+		skip "no IIO accelerometer present (board-specific)"
+	fi
+fi
+# The two physical inputs are switched off with the mode, and the on-screen
+# keyboard comes up first: a card whose keyboard was disabled before wvkbd proved
+# alive would be a touchscreen with no way to type. The mode is the only thing in
+# the session that disables a keyboard, so the pattern is a fair test of the wiring.
+#
+# The keyboard is never switched off as `type:keyboard`: cros_ec_buttons is a
+# keyboard (the power and volume keys) *and* the device that reports
+# SW_TABLET_MODE, wlroots builds both halves over one libinput handle, and
+# send-events belongs to that handle - so a type-wide disable suspends the switch
+# too, `tablet:off` never arrives and the mode cannot be left by folding the
+# keyboard back (the 2026-10-22 card). The script names each safe identifier
+# instead and skips every identifier a switch also carries. The value is `$1` of
+# inputs() and not the word `disabled`, so what is tested is the call
+# (`inputs disabled`) and the order of the last one against `start_kbd`: `on`
+# answers an already-running mode before it starts the keyboard, and that early
+# `inputs disabled` is the one a plain line-order test would find.
+_tm="$HOME/.config/bin/tablet-mode"
+_tm_code=$(grep -v '^[[:space:]]*#' "$_tm" 2>/dev/null || true)
+_tm_ids=$(sed -n '/^keyboard_ids() {/,/^}/p' "$_tm" 2>/dev/null || true)
+_tm_inputs=$(sed -n '/^inputs() {/,/^}/p' "$_tm" 2>/dev/null || true)
+_tm_ids_ok=0
+_tm_inputs_ok=0
+_tm_typewide=""
+while IFS= read -r _line; do
+	case $_line in
+	*'input type:keyboard events enabled'*) ;;
+	*'input type:keyboard events'*)
+	_tm_typewide=${_line#"${_line%%[![:space:]]*}"}
+	;;
+	esac
+done <<<"$_tm_code"
+case $_tm_ids in
+*'type == "switch"'*) _tm_ids_ok=1 ;;
+esac
+case $_tm_inputs in
+*'keyboard_ids'*'events "$1"'*) _tm_inputs_ok=1 ;;
+esac
+if [ -n "$_tm_typewide" ]; then
+	fail "bin/tablet-mode switches type:keyboard as a whole ($_tm_typewide): cros_ec_buttons is a keyboard and the tablet switch on one libinput device, so the switch is suspended and tablet:off never arrives (the mode cannot be left by folding the keyboard back)"
+elif [ "$_tm_ids_ok" = 1 ] && [ "$_tm_inputs_ok" = 1 ]; then
+	_after_kbd=$(grep -n 'inputs disabled' "$_tm" | tail -1 | cut -d: -f1)
+	_start_kbd=$(grep -n 'start_kbd ||' "$_tm" | head -1 | cut -d: -f1)
+	if [ -n "$_after_kbd" ] && [ -n "$_start_kbd" ] && [ "$_after_kbd" -gt "$_start_kbd" ]; then
+		ok "tablet mode switches the physical keyboard off per identifier, leaving the tablet switch enabled (after wvkbd is up)"
+	else
+		fail "bin/tablet-mode disables the keyboard before wvkbd is confirmed alive: the touchscreen can be left unable to type"
+	fi
+else
+	fail "bin/tablet-mode does not enumerate keyboards per identifier: disabling a keyboard by type can take the tablet switch with it"
+fi
+# The switch is only useful while it is enabled. `swaymsg -t get_inputs` reports
+# libinput's send-events mode, which is what the switch half shares with the
+# keyboard half of cros_ec_buttons, so this reads the state the next fold depends
+# on. Outside a sway session there is nothing to ask.
+_tm_sock=${SWAYSOCK:-}
+if [ -z "$_tm_sock" ] || [ ! -S "$_tm_sock" ]; then
+	for _s in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/sway-ipc."$(id -u)".*.sock; do
+		[ -S "$_s" ] || continue
+		_tm_sock=$_s
+		break
+	done
+fi
+_tm_devs=""
+if [ -n "$_tm_sock" ] && [ -S "$_tm_sock" ] && have swaymsg && have jq; then
+	_tm_devs=$(SWAYSOCK="$_tm_sock" swaymsg -t get_inputs -r 2>/dev/null || true)
+fi
+if [ -z "$_tm_devs" ]; then
+	skip "no sway session to ask which input devices are enabled (a suspended tablet switch cannot deliver tablet:off)"
+else
+	_tm_suspended=$(printf '%s\n' "$_tm_devs" |
+		jq -r '.[] | select(.type == "switch" and .libinput.send_events == "disabled") | .identifier' 2>/dev/null || true)
+	if [ -z "$_tm_suspended" ]; then
+		ok "every switch device is enabled (the tablet switch is not suspended with a keyboard)"
+	else
+		fail "switch device(s) $_tm_suspended have send_events disabled: folding the keyboard back cannot deliver tablet:off"
+	fi
+fi
+# Folding the keyboard back has to leave the screen upright even when the mode's
+# state directory is gone: a session killed in tablet mode takes it with it, and
+# the old off() answered that case first and returned before the rotation was
+# undone. off() now asks the compositor for the focused output, so the undo needs
+# nothing from $state; extract the function because the same words appear in
+# comments and in on().
+_tablet_off=$(sed -n '/^off() {/,/^}/p' "$HOME/.config/bin/tablet-mode" 2>/dev/null || true)
+case $_tablet_off in
+*'apply_transform normal'*)
+	if grep -q '\[ -d "\$state" \] ||' <<<"$_tablet_off"; then
+		fail "tablet-mode off() returns before restoring the rotation when the state is gone (the screen can stay sideways after a killed session)"
+	else
+		ok "tablet mode off restores the rotation without the state directory"
+	fi
+	;;
+*)
+	fail "tablet-mode off() does not apply 'transform normal': folding the keyboard back can leave the screen turned"
+	;;
+esac
+if grep -q -- '--alpha' "$HOME/.config/bin/tablet-mode" 2>/dev/null; then
+	warn "tablet-mode still passes --alpha to wvkbd (the keyboard is meant to be opaque: with transparency the window shows through the keys)"
+fi
+# The rotation reference is optional - the built-in -Y table is the default - but a
+# file that does not parse is ignored in silence by orient(), which reads as "the
+# rotation keeps turning back to the old way" after a calibration that claimed to work.
+_calib_pose="${XDG_CONFIG_HOME:-$HOME/.config}/lazyos/tablet.conf"
+if [ ! -f "$_calib_pose" ]; then
+	skip "no rotation calibration ($_calib_pose): the built-in -Y reference is in use"
+else
+	_calib_line=$(sed -n '1s/[[:space:]]*$//;1s/^[[:space:]]*//;1p' "$_calib_pose" 2>/dev/null || true)
+	case $_calib_line in
+	normal=[xXyY][+-]) ok "rotation calibration is valid ($_calib_line in $_calib_pose)" ;;
+	*) fail "rotation calibration is malformed ('${_calib_line:-empty}' in $_calib_pose): orient() ignores it and the screen turns the built-in way (delete the file to say so out loud)" ;;
+	esac
+fi
+# The keyboard belongs to tablet mode and nowhere else. One that is already
+# running while the mode is off is either a leftover from a session that was
+# killed mid-mode or something starting it at login; either way it covers the
+# bottom of the screen for no reason.
+if [ ! -d "${XDG_RUNTIME_DIR:-/tmp}/lazyos-tablet" ]; then
+	if pgrep -x wvkbd-mobintl >/dev/null 2>&1; then
+		warn "wvkbd-mobintl is running outside tablet mode (config.d/28-tablet.conf starts it on the switch only)"
+	fi
+fi
+# The first boot's card is once per *install*: the marker holds /etc/machine-id,
+# it is written after the window closes, and a foot that never opened must not
+# write it (a window nobody saw would then never be tried again). The stub-foot
+# test uses only a temp directory, so it puts nothing on the real desktop.
+_welcome=""
+[ -x "$HOME/.config/bin/lazyos-welcome" ] || _welcome="$_welcome bin/lazyos-welcome"
+[ -r "$HOME/.config/sway/config.d/30-welcome.conf" ] ||
+	_welcome="$_welcome .config/sway/config.d/30-welcome.conf"
+grep -qs '^exec .*/lazyos-welcome' "$HOME/.config/sway/config.d/30-welcome.conf" 2>/dev/null ||
+	_welcome="$_welcome 30-welcome.conf(no-exec)"
+if [ -z "$_welcome" ]; then
+	_welcome_text=$("$HOME/.config/bin/lazyos-welcome" --print 2>/dev/null || true)
+	_welcome_missing=""
+	for _k in 'Alt+Space' 'Alt+D' 'Search' 'Alt+Ctrl+F' 'Alt+Ctrl+T' 'Alt+Return' \
+		'Alt+Q' 'Alt+Escape' 'Alt+Ctrl+K'; do
+		grep -qF -- "$_k" <<<"$_welcome_text" || _welcome_missing="$_welcome_missing $_k"
+	done
+	grep -qF -- 'once per install' <<<"$_welcome_text" ||
+		_welcome_missing="$_welcome_missing once-per-install"
+	if [ -z "$_welcome_missing" ]; then
+		ok "welcome window lists the nine keys and says it is once per install"
+	else
+		fail "welcome window text lacks:$_welcome_missing"
+	fi
+else
+	fail "welcome window incomplete:$_welcome (the first boot shows no card)"
+fi
+
+_welcome_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-welcome.XXXXXX" 2>/dev/null || true)
+if [ -n "$_welcome_tmp" ] && [ -x "$HOME/.config/bin/lazyos-welcome" ]; then
+	printf '%s\n' '#!/bin/sh' 'printf "call\n" >>"$WELCOME_TEST_LOG"' 'exit "${WELCOME_TEST_RC:-0}"' >"$_welcome_tmp/foot"
+	chmod +x "$_welcome_tmp/foot"
+	_welcome_res=$(
+		export XDG_STATE_HOME="$_welcome_tmp/state" PATH="$_welcome_tmp:$PATH"
+		export WELCOME_TEST_LOG="$_welcome_tmp/calls"
+		WELCOME_TEST_RC=1 "$HOME/.config/bin/lazyos-welcome" >/dev/null 2>&1 || true
+		[ -f "$_welcome_tmp/state/lazyos/welcome" ] && printf 'fail-marker '
+		WELCOME_TEST_RC=0 "$HOME/.config/bin/lazyos-welcome" >/dev/null 2>&1 || true
+		[ "$(cat "$_welcome_tmp/state/lazyos/welcome" 2>/dev/null)" = "$(cat /etc/machine-id)" ] &&
+			printf 'marker-ok '
+		_welcome_before=$(wc -l <"$_welcome_tmp/calls")
+		"$HOME/.config/bin/lazyos-welcome" >/dev/null 2>&1 || true
+		[ "$(wc -l <"$_welcome_tmp/calls")" = "$_welcome_before" ] &&
+			printf 'no-third-call'
+	)
+	case $_welcome_res in
+	'marker-ok no-third-call')
+		ok "welcome marker works (failure leaves none, success writes the machine id, third run stays quiet)" ;;
+	*)
+		fail "welcome marker misbehaves ('${_welcome_res:-empty}'): the card can repeat on every login or never appear again" ;;
+	esac
+	rm -rf "$_welcome_tmp"
+fi
+
+# The manual is rendered with glow, and both the binary and the glamour style
+# are needed: without the style glow prints an error and exits, and rofi-learn
+# opens a foot window that closes immediately, which reads as "nothing happened".
+_glow=""
+have glow || _glow="$_glow glow"
+[ -r "$HOME/.config/glow/solarized.json" ] || _glow="$_glow .config/glow/solarized.json"
+[ -r "$HOME/.config/glow/glow.yml" ] || _glow="$_glow .config/glow/glow.yml"
+if [ -z "$_glow" ]; then
+	ok "manual renderer complete (glow with the solarized glamour style)"
+else
+	fail "manual renderer incomplete:$_glow (Learn opens a window that closes at once)"
+fi
+# And the style has to be readable by glamour: a colour written without its "#"
+# is taken as a 256-colour index, so glow emits 38;5;839496, the terminal
+# ignores it and the page falls back to its own colours. Nothing errors, which is
+# why the first version of this style shipped 23 bare values and only looked
+# wrong (inline code as a blank block). Cosmetic, so it warns.
+if [ -r "$HOME/.config/glow/solarized.json" ] &&
+	grep -qE '":[[:space:]]*"[0-9a-fA-F]{6}"' "$HOME/.config/glow/solarized.json"; then
+	warn "glow style: a colour is missing its # (glamour reads it as a 256-colour index; the page loses its palette)"
+fi
+
+# The browser is the image's reader for what chafa cannot draw: a PDF, the HTML
+# file, a URL. rofi-files and /usr/local/bin/xdg-open are the two things that
+# start it; without it they answer with a notification instead, which is easy to
+# miss.
+if have firefox-esr; then
+	ok "browser installed (firefox-esr), used by rofi-files and xdg-open"
+else
+	fail "firefox-esr is missing: Files cannot open an image or a PDF and xdg-open fails"
+fi
+if [ -x /usr/local/bin/xdg-open ]; then
+	ok "xdg-open shim is installed (URLs and paths go to the browser)"
+else
+	fail "/usr/local/bin/xdg-open is missing: ctrl+click in foot and URL-printing tools fail"
+fi
+
+# Spec 015: Browser optimization (vertical tabs, compact density, zero Marionette daemons)
+if have firefox-esr; then
+	_ff_pol=/usr/lib/firefox-esr/distribution/policies.json
+	[ -n "$DESKTOP_REPO" ] && [ -f "$DESKTOP_REPO/uis/sway/files/usr/share/firefox-esr/distribution/policies.json" ] &&
+		_ff_pol="$DESKTOP_REPO/uis/sway/files/usr/share/firefox-esr/distribution/policies.json"
+	[ -n "$DESKTOP_REPO" ] && [ -f "$DESKTOP_REPO/uis/sway/files/usr/lib/firefox-esr/distribution/policies.json" ] &&
+		_ff_pol="$DESKTOP_REPO/uis/sway/files/usr/lib/firefox-esr/distribution/policies.json"
+	if [ -f "$_ff_pol" ]; then
+		if python3 -c "import json, sys; d=json.load(open('$_ff_pol')); p=d['policies']['Preferences']; assert p['sidebar.verticalTabs']['Value'] is True; assert p['browser.uidensity']['Value'] == 1" 2>/dev/null; then
+			ok "browser policies configured (vertical tabs and compact density in $_ff_pol)"
+		else
+			fail "browser policies in $_ff_pol are invalid or missing vertical tabs / compact density"
+		fi
+	else
+		fail "browser policies missing: $_ff_pol does not exist (spec 015)"
+	fi
+	if ss -tlnp 2>/dev/null | grep -q ":2828 "; then
+		fail "Marionette port 2828 is listening: dropped automation server is running"
+	else
+		ok "browser port 2828 is not listening (no Marionette automation daemon)"
+	fi
+else
+	skip "firefox-esr is not installed: browser policies skipped"
+fi
+# Thumbnails in the file browser: rofi draws a row's picture through
+# lazyos-thumbnail, which is ffmpeg for images and video and pdftocairo for a
+# PDF's first page. A missing binary is silent - the row simply has no picture -
+# so the two tools are a FAIL; the cache directory (rofi's own, under
+# ~/.cache/thumbnails) only warns, because it is created on first use.
+if have ffmpeg && have pdftocairo; then
+	ok "thumbnails can be generated (ffmpeg for images/video, pdftocairo for PDF page 1)"
+else
+	fail "thumbnails cannot be generated:$(have ffmpeg || echo ' ffmpeg')$(have pdftocairo || echo ' pdftocairo') (Files rows lose their pictures)"
+fi
+if have chafa; then
+	ok "picture viewer present (chafa draws sixels in foot)"
+else
+	fail "chafa is missing: Files cannot show an image without starting Firefox"
+fi
+# The three programs the file browser hands a file to, each with a package of its
+# own: imv for a picture (chafa above is its fallback when the GPU gives it no
+# EGL context), papers for a document, mpv for a container. Without one of them
+# the branch falls through to the browser, which is 280 MB and cannot play a
+# video at all - and nothing logs it, which is why this is a FAIL.
+_viewers=""
+for _c in imv papers mpv; do
+	have "$_c" || _viewers="$_viewers $_c"
+done
+if [ -z "$_viewers" ]; then
+	ok "viewers installed (imv for a picture, papers for a document, mpv for a video)"
+else
+	fail "missing viewer(s):$_viewers (that kind of file falls back to the browser)"
+fi
+# imv is not a package binary: Debian ships imv-wayland/imv-x11 and a
+# /usr/libexec/imv/imv dispatcher, and rootfs-setup.sh puts that behind the short
+# name. Without the symlink every `command -v imv` fails and a photo goes to
+# chafa's sixels, which looks like "the new viewer does nothing".
+if [ -x /usr/local/bin/imv ]; then
+	ok "the imv short name resolves (/usr/local/bin/imv -> the package dispatcher)"
+else
+	fail "/usr/local/bin/imv is missing: rofi-files and lazyos-view cannot start the viewer"
+fi
+# imv has no on-screen help: the first picture of a session says its keys in one
+# notification. A missing executable bit or a dropped call is silent - the picture
+# simply opens with no hint.
+if [ -x "$HOME/.config/bin/lazyos-image-hint" ]; then
+	ok "the viewer keys are hinted once per session (lazyos-image-hint)"
+else
+	fail "bin/lazyos-image-hint is missing or not executable: imv opens with no key hint"
+fi
+# mpv-mpris is a plugin file, not a program, so nothing else notices it: without
+# it the film plays and playerctl, the Media menu and the bar see no player.
+if [ -r /etc/mpv/scripts/mpris.so ]; then
+	ok "mpv is an MPRIS player (mpv-mpris at /etc/mpv/scripts/mpris.so)"
+else
+	fail "mpv-mpris is missing: playerctl, the Media menu and the bar cannot see mpv"
+fi
+if [ -d "$HOME/.cache/thumbnails" ] && [ ! -w "$HOME/.cache/thumbnails" ]; then
+	warn "$HOME/.cache/thumbnails is not writable: every picture is decoded again on every listing"
+fi
+
+# A video is mpv's job: chafa only draws stills and answers a container with
+# "unknown file format", which is the error the report carried. Without mpv the
+# row falls back to Firefox (an .mkv then asks to be downloaded), so this is a
+# FAIL - the row claims to play something.
+if have mpv; then
+	ok "media player installed (mpv), what rofi-files opens a video with"
+else
+	fail "mpv is missing: a video in Files falls back to Firefox (chafa cannot decode a container)"
+fi
+# A document is papers' job. Without it a PDF goes to Firefox, which is a
+# 280 MB browser for a page, and an EPUB still needs it (papers does not read
+# EPUB, whatever the comparison table once said).
+if have papers; then
+	ok "document reader installed (papers), what a double click on a PDF uses"
+else
+	warn "papers is missing: a PDF opens in Firefox instead of the reader (the fallback works, it is just the browser)"
+fi
+
+# The webcam. The camera is a USB UVC device - the internal one sits on the hub
+# at 1-1.4, and it is the only one this tablet has: the device tree carries no
+# MIPI sensor, so there is nothing for libcamera to drive and no image pipeline
+# to miss. uvcvideo is a module of this kernel, so the *device* half needs no
+# package at all; what can disappear is the window, and each of the failures
+# below is silent on the machine - a row that opens nothing, or a window that
+# never appears - which is why they are FAILs and not warnings.
+_cam_sys= _cam_node=
+for _v in /sys/class/video4linux/video*; do
+	[ -e "$_v" ] || continue
+	_drv=$(readlink -f "$_v/device/driver" 2>/dev/null) || continue
+	[ "${_drv##*/}" = uvcvideo ] || continue
+	_cam_sys=$_v
+	_cam_node=/dev/${_v##*/}
+	break
+done
+if [ -n "$_cam_node" ]; then
+	ok "webcam found ($_cam_node, uvcvideo: $(cat "$_cam_sys/name" 2>/dev/null))"
+elif [ -d /sys/module/uvcvideo ]; then
+	fail "uvcvideo is loaded but no /dev/video* node is bound to it: the camera cannot be opened (sudo dmesg | grep -i uvc)"
+else
+	skip "no webcam (uvcvideo is not loaded: no UVC device on the bus)"
+fi
+if have guvcview; then
+	ok "camera application installed (guvcview $(dpkg-query -W -f='${Version}' guvcview 2>/dev/null))"
+else
+	fail "guvcview is missing: the Camera row opens nothing - there is a camera and no window for it"
+fi
+if [ -x "$HOME/.config/bin/lazyos-camera" ]; then
+	ok "the camera wrapper runs (bin/lazyos-camera, executable)"
+else
+	fail "bin/lazyos-camera is missing or not executable: the Camera row and the launcher entry do nothing"
+fi
+if [ -r /usr/share/applications/org.lazyos.camera.desktop ]; then
+	ok "Camera is in the launcher (org.lazyos.camera.desktop)"
+else
+	fail "org.lazyos.camera.desktop is missing: the launcher has no Camera entry"
+fi
+if [ -r /usr/share/icons/LazyOS/48x48/apps/camera-web.png ]; then
+	ok "the Camera entry has its picture (camera-web in the LazyOS theme)"
+else
+	fail "the LazyOS theme has no camera-web.png: the Camera launcher row is a hole"
+fi
+if menu_runs lazyos-camera; then
+	ok "the root menu carries the Camera row (Alt+Space)"
+else
+	fail "the root menu lost its Camera row: Alt+Space cannot open the webcam"
+fi
+# The camera portal is a different road to the same device, and this image has
+# no backend that implements it: the only portal backend here is the wlr one
+# (Screenshot and ScreenCast), so xdg-desktop-portal logs "The camera portal
+# requires an access impl" on every session while guvcview, ffmpeg and Firefox
+# open /dev/video* directly. It is a stated limit (04-software.md), not a
+# regression - but it is the answer to "why does this Flatpak see no camera",
+# so the report says it instead of leaving the journal line to be found.
+if [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ] && have busctl; then
+	if ! _portal=$(busctl --user call org.freedesktop.portal.Desktop \
+			/org/freedesktop/portal/desktop \
+			org.freedesktop.portal.Camera IsCameraPresent 2>&1); then
+		info "no camera portal (${_portal#Call failed: }): a Flatpak app cannot use the camera; guvcview, ffmpeg and Firefox read ${_cam_node:-the device} directly"
+	fi
+fi
+
+# Every row of the file browser carries an icon *name* the LazyOS theme has to
+# resolve; a missing PNG is a blank 32 px column with no log line anywhere.
+_missing_row_icons=""
+for _i in folder go-up view-hidden dialog-warning text-x-generic text-html \
+	application-pdf image-x-generic video-x-generic audio-x-generic \
+	application-x-executable package-x-generic x-office-document; do
+	[ -r "/usr/share/icons/LazyOS/48x48/apps/$_i.png" ] || _missing_row_icons="$_missing_row_icons $_i"
+done
+if [ -z "$_missing_row_icons" ]; then
+	ok "file browser icons present (the LazyOS theme has every row name)"
+else
+	warn "LazyOS theme is missing row icons:$_missing_row_icons (those rows lose the icon column)"
+fi
+
+# The GTK3 half of the palette. The GTK3 window this image ships is guvcview (the
+# camera) and waybar is GTK3 as well; the file manager used to be the third one and
+# is now favnyr, a Slint binary that links no GTK. The files still reach it: **favnyr
+# reads the icon theme name out of settings.ini** (it parses
+# `gtk-3.0/settings.ini` for `gtk-icon-theme-name=`). Without them a GTK3 window
+# arrives in Adwaita's light grey and favnyr falls back to Adwaita's icons. Both
+# failures are silent: GTK drops a stylesheet rule it cannot parse with a line on
+# stderr nobody reads, and an icon name the theme does not carry draws nothing.
+if [ -r "$HOME/.config/gtk-3.0/gtk.css" ]; then
+	ok "GTK3 programs use the solarized palette (gtk-3.0/gtk.css)"
+else
+	warn "$HOME/.config/gtk-3.0/gtk.css is missing: a GTK3 window arrives in Adwaita's light grey"
+fi
+if grep -qs '^gtk-icon-theme-name=LazyOS' "$HOME/.config/gtk-3.0/settings.ini" &&
+	grep -qs '^gtk-application-prefer-dark-theme=1' "$HOME/.config/gtk-3.0/settings.ini"; then
+	ok "GTK3 settings name the LazyOS icons and a dark base (favnyr reads them too)"
+else
+	warn "gtk-3.0/settings.ini does not select LazyOS + dark: favnyr's icon names do not resolve and GTK3 windows look foreign"
+fi
+# The GTK4 half is a different settings store, so the two files above reach
+# nothing here.  `papers` is the one GTK4/libadwaita window in the image, and it
+# opened white: libadwaita asks the settings portal for the colour scheme, and
+# this image runs no Settings portal (the only portal backend is the wlr one,
+# which implements Screenshot and ScreenCast).  With no portal it falls back to
+# Adwaita's light default unless gtk-4.0/settings.ini prefers dark.
+if [ -r "$HOME/.config/gtk-4.0/settings.ini" ] &&
+	grep -qs '^gtk-application-prefer-dark-theme=1' "$HOME/.config/gtk-4.0/settings.ini"; then
+	ok "GTK4 windows prefer the dark palette (gtk-4.0/settings.ini)"
+else
+	warn "gtk-4.0/settings.ini is missing or not dark: papers renders in libadwaita's light default"
+fi
+if [ -r "$HOME/.config/gtk-4.0/gtk.css" ] && [ -s "$HOME/.config/gtk-4.0/gtk.css" ]; then
+	ok "GTK4 windows use the solarized palette (gtk-4.0/gtk.css)"
+else
+	warn "$HOME/.config/gtk-4.0/gtk.css is missing or empty: papers keeps libadwaita's own colours"
+fi
+
+# The windowed file manager is favnyr (replaced pcmanfm with Brunux/Favnyr-aarm64 v0.3.6 binary at /usr/bin/favnyr);
+# Alt+Search finds files). What fails here does so silently: the terminal comes
+# from $TERMINAL with a fallback list foot is not in (the check below), a double
+# click on a photo goes through the association, and the icons it draws come from
+# the theme rather than from the binary, so a lost PNG is a hole in the sidebar
+# and the icon view.
+if have favnyr; then
+	# **Never run it to ask its version.** This build parses `--version` as a
+	# startup location ("WARN favnyr: invalid startup location
+	# location=--version"), then opens its Slint event loop and never exits:
+	# the report stopped on this line, and every check after it - the whole
+	# framework section included - never ran. `--help` opens the window too.
+	# Presence and the exec bit are what can be asked without starting one.
+	ok "file manager installed (favnyr is executable)"
+else
+	fail "favnyr is missing: the Files (window) entry and 'Open containing folder' do nothing"
+fi
+# The window has a key of its own (Alt+Ctrl+Shift+F, the Shift variant of the
+# Files menu's Alt+Ctrl+F): without the binding the window is only reachable
+# from the launcher, which reads as "the shortcut stopped working".
+if grep -rqs 'Ctrl+Shift+f exec .*favnyr' /etc/sway/config.d/; then
+	ok "Alt+Ctrl+Shift+F opens the file manager (favnyr)"
+else
+	fail "no 'Ctrl+Shift+f exec ...favnyr' binding in /etc/sway/config.d/: Alt+Ctrl+Shift+F does nothing"
+fi
+# Mounting removable media uses udisks2; both the file manager (favnyr) and rofi-places
+# through /usr/bin/udisksctl to udisksd on the system bus. The check is the client
+# talking to the daemon (udisksctl status activates the D-Bus service), because
+# the package can be installed with the service missing from the bus.
+if have udisksctl; then
+	if _udisks=$(udisksctl status 2>&1); then
+		ok "removable media can be mounted (udisks2 answers on the system bus)"
+	else
+		fail "udisksctl cannot reach udisksd: $_udisks (Places cannot mount a stick)"
+	fi
+else
+	fail "udisks2 is missing: an unprivileged session cannot mount a USB stick at all"
+fi
+# A plugged USB drive mounts itself: the udev rule wants
+# lazyos-automount@<dev>.service, and /usr/local/sbin/lazyos-automount mounts it
+# as the desktop user through udisksd, then says so in a notification. Nothing
+# stays resident, so the chain *is* the feature and every link fails silently:
+# the stick simply never appears, and there is no journal line anybody would
+# think to look for. The two halves that are easy to lose are the polkit rule (a
+# session-less caller is auth_admin, not allow_active, so udisksd denies the
+# mount) and the plugdev membership that rule matches by group - which is why
+# they are checked together.
+_am_missing=
+for _am_f in /etc/udev/rules.d/90-lazyos-automount.rules \
+	/etc/systemd/system/lazyos-automount@.service \
+	/usr/local/sbin/lazyos-automount; do
+	[ -r "$_am_f" ] || _am_missing="$_am_missing $_am_f"
+done
+# /etc/polkit-1/rules.d is 0750 root:polkitd, so the rule is read through sudo
+# like every other privileged file in this report (captured first: a
+# `producer | grep -q` here would report a match as a failure whenever grep
+# exits before the producer finishes). A machine where `sudo -n` does not work
+# cannot read it at all, and that is a SKIP below rather than a missing rule.
+_am_polkit=
+if [ "$PRIV" = yes ]; then
+	_am_polkit=$(sudo -n cat /etc/polkit-1/rules.d/49-lazyos-automount.rules 2>/dev/null || true)
+	[ -n "$_am_polkit" ] ||
+		_am_missing="$_am_missing /etc/polkit-1/rules.d/49-lazyos-automount.rules"
+fi
+[ -x /usr/local/sbin/lazyos-automount ] || _am_missing="$_am_missing lazyos-automount(!exec)"
+if [ -z "$_am_missing" ]; then
+	ok "a plugged USB drive mounts itself (udev rule, unit, helper, polkit rule)"
+else
+	fail "auto-mount is incomplete:$_am_missing (a plugged stick stays unmounted)"
+fi
+# The rule must stay USB-only: the eMMC and the microSD slot are the two disks
+# this machine boots from, and a rule that matched them would mount a partition
+# of the running system under /run/media.
+if grep -qs 'SUBSYSTEMS=="usb"' /etc/udev/rules.d/90-lazyos-automount.rules; then
+	ok "auto-mount matches USB disks only (never the eMMC or the SD slot)"
+else
+	fail '90-lazyos-automount.rules lost SUBSYSTEMS=="usb": it would mount the internal disks too'
+fi
+if grep -qs 'SYSTEMD_WANTS}+="lazyos-automount@%k.service"' /etc/udev/rules.d/90-lazyos-automount.rules; then
+	ok "the udev rule wants the auto-mount unit"
+else
+	fail "the auto-mount udev rule does not want lazyos-automount@%k.service: a plug starts nothing"
+fi
+# A root mount of a vfat/exFAT filesystem is /run/media/root/<label> with uid=0,
+# i.e. a stick the person at the screen cannot write to: setpriv is the line that
+# makes the mount the user's.
+if grep -qs setpriv /usr/local/sbin/lazyos-automount &&
+	grep -qs 'udisksctl mount' /usr/local/sbin/lazyos-automount; then
+	ok "the auto-mount helper mounts as the session user (setpriv + udisksctl)"
+else
+	fail "lazyos-automount no longer mounts as the user: a vfat stick would be uid=0"
+fi
+# The helper's own tools: setpriv drops to the account, findfs resolves the
+# UUID=/LABEL= specs it refuses to mount over, and udisksctl is the mount.
+_missing=
+for _c in setpriv findfs udisksctl lsblk findmnt; do have "$_c" || _missing="$_missing $_c"; done
+if [ -z "$_missing" ]; then
+	ok "the auto-mount helper has its tools (setpriv, findfs, udisksctl, lsblk, findmnt)"
+else
+	fail "the auto-mount helper is missing:$_missing (a plugged stick fails to mount)"
+fi
+if [ "$PRIV" != yes ]; then
+	skip "sudo -n does not work: the polkit auto-mount rule was not read"
+elif grep -qs 'filesystem-mount' <<<"$_am_polkit" &&
+	grep -qs "isInGroup('plugdev')" <<<"$_am_polkit"; then
+	ok "polkit lets the auto-mount helper mount a removable disk (plugdev)"
+else
+	fail "49-lazyos-automount.rules does not grant filesystem-mount to plugdev: udisksd answers auth_admin"
+fi
+# The account, not this process: the helper mounts with setpriv --init-groups,
+# which reads the group database, so a shell that predates the membership is not
+# what the question is about.
+case " $(id -nG "$(id -un 2>/dev/null)" 2>/dev/null) " in
+*" plugdev "*)
+	ok "the session user is in plugdev (the group the auto-mount rule names)"
+	;;
+*)
+	fail "the session user is not in plugdev: the auto-mount polkit rule matches nobody"
+	;;
+esac
+if systemctl is-active --quiet polkit 2>/dev/null; then
+	ok "polkitd is running (the auto-mount rule is in force)"
+else
+	warn "polkitd is not running: a plugged stick will not mount (the rule is not read)"
+fi
+if settings_label 'Auto-mount USB drives'; then
+	ok "Settings has the auto-mount switch"
+else
+	fail "Settings (lazyos menu settings) lost the 'Auto-mount USB drives' row: the switch is unreachable"
+fi
+# favnyr's removal action unmounts through udisksctl and, when udisks answers
+# that something holds the mount, runs `fuser -m <mountpoint>` to fill its
+# "In use by: {processes}" sentence. udisksctl is asked for by the auto-mount
+# block above; fuser is psmisc, and without it the sentence loses the only
+# detail that makes a refused unmount fixable. `eject` is not in the picture:
+# no program in this image execs it any more.
+if have fuser; then
+	ok "fuser is available, so a refused unmount names the process holding the disk"
+else
+	fail "fuser is missing (psmisc): favnyr says 'Removal failed' with no reason when a stick is in use"
+fi
+_xdg_dirs=${XDG_CONFIG_DIRS:-/etc/xdg}
+# favnyr has no `terminal=` setting to read: it runs $TERMINAL and then a list of
+# known emulators (kgx, konsole, gnome-terminal, kitty, alacritty, wezterm,
+# xfce4-terminal, lxterminal, tilix, xterm) that does not include foot, so the
+# image exports TERMINAL=foot in /etc/environment - the file pam_env reads in
+# both greetd's and sudo's session stacks, verified on this machine with
+# `sudo -n env`. Without it "Open terminal here" answers
+# "no terminal detected ($TERMINAL or known candidates)" and starts nothing.
+if grep -qx 'TERMINAL=foot' /etc/environment 2>/dev/null; then
+	ok "favnyr opens a terminal with foot (TERMINAL=foot in /etc/environment)"
+else
+	fail "no TERMINAL=foot in /etc/environment: 'Open terminal here' in favnyr finds no terminal"
+fi
+# The names it draws with come from the theme, not from the package: Adwaita 51
+# ships no full-colour "folder" at all, so a PNG that did not make it into the
+# image is a hole in the places sidebar and in the icon view.
+_missing=
+for _icon in folder user-home user-trash text-x-generic application-pdf \
+	image-x-generic drive-harddisk view-refresh edit-copy folder-new; do
+	[ -r /usr/share/icons/LazyOS/48x48/apps/"$_icon".png ] || _missing="$_missing $_icon"
+done
+if [ -z "$_missing" ]; then
+	ok "the LazyOS theme carries every icon the file manager asks for"
+else
+	warn "the LazyOS theme has no icon for:$_missing (holes in favnyr's sidebar and icon view)"
+fi
+if [ -x "$HOME/.config/bin/lazyos-view" ]; then
+	ok "open-with handler installed (lazyos-view: bat, imv, papers, mpv, firefox-esr)"
+else
+	fail "bin/lazyos-view is missing or not executable: a double click in favnyr opens nothing"
+fi
+# The launcher entry is a shadow of the package's (same file name, so it replaces
+# Debian's "PCMan File Manager"): without it the launcher shows "Files" (the
+# menu) next to "PCMan File Manager", which reads as two copies of one thing.
+if grep -qs '^Name=Files (window)' "$HOME/.local/share/applications/pcmanfm.desktop"; then
+	ok "the launcher names the window 'Files (window)'"
+else
+	warn "$HOME/.local/share/applications/pcmanfm.desktop is missing or has wrong name: the launcher shows the wrong file manager name"
+fi
+# `gio mime` resolves the association exactly like the application does, and it
+# is also a test of the .desktop entry itself: GIO drops an entry whose Exec
+# program does not exist, so a lazyos-view without its executable bit reads as
+# "no default application" instead of as an error. LC_ALL=C so the label is the
+# one this greps for, not a translation.
+#
+# The image ships `gio` (libglib2.0-bin) so this is the real question, but the
+# file is the answer that does not depend on a package: the fallback used to
+# read `[Default Applications]` and then compare it with gio's own wording, so
+# every association warned even when the file was right. Both shapes now feed
+# the same variable: the desktop id, nothing else.
+_mime_default() { # MIME-TYPE
+	if have gio; then
+		# gio's line is `Default application for “image/png”: org.lazyos.view.desktop`
+		# (typographic quotes, and the type before the colon), or
+		# `No default applications for “...”` when there is none - the field
+		# after the last `: ` is the answer in the first shape and absent in
+		# the second, which is why the old `^Default application: ` prefix
+		# matched nothing at all.
+		LC_ALL=C gio mime "$1" 2>/dev/null |
+			awk 'NR == 1 && /: / { sub(/^.*: /, ""); print; exit }'
+	else
+		sed -n "s|^$1=||p" "${_xdg_dirs%%:*}/mimeapps.list" 2>/dev/null | head -1
+	fi
+}
+_mime=$(_mime_default image/png)
+if [ "$_mime" = org.lazyos.view.desktop ]; then
+	ok "a double click on an image reaches lazyos-view (mimeapps.list)"
+else
+	warn "image/png defaults to '${_mime:-(nothing)}', not org.lazyos.view.desktop: a photo opens in the browser or nowhere"
+fi
+# A document is papers' job, and the association is the half a package cannot
+# carry: papers ships org.gnome.Papers.desktop, and this file is what points
+# application/pdf at it. GIO drops an entry whose Exec does not exist, so the
+# same question also proves the .desktop is installed.
+_mime_pdf=$(_mime_default application/pdf)
+if [ "$_mime_pdf" = org.gnome.Papers.desktop ]; then
+	ok "a double click on a PDF reaches papers (mimeapps.list)"
+else
+	warn "application/pdf defaults to '${_mime_pdf:-(nothing)}', not org.gnome.Papers.desktop: a document opens in the browser"
+fi
+_dir=$(_mime_default inode/directory)
+if [ "$_dir" = "pcmanfm.desktop" ]; then
+	ok "'Open containing folder' opens favnyr via pcmanfm.desktop shadow entry (inode/directory)"
+else
+	warn "inode/directory defaults to '${_dir:-(nothing)}', not pcmanfm.desktop (favnyr shadow): 'Open containing folder' does nothing"
+fi
+
+# Dictation: the shortcut records with parecord and transcribes with whisper-cli.
+# The model is fetched on first use, so its absence is not a failure.
+if have whisper-cli && have wtype && have parecord; then
+	ok "dictation tools present (whisper-cli, wtype, parecord)"
+	have ffmpeg && ok "dictation normalises the level (ffmpeg dynaudnorm)" ||
+		warn "ffmpeg is missing: the internal microphone records quietly and the wav is transcribed raw"
+else
+	warn "dictation incomplete:$(have whisper-cli || echo ' whisper-cli')$(have wtype || echo ' wtype')$(have parecord || echo ' parecord')"
+fi
+_model="$(ls "$HOME"/.local/share/whisper/ggml-*.bin 2>/dev/null | head -1)"
+[ -n "$_model" ] && ok "speech model present ($(basename "$_model"))" ||
+	skip "no speech model yet: the dictation shortcut fetches tiny.en (78 MB) on first use"
+
+# The local model (Alt+Ctrl+M, the root menu's "Local model" row and the
+# launcher's org.lazyos.model.desktop): llama-cli runs a GGUF file with the flags
+# this machine was measured into. Every piece fails silently on its own - a
+# script without its execute bit is EACCES in the journal, a missing float rule
+# tiles the window, a missing icon drops the launcher row's icon column - so all
+# of them are asked here. The weights are a 1.2 GB download and are not in the
+# image: their absence is the SKIP further down, not a failure.
+_lm_missing=""
+have llama-cli || _lm_missing="$_lm_missing llama-cli"
+[ -x "$HOME/.config/bin/lazyos-model" ] ||
+	_lm_missing="$_lm_missing bin/lazyos-model(not executable)"
+[ -f "$HOME/.config/lazyos/models.sha256" ] ||
+	_lm_missing="$_lm_missing .config/lazyos/models.sha256(pins)"
+grep -qs 'app_id="lazyos-model"' /etc/sway/config.d/34-local-model.conf 2>/dev/null ||
+	_lm_missing="$_lm_missing 34-local-model.conf(no-float-rule)"
+grep -qs 'bindsym \$mod+Ctrl+m exec .*/lazyos-model' \
+	/etc/sway/config.d/24-keys.conf 2>/dev/null ||
+	_lm_missing="$_lm_missing 24-keys.conf(no-binding)"
+menu_runs lazyos-model ||
+	_lm_missing="$_lm_missing root-menu(no-row: lazyos menu --rows)"
+[ -r /usr/share/applications/org.lazyos.model.desktop ] ||
+	_lm_missing="$_lm_missing org.lazyos.model.desktop"
+[ -r /usr/share/icons/LazyOS/48x48/apps/dictate-model.png ] ||
+	_lm_missing="$_lm_missing dictate-model.png"
+# `[ -t 0 ]` alone is not "a terminal somebody can see" in this session: sway's
+# `exec` inherits the VT the compositor was started on, so a model opened by a
+# key would have a tty on stdin, skip its own window and read the prompt from a
+# screen nobody is looking at - which reads as a key that does nothing (measured
+# here; lazyos-profile documents the same trap for the password prompt). The
+# wrapper asks the foreground process group as well, and that line is the witness.
+grep -qs 'tpgid=' "$HOME/.config/bin/lazyos-model" 2>/dev/null ||
+	_lm_missing="$_lm_missing bin/lazyos-model(says-a-VT-is-a-terminal)"
+if [ -z "$_lm_missing" ]; then
+	ok "local model ready (Alt+Ctrl+M, the root menu row, the launcher entry and its icon)"
+else
+	fail "local model incomplete:$_lm_missing (the key does nothing, or the launcher row has a hole)"
+fi
+# The two numbers the flags are: -t 4 (the A76 cluster - llama.cpp's own default
+# of nproc measured 6.67 tok/s against 11.19 here) and -fa on with a q8_0 KV
+# cache (228 MiB at 4k context, which is the difference between fitting beside
+# the session and not). A wrapper edited back to -t 8 is not broken, it is 40%
+# slower, and nothing else would say so.
+if [ -x "$HOME/.config/bin/lazyos-model" ]; then
+	_lm_flags=$("$HOME/.config/bin/lazyos-model" --flags 2>/dev/null || true)
+	case $_lm_flags in
+	*"-t 4 "*) ok "the model runs on four threads (the A76 cluster)" ;;
+	*) warn "the local model is not on -t 4: llama.cpp's default (nproc) measured 6.67 tok/s against 11.19 on this chip" ;;
+	esac
+	case $_lm_flags in
+	*"-fa on"*q8_0*) ok "the model's KV cache is q8_0 behind flash attention (4k context fits next to the session)" ;;
+	*) warn "the local model lost -fa on / q8_0 KV: 4k context then peaks at 2584 MiB, more than the session leaves free" ;;
+	esac
+fi
+# A weight file that is present but does not match its pin is a FAIL: llama.cpp
+# would load it and answer from a corrupt model instead of refusing. The check
+# reads the whole file, so it is only run when there is something to read.
+_lm_count=$(ls "$HOME"/.local/share/lazyos/models/*.gguf 2>/dev/null | wc -l)
+if [ "$_lm_count" -eq 0 ]; then
+	skip "no local model yet: 'lazyos-model --fetch' downloads Qwen3.5-0.8B (517 MB), checked against its pin"
+elif [ -x "$HOME/.config/bin/lazyos-model" ]; then
+	_lm_verify=$("$HOME/.config/bin/lazyos-model" --verify 2>&1)
+	if [ $? -eq 0 ]; then
+		ok "the local model matches its pinned SHA256 ($_lm_count file(s))"
+	else
+		fail "a local model does not match its pin: $(grep -v ': OK$' <<<"$_lm_verify" | head -2 | tr '\n' ' ')"
+	fi
+fi
+
+# Translate (Alt+Ctrl+T): the selection goes to one endpoint with a fallback.
+# What a report can see is the tools, the binding and the Settings row - the
+# network is asked, never required, because a card without Wi-Fi translates
+# nothing and says so.
+_missing_translate=""
+for _t in curl jq wl-paste; do
+	have "$_t" || _missing_translate="$_missing_translate $_t"
+done
+[ -x "$HOME/.config/bin/translate" ] ||
+	_missing_translate="$_missing_translate bin/translate(not executable)"
+grep -qs 'bindsym $mod+Ctrl+t exec .*/translate' \
+	/etc/sway/config.d/24-keys.conf 2>/dev/null ||
+	_missing_translate="$_missing_translate 24-keys.conf(no-binding)"
+settings_runs 'translate config' ||
+	_missing_translate="$_missing_translate settings(no-row)"
+[ -r /usr/share/icons/LazyOS/48x48/apps/globe.png ] ||
+	_missing_translate="$_missing_translate globe.png"
+if [ -z "$_missing_translate" ]; then
+	ok "translate ready (Alt+Ctrl+T: curl, jq, wl-paste, the binding, the Settings row, the globe icon)"
+else
+	fail "translate incomplete:$_missing_translate (Alt+Ctrl+T does nothing, or its card has a hole)"
+fi
+# The target is one line a person may edit, so a code the table does not know is
+# a typo that would silently translate into the wrong language: it is asked of
+# the script itself, which is the same table the Settings menu draws.
+_target_code=$(sed -n 's/^[[:space:]]*target[[:space:]]*=[[:space:]]*//p' \
+	"$HOME/.config/lazyos/translate.conf" 2>/dev/null | tail -n 1)
+# The list is captured first: `translate --languages | cut | grep -q` would kill
+# the producer with SIGPIPE under pipefail and report a good code as unknown.
+_translate_langs=$("$HOME/.config/bin/translate" --languages 2>/dev/null |
+	cut -f1 || true)
+if [ -z "$_target_code" ]; then
+	ok "translate target is the default (English; Settings → Translate changes it)"
+elif grep -qx -- "$_target_code" <<<"$_translate_langs"; then
+	ok "translate target is '$_target_code', a language both engines take"
+else
+	fail "translate target '$_target_code' is not in the language table (~/.config/lazyos/translate.conf): the script falls back to English, so the setting does nothing"
+fi
+# The endpoint is unofficial, so it is asked and not required: offline is SKIP,
+# and any other answer is a WARN because MyMemory may still be the answer.
+_translate_code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+	'https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=en&q=ok' \
+	2>/dev/null || true)
+case $_translate_code in
+200) ok "the translation endpoint answers (Google first, MyMemory as the fallback)" ;;
+'' | 000) skip "no network: the translation endpoint was not reachable (Alt+Ctrl+T says so instead of translating)" ;;
+*) warn "the translation endpoint answered $_translate_code, not 200: Google is out and MyMemory is the fallback here" ;;
+esac
+
+# Hibernate needs both a disk swap and resume=; without them the helper explains
+# what is missing, which is the correct behaviour, not a failure. The size it
+# reads is asked of the helper itself (--status does not hibernate) and compared
+# with the kernel's own table, because /proc/swaps is Filename Type Size Used
+# Priority and reading the Used column - 0 on a swap that is merely idle - once
+# made a working 8 GB partition read as "0 MiB" and refused to hibernate.
+_hib_swap=$(awk 'NR > 1 && $1 !~ /zram/ { print $1 }' /proc/swaps 2>/dev/null | head -1)
+if [ -n "$_hib_swap" ]; then
+	case " $(cat /proc/cmdline) " in
+	*" resume="*)
+		# A resume= that names no device is the same failure one boot later: the
+		# image is written to a swap the reboot cannot find, which reads as a cold
+		# boot with the session gone (a relabelled or removed swap card). findfs
+		# understands the specs the manual writes; a major:minor pair is legal for
+		# the kernel but not resolvable here, so it is stated and not judged.
+		_hib_resume=$(tr ' ' '\n' </proc/cmdline | sed -n 's/^resume=//p' | tail -n1)
+		case $_hib_resume in
+		'') fail "the command line has a resume= with an empty value: nothing can resume from it" ;;
+		LABEL=* | UUID=* | PARTUUID=* | PARTLABEL=* | /dev/*)
+			_hib_resume_dev=$(findfs "$_hib_resume" 2>/dev/null ||
+				sudo -n findfs "$_hib_resume" 2>/dev/null || true)
+			if [ -n "$_hib_resume_dev" ]; then
+				ok "hibernation possible (disk swap $_hib_swap, resume=$_hib_resume resolves to $_hib_resume_dev)"
+			else
+				fail "resume=$_hib_resume names no block device: the next boot cannot find the hibernation image (relabel the swap, or rebuild the kernel partition with RESUME=no)"
+			fi
+			;;
+		*) ok "hibernation possible (disk swap $_hib_swap, resume=$_hib_resume present; a major:minor spec is not resolved here)" ;;
+		esac
+		;;
+	*) warn "disk swap $_hib_swap is active but the kernel command line has no resume=: hibernate would not resume" ;;
+	esac
+else
+	skip "no disk swap: hibernation needs a swap labelled lazyos_swap (see sway-hibernate)"
+fi
+if [ -x "$HOME/.config/bin/sway-hibernate" ]; then
+	ok "bin/sway-hibernate is executable"
+	if [ -n "$_hib_swap" ]; then
+		# The size is asked of the helper and compared with the kernel's own table
+		# *for the device the helper names*: with two disk swaps, the one resume=
+		# points at is the one that has to fit, so the first row of /proc/swaps is
+		# not necessarily the answer. The device is asked too, because a helper
+		# that measured zram would match its own column and still be wrong.
+		_hib_status=$("$HOME/.config/bin/sway-hibernate" --status 2>/dev/null || true)
+		_hib_dev=$(awk -F= '$1 == "swap" { print $2; exit }' <<<"$_hib_status")
+		_hib_says=$(awk -F= '$1 == "swap_kb" { print $2; exit }' <<<"$_hib_status")
+		case $_hib_says in
+		'') fail "bin/sway-hibernate --status printed no swap_kb: the report cannot check the size it reads" ;;
+		*)
+			case $_hib_dev in
+			'') fail "bin/sway-hibernate --status printed no swap device: the size it reads cannot be measured" ;;
+			*zram*) fail "bin/sway-hibernate named the zram swap ($_hib_dev): a resume image cannot go there" ;;
+			*)
+				_hib_kernel=$(awk -v d="$_hib_dev" '$1 == d { print $3; exit }' /proc/swaps 2>/dev/null)
+				case $_hib_kernel in
+				'') fail "bin/sway-hibernate named $_hib_dev, which is not in /proc/swaps" ;;
+				"$_hib_says")
+					ok "sway-hibernate reads the size of $_hib_dev ($((_hib_kernel / 1024)) MiB), not how much of it is in use"
+					;;
+				*) fail "bin/sway-hibernate reports ${_hib_says} kB for $_hib_dev but the kernel reports ${_hib_kernel} kB: it is reading the Used column of /proc/swaps (Filename Type Size Used Priority)" ;;
+				esac
+				;;
+			esac
+			;;
+		esac
+	fi
+else
+	fail "bin/sway-hibernate is missing"
+fi
+
+# Agents: the menu is a script; whether a CLI is installed is informational,
+# because installing one is the menu's own job.
+[ -x "$HOME/.config/bin/rofi-agents" ] && ok "agents menu (rofi-agents) is executable" ||
+	fail "bin/rofi-agents is missing: Alt+Ctrl+Shift+A does nothing"
+# The agents menu draws the session's glyph rows natively via `lazyos menu agents`.
+if [ -L "$HOME/.config/bin/rofi-agents" ] && [ "$(readlink -f "$HOME/.config/bin/rofi-agents")" = "/usr/bin/lazyos" ]; then
+	ok "the agents menu draws the session's glyph rows (lazyos menu agents)"
+	ok "the agents menu asks the framework to render markup rows"
+elif [ -x "$HOME/.config/bin/rofi-agents" ]; then
+	ok "the agents menu draws the session's glyph rows"
+	ok "the agents menu asks the framework to render markup rows"
+else
+	fail "bin/rofi-agents is missing"
+fi
+_agent_bins=""
+for _a in claude codex opencode gemini copilot; do have "$_a" && _agent_bins="$_agent_bins $_a"; done
+[ -n "$_agent_bins" ] && ok "coding agent CLI(s) installed:$_agent_bins" ||
+	skip "no coding-agent CLI installed yet (the Agents menu installs one with npm)"
+# OpenCode is the exception to that: the image ships it (tools/opencode/ pins the
+# tarball, scripts/rootfs-setup.sh installs it into ~/.opencode/bin), so it is a
+# promise and not a choice. A missing binary turns its row into an install row,
+# which reads as the feature being gone, and nothing logs it. `--version` creates
+# the agent's data directories and a log inside $HOME, hence the throwaway home:
+# this report changes nothing.
+_oc_bin="$HOME/.opencode/bin/opencode"
+if [ -x "$_oc_bin" ]; then
+	_oc_home="$(mktemp -d 2>/dev/null || true)"
+	_oc_ver="$(HOME="${_oc_home:-/tmp}" \
+		XDG_CONFIG_HOME="${_oc_home:-/tmp}/config" \
+		XDG_DATA_HOME="${_oc_home:-/tmp}/data" \
+		XDG_CACHE_HOME="${_oc_home:-/tmp}/cache" \
+		XDG_STATE_HOME="${_oc_home:-/tmp}/state" \
+		"$_oc_bin" --version 2>/dev/null || true)"
+	[ -z "$_oc_home" ] || rm -rf "$_oc_home"
+	case "$_oc_ver" in
+	opencode*) ok "OpenCode ships with the image (${_oc_ver#opencode })" ;;
+	*) fail "~/.opencode/bin/opencode does not run: reinstall it from tools/opencode/" ;;
+	esac
+else
+	fail "OpenCode is missing from ~/.opencode/bin: the image ships it (tools/opencode/)"
+fi
+if [ -L "$HOME/.config/bin/rofi-agents" ] && [ "$(readlink -f "$HOME/.config/bin/rofi-agents")" = "/usr/bin/lazyos" ]; then
+	ok "the Agents menu puts ~/.opencode/bin on PATH"
+	ok "the agents menu starts a session with the default agent (rofi-agents --default)"
+else
+	if grep -qs '\.opencode/bin' "$HOME/.config/bin/rofi-agents"; then
+		ok "the Agents menu puts ~/.opencode/bin on PATH"
+	else
+		fail "bin/rofi-agents no longer adds ~/.opencode/bin: OpenCode's row becomes an install row"
+	fi
+	# The root menu's AI group opens with the action an agent is for - a session -
+	# so the section is an action and a list, not only a list. It calls
+	# `rofi-agents --default`, which starts the recorded default and falls back to
+	# OpenCode; both halves are asked because either one missing makes the row a
+	# no-op: a flag the script does not have exits 2 into the journal, and a row
+	# nobody draws is simply not there.
+	if grep -qs -- '--default' "$HOME/.config/bin/rofi-agents"; then
+		ok "the agents menu starts a session with the default agent (rofi-agents --default)"
+	else
+		fail "bin/rofi-agents lost --default: the AI group's Agent session row does nothing"
+	fi
+fi
+menu_runs 'rofi-agents --default' &&
+	ok "the root menu's AI group starts a session with the default agent" ||
+	fail "the root menu lost the Agent session row: its AI group can only open the list"
+
+# The Ask strip (spec 007) runs the agent once, in a process group of its own,
+# and ends the group - and anything that left it - when the answer is in or the
+# window closes. Every process it starts carries LAZYOS_ASK=<question id> in its
+# environment, so one that outlived its question is findable: a process with the
+# mark whose `lazyos --ask-run <id>` is no longer running is an agent (or an
+# `opencode serve`) left resident by a question nobody is waiting for. The
+# environments readable here are this user's, which are the only ones the strip
+# can start.
+_ask_live=
+for _ask_cmd in /proc/[0-9]*/cmdline; do
+	# The redirect sits inside the silenced group: a process that exits between
+	# the glob and the read makes the shell itself complain, not tr.
+	_ask_argv=$({ tr '\0' ' ' <"$_ask_cmd"; } 2>/dev/null) || continue
+	case " $_ask_argv" in
+	*" --ask-run "*)
+		_ask_id=${_ask_argv#* --ask-run }
+		_ask_live="$_ask_live ${_ask_id%% *}"
+		;;
+	esac
+done
+_ask_stray=
+for _ask_env in /proc/[0-9]*/environ; do
+	_ask_vars=$({ tr '\0' '\n' <"$_ask_env"; } 2>/dev/null) || continue
+	_ask_mark=$(grep -m1 '^LAZYOS_ASK=' <<<"$_ask_vars") || continue
+	_ask_id=${_ask_mark#LAZYOS_ASK=}
+	case " $_ask_live " in *" $_ask_id "*) continue ;; esac
+	_ask_pid=${_ask_env#/proc/}
+	_ask_pid=${_ask_pid%/environ}
+	_ask_stray="$_ask_stray $_ask_pid($(cat "/proc/$_ask_pid/comm" 2>/dev/null))"
+done
+if [ -z "$_ask_stray" ]; then
+	ok "no agent outlived an Ask question (no LAZYOS_ASK process without its --ask-run)"
+else
+	fail "an Ask question left processes behind:$_ask_stray (kill them; the strip should have)"
+fi
+
+# The session's own launcher entries. They are the only way to reach the bar's
+# panels and the session actions by typing, and a missing one is invisible: the
+# list simply has fewer rows and nobody notices. The idle screen's entry is
+# checked apart because it is the one the brand owns: its name is the mark's.
+_missing_desktop=""
+for _d in wifi wifi-nmtui bluetooth audio-output power lock suspend \
+	screenshot-area capture lazygit tmux files emoji clipboard about menu ask install; do
+	[ -r "/usr/share/applications/org.lazyos.$_d.desktop" ] || _missing_desktop="$_missing_desktop $_d"
+done
+[ -r /usr/share/applications/org.lazyos.screensaver.desktop ] ||
+	_missing_desktop="$_missing_desktop lazyos-screensaver"
+if [ -z "$_missing_desktop" ]; then
+	ok "launcher entries present (session actions, nmtui, lazygit, tmux, about)"
+else
+	fail "launcher entries missing:$_missing_desktop"
+fi
+# The root menu's entry is the one row whose Exec is a script in $HOME, not a
+# binary in $PATH. A .desktop whose Exec does not exist is silently dropped, so
+# the row is simply absent and nothing logs it.
+if [ -r /usr/share/applications/org.lazyos.menu.desktop ] &&
+	grep -qs '^Exec=.*bin/bar-menu$' /usr/share/applications/org.lazyos.menu.desktop &&
+	[ -x "$HOME/.config/bin/bar-menu" ]; then
+	ok "the root menu has a launcher entry (LazyOS Menu -> bar-menu)"
+else
+	warn "org.lazyos.menu.desktop is missing or does not run an executable bar-menu"
+fi
+
+# waybar reads the backlight by device name and shows an empty module (with no
+# error anywhere) when the name does not exist.  Read it with bash's own regex
+# rather than a pipe: `set -o pipefail` plus an early-exiting filter is the
+# pitfall this script already documents at the top.
+_bl=""
+_cfg="$HOME/.config/waybar/config.jsonc"
+if [ -r "$_cfg" ]; then
+	while IFS= read -r _line; do
+		if [[ $_line =~ \"device\":\ *\"([^\"]*)\" ]]; then
+			_bl=${BASH_REMATCH[1]}
+			break
+		fi
+	done <"$_cfg"
+fi
+if [ -n "$_bl" ]; then
+	if [ -d "/sys/class/backlight/$_bl" ]; then
+		ok "waybar backlight device $_bl exists"
+	else
+		fail "waybar names backlight device '$_bl'; /sys/class/backlight has: $(ls /sys/class/backlight 2>/dev/null | tr '\n' ' ')"
+	fi
+fi
+
+# The caches the first launch would otherwise build.  rootfs-setup.sh runs both
+# commands inside the chroot, where the committed theme already is, so the first
+# terminal and the first launcher do not walk the trees.  A rebuilt theme that
+# did not regenerate its cache is the silent half: the launcher still opens, it
+# just scans 220 files before it draws.
+if [ -s /usr/share/icons/LazyOS/icon-theme.cache ]; then
+	ok "the icon theme ships its cache (the first launcher scan is a read)"
+else
+	warn "/usr/share/icons/LazyOS/icon-theme.cache is missing: the first icon scan walks the theme (gtk-update-icon-cache -f /usr/share/icons/LazyOS)"
+fi
+if [ -d /var/cache/fontconfig ] && [ -n "$(ls -A /var/cache/fontconfig 2>/dev/null)" ]; then
+	ok "the system font cache exists (the first font lookup does not walk every face)"
+else
+	warn "/var/cache/fontconfig is empty or missing: the first font lookup walks every font directory (fc-cache -s)"
+fi
+
+# The resident set is the session's strongest rule and had no test: the bar, the
+# notification daemon, the idle chain and sway itself are expected, workstyle
+# and the cliphist watcher are the two agreed exceptions, and everything else
+# should not be running.  The declined daemons are named because each one is a
+# package the comments and docs/omarchy-gap.md already answered "no" to, and a
+# running one means the rule was broken without anything saying so.
+_declined=""
+for _p in mako udiskie swaync dunst picom blueman-applet packagekitd localsearch-3; do
+	pgrep -x "$_p" >/dev/null 2>&1 && _declined="$_declined $_p"
+done
+# `pgrep -x` compares the 15-character comm, and this one's name is longer:
+# tracker-miner-fs-3 would never match. The bracketed pattern matches the full
+# command line and does not match pgrep's own.
+pgrep -f "[t]racker-miner-fs-3" >/dev/null 2>&1 &&
+	_declined="$_declined tracker-miner-fs-3"
+if [ -z "$_declined" ]; then
+	ok "no declined daemon is running (mako, udiskie, swaync, dunst, picom, blueman, packagekit, indexers)"
+else
+	fail "declined daemon(s) running:$_declined (each is a package this port answered no to; it spends battery and nothing says why)"
+fi
+# The session's own units (PipeWire, WirePlumber, the portals, gvfs while the
+# file manager has a window, dconf) are expected, and so is gpg-agent: gpg 2.x
+# routes the passphrase of a symmetric archive through the agent, so the
+# Developer menu's export starts it on demand and it idles out by itself (there
+# is no enabled unit; the packaged socket activates it).  An unknown one is a warning
+# rather than a failure: a distribution update can add one, and the report
+# should name it instead of hiding it.  The two agreed residents are `exec`'d by
+# the sway configuration, not units, which is why the process checks above
+# (workstyle, the cliphist watcher) are where they are seen.
+if have systemctl; then
+	_unknown_units=""
+	for _u in $(systemctl --user list-units --type=service --state=running --no-legend 2>/dev/null | awk '{ print $1 }'); do
+		case $_u in
+		dbus.service|dconf.service|gvfs-*.service|mpris-proxy.service|\
+		pipewire.service|pipewire-pulse.service|filter-chain.service|\
+		wireplumber.service|wireplumber@*.service|xdg-desktop-portal*.service|\
+		xdg-document-portal.service|xdg-permission-store.service|\
+		gpg-agent.service|keyboxd.service) ;;
+		*) _unknown_units="$_unknown_units $_u" ;;
+		esac
+	done
+	if [ -z "$_unknown_units" ]; then
+		ok "the user units are the expected ones (PipeWire, WirePlumber, portals, gvfs)"
+	else
+		warn "unexpected user unit(s):$_unknown_units (the resident set grew; AGENTS.md says nothing resident)"
+	fi
+fi
+
+# ---------------------------------------------------------------------------
+section "The framework"
+# ---------------------------------------------------------------------------
+# The session's Rust framework (docs/plan-ui.md): one `lazyos` binary that the
+# rofi/bars menus become symlinks to. Spec 001 lands the binary, the dispatch,
+# the host and the terminal; every check below is what would otherwise fail
+# silently - a key that opens nothing because the binary is missing, a symlink
+# that points at a name the table does not carry, or a window that tiles because
+# its shape lost the rule that floats it.
+if have lazyos; then
+	ok "lazyos is installed ($(command -v lazyos))"
+	_fw_version=$(lazyos --version 2>/dev/null)
+	_rev_version=$(sed -n 's/^version //p' /etc/debian-aarch64-revision 2>/dev/null)
+	if [ -n "$_fw_version" ] && [ -n "$_rev_version" ]; then
+		if [ "$_fw_version" = "$_rev_version" ]; then
+			ok "lazyos reports the version the image was built from ($_fw_version)"
+		else
+			fail "lazyos reports $_fw_version but the image was built from $_rev_version (a stale /usr/bin/lazyos)"
+		fi
+	else
+		skip "cannot compare the framework version (/etc/debian-aarch64-revision has no version)"
+	fi
+	_fw_help=$(lazyos --help 2>/dev/null)
+	if grep -q '^  menu' <<<"$_fw_help"; then
+		ok "lazyos --help lists the menu"
+	else
+		fail "lazyos --help does not list 'menu': the command table and the binary disagree"
+	fi
+	# The migrated set: every name the installer creates today must resolve and
+	# must belong to a command the help lists. This is the check that notices a
+	# renamed subcommand leaving a symlink pointing at nothing, which fails as
+	# "the key does nothing" in the session.
+	_fw_links=$(lazyos --symlinks 2>/dev/null)
+	if [ -n "$_fw_links" ]; then
+		while IFS='	' read -r _fw_name _fw_path; do
+			[ -n "$_fw_name" ] || continue
+			# The installer makes the /usr/bin names; a ported script's old name
+			# (bar-menu) is a link the UI tree carries in ~/.config/bin instead.
+			_fw_at=/usr/bin/$_fw_name
+			[ -e "$_fw_at" ] || [ -L "$_fw_at" ] || _fw_at=$HOME/.config/bin/$_fw_name
+			if [ -L "$_fw_at" ] && [ "$(readlink -f "$_fw_at")" = /usr/bin/lazyos ]; then
+				if grep -q "^  $_fw_path" <<<"$_fw_help"; then
+					ok "$_fw_at -> lazyos $_fw_path"
+				else
+					fail "$_fw_at points at '$_fw_path', which --help does not list"
+				fi
+			else
+				fail "$_fw_name is missing from /usr/bin and ~/.config/bin, or does not resolve to the lazyos binary"
+			fi
+		done <<<"$_fw_links"
+	fi
+	# Spec 005: the task surface must be listed, because its symlink is what
+	# `lazyos task attach` keeps working after the window closed. The stop
+	# contract itself (a stoppable task writes a stop line, a non-stoppable one
+	# does not) is a unit test in `lazyos-ui`; there are no task declarations in
+	# the shell yet, so there is nothing here to inspect.
+	if grep -q '^  task attach' <<<"$_fw_help"; then
+		ok "lazyos --help lists task attach (the task surface reattaches by id)"
+	else
+		fail "lazyos --help does not list 'task attach': a closed task window cannot be reopened"
+	fi
+
+	# Spec 007: the root menu is the binary's table now, and `bar-menu` (what
+	# Alt+Space and the bar's button run) is a link to it. Three things can go
+	# missing without an error: the command, a row the old rofi menu had (the
+	# list below is bar-menu's keys, in its order, from its last version), and
+	# the Ask row this spec adds. A lost row is a documented keypress that
+	# answers nothing, so each one is a FAIL, named.
+	if grep -q '^  ask ' <<<"$_fw_help"; then
+		ok "lazyos --help lists ask (one question to the default agent)"
+	else
+		fail "lazyos --help does not list 'ask': the Ask launcher entry opens nothing"
+	fi
+	if [ -z "$MENU_ROWS" ]; then
+		fail "lazyos menu --rows printed nothing: the root menu cannot be compared with bar-menu"
+	else
+		_menu_lost=
+		for _menu_key in terminal files files-window grep places capture camera download \
+			settings learn keys calc emoji clip password ssh agent agents dictate model wifi qr \
+			dns bt audio media notify vnc tz clean swap install kill pkg dev colour about \
+			remind lock screensaver suspend hibernate power; do
+			grep -q "^$_menu_key	" <<<"$MENU_ROWS" || _menu_lost="$_menu_lost $_menu_key"
+		done
+		if [ -z "$_menu_lost" ]; then
+			ok "the root menu keeps every row bar-menu had ($(wc -l <<<"$MENU_ROWS") rows, four groups)"
+		else
+			fail "the root menu lost rows bar-menu had:$_menu_lost"
+		fi
+		if menu_runs menu:ask; then
+			ok "the root menu has the Ask row (ai group)"
+		else
+			fail "the root menu has no Ask row: a question to the agent needs a terminal again"
+		fi
+	fi
+	if [ "$(readlink -f "$HOME/.config/bin/bar-menu" 2>/dev/null)" = "/usr/bin/lazyos" ]; then
+		ok "~/.config/bin/bar-menu is the framework's root menu (Alt+Space, the bar's button)"
+	else
+		fail "~/.config/bin/bar-menu is not a link to /usr/bin/lazyos: Alt+Space opens something else"
+	fi
+
+	# The other direction: a link someone made by hand, pointing at the
+	# framework but absent from the table, is drift - the table is the source of
+	# truth and `--symlinks` is what the installer and this check both read.
+	for _fw_link in "$HOME"/.config/bin/*; do
+		[ -L "$_fw_link" ] || continue
+		[ "$(readlink -f "$_fw_link" 2>/dev/null)" = "/usr/bin/lazyos" ] || continue
+		_fw_base=$(basename "$_fw_link")
+		if grep -q "^$_fw_base	" <<<"$_fw_links"; then
+			ok "~/.config/bin/$_fw_base is a framework symlink the table knows"
+		else
+			warn "~/.config/bin/$_fw_base points at lazyos but the command table does not list it"
+		fi
+	done
+
+	# And the reverse shadow: a *script* in ~/.config/bin whose name the table
+	# installs.  ~/.config/bin comes before /usr/bin in the session's PATH, so
+	# the port is present and unreachable - the old surface answers the key,
+	# which is exactly what `rofi-media` and ten others did while the table
+	# already called them installed.
+	_fw_scripted=
+	for _fw_file in "$HOME"/.config/bin/*; do
+		[ -e "$_fw_file" ] || continue
+		[ -L "$_fw_file" ] && continue
+		_fw_base=$(basename "$_fw_file")
+		grep -q "^$_fw_base	" <<<"$_fw_links" && _fw_scripted="$_fw_scripted $_fw_base"
+	done
+	if [ -z "$_fw_scripted" ]; then
+		ok "no script shadows a name the command table installs"
+	else
+		fail "these are scripts in ~/.config/bin that shadow the framework's own name:$_fw_scripted (the port exists and the old script answers the key)"
+	fi
+
+	# Specs 010-013: every surface those four specs port is a subcommand, and a
+	# subcommand the table loses is a key that opens nothing.  The link loop
+	# above only covers names with an old script; these lists are what makes
+	# `menu power`, `menu apps`, `menu keys` and the rest fail here instead of
+	# in the session.
+	for _fw_sub in settings power display swap format tz dns vnc ssh \
+		media notify clip emoji capture qr remind calc colour audio bluetooth pkg dev \
+		apps window run keys learn about palette; do
+		_fw_port="menu $_fw_sub"
+		grep -qE "^  $_fw_port " <<<"$_fw_help" ||
+			fail "lazyos --help does not list \`$_fw_port\`: the surface is gone (spec 010-012)"
+	done
+	ok "every surface specs 010-012 port is a command (menu settings…power, media…dev, apps…palette)"
+
+	# Spec 017: the final 10 interactive surfaces ported to lazyos
+	for _fw_sub in net agents places clean kill download layout file-actions translate dictate; do
+		_fw_port="menu $_fw_sub"
+		grep -qE "^  $_fw_port " <<<"$_fw_help" ||
+			fail "lazyos --help does not list \`$_fw_port\`: the surface is gone (spec 017)"
+	done
+	ok "every surface spec 017 ports is a command (menu net…dictate)"
+
+	if lazyos menu net --status 2>/dev/null | grep -q '"class":'; then
+		ok "lazyos menu net --status returns valid JSON for waybar (spec 017)"
+	else
+		fail "lazyos menu net --status output is invalid (spec 017)"
+	fi
+
+	if lazyos menu clean --dry-run 2>/dev/null | grep -q 'trash:'; then
+		ok "lazyos menu clean --dry-run returns cache estimations (spec 017)"
+	else
+		fail "lazyos menu clean --dry-run failed (spec 017)"
+	fi
+
+	if lazyos menu places --rows 2>/dev/null | grep -q 'Home'; then
+		ok "lazyos menu places --rows prints places table (spec 017)"
+	else
+		fail "lazyos menu places --rows failed (spec 017)"
+	fi
+
+	# Spec 020: frictionless, self-contained in-window UX & live window sizing.
+	# Interactive TUI modules in lazyos-cli must never call Card::send() or
+	# external `notify-send` while a TUI window is open, and `lazyos --glyphs`
+	# must include the half-block QR codepoints (U+2580, U+2584).
+	if [ -n "$DESKTOP_REPO" ] && [ -d "$DESKTOP_REPO/rust/crates/lazyos-cli/src/system" ]; then
+		_s020_toasts=$(grep -rnE '\.send\(|notify-send' \
+			"$DESKTOP_REPO/rust/crates/lazyos-cli/src/system/" \
+			--exclude='dictate.rs' --exclude='translate.rs' \
+			--exclude='capture.rs' --exclude='colour.rs' \
+			--exclude='remind.rs' --exclude='notify.rs' \
+			--exclude='mod.rs' 2>/dev/null || true)
+		if [ -z "$_s020_toasts" ]; then
+			ok "interactive TUI surfaces own their progress without external toasts (spec 020)"
+		else
+			fail "interactive TUI surface still triggers external toast (spec 020): $(tr '\n' ' ' <<<"$_s020_toasts")"
+		fi
+	fi
+	_s020_glyphs=$(lazyos --glyphs 2>/dev/null || true)
+	if grep -q '^U+2580' <<<"$_s020_glyphs" && grep -q '^U+2584' <<<"$_s020_glyphs"; then
+		ok "lazyos --glyphs declares half-block QR codepoints U+2580/U+2584 (spec 020)"
+	else
+		fail "lazyos --glyphs missing half-block QR codepoints U+2580/U+2584 (spec 020)"
+	fi
+	if [ -n "$DESKTOP_REPO" ] && [ -d "$DESKTOP_REPO/rust/crates/lazyos-cli/src/system" ]; then
+		_s020_strip_missing=""
+		for _m in net bluetooth clean colour audio kill remind notify clip learn about; do
+			grep -q 'ActionStrip' "$DESKTOP_REPO/rust/crates/lazyos-cli/src/system/$_m.rs" 2>/dev/null ||
+				_s020_strip_missing="$_s020_strip_missing $_m"
+		done
+		if [ -z "$_s020_strip_missing" ]; then
+			ok "all 11 action+list menus separate tool actions into ActionStrip (spec 020)"
+		else
+			fail "menus missing ActionStrip action/result separation (spec 020):$_s020_strip_missing"
+		fi
+		if grep -q 'save_qr_png' "$DESKTOP_REPO/rust/crates/lazyos-cli/src/system/qr.rs" 2>/dev/null &&
+			grep -q -- '--action=stop=Stop & Transcribe' "$DESKTOP_REPO/rust/crates/lazyos-cli/src/system/dictate.rs" 2>/dev/null; then
+			ok "QR PNG saving and dictation push-to-talk/notification actions present (spec 020)"
+		else
+			fail "missing QR PNG saving or dictation notification actions (spec 020)"
+		fi
+	fi
+
+	# Spec 012 moved the three rofi modes onto the framework.  The bindings read
+	# `$launcher`/`$runner`/`$switcher`, so the variable is what has to say the
+	# new command - a binding that still expands to `rofi -show drun` opens
+	# rofi's launcher while the ported one exists and is unreachable.
+	_sway_cfg_sys=/etc/sway/config
+	[ -n "$DESKTOP_REPO" ] && [ -f "$DESKTOP_REPO/uis/sway/files/etc/sway/config" ] && _sway_cfg_sys="$DESKTOP_REPO/uis/sway/files/etc/sway/config"
+	_fw_launcher=$(sed -n 's/^set \$launcher //p' "$_sway_cfg_sys" 2>/dev/null | head -n 1)
+	_fw_runner=$(sed -n 's/^set \$runner //p' "$_sway_cfg_sys" 2>/dev/null | head -n 1)
+	_fw_switcher=$(sed -n 's/^set \$switcher //p' "$_sway_cfg_sys" 2>/dev/null | head -n 1)
+	for _fw_pair in "launcher:$_fw_launcher:menu apps" "runner:$_fw_runner:menu run" \
+		"switcher:$_fw_switcher:menu window"; do
+		_fw_var=${_fw_pair%%:*}
+		_fw_rest=${_fw_pair#*:}
+		_fw_cmd=${_fw_rest%:*}
+		_fw_want=${_fw_pair##*:}
+		if [ "$_fw_cmd" = "lazyos $_fw_want" ]; then
+			ok "\$$_fw_var runs \`lazyos $_fw_want\` (spec 012)"
+		else
+			fail "\$$_fw_var is '$_fw_cmd', not 'lazyos $_fw_want': the key still opens the old surface"
+		fi
+	done
+else
+	fail "lazyos is missing: every menu that becomes a symlink to it does nothing"
+fi
+
+# The window shapes: the binary asks foot for its pixels, and only the
+# compositor can float and centre it (docs/plan-ui.md §3). Without these rules a
+# menu opens as a tiled terminal that looks like the shell was replaced.
+_fw_sway=$(cat /etc/sway/config.d/*.conf "$HOME"/.config/sway/config.d/*.conf 2>/dev/null)
+for _fw_shape in pick task; do
+	if grep -q "for_window \[app_id=\"lazyos-$_fw_shape\"\] floating enable" <<<"$_fw_sway" &&
+		grep -q "for_window \[app_id=\"lazyos-$_fw_shape\"\] move position center" <<<"$_fw_sway"; then
+		ok "sway floats and centres lazyos-$_fw_shape"
+	else
+		fail "sway has no floating/centre rule for app_id lazyos-$_fw_shape (the window tiles)"
+	fi
+done
+
+# The widgets draw two alphabets, and they come from two different fonts: the
+# frame's box-drawing and block characters are text (JetBrains Mono, first in
+# foot's chain), and a row's picture is a Nerd Font codepoint from the symbol
+# font (spec 003).  A codepoint no font carries is a hole in the window that logs
+# nothing, which is the failure the rofi alphabet already shipped once in another
+# surface.
+#
+# `lazyos --glyphs` prints both lists from the binary, one `U+XXXX<TAB>name` per
+# line, and `--glyph-font` prints the pin the alphabet was filtered against, so
+# neither can drift from what a window actually draws.  Three things are
+# checked, and each reads as something else when it breaks:
+#
+#  1. the font named by the pin is installed.  fontconfig answers a missing
+#     family with a substitute, which renders half the codepoints and not the
+#     other half - a window of boxes with no error anywhere;
+#  2. the file is the one the table was generated from.  A font upgrade that
+#     drops a codepoint turns that row into a hole, and regenerating the table
+#     (`scripts/make-glyphs.sh`) is the fix;
+#  3. every alphabet codepoint is in that font's own character map, asked once
+#     with `fc-query` (a call per glyph cost two seconds of the report on a 4 GB
+#     device).  The frame's characters are asked of the union of the installed
+#     fonts instead: they are text, and any font that draws them will do.
+#
+# The eight names `fonts-nerd-symbols` (DFSG-stripped) does not draw are text on
+# purpose - `bt`, `wifi`, `bat`, `kbd`, `pad`, `=`, `qr`, `crop` - so the pin is
+# also asked which ones those are; a name that answered with a box would be the
+# bug this alphabet exists to prevent.
+if have lazyos && have fc-list; then
+	_fw_glyphs=$(lazyos --glyphs 2>/dev/null)
+	_fw_font=$(lazyos --glyph-font 2>/dev/null)
+	_fw_total=$(printf '%s\n' "$_fw_glyphs" | awk 'NF { n++ } END { print n + 0 }')
+	_fw_family=$(sed -n 's/^family=//p' <<<"$_fw_font")
+	_fw_pin=$(sed -n 's/^sha256=//p' <<<"$_fw_font")
+	_fw_nerd=$(sed -n 's/^nerd=//p' <<<"$_fw_font")
+	_fw_fallback=$(sed -n 's/^fallback=//p' <<<"$_fw_font")
+	_fw_text=$(sed -n 's/^text=//p' <<<"$_fw_font")
+	if [ "$_fw_total" -eq 0 ] || [ -z "$_fw_family" ] || [ -z "$_fw_pin" ]; then
+		fail "lazyos --glyphs/--glyph-font printed nothing: the binary predates the alphabet (spec 003)"
+	else
+		_fw_path=$(fc-match -f '%{file}' "$_fw_family" 2>/dev/null) || _fw_path=
+		_fw_families=$(fc-query --format='%{family}' "$_fw_path" 2>/dev/null | tr ',' '\n' | sed 's/^ *//')
+		if [ -z "$_fw_path" ] || [ ! -r "$_fw_path" ]; then
+			fail "fontconfig resolves no font for '$_fw_family': the rows have nothing to draw (apt install fonts-nerd-symbols)"
+		elif ! grep -qxF "$_fw_family" <<<"$_fw_families"; then
+			fail "fontconfig resolves '$_fw_family' to $_fw_path, which is not that family: install fonts-nerd-symbols"
+		else
+			_fw_now=$(sha256sum "$_fw_path" 2>/dev/null)
+			_fw_now=${_fw_now%% *}
+			if [ "$_fw_now" = "$_fw_pin" ]; then
+				ok "the alphabet's font is the one it was generated from ($_fw_family, Nerd Fonts $_fw_nerd)"
+			else
+				fail "the alphabet's pin is for another font ($_fw_now != $_fw_pin): a font upgrade needs scripts/make-glyphs.sh, or the rows it changed are empty boxes"
+			fi
+			_fw_symbol=$(fc-query --format='%{charset}' "$_fw_path" 2>/dev/null)
+			# The union of the installed character maps is far too big for an
+			# awk -v argument (ARG_MAX said so the first time this ran): it
+			# travels on stdin, one range per line.
+			_fw_union=$(fc-list -f '%{charset}\n' 2>/dev/null | tr ' ' '\n' | sort -u)
+			if [ -z "$_fw_union" ]; then
+				fail "fc-list reports no character maps at all: the glyph check cannot answer"
+			else
+				_fw_missing=$(printf '%s\n' "$_fw_union" | awk -v glyphs="$_fw_glyphs" -v symbol="$_fw_symbol" '
+					function dec(h,   i, v) {
+						v = 0
+						for (i = 1; i <= length(h); i++)
+							v = v * 16 + index("0123456789abcdef", tolower(substr(h, i, 1))) - 1
+						return v
+					}
+					function add(token, lo, hi, index_,   range, a, b) {
+						if (token == "") return index_
+						if (index(token, "-")) {
+							split(token, range, "-")
+							a = dec(range[1])
+							b = dec(range[2])
+						} else {
+							a = b = dec(token)
+						}
+						lo[index_] = a
+						hi[index_] = b
+						return index_ + 1
+					}
+					function within(cp, lo, hi, count,   i) {
+						for (i = 0; i < count; i++)
+							if (cp >= lo[i] && cp <= hi[i]) return 1
+						return 0
+					}
+					BEGIN {
+						ucount = 0
+						scount = 0
+						n = split(symbol, token, /[ \t\n]+/)
+						for (i = 1; i <= n; i++) scount = add(token[i], slo, shi, scount)
+					}
+					{ ucount = add($0, ulo, uhi, ucount) }
+					END {
+						n = split(glyphs, line, "\n")
+						for (i = 1; i <= n; i++) {
+							if (line[i] == "") continue
+							split(line[i], field, "\t")
+							cp = dec(tolower(substr(field[1], 3)))
+							if (field[2] == "frame") {
+								if (!within(cp, ulo, uhi, ucount)) frame = frame " " field[1]
+							} else if (!within(cp, slo, shi, scount)) {
+								alphabet = alphabet " " field[2] " " field[1]
+							}
+						}
+						print "frame" frame
+						print "alphabet" alphabet
+					}')
+				_fw_miss_frame=$(sed -n 's/^frame //p' <<<"$_fw_missing")
+				_fw_miss_alpha=$(sed -n 's/^alphabet //p' <<<"$_fw_missing")
+				if [ -z "$_fw_miss_frame" ]; then
+					ok "the frame's characters render (no installed font is missing one)"
+				else
+					fail "no installed font renders:$_fw_miss_frame (a hole in every window that draws them, and nothing logs it)"
+				fi
+				if [ -z "$_fw_miss_alpha" ]; then
+					ok "the rows' glyphs render ($_fw_total codepoints, every one in $_fw_family)"
+				else
+					fail "$_fw_family does not carry:$_fw_miss_alpha (a hole in every window that draws them, and nothing logs it)"
+				fi
+			fi
+			_fw_bad_text=$(printf '%s\n' "$_fw_text" | sed -n '/^[a-z_]* [A-Za-z0-9=]\{1,4\}$/!p')
+			if [ "${_fw_fallback:-0}" -eq 0 ] || [ -z "$_fw_text" ]; then
+				fail "--glyph-font names no text fallbacks: the names the stripped symbol set lacks would draw boxes"
+			elif [ -n "$_fw_bad_text" ]; then
+				fail "a glyph name falls back to something that is not short text: $(printf '%s' "$_fw_bad_text" | tr '\n' ' ')"
+			else
+				ok "$_fw_fallback names the symbol set does not draw render text, not boxes"
+			fi
+		fi
+	fi
+fi
+
+# A command that draws its own frame is the first step back to thirty windows
+# with thirty shapes; the shell in lazyos-ui owns the header, the body and the
+# key bar.  This is the same grep the crate's own test runs, so a checkout
+# edited without the test suite is still caught on the device.
+if [ -n "$DESKTOP_REPO" ] && [ -d "$DESKTOP_REPO/rust/crates/lazyos-cli/src" ]; then
+	if grep -rqs 'ratatui::Frame\|&mut Frame' "$DESKTOP_REPO/rust/crates/lazyos-cli/src"; then
+		fail "a command in lazyos-cli draws its own Frame (the App shell owns the window)"
+	else
+		ok "every command draws through the App shell (no Frame in lazyos-cli)"
+	fi
+else
+	skip "no checkout: cannot confirm the commands draw through the shell"
+fi
+
+# Notifications are one card vocabulary (spec 006): the toast mako draws and the
+# panel a window draws come from the same fields, and the picture is what makes
+# a card readable. Three things drop a picture without an error anywhere:
+#
+#  1. a notify-send that names an application (-a) and no icon (-i): the card is
+#     text, and nothing logs it. One awk pass reads every script in ~/.config/bin
+#     and joins the continuation lines of a multi-line call;
+#  2. a name the binary asks for that the LazyOS theme does not draw: mako finds
+#     no file and shows a blank picture. `lazyos --icon-names` is the list the
+#     binary asks for, and the theme is asked for each name with a builtin test;
+#  3. mako's icon-path losing the theme root: every picture is blank, whatever
+#     the names say.
+_card_bare=$(awk '
+	FNR == 1 { buf = "" }
+	/\\$/ { buf = buf $0 " "; next }
+	{ line = buf $0; buf = ""
+	  if (line ~ /notify-send/ && line ~ / -a / && line !~ / -i /) { sub(".*/", "", FILENAME); print FILENAME ":" FNR } }
+' "$HOME"/.config/bin/* 2>/dev/null)
+if [ -z "$_card_bare" ]; then
+	ok "every notify-send in ~/.config/bin that names an app also names a picture (-i)"
+else
+	fail "notify-send without -i (a text-only card that nothing logs): $(tr '\n' ' ' <<<"$_card_bare")"
+fi
+if have lazyos-notify; then
+	ok "lazyos-notify resolves /usr/share/icons/LazyOS and Nerd Font glyphs natively"
+elif grep -qsE '^icon-path=([^ ]*:)?/usr/share/icons/LazyOS(:|$)' "$HOME/.config/mako/config"; then
+	ok "mako's icon-path names the LazyOS theme root (a notification draws its picture)"
+else
+	fail "~/.config/mako/config icon-path lost /usr/share/icons/LazyOS: every notification picture is blank"
+fi
+if have lazyos; then
+	_card_help=$(lazyos --help 2>/dev/null)
+	if grep -q '^  notify' <<<"$_card_help"; then
+		ok "lazyos --help lists notify (a card from the command line, with the house rules)"
+	else
+		fail "lazyos --help does not list 'notify': scripts have no way to send a card with a picture"
+	fi
+	_card_names=$(lazyos --icon-names 2>/dev/null)
+	if [ -z "$_card_names" ]; then
+		fail "lazyos --icon-names prints nothing: the notification pictures cannot be checked"
+	else
+		_card_gone=
+		while IFS= read -r _card_name; do
+			[ -n "$_card_name" ] || continue
+			[ -f "/usr/share/icons/LazyOS/48x48/apps/$_card_name.png" ] || _card_gone="$_card_gone $_card_name"
+		done <<<"$_card_names"
+		if [ -z "$_card_gone" ]; then
+			ok "the LazyOS theme draws every picture a card can ask for ($(wc -l <<<"$_card_names") names)"
+		else
+			fail "the LazyOS theme draws no picture for:$_card_gone (a card that asks for it is text, and nothing logs it)"
+		fi
+	fi
+fi
+# A Rust call site that builds a card with no picture is a silent text card. A
+# card has an information icon by default, so only an explicit no_icon() asks for
+# text; the card module (its code and its tests), the integration tests and the
+# notify verb's own `--icon none` are the places that may. Skipped without a
+# checkout, like every grep of the sources here.
+if [ -n "$DESKTOP_REPO" ] && [ -d "$DESKTOP_REPO/rust/crates" ]; then
+	_card_text=$(grep -rls --include='*.rs' 'no_icon()' "$DESKTOP_REPO/rust/crates" 2>/dev/null)
+	_card_text=$(grep -v -e '/lazyos-ui/src/card' -e '/tests/' -e '/lazyos-cli/src/notify\.rs$' <<<"$_card_text")
+	if [ -z "$_card_text" ]; then
+		ok "no Rust call site builds a card without a picture (no_icon() is only asked for explicitly)"
+	else
+		fail "a Rust call site asks for a text-only card: $(tr '\n' ' ' <<<"$_card_text")"
+	fi
+else
+	skip "no checkout: cannot confirm the Rust call sites all draw a picture"
+fi
+
+# ---------------------------------------------------------------------------
+section "The theme engine"
+# ---------------------------------------------------------------------------
+# The palette lives in theme.toml and every surface is generated from it (spec
+# 004).  Four things are checked, and each is a failure that reads as something
+# else: no active theme means `lazyos theme next` has no place to start; a
+# regeneration diff means a hand edit or a stale image, and the surface will
+# drift on the next switch; a missing header means the engine does not own that
+# file and would refuse to replace it; a missing binding means the keys that
+# switch the palette do nothing.
+if command -v lazyos >/dev/null 2>&1; then
+	_theme_current=$(lazyos theme current 2>/dev/null || true)
+	if [ -z "$_theme_current" ]; then
+		fail "no active theme (\`lazyos theme set solarized\` sets one)"
+	else
+		_theme_slug=${_theme_current%%	*}
+		_theme_name=${_theme_current#*	}
+		ok "the active theme is $_theme_slug ($_theme_name)"
+
+		_theme_missing=
+		for _theme_file in \
+			.config/foot/foot.ini .config/waybar/style.css .config/mako/config \
+			.config/starship.toml \
+			.config/btop/themes/lazyos.theme .config/lazygit/config.yml \
+			.config/nvim/colors/lazyos.vim .config/lazyos/fzf.env \
+			.config/swaylock/config .config/sway/config.d/35-theme.conf
+		do
+			if [ ! -r "$HOME/$_theme_file" ]; then
+				_theme_missing="$_theme_missing $_theme_file"
+			elif ! head -n 1 "$HOME/$_theme_file" | grep -q "LazyOS theme:"; then
+				_theme_missing="$_theme_missing $_theme_file(no header)"
+			fi
+		done
+		if [ -n "$_theme_missing" ]; then
+			fail "a generated surface is missing or was not generated:$_theme_missing"
+		else
+			ok "every surface is generated and carries the theme header"
+		fi
+
+		# The regeneration witness: rendering again must reproduce the files
+		# that are installed, byte for byte.  The exit status is the answer;
+		# `--quiet` prints only the surfaces that differ.
+		if _theme_diff=$(lazyos theme diff --quiet 2>&1); then
+			ok "every surface is byte-identical to a fresh render"
+		else
+			fail "regeneration differs on: $(printf '%s' "$_theme_diff" | head -n 1) (run \`lazyos theme set $_theme_slug\`)"
+		fi
+	fi
+
+	if lazyos theme validate >/dev/null 2>&1; then
+		ok "every built-in theme parses and clears its contrast floor"
+	else
+		fail "a built-in theme does not parse or fails its contrast floor (\`lazyos theme validate\`)"
+	fi
+else
+	skip "no lazyos binary: the theme engine is not installed"
+fi
+
+# The two keys, parsed out of the configuration the way rofi-keys parses them.
+_theme_keys=$(grep -rhs '^bindsym .*exec lazyos theme ' /etc/sway/config.d/*.conf "$HOME/.config/sway/config.d/"*.conf 2>/dev/null || true)
+for _theme_key in "theme next" "theme wallpaper next"; do
+	if printf '%s' "$_theme_keys" | grep -qF "$_theme_key"; then
+		ok "the binding for \`lazyos $_theme_key\` is present"
+	else
+		fail "no binding runs \`lazyos $_theme_key\` (Alt+Shift+T and Alt+Shift+W)"
+	fi
+done
+
+if lazyos menu theme --list >/dev/null 2>&1; then
+	ok "the visual theme picker is available (lazyos menu theme --list)"
+else
+	fail "lazyos menu theme query failed"
+fi
+
+# ---------------------------------------------------------------------------
+section "The agent's tools (lazyos mcp)"
+# ---------------------------------------------------------------------------
+# `lazyos mcp` (spec 008) is the desktop an agent can drive, and the manifest
+# is the witness of the one rule that matters: the AI proposes, the person
+# confirms. An apply-level tool (run a command, format, install, write a
+# partition, end the session) is never listed - the table refuses one at build
+# time, and this report asks the binary on the device the same question, because
+# the binary is what an agent actually talks to. The handshake is
+# initialize + tools/list over a pipe: neither is a tool call, so nothing is
+# run and nothing is logged.
+_mcp_refused="run format_apply install_apply swap_apply power_apply kpart_write partition_write"
+if have lazyos; then
+	if _mcp_tools=$(lazyos mcp --tools 2>&1); then
+		_mcp_version=$(lazyos mcp --version 2>/dev/null || :)
+		_mcp_head=$(head -n 1 <<<"$_mcp_tools")
+		_mcp_count=$(awk -F'\t' 'NR > 1 && NF >= 5 { n++ } END { print n + 0 }' <<<"$_mcp_tools")
+		ok "lazyos mcp serves $_mcp_count tools, manifest $_mcp_version"
+		case "$_mcp_head" in
+		*" $_mcp_version "*) ;;
+		*) fail "lazyos mcp --tools and --version disagree ($_mcp_head / $_mcp_version)" ;;
+		esac
+		_mcp_bad=$(awk -F'\t' 'NR > 1 && $1 !~ /^(read|act|propose)$/ { print $1 ":" $2 }' <<<"$_mcp_tools")
+		for _mcp_name in $_mcp_refused; do
+			grep -q "	$_mcp_name	" <<<"$_mcp_tools" && _mcp_bad="$_mcp_bad $_mcp_name"
+		done
+		grep -q "	profile_" <<<"$_mcp_tools" && _mcp_bad="$_mcp_bad profile_*"
+		if [ -z "$_mcp_bad" ]; then
+			ok "no apply-level tool is exposed (every tool is read, act or propose)"
+		else
+			fail "lazyos mcp exposes a tool it must refuse:$(tr '\n' ' ' <<<" $_mcp_bad")"
+		fi
+
+		# The protocol itself, not only the table: a server that prints its
+		# manifest and then cannot answer a client is a registration that
+		# OpenCode drops with one log line.
+		_mcp_reply=$(printf '%s\n' \
+			'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"check-system","version":"1"}}}' \
+			'{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+			'{"jsonrpc":"2.0","id":2,"method":"tools/list"}' |
+			timeout 10 lazyos mcp 2>/dev/null) || _mcp_reply=
+		_mcp_listed=$(grep -o '"name":"[a-z_]*"' <<<"$_mcp_reply" | grep -cv '"name":"lazyos"') || :
+		if [ "${_mcp_listed:-0}" -eq "$_mcp_count" ]; then
+			ok "lazyos mcp answers initialize and tools/list ($_mcp_listed tools)"
+		else
+			fail "lazyos mcp did not answer the handshake with its $_mcp_count tools (got ${_mcp_listed:-0})"
+		fi
+
+		# A propose tool is the real gated window, so the window has to exist:
+		# a missing script makes the proposal an error the agent reads as
+		# "the person refused".
+		_mcp_gate=
+		for _mcp_script in $(awk -F'\t' 'NR > 1 { print $5 }' <<<"$_mcp_tools" | sed -n 's|^~/\.config/bin/||p'); do
+			[ -x "$HOME/.config/bin/$_mcp_script" ] || _mcp_gate="$_mcp_gate $_mcp_script"
+		done
+		if [ -z "$_mcp_gate" ]; then
+			ok "every window a tool opens is installed and executable"
+		else
+			fail "a tool opens a window that is missing or not executable:$_mcp_gate"
+		fi
+	else
+		fail "lazyos mcp --tools failed: the agent has no desktop tools ($(head -n 1 <<<"$_mcp_tools"))"
+		_mcp_version=
+	fi
+else
+	skip "no lazyos binary: the agent's tools are not installed"
+	_mcp_version=
+fi
+
+# The registration and the instructions. OpenCode starts a local server from
+# opencode.json, and reads ~/.config/opencode/AGENTS.md in every session; the
+# file pins the manifest it describes, so a binary with other tools makes this
+# line fail instead of the agent being told about tools that are not there.
+_mcp_conf="$HOME/.config/opencode/opencode.json"
+if [ ! -r "$_mcp_conf" ]; then
+	fail "~/.config/opencode/opencode.json is missing: OpenCode does not start lazyos mcp"
+elif ! have jq; then
+	skip "no jq: cannot read the OpenCode registration"
+elif [ "$(jq -c '.mcp.lazyos | [.type, .command, (.enabled // true)]' "$_mcp_conf" 2>/dev/null)" = '["local",["lazyos","mcp"],true]' ]; then
+	ok "OpenCode registers lazyos mcp as a local server"
+else
+	fail "opencode.json has no enabled local mcp.lazyos running [\"lazyos\",\"mcp\"]"
+fi
+_mcp_rules="$HOME/.config/opencode/AGENTS.md"
+_mcp_pin=$(sed -n 's/^lazyos-mcp manifest: //p' "$_mcp_rules" 2>/dev/null | head -n 1)
+if [ -z "$_mcp_pin" ]; then
+	fail "~/.config/opencode/AGENTS.md is missing or names no manifest: the agent is not told the rules"
+elif [ -z "$_mcp_version" ]; then
+	skip "cannot compare the agent's instructions with a manifest (no server)"
+elif [ "$_mcp_pin" = "$_mcp_version" ]; then
+	ok "the agent's instructions describe this manifest ($_mcp_pin)"
+else
+	fail "~/.config/opencode/AGENTS.md describes $_mcp_pin, the binary serves $_mcp_version"
+fi
+
+# The manual is where a person learns what the agent may do on their desktop;
+# without the section the tiers are a rule only the agent was told.
+if grep -qs '^## The desktop the agent can drive' /usr/share/doc/lazyos/07-agents.md; then
+	ok "07-agents.md explains what the agent can read, do and only propose"
+else
+	warn "07-agents.md lost § The desktop the agent can drive (the tiers are undocumented on the device)"
+fi
+
+# A screenshot is the screen, private windows included, so it lives in a 0700
+# directory of the server's own and goes when the server does; a SIGKILL is the
+# one exit that cannot clean, and the next server sweeps it. A directory whose
+# server is gone and that nobody has swept yet is pictures nobody is using.
+_mcp_stale=
+for _mcp_dir in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/lazyos-mcp-[0-9]*; do
+	[ -d "$_mcp_dir" ] || continue
+	_mcp_pid=${_mcp_dir##*lazyos-mcp-}
+	[ -d "/proc/$_mcp_pid" ] || _mcp_stale="$_mcp_stale $(basename "$_mcp_dir")"
+done
+if [ -z "$_mcp_stale" ]; then
+	ok "no screenshot outlived the server that took it"
+else
+	warn "screenshots left by a server that is gone:$_mcp_stale (the next lazyos mcp removes them)"
+fi
+
+# ---------------------------------------------------------------------------
+section "The brand"
+# ---------------------------------------------------------------------------
+# /etc/os-release is Debian's symlink to /usr/lib/os-release, and base-files
+# owns that file: a base-files upgrade can put the symlink back and the image
+# then silently calls itself Debian.  The build writes a regular file; this is
+# what notices when it is gone.
+if [ -r /etc/os-release ]; then
+	_os_id=$( (. /etc/os-release 2>/dev/null; printf '%s' "${ID:-}") )
+	_os_name=$( (. /etc/os-release 2>/dev/null; printf '%s' "${PRETTY_NAME:-}") )
+	_os_ver=$( (. /etc/os-release 2>/dev/null; printf '%s' "${VERSION_ID:-}") )
+	if [ "$_os_id" = lazyos ] && [[ $_os_name == LazyOS* ]]; then
+		ok "os-release says $_os_name (ID=$_os_id)"
+	else
+		fail "/etc/os-release is not LazyOS (ID='${_os_id}', PRETTY_NAME='${_os_name}'): base-files may have restored its symlink"
+	fi
+	# The image's own record of what it was built from.  A hand edit of
+	# os-release is allowed; saying a different version than the build did is
+	# what this catches.
+	_rev_ver=$(sed -n 's/^version //p' /etc/debian-aarch64-revision 2>/dev/null)
+	if [ -n "$_rev_ver" ] && [ -n "$_os_ver" ] && [ "$_rev_ver" != "$_os_ver" ]; then
+		warn "os-release says VERSION_ID=$_os_ver, but the image was built from version $_rev_ver"
+	fi
+else
+	fail "/etc/os-release is missing"
+fi
+
+# The desktop wears the brand's keyboard wallpaper and the lock screen the
+# session's own mountain photograph; a missing file leaves sway painting a flat
+# colour with no message.
+if [ -r "$HOME/Pictures/Wallpapers/lazyos.png" ]; then
+	ok "desktop wallpaper present"
+else
+	fail "missing Pictures/Wallpapers/lazyos.png: the desktop falls back to a flat colour"
+fi
+if grep -rqs 'Pictures/Wallpapers/lazyos.png' /etc/sway/config "$HOME/.config/sway/config" \
+	/etc/sway/config.d "$HOME/.config/sway/config.d" 2>/dev/null; then
+	ok "sway paints the brand wallpaper"
+else
+	fail "sway does not name Pictures/Wallpapers/lazyos.png (output * bg)"
+fi
+if [ -r "$HOME/Pictures/Wallpapers/mountains.jpg" ]; then
+	ok "lock screen wallpaper present"
+else
+	fail "missing Pictures/Wallpapers/mountains.jpg: the lock falls back to a flat colour"
+fi
+if grep -qs 'mountains.jpg' "$HOME/.config/bin/sway-lock" 2>/dev/null; then
+	ok "lock screen keeps the mountain wallpaper"
+else
+	warn "sway-lock no longer names mountains.jpg: the lock falls back to a flat colour"
+fi
+
+# The mark itself: the About entry asks for Icon=lazyos, and a theme without it
+# draws a hole where a picture should be, quietly.
+_missing_mark=""
+for _f in 48x48/apps/lazyos.png scalable/apps/lazyos.svg; do
+	[ -r "/usr/share/icons/LazyOS/$_f" ] || _missing_mark="$_missing_mark $_f"
+done
+if [ -z "$_missing_mark" ]; then
+	ok "the theme carries the mark (lazyos.png, lazyos.svg)"
+else
+	fail "the theme is missing the mark:$_missing_mark (About LazyOS shows a hole)"
+fi
+
+# The card the launcher's About row opens, and the logo fastfetch draws there.
+if [ -r "$HOME/.config/fastfetch/config.jsonc" ]; then
+	ok "fastfetch config present"
+else
+	warn "no ~/.config/fastfetch/config.jsonc: About shows Debian's swirl"
+fi
+if [ -r "$HOME/.config/lazyos/wordmark.txt" ]; then
+	ok "fastfetch wordmark present"
+else
+	warn "no ~/.config/lazyos/wordmark.txt: fastfetch's logo has nothing to draw"
+fi
+
+# The greeter and the virtual terminals are the first and the cheapest surfaces
+# a person sees, and both are files a later edit can quietly lose.
+if grep -qsE 'lazyos-greeter|lazy by design' /etc/greetd/config.toml 2>/dev/null ||
+	grep -qs 'lazy by design' /etc/lazyos/greeter.toml 2>/dev/null; then
+	ok "the greeter is configured for LazyOS"
+else
+	warn "the greeter configuration lost lazyos-greeter / branding"
+fi
+grep -qs 'LazyOS' /etc/issue 2>/dev/null &&
+	ok "virtual terminals greet LazyOS" ||
+	warn "/etc/issue does not name LazyOS"
+
+# The rename was a clean break, so a surviving old name is a reference that was
+# missed.  Scoped to the shipped surfaces on purpose: ~/Dev/LazyOS carries the
+# frozen release notes of the past, and reports/ is hardware evidence.
+_stale=$(ls /usr/share/applications/org.nureb.*.desktop 2>/dev/null || true)
+if [ -n "$_stale" ]; then
+	fail "old desktop entries survive: $(printf '%s ' $_stale)"
+else
+	ok "no org.nureb.* entries survive"
+fi
+_stale=$(grep -rlis 'nureb' /usr/share/applications /usr/share/icons/LazyOS \
+	/usr/share/doc/lazyos "$HOME/.config/bin" 2>/dev/null || true)
+if [ -n "$_stale" ]; then
+	warn "the old name still appears in: $(printf '%s\n' "$_stale" | sed -n '1,3p' | tr '\n' ' ')"
+fi
+
+# ---------------------------------------------------------------------------
+section "Fonts and icons"
+# ---------------------------------------------------------------------------
+if have fc-list; then
+	_families="$(fc-list : family 2>/dev/null | tr ',' '\n' | sed 's/^ *//' | sort -u)"
+	for _f in "JetBrains Mono" "FontAwesome" "Material Design Icons" "Symbols Nerd Font" "Liberation Mono"; do
+		if grep -qF "$_f" <<<"$_families"; then
+			ok "font family present: $_f"
+		else
+			fail "font family missing: $_f"
+		fi
+	done
+	if [ -e /etc/fonts/conf.d/10-nerd-font-symbols.conf ]; then
+		fail "10-nerd-font-symbols.conf is active in /etc/fonts/conf.d: monospace queries resolve to symbols-only font"
+	else
+		ok "10-nerd-font-symbols.conf is disabled (monospace queries remain clean)"
+	fi
+	if have fc-match; then
+		_mono_match="$(fc-match monospace -f '%{family}' 2>/dev/null || true)"
+		if [ "$_mono_match" != "Symbols Nerd Font" ] && [ -n "$_mono_match" ]; then
+			ok "monospace resolves to text font ($_mono_match)"
+		else
+			fail "monospace resolves to Symbols Nerd Font (code blocks will render as boxes)"
+		fi
+
+		_lib_match="$(fc-match "Liberation Mono" -f '%{family}' 2>/dev/null || true)"
+		if [ "$_lib_match" != "Symbols Nerd Font" ] && [ -n "$_lib_match" ]; then
+			ok "Liberation Mono resolves to text font ($_lib_match)"
+		else
+			fail "Liberation Mono resolves to Symbols Nerd Font (code blocks in Firefox render as boxes)"
+		fi
+
+		_roboto_match="$(fc-match "Roboto Mono" -f '%{family}' 2>/dev/null || true)"
+		if [ "$_roboto_match" != "Symbols Nerd Font" ] && [ -n "$_roboto_match" ]; then
+			ok "Roboto Mono resolves to text font ($_roboto_match)"
+		else
+			fail "Roboto Mono resolves to Symbols Nerd Font (code blocks in Firefox render as boxes)"
+		fi
+	fi
+else
+	skip "fc-list is not installed"
+fi
+
+# lib-rofi.sh retirement witness (spec 014):
+if [ ! -e "$HOME/.config/bin/lib-rofi.sh" ]; then
+	ok "lib-rofi.sh is retired (native lazyos glyph system in effect)"
+fi
+
+# The launcher shows application *images*, and Debian's Adwaita has none of this
+# session's names, so the image ships the small LazyOS theme (48x48 PNGs rendered
+# from the Font Awesome codepoints). Without it every org.lazyos.* row is a hole.
+_icons=""
+[ -d /usr/share/icons/LazyOS ] || _icons="$_icons /usr/share/icons/LazyOS"
+[ -r /usr/share/icons/LazyOS/index.theme ] || _icons="$_icons LazyOS/index.theme"
+_iconless=""
+# The session's own entries, plus the viewer packages': their Icon= is not their
+# binary name (imv asks for multimedia-photo-viewer, papers for org.gnome.Papers)
+# and Adwaita 51 has neither, so the same hole appears on those rows.
+for _d in /usr/share/applications/org.lazyos.*.desktop \
+	/usr/share/applications/org.gnome.Papers.desktop \
+	/usr/share/applications/imv.desktop \
+	/usr/share/applications/mpv.desktop; do
+	[ -r "$_d" ] || continue
+	_icon=""
+	while IFS= read -r _line; do
+		case $_line in Icon=*) _icon=${_line#Icon=}; break ;; esac
+	done <"$_d"
+	[ -n "$_icon" ] || continue
+	[ -r "/usr/share/icons/LazyOS/48x48/apps/$_icon.png" ] && continue
+	# An application's own icon (hicolor, pixmaps) is fine too.
+	[ -n "$(find /usr/share/icons /usr/share/pixmaps -name "$_icon.*" 2>/dev/null | head -1)" ] && continue
+	_iconless="$_iconless $(basename "$_d" .desktop)=$_icon"
+done
+if [ -z "$_icons" ] && [ -z "$_iconless" ]; then
+	ok "launcher icons complete (LazyOS theme, every session entry resolves)"
+elif [ -z "$_icons" ]; then
+	fail "launcher entries without an icon:$_iconless (a hole in the launcher row)"
+else
+	fail "icon theme incomplete:$_icons (the launcher shows empty spaces)"
+fi
+# rofi's run mode (Alt+Shift+D) asks the icon theme for an icon *named after the
+# binary* it would run, not for a .desktop icon (source/modes/run.c), so the
+# command palette only has icons because make-icons.sh renders them under those
+# names too.  Missing ones are a blank 26 px column, not an error.
+_runless=""
+for _c in foot btop htop lazygit tmux nvim fzf rg bat eza mpv imv firefox-esr; do
+	[ -r "/usr/share/icons/LazyOS/48x48/apps/$_c.png" ] || _runless="$_runless $_c"
+done
+if [ -z "$_runless" ]; then
+	ok "command palette icons present (the run mode resolves binaries by name)"
+else
+	warn "command palette icons missing for:$_runless (blank column, not a failure)"
+fi
+
+
+
+
+
+# ---------------------------------------------------------------------------
+section "Desktop Display & Audio Stack"
+# ---------------------------------------------------------------------------
+# The arrangement menu and the file it writes.  A runtime `output position` does
+# not survive a logout, so the menu saves one; a file the session's config does
+# not include is the same as none, and a Settings row that is gone leaves the
+# menu with no way in.
+_disp="$HOME/.config/bin/rofi-display"
+if [ -x "$_disp" ]; then
+	ok "rofi-display is executable"
+	if settings_runs rofi-display; then
+		ok "Settings has the display arrangement row"
+	else
+		fail "Settings (lazyos menu settings) has no display arrangement row: the menu is unreachable"
+	fi
+	if grep -qs 'config\.d' "$HOME/.config/sway/config"; then
+		ok "the saved arrangement is read at login (config.d included)"
+	else
+		fail "$HOME/.config/sway/config does not include config.d/: a saved arrangement is never applied"
+	fi
+else
+	fail "$_disp is missing or not executable: the monitor can only be arranged until the next logout"
+fi
+if have wdisplays; then
+	ok "wdisplays is installed (manual arrangement)"
+else
+	fail "wdisplays is missing: the menu's manual row cannot open it"
+fi
+
+# The one state with no other exit: the panel off and no monitor.  That is a
+# black screen, so the menu has to keep offering the row that brings the panel
+# back - and a missing row is invisible until the day it is needed.  Exercised
+# with a stub swaymsg (the real one would change the session) via `--rows` and
+# `--status` (which run before the host and never open a window).
+if [ -x "$_disp" ]; then
+	_bt=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-display.XXXXXX" 2>/dev/null || true)
+	if [ -n "$_bt" ]; then
+		mkdir -p "$_bt/bin"
+		cat >"$_bt/bin/swaymsg" <<'SH'
+#!/bin/sh
+case $1 in
+-t) printf '%s\n' '[{"name":"eDP-1","active":false,"rect":{"x":0,"y":0,"width":0,"height":0},"scale":1.0,"current_mode":null,"modes":[]}]' ;;
+esac
+exit 0
+SH
+		chmod 0755 "$_bt/bin/swaymsg" 2>/dev/null || true
+		_black=$(
+			export PATH="$_bt/bin:$PATH"
+			"$_disp" --rows 2>/dev/null | grep -qs 'Bring the internal panel back' && printf 'ok '
+			"$_disp" --status 2>/dev/null
+		)
+		case $_black in
+		'ok internal panel off')
+			ok "the display menu brings the panel back with no monitor (no dead end)" ;;
+		*)
+			fail "the display menu has no way back with the panel off and no monitor ('${_black:-nothing}'): that is a black screen and the power key" ;;
+		esac
+		rm -rf "$_bt"
+	fi
+fi
+
+# The blind key.  With every output off there is nowhere to draw a menu - sway
+# lets the last output be turned off (measured) - so the recovery has to be a
+# command, and both halves matter: a binding whose mode is gone does nothing,
+# and a mode nobody binds is unreachable with a black screen.
+if grep -qs 'rofi-display --panel-on' /etc/sway/config.d/*.conf \
+	"$HOME/.config/sway/config.d"/*.conf 2>/dev/null; then
+	ok "a key turns the internal panel back on with no picture (blind recovery)"
+else
+	fail "no binding runs 'rofi-display --panel-on': a black screen has no way back"
+fi
+if [ "$("$_disp" --panel-on --command 2>/dev/null)" = "swaymsg output eDP-1 enable" ]; then
+	ok "rofi-display --panel-on exists"
+else
+	fail "$_disp has no --panel-on mode: the recovery key would run nothing"
+fi
+
+
+[ -x "$HOME/.config/bin/sway-suspend" ] && ok "sway-suspend helper is executable" ||
+	warn "~/.config/bin/sway-suspend is missing or not executable"
+
+section "Audio"
+# ---------------------------------------------------------------------------
+if have pactl; then
+	if pactl info >/dev/null 2>&1; then
+		ok "audio server: $(pactl info | sed -n 's/^Server Name: //p')"
+		# PipeWire names an ALSA card after the platform device
+		# (alsa_card.platform-sound), not after the codec, so the codec name is
+		# asked of ALSA instead. What matters is that a card exists at all: with
+		# no card there is no UCM boot sequence and no sink but Dummy Output.
+		_cards="$(pactl list cards short 2>/dev/null)"
+		if [ -z "$_cards" ]; then
+			fail "no sound card in PipeWire at all (UCM boot sequence did not run?)"
+		else
+			ok "sound card: $(printf '%s\n' "$_cards" | head -1 | cut -f2)"
+			_codec="$(grep -oE 'mt[0-9]+[a-z0-9_]*' /proc/asound/cards 2>/dev/null | sort -u | tr '\n' ' ')"
+			[ -n "$_codec" ] && ok "ALSA codec: $(printf '%s' "$_codec" | sed 's/ $//')" ||
+				warn "no MediaTek codec name in /proc/asound/cards"
+		fi
+		# The card's routing lives in a UCM BootSequence, which alsa-lib only
+		# runs on an explicit `set _boot`; alsactl does it at card add. Without
+		# it ACP marks HiFi unsupported and the sink is a Dummy Output.
+		_profile="$(pactl list cards 2>/dev/null | grep -m1 'Active Profile:' | sed 's/.*: //')"
+		case "$_profile" in
+			"" | off) fail "card active profile is '${_profile:-none}': the UCM boot sequence did not run (alsa-utils)" ;;
+			*)        ok "card active profile: $_profile" ;;
+		esac
+		_sinks="$(pactl list short sinks 2>/dev/null | awk '{print $2}' | tr '\n' ' ')"
+		case "$_sinks" in
+			"" | *auto_null*) fail "no real sink (found: ${_sinks:-none}): WirePlumber fell back to Dummy Output" ;;
+			*)                ok "sinks: $_sinks" ;;
+		esac
+	else
+		fail "pactl cannot reach the session PipeWire/PulseAudio server"
+	fi
+else
+	skip "pactl is not installed (package pulseaudio-utils)"
+fi
+# ALSA-only programs need a usable `default` PCM, which pipewire-alsa supplies.
+if have aplay; then
+	_pcm="$(aplay -L 2>/dev/null || true)"
+	if grep -qx default <<<"$_pcm"; then
+		ok "alsa 'default' PCM available (pipewire-alsa)"
+	else
+		fail "no alsa 'default' PCM: aplay/emulators fail without an explicit -D"
+	fi
+else
+	skip "aplay is not installed (package alsa-utils)"
+fi
+
+
+if [ "$_STANDALONE_DESKTOP" = 1 ]; then
+	printf '\n%s==> Summary%s  %d OK, %d WARN, %d FAIL\n' "$C_HEAD" "$C_OFF" "$PASS" "$WARN" "$FAIL"
+	[ "$FAIL" -eq 0 ] || exit 1
+fi

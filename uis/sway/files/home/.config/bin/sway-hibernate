@@ -130,7 +130,7 @@ fi
 	refuse "The swap on $SWAP_DEV is $((SWAP_KB / 1024)) MiB; the hibernation image can need about $((NEED_KB / 1024)) MiB."
 
 if [ "$RESUME_OK" != yes ]; then
-	refuse "The kernel command line has no resume=, so a hibernated session could not be restored. Add it once with CONFIRM=yes RESUME=yes ~/Dev/LazyOS/scripts/install-kpart.sh (it rebuilds the kernel partition and keeps resume= across later kernel updates)."
+	refuse "The kernel command line has no resume=, so a hibernated session could not be restored. Add it once with CONFIRM=yes RESUME=yes /usr/libexec/lazyos/install-boot.sh (it rebuilds the boot configuration and keeps resume= across later kernel updates)."
 fi
 
 # resume= is on the command line but names nothing on this machine: a swap card
@@ -139,14 +139,14 @@ fi
 # hibernation losing the work rather than as a command line pointing at a place
 # that no longer exists.
 if [ -z "$RESUME_SPEC" ]; then
-	refuse "The kernel command line has an empty resume=, so a hibernated session could not be restored. Rebuild the kernel partition without it: CONFIRM=yes RESUME=no ~/Dev/LazyOS/scripts/install-kpart.sh."
+	refuse "The kernel command line has an empty resume=, so a hibernated session could not be restored. Rebuild the boot configuration without it: CONFIRM=yes RESUME=no /usr/libexec/lazyos/install-boot.sh."
 fi
 if [ "$RESUME_BROKEN" = yes ]; then
 	_fix='Rebuild'
 	case "$RESUME_SPEC" in
 	LABEL=*) _fix="Relabel that swap (sudo swaplabel -L ${RESUME_SPEC#LABEL=} <device>), or rebuild" ;;
 	esac
-	refuse "The kernel command line says resume=$RESUME_SPEC, but no device carries that name now, so the next boot could not find the hibernation image. $_fix the kernel partition without it: CONFIRM=yes RESUME=no ~/Dev/LazyOS/scripts/install-kpart.sh."
+	refuse "The kernel command line says resume=$RESUME_SPEC, but no device carries that name now, so the next boot could not find the hibernation image. $_fix the boot configuration without it: CONFIRM=yes RESUME=no /usr/libexec/lazyos/install-boot.sh."
 fi
 
 notify "Hibernating to $SWAP_DEV"

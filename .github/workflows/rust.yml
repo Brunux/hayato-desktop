@@ -1,0 +1,35 @@
+name: Desktop & Rust Workspace
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install runtime test dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libnotify-bin dbus
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --workspace --all-targets
+      - name: Build release
+        run: cargo build --workspace --release --locked
+
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check desktop scripts
+        run: |
+          for f in scripts/*.sh; do
+            bash -n "$f"
+          done

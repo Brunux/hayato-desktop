@@ -75,8 +75,8 @@ rsvg-convert -w 1280 -h 640 -b '#002b36' -o "$brand/social-preview.png" "$brand/
 
 # iOS masks the icon itself and shows transparency as black, so the touch icon
 # is the mark on an opaque base03 square.
-echo "  touch icon  180x180   site/apple-touch-icon.png"
-rsvg-convert -w 180 -h 180 -b '#002b36' -o "$here/site/apple-touch-icon.png" "$brand/lazyos.svg"
+echo "  touch icon  180x180   brand/apple-touch-icon.png"
+rsvg-convert -w 180 -h 180 -b '#002b36' -o "$brand/apple-touch-icon.png" "$brand/lazyos.svg"
 
 # The text forms of the mark.  A terminal cannot draw the SVG, so each terminal
 # surface gets the z_ in full and half blocks, which every monospace font lays

@@ -357,7 +357,7 @@ pub const REFUSED: &[Refused] = &[
     },
     Refused {
         name: "kpart_write",
-        instead: "the kernel partition is written by scripts/install-kpart.sh with CONFIRM=yes, by the person",
+        instead: "the boot configuration is written by /usr/libexec/lazyos/install-boot.sh with CONFIRM=yes, by the person",
     },
     Refused {
         name: "partition_write",

@@ -158,9 +158,9 @@ pub fn run_worker(config: InstallConfig, cancel_token: Option<Arc<AtomicBool>>) 
         .status();
     let _ = Command::new("systemctl").args(["stop", "udisks2"]).status();
 
-    // Execute install-emmc.sh
-    let repo_dir = find_repo_dir().unwrap_or_else(|| "/home/brunux/Dev/LazyOS".to_string());
-    let script_path = Path::new(&repo_dir).join("scripts/install-emmc.sh");
+    // Execute install-emmc.sh (prefer FHS runtime path /usr/libexec/lazyos, then repo paths)
+    let script_path =
+        find_emmc_script().unwrap_or_else(|| PathBuf::from("/usr/libexec/lazyos/install-emmc.sh"));
 
     if !script_path.exists() {
         let err = format!("Installer script not found: {}", script_path.display());
@@ -384,16 +384,35 @@ fn run_dry_run_simulation(
     Ok(())
 }
 
-fn find_repo_dir() -> Option<String> {
-    if let Ok(dir) = std::env::var("LAZYOS_REPO") {
-        if Path::new(&dir).join("scripts/install-emmc.sh").is_file() {
-            return Some(dir);
+fn find_emmc_script() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("LAZYOS_CORE_DIR") {
+        let p = Path::new(&dir).join("scripts/install-emmc.sh");
+        if p.is_file() {
+            return Some(p);
         }
     }
+    if let Ok(dir) = std::env::var("LAZYOS_REPO") {
+        for rel in ["core/scripts/install-emmc.sh", "scripts/install-emmc.sh"] {
+            let p = Path::new(&dir).join(rel);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    let fhs = Path::new("/usr/libexec/lazyos/install-emmc.sh");
+    if fhs.is_file() {
+        return Some(fhs.to_path_buf());
+    }
     if let Ok(home) = std::env::var("HOME") {
-        let path = PathBuf::from(home).join("Dev/LazyOS");
-        if path.join("scripts/install-emmc.sh").is_file() {
-            return Some(path.display().to_string());
+        for rel in [
+            "Dev/LazyOS/core/scripts/install-emmc.sh",
+            "Dev/LazyOS/scripts/install-emmc.sh",
+            "Dev/lazyos-core/scripts/install-emmc.sh",
+        ] {
+            let p = PathBuf::from(&home).join(rel);
+            if p.is_file() {
+                return Some(p);
+            }
         }
     }
     None
