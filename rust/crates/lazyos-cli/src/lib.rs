@@ -40,6 +40,7 @@
 pub mod ask;
 pub mod command;
 pub mod files;
+pub mod greeter;
 pub mod host;
 pub mod installer;
 pub mod mcp;
@@ -421,6 +422,7 @@ fn query(resolved: &Resolved) -> Option<i32> {
             let rest: Vec<String> = resolved.args.iter().skip(1).cloned().collect();
             Some(installer::apply(&rest))
         }
+        ("greeter", _) => greeter::try_query(resolved),
         _ => None,
     }
 }
@@ -537,11 +539,13 @@ fn execute(
         "menu translate" => system::translate::menu(&resolved.args, terminal, design),
         "menu dictate" => system::dictate::menu_with_args(&resolved.args),
         "menu theme" => system::theme_picker::menu(terminal, design),
+        "menu greeter" => greeter::settings::menu(terminal, design),
         "task attach" => task_cmd::attach(resolved, terminal, design),
         "installer" => {
             let dry_run = resolved.args.iter().any(|a| a == "--dry-run");
             installer::menu(terminal, design, dry_run)
         }
+        "greeter" => greeter::menu(&resolved.args, terminal, design),
         other => Err(Failure::new(
             format!("`{other}` is in the table but has no implementation"),
             "this is a bug: the command table and this match disagree",

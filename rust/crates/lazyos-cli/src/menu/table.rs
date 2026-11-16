@@ -743,6 +743,17 @@ pub const PALETTE_EXTRA: &[MenuItem] = &[
             args: &[Arg::Lit("theme"), Arg::Lit("wallpaper"), Arg::Lit("next")],
         },
     ),
+    item(
+        "greeter-settings",
+        "Greeter settings",
+        "login defaults, user pills, clock, sessions",
+        Glyph::Gear,
+        System,
+        Action::Run {
+            program: Program::System("lazyos"),
+            args: &[Arg::Lit("menu"), Arg::Lit("greeter")],
+        },
+    ),
 ];
 
 /// The `bar-menu` row keys, verbatim from the script this menu replaces (its
