@@ -24,7 +24,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
 use super::ipc::{AuthMessageType, AuthOutcome, Backend, SessionLaunch};
-use super::{GreeterState, SessionEntry, UserEntry, load_theme_by_slug};
+use super::{GreeterConfig, GreeterState, SessionEntry, UserEntry, load_theme_by_slug};
 
 const MAX_USER_PILLS: usize = 6;
 
@@ -146,6 +146,7 @@ pub struct GreeterSetup {
     pub preview: bool,
     pub density: Density,
     pub reduced_motion: bool,
+    pub config: GreeterConfig,
 }
 
 struct AuthAttemptResult {
@@ -175,7 +176,15 @@ pub struct GreeterScreen {
     clock_str: String,
     date_str: String,
     clock_fixed: bool,
+    clock_24h: bool,
     last_clock_sec: u64,
+
+    show_user_pills: bool,
+    remember_user: bool,
+    remember_session: bool,
+    follow_user_theme: bool,
+    show_power_actions: bool,
+    open_settings: bool,
 
     username_input: Input,
     secret_input: Input,
@@ -205,25 +214,48 @@ pub struct GreeterScreen {
 
 impl GreeterScreen {
     pub fn new(setup: GreeterSetup) -> Self {
+        let cfg = setup.config;
+        let show_user_pills = cfg.show_user_pills;
+        let remember_user = cfg.remember_user;
+        let remember_session = cfg.remember_session;
+        let clock_24h = cfg.clock_24h;
+        let follow_user_theme = cfg.follow_user_theme;
+        let show_power_actions = cfg.show_power_actions;
+
         let mut selected_user = 0;
-        if let Some(last) = setup.state.last_user.as_deref() {
-            if let Some(idx) = setup.users.iter().position(|u| u.username == last) {
+        let mut username_input = Input::new();
+        if remember_user && let Some(last) = setup.state.last_user.as_deref() {
+            if show_user_pills
+                && let Some(idx) = setup.users.iter().position(|u| u.username == last)
+            {
                 selected_user = idx;
+            } else if !show_user_pills || setup.users.is_empty() {
+                username_input.set(last);
             }
         }
-        // When no users were found in /etc/passwd, focus the manual username field.
-        let focus = if setup.users.is_empty() {
-            selected_user = 0;
-            Focus::Username
+
+        // When pills are hidden or no users were found in /etc/passwd, use the manual username field.
+        let focus = if !show_user_pills || setup.users.is_empty() {
+            selected_user = setup.users.len();
+            if username_input.text().is_empty() {
+                Focus::Username
+            } else {
+                Focus::Password
+            }
         } else {
             Focus::Password
         };
 
         let mut selected_session = 0;
-        if let Some(last) = setup.state.last_session.as_deref() {
-            if let Some(idx) = setup.sessions.iter().position(|s| s.name == last) {
-                selected_session = idx;
-            }
+        if remember_session
+            && let Some(last) = setup.state.last_session.as_deref()
+            && let Some(idx) = setup.sessions.iter().position(|s| s.name == last)
+        {
+            selected_session = idx;
+        } else if let Some(def) = cfg.default_session.as_deref()
+            && let Some(idx) = setup.sessions.iter().position(|s| s.name == def)
+        {
+            selected_session = idx;
         }
 
         let theme_slugs: Vec<&'static str> = builtin::slugs().collect();
@@ -260,15 +292,29 @@ impl GreeterScreen {
         session_list.set_cursor(selected_session);
 
         let hostname = read_hostname();
-        let (clock_str, date_str, now_sec) = current_clock();
+        let (clock_str, date_str, now_sec) = current_clock(clock_24h);
 
-        let strip = Self::build_strip();
+        let strip = Self::build_strip(setup.preview, show_power_actions);
 
         let header_sub = if setup.preview {
             format!("Greeter \u{00b7} Preview ({hostname})")
         } else {
             format!("Greeter \u{00b7} {hostname}")
         };
+
+        let mut keybar_main = vec![
+            KeyHint::new("Enter", "sign in"),
+            KeyHint::new("Tab", "fields"),
+            KeyHint::new("^S", "session"),
+            KeyHint::new("^T", "theme"),
+        ];
+        if setup.preview {
+            keybar_main.push(KeyHint::new("^G", "settings"));
+        }
+        keybar_main.push(KeyHint::new(
+            "Esc",
+            if setup.preview { "close" } else { "clear" },
+        ));
 
         Self {
             users: setup.users,
@@ -288,8 +334,15 @@ impl GreeterScreen {
             clock_str,
             date_str,
             clock_fixed: false,
+            clock_24h,
             last_clock_sec: now_sec,
-            username_input: Input::new(),
+            show_user_pills,
+            remember_user,
+            remember_session,
+            follow_user_theme,
+            show_power_actions,
+            open_settings: false,
+            username_input,
             secret_input: Input::new().with_masked(true),
             prompt_label: "Password".into(),
             challenge_open: false,
@@ -304,13 +357,7 @@ impl GreeterScreen {
             density: setup.density,
             reduced_motion: setup.reduced_motion,
             header: Header::new("LazyOS").subtitle(header_sub),
-            keybar_main: vec![
-                KeyHint::new("Enter", "sign in"),
-                KeyHint::new("Tab", "fields"),
-                KeyHint::new("^S", "session"),
-                KeyHint::new("^T", "theme"),
-                KeyHint::new("Esc", if setup.preview { "close" } else { "clear" }),
-            ],
+            keybar_main,
             keybar_picker: vec![
                 KeyHint::new("Enter", "select"),
                 KeyHint::new("type", "filter"),
@@ -327,6 +374,12 @@ impl GreeterScreen {
         }
     }
 
+    pub fn take_open_settings(&mut self) -> bool {
+        let was = self.open_settings;
+        self.open_settings = false;
+        was
+    }
+
     /// Override displayed clock/date/hostname deterministically (for snapshot tests).
     pub fn set_clock_for_test(&mut self, clock: &str, date: &str, hostname: &str) {
         self.clock_str = clock.into();
@@ -340,22 +393,32 @@ impl GreeterScreen {
         });
     }
 
-    fn build_strip() -> ActionStrip {
-        ActionStrip::new(vec![
+    fn build_strip(preview: bool, show_power_actions: bool) -> ActionStrip {
+        let mut items = vec![
             ActionItem::new("session", "^S", "Session").glyph(Glyph::Window),
             ActionItem::new("theme", "^T", "Theme").glyph(Glyph::Theme),
-            ActionItem::new("sleep", "^Z", "Sleep").glyph(Glyph::Moon),
-            ActionItem::new("reboot", "^R", "Reboot").glyph(Glyph::Reboot),
-            ActionItem::new("poweroff", "^P", "Shut down").glyph(Glyph::Power),
-        ])
+        ];
+        if show_power_actions {
+            items.push(ActionItem::new("sleep", "^Z", "Sleep").glyph(Glyph::Moon));
+            items.push(ActionItem::new("reboot", "^R", "Reboot").glyph(Glyph::Reboot));
+            items.push(ActionItem::new("poweroff", "^P", "Shut down").glyph(Glyph::Power));
+        }
+        if preview {
+            items.push(ActionItem::new("settings", "^G", "Settings").glyph(Glyph::Gear));
+        }
+        ActionStrip::new(items)
     }
 
     fn refresh_strip(&mut self) {
-        self.strip = Self::build_strip();
+        self.strip = Self::build_strip(self.preview, self.show_power_actions);
+    }
+
+    fn pills_visible(&self) -> bool {
+        self.show_user_pills && !self.users.is_empty()
     }
 
     fn using_other_user(&self) -> bool {
-        self.selected_user >= self.users.len()
+        !self.show_user_pills || self.selected_user >= self.users.len()
     }
 
     fn active_username(&self) -> String {
@@ -499,6 +562,14 @@ impl GreeterScreen {
                 self.mode = Mode::ThemePicker;
                 Outcome::Consumed
             }
+            "settings" => {
+                if self.preview {
+                    self.open_settings = true;
+                    Outcome::Done(0)
+                } else {
+                    Outcome::Consumed
+                }
+            }
             "sleep" => {
                 self.mode = Mode::ConfirmPower {
                     action: PowerAction::Sleep,
@@ -562,9 +633,11 @@ impl GreeterScreen {
     }
 
     fn record_login_state(&mut self, username: &str, session_name: &str) {
-        self.state.last_user = Some(username.to_string());
-        self.state.last_session = Some(session_name.to_string());
-        self.state.theme = Some(self.theme_slug.clone());
+        self.state.last_user = self.remember_user.then(|| username.to_string());
+        self.state.last_session = self.remember_session.then(|| session_name.to_string());
+        if self.follow_user_theme {
+            self.state.theme = Some(self.theme_slug.clone());
+        }
         if let Some(path) = &self.state_path {
             let _ = self.state.save(path);
         }
@@ -731,7 +804,7 @@ impl Screen for GreeterScreen {
         if !self.clock_fixed {
             let now_sec = epoch_secs();
             if now_sec != self.last_clock_sec {
-                let (c, d, s) = current_clock();
+                let (c, d, s) = current_clock(self.clock_24h);
                 self.clock_str = c;
                 self.date_str = d;
                 self.last_clock_sec = s;
@@ -786,7 +859,7 @@ impl Screen for GreeterScreen {
         }
 
         // Center the hero + auth card cleanly inside full-bleed viewport.
-        let card_w = area.width.saturating_sub(2).clamp(32, 84);
+        let card_w = area.width.saturating_sub(2).clamp(32, 96);
         let card_h = area.height.saturating_sub(2).clamp(12, 23);
         let card_x = area.x + (area.width - card_w) / 2;
         let card_y = area.y + (area.height - card_h) / 2;
@@ -932,73 +1005,75 @@ impl Screen for GreeterScreen {
         let mut y = inner.y;
         let bg_surface = ctx.design.color(ColorRole::Surface);
 
-        // 1. User pills row
-        let user_glyph = Glyph::People.cell();
-        put(
-            ctx.buf,
-            inner.x,
-            y,
-            user_glyph,
-            2,
-            Style::default()
-                .fg(ctx.design.color(ColorRole::Accent))
-                .bg(bg_surface),
-        );
-        put(
-            ctx.buf,
-            inner.x + 2,
-            y,
-            "User ",
-            5,
-            ctx.design.style(TextStyle::Dim).bg(bg_surface),
-        );
-        let mut px = inner.x + 8;
-        let pill_limit = self.users.len().min(MAX_USER_PILLS);
-        let mut pill_idx = 0usize;
-        for idx in 0..=pill_limit {
-            let is_other = idx == pill_limit;
-            let label = if is_other {
-                "+ Other"
-            } else {
-                self.users[idx].username.as_str()
-            };
-            let w = (label.chars().count() as u16) + 4;
-            if px + w > inner.right() {
-                break;
-            }
-            let selected = if is_other {
-                self.using_other_user()
-            } else {
-                self.selected_user == idx
-            };
-            let focused = self.focus == Focus::Users && selected;
-            let pill_style = if focused {
-                Style::default()
-                    .fg(ctx.design.color(ColorRole::Bg))
-                    .bg(ctx.design.color(ColorRole::Accent))
-                    .add_modifier(Modifier::BOLD)
-            } else if selected {
+        // 1. User pills row (hidden when show_user_pills = false)
+        if self.pills_visible() {
+            let user_glyph = Glyph::People.cell();
+            put(
+                ctx.buf,
+                inner.x,
+                y,
+                user_glyph,
+                2,
                 Style::default()
                     .fg(ctx.design.color(ColorRole::Accent))
-                    .bg(ctx.design.color(ColorRole::Selection))
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-                    .fg(ctx.design.color(ColorRole::Dim))
-                    .bg(ctx.design.color(ColorRole::SurfaceAlt))
-            };
-            let rect = Rect::new(px, y, w, 1);
-            fill_rect(ctx.buf, rect, pill_style);
-            put_trunc(ctx.buf, px + 2, y, label, w - 4, pill_style);
-            let target_user_idx = if is_other { self.users.len() } else { idx };
-            hits.user_pills[pill_idx] = Some((target_user_idx, rect));
-            pill_idx += 1;
-            px += w + 1;
+                    .bg(bg_surface),
+            );
+            put(
+                ctx.buf,
+                inner.x + 2,
+                y,
+                "User ",
+                5,
+                ctx.design.style(TextStyle::Dim).bg(bg_surface),
+            );
+            let mut px = inner.x + 8;
+            let pill_limit = self.users.len().min(MAX_USER_PILLS);
+            let mut pill_idx = 0usize;
+            for idx in 0..=pill_limit {
+                let is_other = idx == pill_limit;
+                let label = if is_other {
+                    "+ Other"
+                } else {
+                    self.users[idx].username.as_str()
+                };
+                let w = (label.chars().count() as u16) + 4;
+                if px + w > inner.right() {
+                    break;
+                }
+                let selected = if is_other {
+                    self.using_other_user()
+                } else {
+                    self.selected_user == idx
+                };
+                let focused = self.focus == Focus::Users && selected;
+                let pill_style = if focused {
+                    Style::default()
+                        .fg(ctx.design.color(ColorRole::Bg))
+                        .bg(ctx.design.color(ColorRole::Accent))
+                        .add_modifier(Modifier::BOLD)
+                } else if selected {
+                    Style::default()
+                        .fg(ctx.design.color(ColorRole::Accent))
+                        .bg(ctx.design.color(ColorRole::Selection))
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                        .fg(ctx.design.color(ColorRole::Dim))
+                        .bg(ctx.design.color(ColorRole::SurfaceAlt))
+                };
+                let rect = Rect::new(px, y, w, 1);
+                fill_rect(ctx.buf, rect, pill_style);
+                put_trunc(ctx.buf, px + 2, y, label, w - 4, pill_style);
+                let target_user_idx = if is_other { self.users.len() } else { idx };
+                hits.user_pills[pill_idx] = Some((target_user_idx, rect));
+                pill_idx += 1;
+                px += w + 1;
+            }
+            hits.user_count = pill_idx;
+            y += 2;
         }
-        hits.user_count = pill_idx;
-        y += 2;
 
-        // 2. Optional inline Username box when "+ Other" is active
+        // 2. Optional inline Username box when "+ Other" is active or pills are hidden
         if self.using_other_user() && y + 1 < inner.bottom() {
             put(
                 ctx.buf,
@@ -1482,13 +1557,16 @@ impl Screen for GreeterScreen {
             (true, KeyCode::Char('t')) => {
                 return self.trigger_action("theme");
             }
-            (true, KeyCode::Char('z')) => {
+            (true, KeyCode::Char('g')) | (false, KeyCode::F(9)) if self.preview => {
+                return self.trigger_action("settings");
+            }
+            (true, KeyCode::Char('z')) if self.show_power_actions => {
                 return self.trigger_action("sleep");
             }
-            (true, KeyCode::Char('r')) => {
+            (true, KeyCode::Char('r')) if self.show_power_actions => {
                 return self.trigger_action("reboot");
             }
-            (true, KeyCode::Char('p')) | (false, KeyCode::F(12)) => {
+            (true, KeyCode::Char('p')) | (false, KeyCode::F(12)) if self.show_power_actions => {
                 return self.trigger_action("poweroff");
             }
             _ => {}
@@ -1527,28 +1605,38 @@ impl Screen for GreeterScreen {
         }
 
         // Field cycle with Tab / BackTab
+        let pills = self.pills_visible();
         if matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
             let reverse = key.code == KeyCode::BackTab;
-            self.focus = match (self.focus, reverse, self.using_other_user()) {
-                (Focus::Password, false, _) => {
+            self.focus = match (self.focus, reverse, pills, self.using_other_user()) {
+                (Focus::Password, false, _, _) => {
                     self.strip.set_focused(true);
                     Focus::Strip
                 }
-                (Focus::Strip, false, _) => {
+                (Focus::Strip, false, true, _) => {
                     self.strip.set_focused(false);
                     Focus::Users
                 }
-                (Focus::Users, false, true) => Focus::Username,
-                (Focus::Users, false, false) => Focus::Password,
-                (Focus::Username, false, _) => Focus::Password,
-                (Focus::Password, true, true) => Focus::Username,
-                (Focus::Password, true, false) => Focus::Users,
-                (Focus::Username, true, _) => Focus::Users,
-                (Focus::Users, true, _) => {
+                (Focus::Strip, false, false, _) => {
+                    self.strip.set_focused(false);
+                    Focus::Username
+                }
+                (Focus::Users, false, _, true) => Focus::Username,
+                (Focus::Users, false, _, false) => Focus::Password,
+                (Focus::Username, false, _, _) => Focus::Password,
+                (Focus::Password, true, _, true) => Focus::Username,
+                (Focus::Password, true, true, false) => Focus::Users,
+                (Focus::Password, true, false, false) => Focus::Username,
+                (Focus::Username, true, true, _) => Focus::Users,
+                (Focus::Username, true, false, _) => {
                     self.strip.set_focused(true);
                     Focus::Strip
                 }
-                (Focus::Strip, true, _) => {
+                (Focus::Users, true, _, _) => {
+                    self.strip.set_focused(true);
+                    Focus::Strip
+                }
+                (Focus::Strip, true, _, _) => {
                     self.strip.set_focused(false);
                     Focus::Password
                 }
@@ -1596,7 +1684,9 @@ impl Screen for GreeterScreen {
                     Outcome::Consumed
                 }
                 KeyCode::Up => {
-                    self.focus = Focus::Users;
+                    if pills {
+                        self.focus = Focus::Users;
+                    }
                     Outcome::Consumed
                 }
                 _ => match self.username_input.handle(key) {
@@ -1606,7 +1696,7 @@ impl Screen for GreeterScreen {
             },
             Focus::Password => match key.code {
                 KeyCode::Up => {
-                    self.focus = if self.using_other_user() {
+                    self.focus = if self.using_other_user() || !pills {
                         Focus::Username
                     } else {
                         Focus::Users
@@ -1646,13 +1736,14 @@ fn epoch_secs() -> u64 {
         .as_secs()
 }
 
-fn current_clock() -> (String, String, u64) {
+fn current_clock(clock_24h: bool) -> (String, String, u64) {
     let now = Local::now();
-    (
-        now.format("%H:%M:%S").to_string(),
-        now.format("%a, %d %b %Y").to_string(),
-        epoch_secs(),
-    )
+    let time = if clock_24h {
+        now.format("%H:%M:%S").to_string()
+    } else {
+        now.format("%I:%M:%S %p").to_string()
+    };
+    (time, now.format("%a, %d %b %Y").to_string(), epoch_secs())
 }
 
 fn read_hostname() -> String {
@@ -1673,7 +1764,7 @@ mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
-    fn test_screen(preview: bool) -> GreeterScreen {
+    fn test_screen_with_config(preview: bool, config: GreeterConfig) -> GreeterScreen {
         let theme = load_theme_by_slug("solarized").unwrap();
         let setup = GreeterSetup {
             users: vec![UserEntry {
@@ -1697,7 +1788,10 @@ mod tests {
                     comment: None,
                 },
             ],
-            state: GreeterState::default(),
+            state: GreeterState {
+                last_user: Some("brunux".into()),
+                ..Default::default()
+            },
             state_path: None,
             auth_marker: None,
             theme_slug: "solarized".into(),
@@ -1707,10 +1801,15 @@ mod tests {
             preview,
             density: Density::Normal,
             reduced_motion: true,
+            config,
         };
         let mut scr = GreeterScreen::new(setup);
         scr.set_clock_for_test("18:30:00", "Sun, 15 Nov 2026", "hayato");
         scr
+    }
+
+    fn test_screen(preview: bool) -> GreeterScreen {
+        test_screen_with_config(preview, GreeterConfig::default())
     }
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -1807,5 +1906,22 @@ mod tests {
         let large = render_text(&mut scr, 152, 45);
         assert!(large.contains("18:30:00"));
         assert!(large.contains("Shut down"));
+    }
+
+    #[test]
+    fn disabled_user_pills_and_power_actions_render_cleanly() {
+        let cfg = GreeterConfig {
+            show_user_pills: false,
+            remember_user: false,
+            show_power_actions: false,
+            ..Default::default()
+        };
+        let mut scr = test_screen_with_config(true, cfg);
+        assert_eq!(scr.focus, Focus::Username);
+        let out = render_text(&mut scr, 100, 30);
+        assert!(!out.contains("+ Other"));
+        assert!(out.contains("Login"));
+        assert!(!out.contains("Shut down"));
+        assert!(out.contains("Settings"));
     }
 }

@@ -539,6 +539,7 @@ fn execute(
         "menu translate" => system::translate::menu(&resolved.args, terminal, design),
         "menu dictate" => system::dictate::menu_with_args(&resolved.args),
         "menu theme" => system::theme_picker::menu(terminal, design),
+        "menu greeter" => greeter::settings::menu(terminal, design),
         "task attach" => task_cmd::attach(resolved, terminal, design),
         "installer" => {
             let dry_run = resolved.args.iter().any(|a| a == "--dry-run");

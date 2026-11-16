@@ -7,6 +7,7 @@
 
 pub mod ipc;
 pub mod screen;
+pub mod settings;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -340,11 +341,41 @@ fn command_exists(bin: &str) -> bool {
     std::env::split_paths(&path_var).any(|dir| dir.join(bin).is_file())
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GreeterConfig {
+    pub follow_user_theme: bool,
     pub theme: Option<String>,
     pub greeting: Option<String>,
     pub default_session: Option<String>,
+    pub show_user_pills: bool,
+    pub remember_user: bool,
+    pub remember_session: bool,
+    pub clock_24h: bool,
+    pub show_power_actions: bool,
+}
+
+impl Default for GreeterConfig {
+    fn default() -> Self {
+        Self {
+            follow_user_theme: true,
+            theme: None,
+            greeting: None,
+            default_session: None,
+            show_user_pills: true,
+            remember_user: true,
+            remember_session: true,
+            clock_24h: true,
+            show_power_actions: true,
+        }
+    }
+}
+
+fn parse_bool_val(raw: &str) -> Option<bool> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "true" | "yes" | "on" | "1" => Some(true),
+        "false" | "no" | "off" | "0" => Some(false),
+        _ => None,
+    }
 }
 
 pub fn parse_greeter_config(text: &str) -> GreeterConfig {
@@ -363,13 +394,159 @@ pub fn parse_greeter_config(text: &str) -> GreeterConfig {
             continue;
         }
         match key {
+            "follow_user_theme" => {
+                if let Some(b) = parse_bool_val(val) {
+                    cfg.follow_user_theme = b;
+                }
+            }
             "theme" => cfg.theme = Some(val.to_string()),
             "greeting" => cfg.greeting = Some(val.to_string()),
             "default_session" | "session" => cfg.default_session = Some(val.to_string()),
+            "show_user_pills" | "user_pills" => {
+                if let Some(b) = parse_bool_val(val) {
+                    cfg.show_user_pills = b;
+                }
+            }
+            "remember_user" => {
+                if let Some(b) = parse_bool_val(val) {
+                    cfg.remember_user = b;
+                }
+            }
+            "remember_session" => {
+                if let Some(b) = parse_bool_val(val) {
+                    cfg.remember_session = b;
+                }
+            }
+            "clock_24h" => {
+                if let Some(b) = parse_bool_val(val) {
+                    cfg.clock_24h = b;
+                }
+            }
+            "show_power_actions" | "power_actions" => {
+                if let Some(b) = parse_bool_val(val) {
+                    cfg.show_power_actions = b;
+                }
+            }
             _ => {}
         }
     }
     cfg
+}
+
+fn toml_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Format [`GreeterConfig`] as clean TOML suitable for `/etc/lazyos/greeter.toml`.
+pub fn format_greeter_config(cfg: &GreeterConfig) -> String {
+    let mut out = String::from(
+        "# LazyOS Greeter configuration (managed by `lazyos menu greeter`)\n\
+         # Changes apply to `/usr/bin/lazyos-greeter --session` and `lazyos greeter --preview`.\n\n",
+    );
+    out.push_str(&format!("follow_user_theme = {}\n", cfg.follow_user_theme));
+    if let Some(theme) = cfg.theme.as_deref().filter(|s| !s.trim().is_empty()) {
+        out.push_str(&format!("theme = \"{}\"\n", toml_escape(theme.trim())));
+    } else {
+        out.push_str("# theme = \"solarized\"\n");
+    }
+    if let Some(greeting) = cfg.greeting.as_deref().filter(|s| !s.trim().is_empty()) {
+        out.push_str(&format!(
+            "greeting = \"{}\"\n",
+            toml_escape(greeting.trim())
+        ));
+    } else {
+        out.push_str("# greeting = \"LazyOS \\u00b7 lazy by design\"\n");
+    }
+    if let Some(session) = cfg
+        .default_session
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+    {
+        out.push_str(&format!(
+            "default_session = \"{}\"\n",
+            toml_escape(session.trim())
+        ));
+    } else {
+        out.push_str("# default_session = \"Sway\"\n");
+    }
+    out.push_str(&format!("show_user_pills = {}\n", cfg.show_user_pills));
+    out.push_str(&format!("remember_user = {}\n", cfg.remember_user));
+    out.push_str(&format!("remember_session = {}\n", cfg.remember_session));
+    out.push_str(&format!("clock_24h = {}\n", cfg.clock_24h));
+    out.push_str(&format!(
+        "show_power_actions = {}\n",
+        cfg.show_power_actions
+    ));
+    out
+}
+
+pub fn default_config_path() -> PathBuf {
+    if let Ok(p) = std::env::var("LAZYOS_GREETER_CONFIG") {
+        if !p.trim().is_empty() {
+            return PathBuf::from(p);
+        }
+    }
+    PathBuf::from(DEFAULT_CONFIG_FILE)
+}
+
+pub fn load_greeter_config(path: &Path) -> GreeterConfig {
+    fs::read_to_string(path)
+        .map(|s| parse_greeter_config(&s))
+        .unwrap_or_default()
+}
+
+/// Save [`GreeterConfig`] to `path`, using passwordless `sudo -n` if `path` is
+/// system-owned (such as `/etc/lazyos/greeter.toml`).
+pub fn save_greeter_config(path: &Path, cfg: &GreeterConfig) -> Result<(), String> {
+    let body = format_greeter_config(cfg);
+    if let Some(parent) = path.parent() {
+        if fs::create_dir_all(parent).is_ok() {
+            let tmp = parent.join(".greeter.toml.new");
+            if fs::write(&tmp, &body).is_ok() {
+                if fs::rename(&tmp, path).is_ok() {
+                    return Ok(());
+                }
+                let _ = fs::remove_file(&tmp);
+            }
+        }
+    }
+
+    let tmp_dir = std::env::var_os("XDG_RUNTIME_DIR")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    let tmp_path = tmp_dir.join(format!("lazyos-greeter-{}.toml", std::process::id()));
+    let _ = fs::remove_file(&tmp_path);
+    {
+        use std::io::Write as _;
+        let mut tmp = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)
+            .map_err(|e| format!("create temp config: {e}"))?;
+        tmp.write_all(body.as_bytes())
+            .map_err(|e| format!("write temp config: {e}"))?;
+        tmp.flush().map_err(|e| format!("flush temp config: {e}"))?;
+    }
+
+    let status = Command::new("sudo")
+        .args([
+            "-n", "install", "-D", "-m", "0644", "-o", "root", "-g", "root",
+        ])
+        .arg(&tmp_path)
+        .arg(path)
+        .status();
+    let _ = fs::remove_file(&tmp_path);
+    let status = status.map_err(|e| format!("invoke sudo: {e}"))?;
+
+    if !status.success() {
+        return Err(format!(
+            "cannot write {} (sudo -n exited with {})",
+            path.display(),
+            status
+        ));
+    }
+    Ok(())
 }
 
 pub fn load_theme_by_slug(slug: &str) -> Option<Theme> {
@@ -383,21 +560,21 @@ pub fn load_theme_by_slug(slug: &str) -> Option<Theme> {
 
 /// Resolve active theme slug, parsed [`Theme`], and greeting string.
 ///
-/// Priority:
+/// Priority when `follow_user_theme = true` (default):
 /// 1. Explicit CLI `--theme` or `LAZYOS_GREETER_THEME`
 /// 2. Last user's `~/.local/state/lazyos/theme/active` (or `$HOME` in preview)
 /// 3. Greeter's own remembered state (`state.theme`)
 /// 4. `/etc/lazyos/greeter.toml` `theme = "..."`
 /// 5. Built-in `"solarized"`
+///
+/// When `follow_user_theme = false`, step 4 precedes steps 2 and 3.
 pub fn resolve_theme_and_greeting(
     cli_theme: Option<&str>,
     user_home: Option<&Path>,
     state: &GreeterState,
     config_file: &Path,
 ) -> (String, Theme, String) {
-    let cfg = fs::read_to_string(config_file)
-        .map(|s| parse_greeter_config(&s))
-        .unwrap_or_default();
+    let cfg = load_greeter_config(config_file);
     let greeting = cfg
         .greeting
         .clone()
@@ -409,13 +586,23 @@ pub fn resolve_theme_and_greeting(
         fs::read_to_string(p).ok().map(|s| s.trim().to_string())
     });
 
-    let candidates = [
-        cli_theme.map(str::to_string),
-        env_theme,
-        user_active,
-        state.theme.clone(),
-        cfg.theme,
-    ];
+    let candidates = if cfg.follow_user_theme {
+        [
+            cli_theme.map(str::to_string),
+            env_theme,
+            user_active,
+            state.theme.clone(),
+            cfg.theme,
+        ]
+    } else {
+        [
+            cli_theme.map(str::to_string),
+            env_theme,
+            cfg.theme,
+            state.theme.clone(),
+            user_active,
+        ]
+    };
 
     for slug in candidates.into_iter().flatten() {
         let trimmed = slug.trim();
@@ -626,17 +813,18 @@ fn run_check(args: &[String]) -> i32 {
     let users = discover_users();
     let sessions = discover_sessions();
     let state = GreeterState::load(&default_state_path());
+    let cfg_path = default_config_path();
+    let cfg = load_greeter_config(&cfg_path);
     let home = resolve_user_home(&users, &state);
     let cli_theme = cli_flag_value(args, "--theme");
-    let (slug, _theme, greeting) = resolve_theme_and_greeting(
-        cli_theme,
-        home.as_deref(),
-        &state,
-        Path::new(DEFAULT_CONFIG_FILE),
-    );
+    let (slug, _theme, greeting) =
+        resolve_theme_and_greeting(cli_theme, home.as_deref(), &state, &cfg_path);
     let sock = std::env::var("GREETD_SOCK").unwrap_or_else(|_| "unset".into());
 
     println!("theme\t{slug}");
+    println!("follow_user_theme\t{}", cfg.follow_user_theme);
+    println!("user_pills\t{}", cfg.show_user_pills);
+    println!("clock_24h\t{}", cfg.clock_24h);
     println!("greeting\t{greeting}");
     println!("users\t{}", users.len());
     for u in &users {
@@ -661,14 +849,11 @@ fn run_prepare_session(args: &[String]) -> i32 {
         .unwrap_or_else(default_runtime_dir);
     let users = discover_users();
     let state = GreeterState::load(&default_state_path());
+    let cfg_path = default_config_path();
     let home = resolve_user_home(&users, &state);
     let cli_theme = cli_flag_value(args, "--theme");
-    let (slug, theme, _greeting) = resolve_theme_and_greeting(
-        cli_theme,
-        home.as_deref(),
-        &state,
-        Path::new(DEFAULT_CONFIG_FILE),
-    );
+    let (slug, theme, _greeting) =
+        resolve_theme_and_greeting(cli_theme, home.as_deref(), &state, &cfg_path);
     let exe = std::env::current_exe()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "/usr/bin/lazyos".to_string());
@@ -706,14 +891,11 @@ fn run_greetd_session(args: &[String]) -> i32 {
         let runtime_dir = default_runtime_dir();
         let users = discover_users();
         let state = GreeterState::load(&default_state_path());
+        let cfg_path = default_config_path();
         let home = resolve_user_home(&users, &state);
         let cli_theme = cli_flag_value(args, "--theme");
-        let (slug, theme, _greeting) = resolve_theme_and_greeting(
-            cli_theme,
-            home.as_deref(),
-            &state,
-            Path::new(DEFAULT_CONFIG_FILE),
-        );
+        let (slug, theme, _greeting) =
+            resolve_theme_and_greeting(cli_theme, home.as_deref(), &state, &cfg_path);
         let exe = std::env::current_exe()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|_| "/usr/bin/lazyos".to_string());
@@ -781,6 +963,10 @@ pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, Failure> {
+    if args.iter().any(|a| a == "settings" || a == "--settings") {
+        return settings::menu(terminal, design);
+    }
+
     let ui_mode = args.iter().any(|a| a == "--ui");
     let preview_flag = args.iter().any(|a| a == "--preview");
     let has_sock = std::env::var("GREETD_SOCK")
@@ -789,48 +975,56 @@ pub fn menu(
 
     // If launched interactively without `--ui` or `GREETD_SOCK`, default to safe preview mode.
     let preview = preview_flag || (!ui_mode && !has_sock);
-    let backend = ipc::Backend::from_env_or_preview(preview)
-        .map_err(|err| Failure::new("greeter cannot reach greetd", err))?;
-
-    let users = discover_users();
-    let sessions = discover_sessions();
-    let state_path = default_state_path();
-    let state = GreeterState::load(&state_path);
-    let home = resolve_user_home(&users, &state);
     let cli_theme = cli_flag_value(args, "--theme");
-    let (theme_slug, theme, greeting) = resolve_theme_and_greeting(
-        cli_theme,
-        home.as_deref(),
-        &state,
-        Path::new(DEFAULT_CONFIG_FILE),
-    );
+    let state_path = default_state_path();
+    let cfg_path = default_config_path();
 
-    let initial_design = Design::new(
-        theme.palette(),
-        design.density(),
-        design.reduced_motion() || theme.motion != lazyos_theme::Motion::Full,
-    );
+    loop {
+        let backend = ipc::Backend::from_env_or_preview(preview)
+            .map_err(|err| Failure::new("greeter cannot reach greetd", err))?;
 
-    let mut scr = screen::GreeterScreen::new(screen::GreeterSetup {
-        users,
-        sessions,
-        state,
-        state_path: (!preview).then_some(state_path),
-        auth_marker: std::env::var_os("LAZYOS_GREETER_AUTH_MARKER").map(PathBuf::from),
-        theme_slug,
-        theme,
-        greeting,
-        backend,
-        preview,
-        density: design.density(),
-        reduced_motion: design.reduced_motion(),
-    });
+        let users = discover_users();
+        let sessions = discover_sessions();
+        let state = GreeterState::load(&state_path);
+        let cfg = load_greeter_config(&cfg_path);
+        let home = resolve_user_home(&users, &state);
+        let (theme_slug, theme, greeting) =
+            resolve_theme_and_greeting(cli_theme, home.as_deref(), &state, &cfg_path);
 
-    App::new(Header::new("LazyOS").subtitle("Greeter"))
-        .design(initial_design)
-        .screen(&mut scr)
-        .run(terminal)
-        .map_err(|e| Failure::new("greeter terminal stopped answering", e.to_string()))
+        let initial_design = Design::new(
+            theme.palette(),
+            design.density(),
+            design.reduced_motion() || theme.motion != lazyos_theme::Motion::Full,
+        );
+
+        let mut scr = screen::GreeterScreen::new(screen::GreeterSetup {
+            users,
+            sessions,
+            state,
+            state_path: (!preview).then(|| state_path.clone()),
+            auth_marker: std::env::var_os("LAZYOS_GREETER_AUTH_MARKER").map(PathBuf::from),
+            theme_slug,
+            theme,
+            greeting,
+            backend,
+            preview,
+            density: design.density(),
+            reduced_motion: design.reduced_motion(),
+            config: cfg,
+        });
+
+        let code = App::new(Header::new("LazyOS").subtitle("Greeter"))
+            .design(initial_design)
+            .screen(&mut scr)
+            .run(terminal)
+            .map_err(|e| Failure::new("greeter terminal stopped answering", e.to_string()))?;
+
+        if preview && scr.take_open_settings() {
+            let _ = settings::menu_embedded(terminal, design)?;
+            continue;
+        }
+        return Ok(code);
+    }
 }
 
 #[cfg(test)]
@@ -951,5 +1145,44 @@ DesktopNames=sway;wlroots;swayfx
         let sway_text = fs::read_to_string(&prep.sway_conf).unwrap();
         assert!(sway_text.contains("fullscreen enable"));
         assert!(sway_text.contains("lazyos-greeter"));
+    }
+
+    #[test]
+    fn greeter_config_format_save_and_parse_round_trip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg_path = tmp.path().join("etc/lazyos/greeter.toml");
+        let cfg = GreeterConfig {
+            follow_user_theme: false,
+            theme: Some("nord".into()),
+            greeting: Some("Welcome to Hayato".into()),
+            default_session: Some("Sway".into()),
+            show_user_pills: false,
+            remember_user: false,
+            remember_session: false,
+            clock_24h: false,
+            show_power_actions: false,
+        };
+        save_greeter_config(&cfg_path, &cfg).unwrap();
+        let loaded = load_greeter_config(&cfg_path);
+        assert_eq!(loaded, cfg);
+    }
+
+    #[test]
+    fn fixed_greeter_theme_ignores_user_active_theme() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home/brunux");
+        let active_dir = home.join(".local/state/lazyos/theme");
+        fs::create_dir_all(&active_dir).unwrap();
+        fs::write(active_dir.join("active"), "nord\n").unwrap();
+
+        let cfg = tmp.path().join("greeter.toml");
+        fs::write(&cfg, "follow_user_theme = false\ntheme = \"gruvbox\"\n").unwrap();
+
+        let state = GreeterState {
+            theme: Some("dracula".into()),
+            ..Default::default()
+        };
+        let (slug, _, _) = resolve_theme_and_greeting(None, Some(&home), &state, &cfg);
+        assert_eq!(slug, "gruvbox");
     }
 }

@@ -81,3 +81,41 @@ fn prepare_session_writes_valid_foot_and_sway_configs() {
         );
     }
 }
+
+#[test]
+fn menu_greeter_resolves_and_is_listed_in_settings_rows() {
+    let by_cmd = resolve("lazyos", &["menu".into(), "greeter".into()]).unwrap();
+    assert_eq!(by_cmd.spec.path, "menu greeter");
+    assert_eq!(by_cmd.spec.shape, lazyos_cli::command::Shape::Task);
+
+    let out = Command::new(bin())
+        .args(["menu", "settings", "--rows"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("greeter\t"), "{stdout}");
+}
+
+#[test]
+fn greeter_check_honors_custom_greeter_toml_config() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg_path = tmp.path().join("greeter.toml");
+    std::fs::write(
+        &cfg_path,
+        "follow_user_theme = false\ntheme = \"nord\"\nshow_user_pills = false\nclock_24h = false\n",
+    )
+    .unwrap();
+
+    let out = Command::new(bin())
+        .args(["greeter", "--check"])
+        .env("LAZYOS_GREETER_CONFIG", &cfg_path)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{:?}", out);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("theme\tnord"), "{stdout}");
+    assert!(stdout.contains("follow_user_theme\tfalse"), "{stdout}");
+    assert!(stdout.contains("user_pills\tfalse"), "{stdout}");
+    assert!(stdout.contains("clock_24h\tfalse"), "{stdout}");
+}

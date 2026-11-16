@@ -45,6 +45,7 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("rotation", "Rotation", "swaymsg output transform"),
         ("display", "Display arrangement", "rofi-display"),
         ("theme", "Appearance & Themes", "rofi-theme"),
+        ("greeter", "Login screen (Greeter)", "lazyos menu greeter"),
         ("automount", "Auto-mount USB drives", "automount.conf"),
         ("tablet", "Tablet mode", "tablet-mode toggle"),
         (
@@ -368,6 +369,14 @@ fn build_rows() -> (Vec<lazyos_ui::Row>, Vec<String>) {
     rows.push(row("Appearance & Themes", theme_current, Glyph::Palette));
     keys.push("theme".to_string());
 
+    // Login screen (Greeter)
+    rows.push(row(
+        "Login screen (Greeter)",
+        crate::greeter::settings::status_summary(),
+        Glyph::Gear,
+    ));
+    keys.push("greeter".to_string());
+
     // Auto-mount USB drives
     if automount_on() {
         rows.push(row(
@@ -582,6 +591,9 @@ pub fn menu(
             }
             "theme" => {
                 let _ = super::theme_picker::menu(terminal, design)?;
+            }
+            "greeter" => {
+                let _ = crate::greeter::settings::menu(terminal, design)?;
             }
             "automount" => {
                 let conf = automount_conf();

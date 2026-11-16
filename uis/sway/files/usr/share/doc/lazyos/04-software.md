@@ -621,8 +621,18 @@ automatically picks up the active user theme (and lets you cycle all 16 themes
 live with **F4** or **Ctrl+T**, switch sessions with **F2** / **Ctrl+S**, or
 trigger Sleep / Reboot / Shut down with Cancel-first confirmation). To preview
 it inside an open session without logging out, run `lazyos greeter --preview`
-(press **Esc** to close); to revert to raw VT7 fallback in `/etc/greetd/config.toml`,
-add `--tty` to `/usr/bin/lazyos-greeter --session --tty`. The lock screen
+(press **Esc** to close, or **Ctrl+G** / **F9** / **Settings** to tweak defaults live);
+to revert to raw VT7 fallback in `/etc/greetd/config.toml`,
+add `--tty` to `/usr/bin/lazyos-greeter --session --tty`.
+
+Defaults for the boot greeter live in `/etc/lazyos/greeter.toml` and can be
+configured interactively from **Settings → Login screen (Greeter)**, the root
+menu (`Greeter settings`), `lazyos menu greeter`, or `lazyos greeter settings`:
+toggle whether the greeter follows the last user's active theme or uses a fixed
+default theme across all 16 palettes, show or hide user account pills, enable
+or disable remembering the last username/session, set the default desktop session,
+switch between 24-hour and 12-hour clock formatting, show or hide power buttons,
+and customize the greeting banner. The lock screen
 (`swaylock`) uses the theme's colours for its indicator ring and the theme's
 wallpaper as its background image.
 
