@@ -37,13 +37,18 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
 5. **Dual density support**: `Screen::key` and `Screen::hit` receive `&Design` (`$XDG_RUNTIME_DIR/lazyos-tablet`)
    rather than caching hit boxes across normal vs tablet row spacing.
 6. **Generated glyph & icon tables**:
-   - Nerd Font codepoints: edit `scripts/make-glyphs.sh`, never hand-edit `glyphs/table.rs`.
+   - Glyph codepoints (`Symbols Nerd Font Mono` + `Font Awesome 6 Free Solid` + `Font Awesome 6 Brands Regular`): edit `scripts/make-glyphs.sh`, never hand-edit `glyphs/table.rs`.
    - PNG app/notification icons: edit `scripts/make-icons.sh` tables and regenerate PNGs.
    - Brand SVGs -> PNGs: `scripts/make-brand.sh` (outputs `brand/apple-touch-icon.png`, wallpapers, wordmark).
    - Theme templates: edit `rust/crates/lazyos-theme/templates/` + `scripts/make-theme.sh`.
 7. **Image codecs**: `image` crate features stay minimal (`png`, `jpeg`) to protect build time & binary size.
 8. **Version invariant**: `VERSION` at the repo root is compiled into `lazyos --version` via
    `include_str!`. Keep it valid semver `x.y.z` matching releases.
+9. **Multi-input cursor & contrast contract**: Screens with multiple text inputs (`InstallerScreen`,
+   `GreeterScreen`, `GreeterSettingsScreen`) must render via `Input::render_field(..., focused, blink_on, bg_role, ...)`
+   so only the active input shows the accent bar and blinking 500 ms cursor (solid when
+   `reduced_motion`), and inputs inside `ColorRole::Surface` cards use `ColorRole::Bg` to preserve
+   palette contrast across Solarized Dark (`Surface == Selection`) and light themes.
 
 ## Cross-Repo Boundaries & Pure-Rust Installer (No Hardcoded Paths!)
 - Never put device-specific keymaps, udev rules, IRQ tuning, or board hacks into `uis/sway/files/`.

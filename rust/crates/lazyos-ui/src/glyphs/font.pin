@@ -3,8 +3,9 @@
 # compare them with the font installed on the machine: a font upgrade that drops
 # a codepoint turns that row into an empty box, and nothing logs it.
 family=Symbols Nerd Font Mono
+extra=Font Awesome 6 Free Solid, Font Awesome 6 Brands Regular
 file=SymbolsNerdFontMono-Regular.ttf
 sha256=b5c6ae7c7542b07abba3f13077f1a095e4ccaff7fe3c2128d25a3561aaefd7d2
 nerd=3.5.1
-drawn=93
-fallback=8
+drawn=101
+fallback=0

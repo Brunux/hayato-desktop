@@ -18,6 +18,7 @@ use super::Glyph;
 /// installed on the machine: a font upgrade that drops a codepoint has to fail
 /// the report, not turn a row into a hole.
 pub const FONT_FAMILY: &str = "Symbols Nerd Font Mono";
+pub const EXTRA_FAMILIES: &str = "Font Awesome 6 Free Solid, Font Awesome 6 Brands Regular";
 pub const FONT_FILE: &str = "SymbolsNerdFontMono-Regular.ttf";
 pub const FONT_SHA256: &str = "b5c6ae7c7542b07abba3f13077f1a095e4ccaff7fe3c2128d25a3561aaefd7d2";
 
@@ -25,8 +26,8 @@ pub const FONT_SHA256: &str = "b5c6ae7c7542b07abba3f13077f1a095e4ccaff7fe3c2128d
 pub const NERD_VERSION: &str = "3.5.1";
 
 /// How many names the font draws, and how many fall back to text.
-pub const DRAWN: usize = 93;
-pub const FALLBACK: usize = 8;
+pub const DRAWN: usize = 101;
+pub const FALLBACK: usize = 0;
 
 pub(crate) struct Entry {
     pub glyph: Glyph,
@@ -191,23 +192,23 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Keyboard,
-        draw: None,
+        draw: Some("\u{f11c}"),
     },
     Entry {
         glyph: Glyph::Wifi,
-        draw: None,
+        draw: Some("\u{f1eb}"),
     },
     Entry {
         glyph: Glyph::Bluetooth,
-        draw: None,
+        draw: Some("\u{f293}"),
     },
     Entry {
         glyph: Glyph::Battery,
-        draw: None,
+        draw: Some("\u{f240}"),
     },
     Entry {
         glyph: Glyph::Mouse,
-        draw: None,
+        draw: Some("\u{f245}"),
     },
     Entry {
         glyph: Glyph::Network,
@@ -287,11 +288,11 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Crop,
-        draw: None,
+        draw: Some("\u{f125}"),
     },
     Entry {
         glyph: Glyph::Qr,
-        draw: None,
+        draw: Some("\u{f029}"),
     },
     Entry {
         glyph: Glyph::Clipboard,
@@ -331,7 +332,7 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Calculator,
-        draw: None,
+        draw: Some("\u{f1ec}"),
     },
     Entry {
         glyph: Glyph::Play,

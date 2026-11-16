@@ -1035,6 +1035,11 @@ impl ListState {
             let row = &self.rows[*row_index];
             let y = area.y + line as u16 * stride;
             let selected = focused && index == self.cursor;
+            let row_bg = if selected {
+                design.color(ColorRole::Selection)
+            } else {
+                design.color(ColorRole::Bg)
+            };
             let mut x = area.x;
             if selected {
                 let rect = Rect {
@@ -1043,54 +1048,41 @@ impl ListState {
                     width: area.width,
                     height: 1,
                 };
-                fill(
-                    buf,
-                    rect,
-                    Style::default().bg(design.color(ColorRole::Selection)),
-                );
+                fill(buf, rect, Style::default().bg(row_bg));
                 x = put(
                     buf,
                     x,
                     y,
                     "\u{258d} ",
                     area.width,
-                    design.style(TextStyle::Title),
+                    design.style(TextStyle::Title).bg(row_bg),
                 );
             } else {
-                x = put(buf, x, y, "  ", area.width, design.style(TextStyle::Dim));
+                x = put(
+                    buf,
+                    x,
+                    y,
+                    "  ",
+                    area.width,
+                    design.style(TextStyle::Dim).bg(row_bg),
+                );
             }
             if self.glyph_width > 0 {
+                let glyph_style = design.style(TextStyle::Body).bg(row_bg);
                 let mut room = self.glyph_width;
                 if let Some(glyph) = &row.glyph {
                     let width = UnicodeWidthStr::width(glyph.as_str()) as u16;
-                    x = put(
-                        buf,
-                        x,
-                        y,
-                        glyph,
-                        area.right() - x,
-                        design.style(TextStyle::Body),
-                    );
+                    x = put(buf, x, y, glyph, area.right() - x, glyph_style);
                     room = room.saturating_sub(width);
                 }
                 // A row with no picture of its own still spends the column, or
                 // its label starts further left than every other row's.
-                x = put(
-                    buf,
-                    x,
-                    y,
-                    spaces(room),
-                    area.right() - x,
-                    design.style(TextStyle::Body),
-                );
-                x = put(
-                    buf,
-                    x,
-                    y,
-                    " ",
-                    area.right() - x,
-                    design.style(TextStyle::Body),
-                );
+                x = put(buf, x, y, spaces(room), area.right() - x, glyph_style);
+                // Nerd Font / Font Awesome glyphs are slightly wider than one
+                // monospace cell in foot, so single-cell icons get 2 spaces to
+                // avoid visually crowding the label (keeping label col == 5).
+                let gap = if self.glyph_width <= 1 { "  " } else { " " };
+                x = put(buf, x, y, gap, area.right() - x, glyph_style);
             }
             let value_width = row
                 .value
@@ -1099,9 +1091,9 @@ impl ListState {
                 .unwrap_or(0);
             let label_room = area.right().saturating_sub(x + value_width + 1);
             let style = if selected {
-                design.style(TextStyle::Title)
+                design.style(TextStyle::Title).bg(row_bg)
             } else {
-                design.style(TextStyle::Body)
+                design.style(TextStyle::Body).bg(row_bg)
             };
             let mut label_end = put_trunc(buf, x, y, &row.label, label_room, style);
             if let Some(detail) = &row.detail {
@@ -1112,14 +1104,14 @@ impl ListState {
                     y,
                     detail,
                     area.right().saturating_sub(label_end + value_width),
-                    design.style(TextStyle::Dim),
+                    design.style(TextStyle::Dim).bg(row_bg),
                 );
             }
             if let Some(value) = &row.value {
                 let value_style = if selected {
-                    design.style(TextStyle::Title)
+                    design.style(TextStyle::Title).bg(row_bg)
                 } else {
-                    design.style(TextStyle::Dim)
+                    design.style(TextStyle::Dim).bg(row_bg)
                 };
                 put_right(
                     buf,
@@ -1980,11 +1972,13 @@ impl Input {
     /// wider than the field shows its tail, because the end is where the
     /// person is typing.
     pub fn render(&self, area: Rect, buf: &mut Buffer, design: &Design, placeholder: &str) {
-        self.render_styled(
+        self.render_field(
             area,
             buf,
             design,
             placeholder,
+            true,
+            true,
             ColorRole::Surface,
             TextStyle::Body,
         );
@@ -2001,51 +1995,173 @@ impl Input {
         bg_role: ColorRole,
         text_style: TextStyle,
     ) {
+        self.render_field(
+            area,
+            buf,
+            design,
+            placeholder,
+            true,
+            true,
+            bg_role,
+            text_style,
+        );
+    }
+
+    /// Render the input field with explicit focus and blink state, a custom
+    /// background role and text style, and zero heap allocations.
+    ///
+    /// When `focused` is true, column `area.x` carries an accent focus bar
+    /// (`\u{258d}`) and the cursor highlights at `self.cursor` using
+    /// `ColorRole::Accent` when `blink_on || design.reduced_motion()`. When
+    /// `focused` is false, no cursor or focus bar is drawn.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_field(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        design: &Design,
+        placeholder: &str,
+        focused: bool,
+        blink_on: bool,
+        bg_role: ColorRole,
+        text_style: TextStyle,
+    ) {
         if area.width < 2 || area.height == 0 {
             return;
         }
         let bg = design.color(bg_role);
+        let accent = design.color(ColorRole::Accent);
         fill(
             buf,
             Rect { height: 1, ..area },
             Style::default().bg(bg).fg(design.color(ColorRole::Text)),
         );
+        if focused {
+            put(
+                buf,
+                area.x,
+                area.y,
+                "\u{258d}",
+                1,
+                Style::default().fg(accent).bg(bg),
+            );
+        }
         let room = area.width.saturating_sub(2);
         let x = area.x + 1;
+        let normal_style = design.style(text_style).bg(bg);
+        let cursor_visible = focused && (blink_on || design.reduced_motion());
+        let cursor_style = if cursor_visible {
+            Style::default()
+                .fg(design.color(ColorRole::Bg))
+                .bg(accent)
+                .add_modifier(ratatui::style::Modifier::BOLD)
+        } else if focused {
+            normal_style.add_modifier(ratatui::style::Modifier::UNDERLINED)
+        } else {
+            normal_style
+        };
+
         if self.text.is_empty() {
-            put_trunc(
-                buf,
-                x + 1,
-                area.y,
-                placeholder,
-                room.saturating_sub(1),
-                design.style(TextStyle::Dim).bg(bg),
-            );
-            put(buf, x, area.y, " ", 1, design.style(TextStyle::Key));
+            let ph_style = design.style(TextStyle::Dim).bg(bg);
+            if focused {
+                let mut ph = placeholder.chars();
+                if let Some(first_ch) = ph.next() {
+                    let mut tmp = [0u8; 4];
+                    let first_str = first_ch.encode_utf8(&mut tmp);
+                    let first_style = if cursor_visible {
+                        cursor_style
+                    } else {
+                        ph_style.add_modifier(ratatui::style::Modifier::UNDERLINED)
+                    };
+                    put(buf, x, area.y, first_str, 1, first_style);
+                    put_trunc(
+                        buf,
+                        x + 1,
+                        area.y,
+                        ph.as_str(),
+                        room.saturating_sub(1),
+                        ph_style,
+                    );
+                } else {
+                    put(buf, x, area.y, " ", 1, cursor_style);
+                }
+            } else {
+                put_trunc(buf, x, area.y, placeholder, room, ph_style);
+            }
             return;
         }
-        let normal_style = design.style(text_style).bg(bg);
-        let cursor_style = design.style(TextStyle::Key);
+
         if self.masked {
             const STARS: &str = "****************************************************************************************************";
-            let count = self.text.chars().count();
-            let draw_len = (count as u16).min(room);
-            let stars_slice = if (draw_len as usize) <= STARS.len() {
-                &STARS[..draw_len as usize]
+            let char_count = self.text.chars().count();
+            let cur_chars = self.text[..self.cursor.min(self.text.len())]
+                .chars()
+                .count();
+            let tail_reserve = if focused && cur_chars >= char_count {
+                1
             } else {
-                &STARS[..STARS.len()]
+                0
             };
-            let end = put(buf, x, area.y, stars_slice, room, normal_style);
-            put(buf, end, area.y, " ", 1, cursor_style);
+            let max_vis = room.saturating_sub(tail_reserve) as usize;
+            let mut start_char = char_count.saturating_sub(max_vis);
+            if cur_chars < start_char {
+                start_char = cur_chars;
+            }
+            let vis_chars = char_count.saturating_sub(start_char).min(room as usize);
+            let cur_offset = cur_chars.saturating_sub(start_char).min(vis_chars);
+            let before_len = cur_offset.min(STARS.len());
+            let c1 = put(buf, x, area.y, &STARS[..before_len], room, normal_style);
+            if focused {
+                if cur_offset < vis_chars {
+                    let used = c1.saturating_sub(x);
+                    let c2 = put(
+                        buf,
+                        c1,
+                        area.y,
+                        "*",
+                        room.saturating_sub(used),
+                        cursor_style,
+                    );
+                    let used2 = c2.saturating_sub(x);
+                    let after_len = vis_chars.saturating_sub(cur_offset + 1).min(STARS.len());
+                    put(
+                        buf,
+                        c2,
+                        area.y,
+                        &STARS[..after_len],
+                        room.saturating_sub(used2),
+                        normal_style,
+                    );
+                } else if c1 < x + room {
+                    put(buf, c1, area.y, " ", 1, cursor_style);
+                }
+            } else {
+                let rest = vis_chars.saturating_sub(before_len).min(STARS.len());
+                let used = c1.saturating_sub(x);
+                put(
+                    buf,
+                    c1,
+                    area.y,
+                    &STARS[..rest],
+                    room.saturating_sub(used),
+                    normal_style,
+                );
+            }
             return;
         }
+
         let cur = self.cursor.min(self.text.len());
         // The tail that fits, measured in cells from the end.
         let mut start = self.text.len();
         let mut width = 0u16;
+        let tail_reserve = if focused && cur >= self.text.len() {
+            1
+        } else {
+            0
+        };
         for (index, ch) in self.text.char_indices().rev() {
             let w = UnicodeWidthStr::width(ch.encode_utf8(&mut [0; 4]) as &str) as u16;
-            if width + w + 1 > room {
+            if width + w + tail_reserve > room {
                 break;
             }
             width += w;
@@ -2054,9 +2170,13 @@ impl Input {
         if cur < start {
             start = cur;
         }
-        if cur >= self.text.len() {
+        if !focused {
+            put(buf, x, area.y, &self.text[start..], room, normal_style);
+        } else if cur >= self.text.len() {
             let end = put(buf, x, area.y, &self.text[start..], room, normal_style);
-            put(buf, end, area.y, " ", 1, cursor_style);
+            if end < x + room {
+                put(buf, end, area.y, " ", 1, cursor_style);
+            }
         } else {
             let next = self.next_boundary(cur);
             let before = &self.text[start..cur];
@@ -2116,12 +2236,15 @@ impl ActionItem {
     fn pill_width(&self) -> u16 {
         let g_w = self
             .glyph
-            .map(|g| UnicodeWidthStr::width(g.cell()) as u16 + 1)
+            .map(|g| {
+                let w = UnicodeWidthStr::width(g.cell()) as u16;
+                w + if w <= 1 { 2 } else { 1 }
+            })
             .unwrap_or(0);
         let k_w = UnicodeWidthStr::width(self.key) as u16;
         let l_w = UnicodeWidthStr::width(self.label.as_str()) as u16;
-        // " [key] glyph label "
-        2 + k_w + 1 + g_w + l_w + 1
+        // " [key] [glyph  ]label "
+        1 + k_w + 1 + g_w + l_w + 1
     }
 }
 
@@ -2242,6 +2365,19 @@ impl ActionStrip {
 
     /// Render the action strip on a single row with zero heap allocations.
     pub fn render(&self, area: Rect, buf: &mut Buffer, design: &Design) {
+        self.render_on(area, buf, design, ColorRole::Surface);
+    }
+
+    /// Render the action strip on a specific container background role
+    /// (`ColorRole::Surface` on `Bg` screens; `ColorRole::Bg` inside `Surface`
+    /// cards so unselected pills keep distinct contrast) with zero allocations.
+    pub fn render_on(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        design: &Design,
+        unselected_bg: ColorRole,
+    ) {
         if area.width < 8 || area.height == 0 || self.items.is_empty() {
             return;
         }
@@ -2256,7 +2392,7 @@ impl ActionStrip {
             let pill_bg = if selected {
                 design.color(ColorRole::Accent)
             } else {
-                design.color(ColorRole::SurfaceAlt)
+                design.color(unselected_bg)
             };
             let key_style = if selected {
                 Style::default()
@@ -2293,8 +2429,10 @@ impl ActionStrip {
             col = put(buf, col, y, item.key, w, key_style);
             col = put(buf, col, y, " ", 1, label_style);
             if let Some(g) = item.glyph {
+                let gw = UnicodeWidthStr::width(g.cell()) as u16;
                 col = put(buf, col, y, g.cell(), 4, label_style);
-                col = put(buf, col, y, " ", 1, label_style);
+                let gap = if gw <= 1 { "  " } else { " " };
+                col = put(buf, col, y, gap, gap.len() as u16, label_style);
             }
             put(
                 buf,
@@ -2808,12 +2946,13 @@ mod tests {
     }
 
     #[test]
-    fn the_fallback_glyph_is_text() {
-        assert_eq!(Glyph::Bluetooth.codepoint(), None);
-        assert_eq!(Glyph::Bluetooth.cell(), "bt");
+    fn the_fallback_token_stays_ascii_when_icon_exists() {
+        assert_eq!(Glyph::Bluetooth.codepoint(), Some('\u{f293}'));
+        assert_eq!(Glyph::Bluetooth.cell(), "\u{f293}");
+        assert_eq!(Glyph::Bluetooth.token(), "bt");
         assert_eq!(Glyph::Folder.cell(), "\u{ea83}");
         let row = Row::new("x").glyph(Glyph::Bluetooth);
-        assert_eq!(row.glyph.as_deref(), Some("bt"));
+        assert_eq!(row.glyph.as_deref(), Some("\u{f293}"));
     }
 
     #[test]
@@ -2987,6 +3126,127 @@ mod tests {
         assert!(
             text.contains('\u{2588}') || text.contains('\u{2580}') || text.contains('\u{2584}'),
             "draw_qr rendered half-block symbols: {text:?}"
+        );
+    }
+
+    #[test]
+    fn render_field_focus_and_blink_toggle() {
+        let design = Design::solarized();
+        let area = Rect::new(0, 0, 20, 1);
+        let input = Input::with_text("abc");
+        let accent = design.color(ColorRole::Accent);
+        let bg = design.color(ColorRole::Bg);
+
+        // Focused + blink on -> left focus bar + Accent block cursor at end ("abc" -> x=1..4, cursor at x=4)
+        let mut buf = Buffer::empty(area);
+        input.render_field(
+            area,
+            &mut buf,
+            &design,
+            "type here",
+            true,
+            true,
+            ColorRole::Bg,
+            TextStyle::Body,
+        );
+        assert_eq!(buf.cell((0, 0)).unwrap().symbol(), "\u{258d}");
+        assert_eq!(buf.cell((0, 0)).unwrap().fg, accent);
+        assert_eq!(buf.cell((4, 0)).unwrap().bg, accent);
+
+        // Focused + blink off -> left focus bar stays, Accent cursor background disappears
+        let mut buf_off = Buffer::empty(area);
+        input.render_field(
+            area,
+            &mut buf_off,
+            &design,
+            "type here",
+            true,
+            false,
+            ColorRole::Bg,
+            TextStyle::Body,
+        );
+        assert_eq!(buf_off.cell((0, 0)).unwrap().symbol(), "\u{258d}");
+        assert_eq!(buf_off.cell((4, 0)).unwrap().bg, bg);
+
+        // Unfocused -> neither focus bar nor cursor block appears
+        let mut buf_unfocused = Buffer::empty(area);
+        input.render_field(
+            area,
+            &mut buf_unfocused,
+            &design,
+            "type here",
+            false,
+            true,
+            ColorRole::Bg,
+            TextStyle::Body,
+        );
+        assert_eq!(buf_unfocused.cell((0, 0)).unwrap().symbol(), " ");
+        assert_eq!(buf_unfocused.cell((4, 0)).unwrap().bg, bg);
+
+        // Reduced motion keeps cursor visible even when blink_on is false
+        let reduced = design.with_reduced_motion(true);
+        let mut buf_rm = Buffer::empty(area);
+        input.render_field(
+            area,
+            &mut buf_rm,
+            &reduced,
+            "type here",
+            true,
+            false,
+            ColorRole::Bg,
+            TextStyle::Body,
+        );
+        assert_eq!(buf_rm.cell((4, 0)).unwrap().bg, accent);
+    }
+
+    #[test]
+    fn selected_list_row_has_no_background_holes() {
+        let design = Design::solarized();
+        let selection = design.color(ColorRole::Selection);
+        let mut list = ListState::new();
+        list.set_rows(vec![
+            Row::new("Wi-Fi")
+                .glyph(Glyph::Wifi)
+                .detail("wlan0")
+                .value("connected"),
+            Row::new("Bluetooth")
+                .glyph(Glyph::Bluetooth)
+                .detail("bluez")
+                .value("off"),
+        ]);
+        list.set_cursor(1);
+        let area = Rect::new(0, 0, 50, 2);
+        let mut buf = Buffer::empty(area);
+        list.render(area, &mut buf, &design, true);
+        for x in 0..50 {
+            assert_eq!(
+                buf.cell((x, 1)).unwrap().bg,
+                selection,
+                "cell at col {x} on selected row dropped selection background"
+            );
+        }
+    }
+
+    #[test]
+    fn action_strip_pill_glyph_has_two_space_gap() {
+        let design = Design::solarized();
+        let strip = ActionStrip::new(vec![
+            ActionItem::new("scan", "F5", "Rescan").glyph(Glyph::Rotate),
+        ]);
+        let area = Rect::new(0, 0, 40, 1);
+        let mut buf = Buffer::empty(area);
+        strip.render(area, &mut buf, &design);
+        let line: String = (0..20)
+            .map(|x| buf.cell((x, 0)).unwrap().symbol().to_string())
+            .collect();
+        let expected = format!(" F5 {}  Rescan ", Glyph::Rotate.cell());
+        assert!(
+            line.starts_with(&expected),
+            "expected pill {expected:?}, got {line:?}"
+        );
+        assert_eq!(
+            strip.hit(area, expected.chars().count() as u16 - 1, 0),
+            Some("scan")
         );
     }
 }

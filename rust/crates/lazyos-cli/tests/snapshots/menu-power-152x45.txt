@@ -3,12 +3,12 @@ LazyOS · Power                                                                 
 ╭ Power ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Lock and sleep act at once; the last three ask once more first.                                                                                      │
 │                                                                                                                                                      │
-│ ▍  Lock  the session lock, now                                                                                                                      │
-│    Suspend  lock, then sleep                                                                                                                        │
-│    Hibernate  to a disk swap, if there is one                                                                                                       │
-│    Log out  back to the greeter                                                                                                                     │
-│    Reboot  asks first                                                                                                                               │
-│   ⏻ Shut down  asks first                                                                                                                            │
+│ ▍   Lock  the session lock, now                                                                                                                     │
+│     Suspend  lock, then sleep                                                                                                                       │
+│     Hibernate  to a disk swap, if there is one                                                                                                      │
+│     Log out  back to the greeter                                                                                                                    │
+│     Reboot  asks first                                                                                                                              │
+│   ⏻  Shut down  asks first                                                                                                                           │
 │                                                                                                                                                      │
 │                                                                                                                                                      │
 │                                                                                                                                                      │

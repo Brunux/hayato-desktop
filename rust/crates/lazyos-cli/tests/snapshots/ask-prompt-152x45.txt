@@ -20,7 +20,7 @@ LazyOS · AI · Ask                                                             
          │ Sends the question only, from an empty private directory.                                                                         │
          │                                                                                                                                   │
          │                                                                                                                                   │
-         │  What is the capital of France?                                                                                                   │
+         │ ▍What is the capital of France?                                                                                                   │
          │                                                                                                                                   │
          │ Enter asks · Esc goes back · it uses the agent's own account                                                                      │
          │                                                                                                                                   │

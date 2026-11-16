@@ -3,8 +3,8 @@ Search inside files · line                                                     
 ╭ Matches ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ type to narrow the matches                                                                                                                          │
 │                                                                                                                                                      │
-│▍  # Notes  ~/notes.md:1                                                                                                                             │
-│   last line  ~/notes.md:5                                                                                                                           │
+│▍   # Notes  ~/notes.md:1                                                                                                                            │
+│    last line  ~/notes.md:5                                                                                                                          │
 │                                                                                                                                                      │
 │                                                                                                                                                      │
 │                                                                                                                                                      │

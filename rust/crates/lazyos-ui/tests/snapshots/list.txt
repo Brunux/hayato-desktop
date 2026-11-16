@@ -11,7 +11,7 @@
     Emoji  1,296 rows                                              Alt+Ctrl+E
     Camera  uvcvideo                                                      row
   ⏻  Power  rofi-power                                              Alt+Escape
-  bt Bluetooth  bluez                                               Alt+Ctrl+B
+    Bluetooth  bluez                                               Alt+Ctrl+B
 
 
 
@@ -36,7 +36,7 @@
     Emoji  1,296 rows                                                                                                                      Alt+Ctrl+E
     Camera  uvcvideo                                                                                                                              row
   ⏻  Power  rofi-power                                                                                                                      Alt+Escape
-  bt Bluetooth  bluez                                                                                                                       Alt+Ctrl+B
+    Bluetooth  bluez                                                                                                                       Alt+Ctrl+B
 
 
 

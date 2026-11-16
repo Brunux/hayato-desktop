@@ -15,6 +15,7 @@
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use lazyos_ui::app::exit::{ESCAPE, OK};
@@ -282,7 +283,9 @@ impl MenuScreen {
             )));
             return Outcome::Continue;
         };
-        let id = format!("ask-{}-{}", super::now(), std::process::id());
+        static ASK_SEQ: AtomicU64 = AtomicU64::new(0);
+        let seq = ASK_SEQ.fetch_add(1, Ordering::Relaxed);
+        let id = format!("ask-{}-{}-{seq}", super::now(), std::process::id());
         let title = format!("Asking {}", choice.agent.name());
         // The window's own pid goes with the question: `--ask-run` ends the
         // agent's group when this process is gone, however it went (Escape,

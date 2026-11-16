@@ -2,38 +2,31 @@
 # Regenerate the TUI alphabet: the codepoint behind every `Glyph` name.
 #
 # The session's Rust framework (`rust/crates/lazyos-ui`) draws its rows in
-# `foot`, and a row's picture is a Nerd Font codepoint - the launcher's Font
-# Awesome images belong to rofi, where Pango resolves them and nothing has to
-# line up.  `Glyph` is the handle a command names (`Glyph::Bluetooth`, not
-# `'\u{f293}'`); this script is where a name becomes a codepoint.
+# `foot`, using `Symbols Nerd Font Mono` (`fonts-nerd-symbols`, DFSG-stripped:
+# Octicons, Codicons, Devicons, Seti, Powerline, IEC) plus the two Font Awesome
+# faces from `fonts-font-awesome-legacy` (`Font Awesome 6 Free Solid` and `Font
+# Awesome 6 Brands Regular`) listed in `foot.ini`.  `Glyph` is the handle a
+# command names (`Glyph::Bluetooth`, not `'\u{f293}'`); this script is where a
+# name becomes a codepoint.
 #
-# The table is generated, then filtered against the font that actually draws it.
-# `fonts-nerd-symbols` is DFSG-stripped: it carries the Octicons, Codicons,
-# Devicons, Seti and Powerline sets and **none** of Font Awesome or the MDI
-# plane 15, so eight of the session's names (bluetooth, wifi, battery, keyboard,
-# mouse, calculator, qr, crop) have no codepoint in it at all.  A row for one of
-# those draws its short text token instead - never a tofu box, which is a hole
-# in the row that logs nothing.  That is the rule the spec states and this
-# script enforces: a codepoint the font's character map does not list becomes
-# `draw: None`, and the column falls back to text.
+# The table is filtered against the resolved fonts' character maps: any
+# candidate missing from all of them falls back to `draw: None` (`Glyph::token`,
+# short ASCII text) instead of rendering a tofu box.
 #
 #   scripts/make-glyphs.sh                 rewrite the table and the pin
 #   scripts/make-glyphs.sh --check         exit 1 when either file is stale
 #   scripts/make-glyphs.sh --font F --charset C --out D   (the tests' form)
 #
-# The candidates below are Nerd Fonts v3.5.1 codepoints (`glyphnames.json` of
-# the `ryanoasis/nerd-fonts` repository), restricted to the sets this package
-# ships: `cod-*`, `oct-*`, `seti-*` and the one IEC symbol at U+23FB.  Nothing
-# here comes from `fa-*` or `md-*`, because those planes are exactly what the
-# stripped package leaves out - the fallbacks are the names that would need
-# them.
+# The primary pin (`FONT_FAMILY`/`FONT_SHA256`) tracks Nerd Fonts v3.5.1
+# (`Symbols Nerd Font Mono`), and `EXTRA_FAMILIES` lists the Font Awesome faces
+# verified alongside it (`bluetooth`, `wifi`, `battery`, `keyboard`, `mouse`,
+# `calculator`, `qr`, `crop`).
 #
-# Regenerating needs fontconfig (`fc-match`, `fc-query`), `sha256sum` and the
-# font itself (`fonts-nerd-symbols`) on the host.  None of that is a build
-# dependency of the image: the generated files are committed, and the image
-# carries the font as a desktop package.  `rootfs-setup.sh` ships the files with
-# the rest of the source tree, and `check-system.sh` compares the pin with the
-# font installed on the machine.
+# Regenerating needs fontconfig (`fc-match`, `fc-query`), `sha256sum`,
+# `fonts-nerd-symbols`, and `fonts-font-awesome-legacy` on the host.  None of
+# that is a build dependency of the image: the generated files are committed,
+# and `check-desktop.sh` compares the pin with the fonts installed on the
+# machine.
 
 set -eu
 
@@ -48,6 +41,7 @@ sidecar="$here/rust/crates/lazyos-ui/src/glyphs/font.pin"
 font=
 charset_file=
 check=no
+custom_font=no
 
 die() {
 	echo "make-glyphs.sh: $*" >&2
@@ -73,6 +67,7 @@ while [ $# -gt 0 ]; do
 	--font)
 		[ $# -ge 2 ] || die "--font needs a file"
 		font=$2
+		custom_font=yes
 		shift 2
 		;;
 	--charset)
@@ -142,6 +137,23 @@ if [ -z "$charset_file" ] && [ "${family#*Symbols Nerd Font}" = "$family" ]; the
 	die "'$font' is ${family:-no family}, not a Symbols Nerd Font: install fonts-nerd-symbols"
 fi
 
+extra_families=
+if [ -z "$charset_file" ] && [ "$custom_font" = no ]; then
+	for ef in "Font Awesome 6 Free Solid" "Font Awesome 6 Brands Regular"; do
+		ep=$(fc-match -f '%{file}' "$ef" 2>/dev/null) || ep=
+		[ -n "$ep" ] && [ -r "$ep" ] ||
+			die "fontconfig resolves no readable '$ef': install fonts-font-awesome-legacy on this host"
+		efam=$(fc-query --format='%{family[0]}' "$ep" 2>/dev/null) || efam=
+		[ "$efam" = "$ef" ] ||
+			die "'$ep' is ${efam:-no family}, not '$ef': install fonts-font-awesome-legacy"
+		ecs=$(fc-query --format='%{charset}' "$ep" 2>/dev/null) || ecs=
+		[ -n "$ecs" ] ||
+			die "fc-query returned no character map for '$ep'"
+		charset="$charset $ecs"
+		extra_families=${extra_families:+$extra_families, }$ef
+	done
+fi
+
 sum=$(sha256sum "$font")
 sum=${sum%% *}
 base=$(basename "$font")
@@ -198,11 +210,11 @@ Unlock eb74			# cod-unlock
 Eye ea70			# cod-eye
 Moon f4ee			# oct-moon
 Brightness f522			# oct-sun
-Keyboard -			# no codicon; Font Awesome's f11c only
-Wifi -				# Font Awesome's f1eb only
-Bluetooth -			# Font Awesome brands' f293 only
-Battery -			# Font Awesome's f240 only
-Mouse -				# Font Awesome's f245 only
+Keyboard f11c			# fa-keyboard (Font Awesome 6 Free Solid)
+Wifi f1eb			# fa-wifi (Font Awesome 6 Free Solid)
+Bluetooth f293			# fa-bluetooth-b (Font Awesome 6 Brands Regular)
+Battery f240			# fa-battery-full (Font Awesome 6 Free Solid)
+Mouse f245			# fa-arrow-pointer (Font Awesome 6 Free Solid)
 Network eb34			# cod-radio_tower
 Server eb50			# cod-server
 Database eace			# cod-database
@@ -223,8 +235,8 @@ Sync ea77			# cod-sync
 Download f409			# oct-download
 Capture eb4c			# cod-screen_full
 Camera eada			# cod-device_camera
-Crop -				# Font Awesome's f125 only
-Qr -				# Font Awesome's f029 only
+Crop f125			# fa-crop (Font Awesome 6 Free Solid)
+Qr f029				# fa-qrcode (Font Awesome 6 Free Solid)
 Clipboard ebcc			# cod-copy (the set has no clipboard proper)
 Smile eb54			# cod-smiley
 Filter eaf1			# cod-filter
@@ -234,7 +246,7 @@ Map ec05			# cod-map
 Theme eb5c			# cod-symbol_color
 Brush f48f			# oct-paintbrush
 Box eb29			# cod-package
-Calculator -			# Font Awesome's f1ec only
+Calculator f1ec			# fa-calculator (Font Awesome 6 Free Solid)
 Play eb2c			# cod-play
 Pause ead1			# cod-debug_pause
 Stop ead7			# cod-debug_stop
@@ -352,6 +364,7 @@ use super::Glyph;
 /// installed on the machine: a font upgrade that drops a codepoint has to fail
 /// the report, not turn a row into a hole.
 pub const FONT_FAMILY: &str = "$family";
+pub const EXTRA_FAMILIES: &str = "$extra_families";
 pub const FONT_FILE: &str = "$base";
 pub const FONT_SHA256: &str = "$sum";
 
@@ -382,6 +395,7 @@ cat >"$tmp/font.pin" <<EOF
 # compare them with the font installed on the machine: a font upgrade that drops
 # a codepoint turns that row into an empty box, and nothing logs it.
 family=$family
+extra=$extra_families
 file=$base
 sha256=$sum
 nerd=$nerd_version

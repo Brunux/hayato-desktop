@@ -8,6 +8,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use lazyos_theme::{Theme, builtin};
 use lazyos_ui::Glyph;
@@ -80,6 +81,8 @@ pub struct GreeterSettingsScreen {
     status: Option<(StatusKind, String)>,
     allow_preview_launch: bool,
     open_preview: bool,
+    cursor_blink_on: bool,
+    last_blink: Instant,
 
     density: Density,
     reduced_motion: bool,
@@ -184,6 +187,8 @@ impl GreeterSettingsScreen {
             status: None,
             allow_preview_launch,
             open_preview: false,
+            cursor_blink_on: true,
+            last_blink: Instant::now(),
             density,
             reduced_motion,
             header: Header::new("LazyOS").subtitle("Greeter Settings"),
@@ -221,6 +226,11 @@ impl GreeterSettingsScreen {
         let was = self.open_preview;
         self.open_preview = false;
         was
+    }
+
+    fn reset_blink(&mut self) {
+        self.cursor_blink_on = true;
+        self.last_blink = Instant::now();
     }
 
     fn rebuild_rows(&mut self) {
@@ -364,6 +374,7 @@ impl GreeterSettingsScreen {
                 if let Some(cur) = &self.config.greeting {
                     self.greeting_input.set(cur);
                 }
+                self.reset_blink();
                 self.mode = SettingsMode::EditGreeting;
             }
             _ => {}
@@ -505,11 +516,13 @@ impl GreeterSettingsScreen {
         }
         if inner.height >= 4 {
             let box_rect = Rect::new(inner.x, inner.y + 2, inner.width, 1);
-            self.greeting_input.render_styled(
+            self.greeting_input.render_field(
                 box_rect,
                 ctx.buf,
                 ctx.design,
                 DEFAULT_GREETING,
+                true,
+                self.cursor_blink_on,
                 ColorRole::Selection,
                 TextStyle::Body,
             );
@@ -601,6 +614,23 @@ impl Screen for GreeterSettingsScreen {
             self.density,
             self.reduced_motion || self.theme.motion != lazyos_theme::Motion::Full,
         ))
+    }
+
+    fn needs_tick(&self) -> Option<Duration> {
+        let blink_active = matches!(self.mode, SettingsMode::EditGreeting)
+            && !self.design().is_some_and(|d| d.reduced_motion());
+        blink_active.then_some(Duration::from_millis(500))
+    }
+
+    fn tick(&mut self) -> Outcome {
+        if matches!(self.mode, SettingsMode::EditGreeting)
+            && !self.design().is_some_and(|d| d.reduced_motion())
+            && self.last_blink.elapsed() >= Duration::from_millis(500)
+        {
+            self.cursor_blink_on = !self.cursor_blink_on;
+            self.last_blink = Instant::now();
+        }
+        Outcome::Continue
     }
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
@@ -892,7 +922,10 @@ impl Screen for GreeterSettingsScreen {
                     Outcome::Consumed
                 }
                 _ => match self.greeting_input.handle(key) {
-                    InputAction::Changed | InputAction::Submitted => Outcome::Consumed,
+                    InputAction::Changed | InputAction::Submitted => {
+                        self.reset_blink();
+                        Outcome::Consumed
+                    }
                     InputAction::Cancelled => {
                         self.mode = SettingsMode::Main;
                         Outcome::Consumed

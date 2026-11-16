@@ -32,7 +32,9 @@
 
 mod table;
 
-pub use table::{DRAWN, FALLBACK, FONT_FAMILY, FONT_FILE, FONT_SHA256, NERD_VERSION};
+pub use table::{
+    DRAWN, EXTRA_FAMILIES, FALLBACK, FONT_FAMILY, FONT_FILE, FONT_SHA256, NERD_VERSION,
+};
 
 /// One name in the alphabet.
 ///
@@ -553,6 +555,7 @@ mod tests {
     #[test]
     fn the_pin_matches_the_table() {
         assert_eq!(pin("family"), table::FONT_FAMILY);
+        assert_eq!(pin("extra"), table::EXTRA_FAMILIES);
         assert_eq!(pin("sha256"), table::FONT_SHA256);
         assert_eq!(pin("file"), table::FONT_FILE);
         assert_eq!(pin("nerd"), table::NERD_VERSION);
@@ -585,6 +588,54 @@ mod tests {
                 "{glyph:?} is named {name:?}"
             );
             assert!(seen.insert(name), "two names are both {name:?}");
+        }
+    }
+
+    #[test]
+    fn font_awesome_session_icons_resolve_to_codepoints() {
+        for glyph in [
+            Glyph::Keyboard,
+            Glyph::Wifi,
+            Glyph::Bluetooth,
+            Glyph::Battery,
+            Glyph::Mouse,
+            Glyph::Crop,
+            Glyph::Qr,
+            Glyph::Calculator,
+        ] {
+            assert!(
+                glyph.codepoint().is_some(),
+                "{glyph:?} should resolve to a Font Awesome codepoint rather than text fallback"
+            );
+            assert!(!glyph.cell().is_empty());
+        }
+    }
+
+    #[test]
+    fn every_variant_has_a_valid_short_text_fallback_token() {
+        let short = [
+            Glyph::Keyboard,
+            Glyph::Wifi,
+            Glyph::Bluetooth,
+            Glyph::Battery,
+            Glyph::Mouse,
+            Glyph::Crop,
+            Glyph::Qr,
+            Glyph::Calculator,
+        ];
+        for glyph in VARIANTS {
+            let token = glyph.token();
+            assert!(!token.is_empty(), "{glyph:?} has an empty fallback token");
+            assert!(
+                token.chars().all(|ch| ch.is_ascii_graphic()),
+                "{glyph:?} has non-graphic fallback token {token:?}"
+            );
+            if short.contains(glyph) {
+                assert!(
+                    token.chars().count() <= 4,
+                    "{glyph:?} token {token:?} is too wide for the glyph column"
+                );
+            }
         }
     }
 }

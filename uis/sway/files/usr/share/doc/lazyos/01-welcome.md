@@ -67,22 +67,17 @@ and pressing `Enter` does; fold the keyboard back and the rows become two lines
 tall so a finger can hit one, and a click on the blank line between two of them
 does nothing at all.
 
-The pictures in these windows are **Nerd Font** codepoints - one cell each,
-from the same symbol font the prompt's glyphs come from - not the Font Awesome
-images the launcher draws. A launcher row asks rofi's icon theme for a file, so
-the picture can be any size the theme has; a window row has to sit in a fixed
-column beside a label, so its picture comes from the one symbol font the image
-guarantees: `fonts-nerd-symbols`, the package `foot.ini` names after JetBrains
-Mono.
-
-That package is DFSG-stripped, and eight of the session's names are Font Awesome
-codepoints it does not carry: **Bluetooth**, **Wi-Fi**, the **battery**, the
-**keyboard**, the **touchpad**, the **calculator**, a **QR code** and **crop**
-show the short words `bt`, `wifi`, `bat`, `kbd`, `pad`, `=`, `qr` and `crop` on
-the row instead. That is the design, not a missing font: a name is only a picture
-while some font draws it, and a box is a hole in the row that logs nothing. Every
-other picture is a codepoint of that font, and `check-system.sh` asks it for each
-one.
+The pictures in these windows are one-cell glyphs drawn in `foot` from
+**Symbols Nerd Font Mono** (`fonts-nerd-symbols`: Octicons, Codicons, Devicons,
+Seti, Powerline, IEC) and **Font Awesome 6** (`Font Awesome 6 Free Solid` and
+`Font Awesome 6 Brands Regular` from `fonts-font-awesome-legacy`), matching the
+order named in `foot.ini` after JetBrains Mono. All 101 UI names — including
+**Bluetooth**, **Wi-Fi**, the **battery**, the **keyboard**, the **touchpad**,
+the **calculator**, a **QR code**, and **crop** — resolve to crisp codepoints
+instead of tofu boxes or fallback tokens, while short ASCII tokens (`bt`, `wifi`,
+`bat`, `kbd`, `pad`, `=`, `qr`, `crop`) remain compiled in as safety fallbacks if
+a font is ever missing. `check-desktop.sh` (`lazyos --glyphs` /
+`lazyos --glyph-font`) verifies every codepoint against the installed fonts.
 
 A window fades in over a third of a second and nothing else animates;
 `LAZYOS_REDUCED_MOTION=1` starts it at its final frame.

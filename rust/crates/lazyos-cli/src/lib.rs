@@ -218,6 +218,9 @@ fn global(args: &[String]) -> Option<i32> {
         "--glyph-font" => {
             let mut out = io::stdout();
             let _ = writeln!(out, "family={}", lazyos_ui::glyphs::FONT_FAMILY);
+            if !lazyos_ui::glyphs::EXTRA_FAMILIES.is_empty() {
+                let _ = writeln!(out, "extra={}", lazyos_ui::glyphs::EXTRA_FAMILIES);
+            }
             let _ = writeln!(out, "file={}", lazyos_ui::glyphs::FONT_FILE);
             let _ = writeln!(out, "sha256={}", lazyos_ui::glyphs::FONT_SHA256);
             let _ = writeln!(out, "nerd={}", lazyos_ui::glyphs::NERD_VERSION);

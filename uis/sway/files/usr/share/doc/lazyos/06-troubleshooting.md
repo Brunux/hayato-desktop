@@ -328,18 +328,20 @@ symbol font in the list is what keeps eza's icons, fastfetch and the starship
 prompt the same size as the text. If you replace the font line, keep a symbol
 font in it.
 
-**A window the framework draws** (the `lazyos` menus) shows its pictures from the
-same symbol font, and eight of its names deliberately have no picture: the
-package Debian ships is DFSG-stripped and carries none of Font Awesome, so
-Bluetooth, Wi-Fi, the battery, the keyboard, the touchpad, the calculator, a QR
-code and crop are the short words `bt`, `wifi`, `bat`, `kbd`, `pad`, `=`, `qr` and
-`crop` on the row. Those are the design, not a missing font. A **box** where any
-other picture belongs is one: `fc-match 'Symbols Nerd Font Mono'` must name
-`SymbolsNerdFontMono-Regular.ttf`, `check-system.sh` compares that file's SHA256
-with the table the windows were built from, and
+**A window the framework draws** (the `lazyos` menus and greeter) shows its
+pictures from `Symbols Nerd Font Mono` (`fonts-nerd-symbols`) plus `Font Awesome
+6 Free Solid` and `Font Awesome 6 Brands Regular` (`fonts-font-awesome-legacy`),
+all listed explicitly in `~/.config/foot/foot.ini`. Every picture name resolves
+to a real codepoint, with short ASCII fallbacks (`bt`, `wifi`, `bat`, `kbd`,
+`pad`, `=`, `qr`, `crop`) only used when a font table omits them. If a **box**
+appears where any picture belongs, check that
+`fc-match 'Symbols Nerd Font Mono'` names `SymbolsNerdFontMono-Regular.ttf` and
+`fc-match 'Font Awesome 6 Brands Regular'` names `fa-6.7.2-brands-400.ttf`;
+`check-system.sh` verifies both the primary SHA256 pin and every codepoint
+against the installed fonts, and
 
 ```sh
-sudo apt install fonts-nerd-symbols
+sudo apt install fonts-nerd-symbols fonts-font-awesome-legacy
 ```
 
 puts it back (log out and in afterwards: a running session keeps the font it

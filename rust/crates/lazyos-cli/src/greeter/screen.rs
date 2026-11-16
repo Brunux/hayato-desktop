@@ -7,7 +7,7 @@
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::Local;
 use lazyos_theme::{Theme, builtin};
@@ -191,6 +191,8 @@ pub struct GreeterScreen {
     prompt_label: String,
     challenge_open: bool,
     caps_lock: bool,
+    cursor_blink_on: bool,
+    last_blink: Instant,
 
     focus: Focus,
     mode: Mode,
@@ -347,6 +349,8 @@ impl GreeterScreen {
             prompt_label: "Password".into(),
             challenge_open: false,
             caps_lock: false,
+            cursor_blink_on: true,
+            last_blink: Instant::now(),
             focus,
             mode: Mode::Login,
             strip,
@@ -480,6 +484,11 @@ impl GreeterScreen {
         if let Some(next_pos) = self.theme_slugs.iter().position(|s| *s == self.theme_slug) {
             self.theme_list.set_cursor(next_pos);
         }
+    }
+
+    fn reset_blink(&mut self) {
+        self.cursor_blink_on = true;
+        self.last_blink = Instant::now();
     }
 
     fn reset_pam_state(&mut self) {
@@ -791,8 +800,13 @@ impl Screen for GreeterScreen {
     }
 
     fn needs_tick(&self) -> Option<Duration> {
+        let blink_active = self.mode == Mode::Login
+            && matches!(self.focus, Focus::Username | Focus::Password)
+            && !self.design().is_some_and(|d| d.reduced_motion());
         if self.runner.is_running() {
             Some(Duration::from_millis(100))
+        } else if blink_active {
+            Some(Duration::from_millis(500))
         } else if !self.clock_fixed {
             Some(Duration::from_secs(1))
         } else {
@@ -809,6 +823,14 @@ impl Screen for GreeterScreen {
                 self.date_str = d;
                 self.last_clock_sec = s;
             }
+        }
+        if self.mode == Mode::Login
+            && matches!(self.focus, Focus::Username | Focus::Password)
+            && !self.design().is_some_and(|d| d.reduced_motion())
+            && self.last_blink.elapsed() >= Duration::from_millis(500)
+        {
+            self.cursor_blink_on = !self.cursor_blink_on;
+            self.last_blink = Instant::now();
         }
 
         if let Some(res) = self.runner.poll() {
@@ -859,7 +881,7 @@ impl Screen for GreeterScreen {
         }
 
         // Center the hero + auth card cleanly inside full-bleed viewport.
-        let card_w = area.width.saturating_sub(2).clamp(32, 96);
+        let card_w = area.width.saturating_sub(2).clamp(32, 114);
         let card_h = area.height.saturating_sub(2).clamp(12, 23);
         let card_x = area.x + (area.width - card_w) / 2;
         let card_y = area.y + (area.height - card_h) / 2;
@@ -1020,13 +1042,13 @@ impl Screen for GreeterScreen {
             );
             put(
                 ctx.buf,
-                inner.x + 2,
+                inner.x + 3,
                 y,
-                "User ",
-                5,
+                "User",
+                4,
                 ctx.design.style(TextStyle::Dim).bg(bg_surface),
             );
-            let mut px = inner.x + 8;
+            let mut px = inner.x + 12.min(inner.width / 3);
             let pill_limit = self.users.len().min(MAX_USER_PILLS);
             let mut pill_idx = 0usize;
             for idx in 0..=pill_limit {
@@ -1058,8 +1080,8 @@ impl Screen for GreeterScreen {
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
-                        .fg(ctx.design.color(ColorRole::Dim))
-                        .bg(ctx.design.color(ColorRole::SurfaceAlt))
+                        .fg(ctx.design.color(ColorRole::Text))
+                        .bg(ctx.design.color(ColorRole::Bg))
                 };
                 let rect = Rect::new(px, y, w, 1);
                 fill_rect(ctx.buf, rect, pill_style);
@@ -1073,27 +1095,43 @@ impl Screen for GreeterScreen {
             y += 2;
         }
 
+        let input_x = inner.x + 12.min(inner.width / 3);
+
         // 2. Optional inline Username box when "+ Other" is active or pills are hidden
         if self.using_other_user() && y + 1 < inner.bottom() {
+            let user_focused = self.focus == Focus::Username;
+            let label_style = if user_focused {
+                Style::default()
+                    .fg(ctx.design.color(ColorRole::Accent))
+                    .bg(bg_surface)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                ctx.design.style(TextStyle::Dim).bg(bg_surface)
+            };
             put(
                 ctx.buf,
                 inner.x,
                 y,
-                "Login",
-                5,
-                ctx.design.style(TextStyle::Dim).bg(bg_surface),
+                Glyph::Tag.cell(),
+                2,
+                Style::default()
+                    .fg(ctx.design.color(if user_focused {
+                        ColorRole::Accent
+                    } else {
+                        ColorRole::Dim
+                    }))
+                    .bg(bg_surface),
             );
-            let box_rect = Rect::new(inner.x + 8, y, inner.width.saturating_sub(8), 1);
-            self.username_input.render_styled(
+            put(ctx.buf, inner.x + 3, y, "Login", 6, label_style);
+            let box_rect = Rect::new(input_x, y, inner.right().saturating_sub(input_x), 1);
+            self.username_input.render_field(
                 box_rect,
                 ctx.buf,
                 ctx.design,
                 "username",
-                if self.focus == Focus::Username {
-                    ColorRole::Selection
-                } else {
-                    ColorRole::SurfaceAlt
-                },
+                user_focused,
+                self.cursor_blink_on,
+                ColorRole::Bg,
                 TextStyle::Body,
             );
             hits.username_box = Some(box_rect);
@@ -1102,6 +1140,7 @@ impl Screen for GreeterScreen {
 
         // 3. Password / PAM prompt input box
         if y + 1 < inner.bottom() {
+            let pass_focused = self.focus == Focus::Password;
             let lock_glyph = Glyph::Key.cell();
             put(
                 ctx.buf,
@@ -1113,22 +1152,29 @@ impl Screen for GreeterScreen {
                     .fg(ctx.design.color(ColorRole::Accent))
                     .bg(bg_surface),
             );
-            let label_w = inner.width.saturating_sub(14).min(12);
+            let label_w = input_x.saturating_sub(inner.x + 4).max(4);
+            let label_style = if pass_focused {
+                Style::default()
+                    .fg(ctx.design.color(ColorRole::Accent))
+                    .bg(bg_surface)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                ctx.design.style(TextStyle::Dim).bg(bg_surface)
+            };
             put_trunc(
                 ctx.buf,
-                inner.x + 2,
+                inner.x + 3,
                 y,
                 &self.prompt_label,
                 label_w,
-                ctx.design.style(TextStyle::Dim).bg(bg_surface),
+                label_style,
             );
 
-            let input_x = inner.x + 11.min(inner.width / 3);
             let caps_reserve = if self.caps_lock { 8 } else { 0 };
             let input_w = inner.right().saturating_sub(input_x + caps_reserve);
             if input_w >= 8 {
                 let pass_rect = Rect::new(input_x, y, input_w, 1);
-                self.secret_input.render_styled(
+                self.secret_input.render_field(
                     pass_rect,
                     ctx.buf,
                     ctx.design,
@@ -1137,11 +1183,9 @@ impl Screen for GreeterScreen {
                     } else {
                         "type password"
                     },
-                    if self.focus == Focus::Password {
-                        ColorRole::Selection
-                    } else {
-                        ColorRole::SurfaceAlt
-                    },
+                    pass_focused,
+                    self.cursor_blink_on,
+                    ColorRole::Bg,
                     TextStyle::Body,
                 );
                 hits.password_box = Some(pass_rect);
@@ -1178,7 +1222,7 @@ impl Screen for GreeterScreen {
             );
             let sess_text = format!("{} ({})", active_session.name, active_session.kind.label());
             let sess_w = (sess_text.chars().count() as u16 + 2).min(inner.width / 2);
-            let sess_rect = Rect::new(inner.x + 2, y, sess_w, 1);
+            let sess_rect = Rect::new(inner.x + 3, y, sess_w, 1);
             put_trunc(
                 ctx.buf,
                 sess_rect.x,
@@ -1189,7 +1233,7 @@ impl Screen for GreeterScreen {
             );
             hits.session_pill = Some(sess_rect);
 
-            let theme_badge = format!("{} {}", Glyph::Theme.cell(), self.theme.name);
+            let theme_badge = format!("{}  {}", Glyph::Theme.cell(), self.theme.name);
             let theme_w = (theme_badge.chars().count() as u16 + 2).min(inner.width / 2);
             let theme_x = inner.right().saturating_sub(theme_w);
             if theme_x > sess_rect.right() + 1 {
@@ -1224,10 +1268,10 @@ impl Screen for GreeterScreen {
                 );
                 put_trunc(
                     ctx.buf,
-                    inner.x + 2,
+                    inner.x + 3,
                     y,
                     "Authenticating with greetd\u{2026}",
-                    inner.width.saturating_sub(2),
+                    inner.width.saturating_sub(3),
                     ctx.design.style(TextStyle::Title).bg(bg_surface),
                 );
             } else if let Some((kind, text)) = &self.status {
@@ -1250,10 +1294,10 @@ impl Screen for GreeterScreen {
                 );
                 put_trunc(
                     ctx.buf,
-                    inner.x + 2,
+                    inner.x + 3,
                     y,
                     text,
-                    inner.width.saturating_sub(2),
+                    inner.width.saturating_sub(3),
                     Style::default().fg(ctx.design.color(role)).bg(bg_surface),
                 );
             } else {
@@ -1275,7 +1319,8 @@ impl Screen for GreeterScreen {
 
         // 6. Bottom ActionStrip
         let strip_area = Rect::new(inner.x, strip_y, inner.width, 1);
-        self.strip.render(strip_area, ctx.buf, ctx.design);
+        self.strip
+            .render_on(strip_area, ctx.buf, ctx.design, ColorRole::Bg);
         hits.strip_row = Some(strip_area);
 
         *self.hits.borrow_mut() = hits;
@@ -1341,6 +1386,7 @@ impl Screen for GreeterScreen {
         let Some(id) = hit_id else {
             return Outcome::Continue;
         };
+        self.reset_blink();
         if id >= 1000 {
             let row = id - 1000;
             match self.mode {
@@ -1419,6 +1465,7 @@ impl Screen for GreeterScreen {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
         }
+        self.reset_blink();
         self.caps_lock = key.state.contains(KeyEventState::CAPS_LOCK);
 
         // If authentication is currently running, only allow Esc to cancel locally.
@@ -1906,6 +1953,7 @@ mod tests {
         let large = render_text(&mut scr, 152, 45);
         assert!(large.contains("18:30:00"));
         assert!(large.contains("Shut down"));
+        assert!(large.contains("Settings"));
     }
 
     #[test]
@@ -1923,5 +1971,56 @@ mod tests {
         assert!(out.contains("Login"));
         assert!(!out.contains("Shut down"));
         assert!(out.contains("Settings"));
+    }
+
+    #[test]
+    fn password_cursor_blinks_and_other_pill_remains_legible() {
+        let design = Design::solarized();
+        let mut scr = test_screen(true);
+        scr.reduced_motion = false;
+        scr.theme.motion = lazyos_theme::Motion::Full;
+        assert!(scr.needs_tick().is_some());
+        assert!(scr.cursor_blink_on);
+
+        scr.last_blink -= Duration::from_millis(600);
+        scr.tick();
+        assert!(!scr.cursor_blink_on);
+
+        // Typing resets the blink phase immediately to solid-on.
+        scr.key(key(KeyCode::Char('a')), &design);
+        assert!(scr.cursor_blink_on);
+
+        // Verify the rendered buffer for focused input contrast and "+ Other" pill legibility.
+        let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+        let mut app = App::new(Header::new("LazyOS"))
+            .design(design.clone())
+            .screen(&mut scr);
+        terminal.draw(|f| app.render(f)).unwrap();
+        let buf = terminal.backend().buffer();
+
+        let pass_rect = scr
+            .hits
+            .borrow()
+            .password_box
+            .expect("password box hit rect");
+        assert_eq!(
+            buf.cell((pass_rect.x, pass_rect.y)).unwrap().symbol(),
+            "\u{258d}",
+            "focused password box renders left accent focus bar"
+        );
+        assert_eq!(
+            buf.cell((pass_rect.x + 2, pass_rect.y)).unwrap().bg,
+            design.color(ColorRole::Accent),
+            "focused password box highlights active cursor cell"
+        );
+
+        let other_pill = scr.hits.borrow().user_pills[1]
+            .expect("+ Other pill rect")
+            .1;
+        let other_cell = buf.cell((other_pill.x + 2, other_pill.y)).unwrap();
+        assert_ne!(
+            other_cell.fg, other_cell.bg,
+            "unselected + Other pill text must contrast cleanly against pill fill"
+        );
     }
 }

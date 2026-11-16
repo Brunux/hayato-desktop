@@ -41,7 +41,7 @@
 # caps U+E0B6/U+E0B4 exist only in the symbol font, and drawn at its own size they
 # sit short of the segment they close - which is why ~/.config/starship.toml uses
 # triangles rather than caps.
-font=JetBrains Mono:size=11, Symbols Nerd Font Mono:size=12, Font Awesome 6 Free Solid:size=12, Material Design Icons version 6:size=12
+font=JetBrains Mono:size=11, Symbols Nerd Font Mono:size=12, Font Awesome 6 Free Solid:size=12, Font Awesome 6 Brands Regular:size=12, Material Design Icons version 6:size=12
 pad=6x6
 dpi-aware=no
 

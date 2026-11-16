@@ -1,16 +1,18 @@
 //! Full-screen interactive wizard for LazyOS installation (spec 018 & spec 023).
 
+use std::cell::RefCell;
 use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use lazyos_ui::app::{BodyCtx, Outcome, Screen};
 use lazyos_ui::design::{ColorRole, Design, TextStyle};
 use lazyos_ui::widgets::{
-    Input, KeyHint, ListAction, ListState, Row, draw_card, draw_gauge, put, put_trunc,
+    BRAILLE_SPINNER, Input, KeyHint, ListAction, ListState, Row, draw_card, draw_gauge, put,
+    put_trunc,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Rect;
@@ -60,6 +62,29 @@ impl WizardStep {
     }
 }
 
+#[derive(Clone, Default)]
+struct InstallerHits {
+    welcome_next: Option<Rect>,
+    tz_input: Option<Rect>,
+    tz_list: Option<Rect>,
+    locale_rect: Option<Rect>,
+    keymap_rect: Option<Rect>,
+    keymap_test: Option<Rect>,
+    loc_back: Option<Rect>,
+    loc_next: Option<Rect>,
+    user_inputs: [Option<Rect>; 5],
+    user_ssh: Option<Rect>,
+    user_back: Option<Rect>,
+    user_next: Option<Rect>,
+    disk_target: Option<Rect>,
+    disk_confirm: Option<Rect>,
+    disk_cancel: Option<Rect>,
+    disk_erase: Option<Rect>,
+    progress_log: Option<Rect>,
+    complete_reboot: Option<Rect>,
+    complete_exit: Option<Rect>,
+}
+
 pub struct InstallerScreen {
     pub step: WizardStep,
     pub preflight: Preflight,
@@ -96,6 +121,10 @@ pub struct InstallerScreen {
     swayidle_paused: bool,
     // Step 5: Complete
     pub complete_focus: usize,
+    // Cursor blink & mouse hit regions
+    cursor_blink_on: bool,
+    last_blink: Instant,
+    hits: RefCell<InstallerHits>,
     // Keybar cache
     keybar_hints: Vec<KeyHint>,
 }
@@ -204,12 +233,18 @@ impl InstallerScreen {
             ..Default::default()
         };
 
-        let tz_rows: Vec<Row> = COMMON_TIMEZONES
+        let mut tz_rows: Vec<Row> = COMMON_TIMEZONES
             .iter()
             .map(|&tz| Row::new(tz).detail("IANA timezone"))
             .collect();
+        if !COMMON_TIMEZONES.contains(&live_tz.as_str()) {
+            tz_rows.insert(0, Row::new(&live_tz).detail("Detected timezone"));
+        }
         let mut tz_list = ListState::new();
         tz_list.set_rows(tz_rows);
+        if let Some(pos) = tz_list.rows().iter().position(|r| r.label == live_tz) {
+            tz_list.set_cursor(pos);
+        }
 
         let boot_type = preflight.device_info.boot_type;
         let initial_state = WorkerState {
@@ -249,10 +284,62 @@ impl InstallerScreen {
             show_log_full: false,
             swayidle_paused: false,
             complete_focus: 0,
+            cursor_blink_on: true,
+            last_blink: Instant::now(),
+            hits: RefCell::new(InstallerHits::default()),
             keybar_hints: Vec::new(),
         };
         screen.update_keybar();
         screen
+    }
+
+    fn reset_blink(&mut self) {
+        self.cursor_blink_on = true;
+        self.last_blink = Instant::now();
+    }
+
+    fn focused_input_active(&self) -> bool {
+        matches!(
+            (self.step, self.loc_focus, self.user_focus, self.disk_focus),
+            (WizardStep::Localization, 0 | 4, _, _)
+                | (WizardStep::UserAccount, _, 0..=4, _)
+                | (WizardStep::DiskReview, _, _, 1)
+        )
+    }
+
+    fn try_advance_user_account(&mut self) -> Outcome {
+        self.config.fullname = self.fullname_input.text().to_string();
+        self.config.username = self.username_input.text().to_string();
+        self.config.password = self.password_input.text().to_string();
+        self.config.password_confirm = self.confirm_input.text().to_string();
+        self.config.hostname = self.hostname_input.text().to_string();
+        self.config.regenerate_ssh_keys = self.regen_ssh;
+
+        if let Err(err) = self.config.validate_user_fields() {
+            self.user_error = Some(err);
+            // Move cursor focus directly to the field that failed validation.
+            if validate_username(&self.config.username).is_err() {
+                self.user_focus = 1;
+            } else if validate_password(&self.config.password, &self.config.password_confirm)
+                .is_err()
+            {
+                self.user_focus = if self.config.password.is_empty() {
+                    2
+                } else {
+                    3
+                };
+            } else if validate_hostname(&self.config.hostname).is_err() {
+                self.user_focus = 4;
+            }
+            self.reset_blink();
+            return Outcome::Consumed;
+        }
+        self.user_error = None;
+        self.step = WizardStep::DiskReview;
+        self.disk_focus = 0; // Always start on Cancel!
+        self.reset_blink();
+        self.update_keybar();
+        Outcome::Consumed
     }
 
     fn pause_swayidle(&mut self) {
@@ -465,6 +552,8 @@ impl Screen for InstallerScreen {
     fn needs_tick(&self) -> Option<Duration> {
         if self.step == WizardStep::Progress {
             Some(Duration::from_millis(100))
+        } else if self.focused_input_active() {
+            Some(Duration::from_millis(500))
         } else {
             None
         }
@@ -472,7 +561,7 @@ impl Screen for InstallerScreen {
 
     fn tick(&mut self) -> Outcome {
         if self.step == WizardStep::Progress {
-            self.spinner_idx = (self.spinner_idx + 1) % 4;
+            self.spinner_idx = (self.spinner_idx + 1) % BRAILLE_SPINNER.len();
             let prev_first = self.worker_state.first_write;
             let prev_status = self.worker_state.status.clone();
             if let Some(state) = load_state() {
@@ -492,14 +581,224 @@ impl Screen for InstallerScreen {
                     self.update_keybar();
                 }
             }
+        } else if self.focused_input_active()
+            && self.last_blink.elapsed() >= Duration::from_millis(500)
+        {
+            self.cursor_blink_on = !self.cursor_blink_on;
+            self.last_blink = Instant::now();
         }
         Outcome::Continue
+    }
+
+    fn hit(&self, _area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        let hits = self.hits.borrow();
+        let contains = |rect: Option<Rect>| -> bool {
+            rect.is_some_and(|r| x >= r.x && x < r.right() && y >= r.y && y < r.bottom())
+        };
+        match self.step {
+            WizardStep::Welcome => contains(hits.welcome_next).then_some(1),
+            WizardStep::Localization => {
+                if contains(hits.tz_input) {
+                    return Some(10);
+                }
+                if let Some(list_rect) = hits.tz_list {
+                    if let Some(row) = self.tz_list.hit_row(list_rect, x, y, design) {
+                        return Some(1000 + row);
+                    }
+                    if contains(Some(list_rect)) {
+                        return Some(11);
+                    }
+                }
+                if contains(hits.locale_rect) {
+                    return Some(12);
+                }
+                if contains(hits.keymap_rect) {
+                    return Some(13);
+                }
+                if contains(hits.keymap_test) {
+                    return Some(14);
+                }
+                if contains(hits.loc_back) {
+                    return Some(15);
+                }
+                if contains(hits.loc_next) {
+                    return Some(16);
+                }
+                None
+            }
+            WizardStep::UserAccount => {
+                for (i, r) in hits.user_inputs.iter().enumerate() {
+                    if contains(*r) {
+                        return Some(20 + i);
+                    }
+                }
+                if contains(hits.user_ssh) {
+                    return Some(25);
+                }
+                if contains(hits.user_back) {
+                    return Some(26);
+                }
+                if contains(hits.user_next) {
+                    return Some(27);
+                }
+                None
+            }
+            WizardStep::DiskReview => {
+                if contains(hits.disk_target) {
+                    return Some(30);
+                }
+                if contains(hits.disk_confirm) {
+                    return Some(31);
+                }
+                if contains(hits.disk_cancel) {
+                    return Some(32);
+                }
+                if contains(hits.disk_erase) {
+                    return Some(33);
+                }
+                None
+            }
+            WizardStep::Progress => contains(hits.progress_log).then_some(40),
+            WizardStep::Complete => {
+                if contains(hits.complete_reboot) {
+                    Some(50)
+                } else if contains(hits.complete_exit) {
+                    Some(51)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    fn click(&mut self, hit_id: Option<usize>) -> Outcome {
+        let Some(id) = hit_id else {
+            return Outcome::Continue;
+        };
+        self.reset_blink();
+        if id >= 1000 && self.step == WizardStep::Localization {
+            let row = id - 1000;
+            self.tz_list.set_cursor(row);
+            self.loc_focus = 1;
+            if let Some(selected) = self.tz_list.selected() {
+                self.selected_tz = selected.label.clone();
+                self.config.timezone = selected.label.clone();
+            }
+            return Outcome::Consumed;
+        }
+        match id {
+            1 if self.step == WizardStep::Welcome => {
+                if self.preflight.is_safe {
+                    self.step = WizardStep::Localization;
+                    self.update_keybar();
+                    Outcome::Consumed
+                } else {
+                    Outcome::Done(lazyos_ui::app::exit::ESCAPE)
+                }
+            }
+            10 => {
+                self.loc_focus = 0;
+                Outcome::Consumed
+            }
+            11 => {
+                self.loc_focus = 1;
+                Outcome::Consumed
+            }
+            12 => {
+                self.loc_focus = 2;
+                self.locale_idx = (self.locale_idx + 1) % self.locales.len().max(1);
+                self.config.locale = self.locales[self.locale_idx].to_string();
+                Outcome::Consumed
+            }
+            13 => {
+                self.loc_focus = 3;
+                self.keymap_idx = (self.keymap_idx + 1) % self.keymaps.len().max(1);
+                self.config.keymap = self.keymaps[self.keymap_idx].to_string();
+                Outcome::Consumed
+            }
+            14 => {
+                self.loc_focus = 4;
+                Outcome::Consumed
+            }
+            15 => {
+                self.step = WizardStep::Welcome;
+                self.update_keybar();
+                Outcome::Consumed
+            }
+            16 => {
+                self.config.timezone = self.selected_tz.clone();
+                self.config.locale = self.locales[self.locale_idx].to_string();
+                self.config.keymap = self.keymaps[self.keymap_idx].to_string();
+                self.step = WizardStep::UserAccount;
+                self.update_keybar();
+                Outcome::Consumed
+            }
+            20..=24 => {
+                self.user_focus = id - 20;
+                Outcome::Consumed
+            }
+            25 => {
+                self.user_focus = 5;
+                self.regen_ssh = !self.regen_ssh;
+                self.config.regenerate_ssh_keys = self.regen_ssh;
+                Outcome::Consumed
+            }
+            26 => {
+                self.step = WizardStep::Localization;
+                self.update_keybar();
+                Outcome::Consumed
+            }
+            27 => self.try_advance_user_account(),
+            30 => {
+                self.disk_focus = 3;
+                self.cycle_target(1);
+                Outcome::Consumed
+            }
+            31 => {
+                self.disk_focus = 1;
+                Outcome::Consumed
+            }
+            32 => {
+                self.step = WizardStep::UserAccount;
+                self.update_keybar();
+                Outcome::Consumed
+            }
+            33 => {
+                self.disk_focus = 2;
+                let token = self.target_short().to_string();
+                if validate_confirmation(self.disk_confirm_input.text(), &token) {
+                    self.step = WizardStep::Progress;
+                    self.update_keybar();
+                    self.start_worker();
+                } else {
+                    self.disk_focus = 1;
+                }
+                Outcome::Consumed
+            }
+            40 if self.step == WizardStep::Progress => {
+                self.show_log_full = !self.show_log_full;
+                Outcome::Consumed
+            }
+            50 if self.step == WizardStep::Complete => {
+                self.complete_focus = 0;
+                if !self.config.dry_run {
+                    let _ = Command::new("systemctl").arg("reboot").spawn();
+                }
+                Outcome::Done(lazyos_ui::app::exit::OK)
+            }
+            51 if self.step == WizardStep::Complete => {
+                self.complete_focus = 1;
+                Outcome::Done(lazyos_ui::app::exit::OK)
+            }
+            _ => Outcome::Continue,
+        }
     }
 
     fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
         if key.kind != ratatui::crossterm::event::KeyEventKind::Press {
             return Outcome::Continue;
         }
+        self.reset_blink();
 
         match self.step {
             WizardStep::Welcome => match key.code {
@@ -574,22 +873,62 @@ impl Screen for InstallerScreen {
             return;
         }
 
-        let step_text = format!(
-            " Step {} of 6: {} ",
-            self.step as usize + 1,
-            self.step.title()
-        );
-        put(
+        let badge = format!(" Step {} of 6 ", self.step as usize + 1);
+        let badge_w = badge.chars().count() as u16;
+        let x = put(
             buf,
             area.x + 2,
             area.y,
-            &step_text,
+            &badge,
             area.width.saturating_sub(4),
-            design
-                .style(TextStyle::Key)
-                .add_modifier(Modifier::BOLD)
-                .fg(design.color(ColorRole::Accent)),
+            design.style(TextStyle::Key).add_modifier(Modifier::BOLD),
         );
+        let x = put(
+            buf,
+            x,
+            area.y,
+            &format!("  {}", self.step.title()),
+            area.right().saturating_sub(x + 2),
+            design.style(TextStyle::Title).add_modifier(Modifier::BOLD),
+        );
+        // Right-align concise step breadcrumb rail when viewport width allows.
+        let rail = "1 Welcome \u{203a} 2 Locale \u{203a} 3 Account \u{203a} 4 Disk \u{203a} 5 Install \u{203a} 6 Done";
+        let rail_w = rail.chars().count() as u16;
+        let _ = badge_w;
+        if x + 2 + rail_w <= area.right().saturating_sub(2) {
+            let steps_short = [
+                "1 Welcome",
+                "2 Locale",
+                "3 Account",
+                "4 Disk",
+                "5 Install",
+                "6 Done",
+            ];
+            let mut rx = area.right().saturating_sub(2 + rail_w);
+            for (idx, lbl) in steps_short.iter().enumerate() {
+                if idx > 0 {
+                    rx = put(
+                        buf,
+                        rx,
+                        area.y,
+                        " \u{203a} ",
+                        3,
+                        design.style(TextStyle::Dim),
+                    );
+                }
+                let st = if idx == self.step as usize {
+                    Style::default()
+                        .fg(design.color(ColorRole::Accent))
+                        .bg(design.color(ColorRole::Bg))
+                        .add_modifier(Modifier::BOLD)
+                } else if idx < self.step as usize {
+                    design.style(TextStyle::Body)
+                } else {
+                    design.style(TextStyle::Dim)
+                };
+                rx = put(buf, rx, area.y, lbl, lbl.chars().count() as u16, st);
+            }
+        }
 
         let content_area = Rect {
             x: area.x + 1,
@@ -598,14 +937,18 @@ impl Screen for InstallerScreen {
             height: area.height.saturating_sub(3),
         };
 
+        let mut hits = InstallerHits::default();
         match self.step {
-            WizardStep::Welcome => self.draw_welcome(content_area, buf, design),
-            WizardStep::Localization => self.draw_localization(content_area, buf, design),
-            WizardStep::UserAccount => self.draw_user_account(content_area, buf, design),
-            WizardStep::DiskReview => self.draw_disk_review(content_area, buf, design),
-            WizardStep::Progress => self.draw_progress(content_area, buf, design),
-            WizardStep::Complete => self.draw_complete(content_area, buf, design),
+            WizardStep::Welcome => self.draw_welcome(content_area, buf, design, &mut hits),
+            WizardStep::Localization => {
+                self.draw_localization(content_area, buf, design, &mut hits);
+            }
+            WizardStep::UserAccount => self.draw_user_account(content_area, buf, design, &mut hits),
+            WizardStep::DiskReview => self.draw_disk_review(content_area, buf, design, &mut hits),
+            WizardStep::Progress => self.draw_progress(content_area, buf, design, &mut hits),
+            WizardStep::Complete => self.draw_complete(content_area, buf, design, &mut hits),
         }
+        *self.hits.borrow_mut() = hits;
     }
 }
 
@@ -647,72 +990,111 @@ impl InstallerScreen {
                     self.loc_focus = 1;
                     return Outcome::Consumed;
                 }
-                self.tz_input.handle(key);
-                self.tz_list.set_filter(self.tz_input.text());
-                Outcome::Consumed
-            }
-            1 => match self.tz_list.handle(key, 15, design) {
-                ListAction::Activated(_) => {
+                if key.code == KeyCode::Enter {
                     if let Some(row) = self.tz_list.selected() {
                         self.selected_tz = row.label.clone();
                         self.config.timezone = row.label.clone();
                     }
-                    Outcome::Consumed
+                    self.loc_focus = 2;
+                    return Outcome::Consumed;
                 }
-                ListAction::Ignored if key.code == KeyCode::Esc => {
+                self.tz_input.handle(key);
+                self.tz_list.set_filter(self.tz_input.text());
+                Outcome::Consumed
+            }
+            1 => {
+                if key.code == KeyCode::Up && self.tz_list.cursor() == 0 {
                     self.loc_focus = 0;
-                    Outcome::Consumed
+                    return Outcome::Consumed;
                 }
-                _ => Outcome::Consumed,
-            },
+                match self.tz_list.handle(key, 15, design) {
+                    ListAction::Activated(_) => {
+                        if let Some(row) = self.tz_list.selected() {
+                            self.selected_tz = row.label.clone();
+                            self.config.timezone = row.label.clone();
+                        }
+                        self.loc_focus = 2;
+                        Outcome::Consumed
+                    }
+                    ListAction::Ignored if key.code == KeyCode::Esc => {
+                        self.loc_focus = 0;
+                        Outcome::Consumed
+                    }
+                    _ => Outcome::Consumed,
+                }
+            }
             2 => {
                 match key.code {
-                    KeyCode::Left | KeyCode::Up => {
+                    KeyCode::Left => {
                         self.locale_idx = self.locale_idx.saturating_sub(1);
                         self.config.locale = self.locales[self.locale_idx].to_string();
                     }
-                    KeyCode::Right | KeyCode::Down => {
+                    KeyCode::Right => {
                         self.locale_idx =
                             (self.locale_idx + 1).min(self.locales.len().saturating_sub(1));
                         self.config.locale = self.locales[self.locale_idx].to_string();
                     }
+                    KeyCode::Up => self.loc_focus = 1,
+                    KeyCode::Down | KeyCode::Enter => self.loc_focus = 3,
                     _ => {}
                 }
                 Outcome::Consumed
             }
             3 => {
                 match key.code {
-                    KeyCode::Left | KeyCode::Up => {
+                    KeyCode::Left => {
                         self.keymap_idx = self.keymap_idx.saturating_sub(1);
                         self.config.keymap = self.keymaps[self.keymap_idx].to_string();
                     }
-                    KeyCode::Right | KeyCode::Down => {
+                    KeyCode::Right => {
                         self.keymap_idx =
                             (self.keymap_idx + 1).min(self.keymaps.len().saturating_sub(1));
                         self.config.keymap = self.keymaps[self.keymap_idx].to_string();
+                    }
+                    KeyCode::Up => self.loc_focus = 2,
+                    KeyCode::Down | KeyCode::Enter => self.loc_focus = 4,
+                    _ => {}
+                }
+                Outcome::Consumed
+            }
+            4 => match key.code {
+                KeyCode::Up => {
+                    self.loc_focus = 3;
+                    Outcome::Consumed
+                }
+                KeyCode::Down | KeyCode::Enter => {
+                    self.loc_focus = 6;
+                    Outcome::Consumed
+                }
+                _ => {
+                    self.keymap_test.handle(key);
+                    Outcome::Consumed
+                }
+            },
+            5 => {
+                match key.code {
+                    KeyCode::Right => self.loc_focus = 6,
+                    KeyCode::Up => self.loc_focus = 4,
+                    KeyCode::Enter => {
+                        self.step = WizardStep::Welcome;
+                        self.update_keybar();
                     }
                     _ => {}
                 }
                 Outcome::Consumed
             }
-            4 => {
-                self.keymap_test.handle(key);
-                Outcome::Consumed
-            }
-            5 => {
-                if key.code == KeyCode::Enter {
-                    self.step = WizardStep::Welcome;
-                    self.update_keybar();
-                }
-                Outcome::Consumed
-            }
             6 => {
-                if key.code == KeyCode::Enter {
-                    self.config.timezone = self.selected_tz.clone();
-                    self.config.locale = self.locales[self.locale_idx].to_string();
-                    self.config.keymap = self.keymaps[self.keymap_idx].to_string();
-                    self.step = WizardStep::UserAccount;
-                    self.update_keybar();
+                match key.code {
+                    KeyCode::Left => self.loc_focus = 5,
+                    KeyCode::Up => self.loc_focus = 4,
+                    KeyCode::Enter => {
+                        self.config.timezone = self.selected_tz.clone();
+                        self.config.locale = self.locales[self.locale_idx].to_string();
+                        self.config.keymap = self.keymaps[self.keymap_idx].to_string();
+                        self.step = WizardStep::UserAccount;
+                        self.update_keybar();
+                    }
+                    _ => {}
                 }
                 Outcome::Consumed
             }
@@ -751,6 +1133,24 @@ impl InstallerScreen {
             _ => {}
         }
 
+        if (0..=4).contains(&self.user_focus) {
+            match key.code {
+                KeyCode::Down | KeyCode::Enter => {
+                    self.user_focus = if self.user_focus < 4 {
+                        self.user_focus + 1
+                    } else {
+                        5
+                    };
+                    return Outcome::Consumed;
+                }
+                KeyCode::Up => {
+                    self.user_focus = self.user_focus.saturating_sub(1);
+                    return Outcome::Consumed;
+                }
+                _ => {}
+            }
+        }
+
         match self.user_focus {
             0 => {
                 self.fullname_input.handle(key);
@@ -784,36 +1184,35 @@ impl InstallerScreen {
                 Outcome::Consumed
             }
             5 => {
-                if key.code == KeyCode::Char(' ') || key.code == KeyCode::Enter {
-                    self.regen_ssh = !self.regen_ssh;
-                    self.config.regenerate_ssh_keys = self.regen_ssh;
+                match key.code {
+                    KeyCode::Up => self.user_focus = 4,
+                    KeyCode::Down => self.user_focus = 7,
+                    KeyCode::Char(' ') | KeyCode::Enter => {
+                        self.regen_ssh = !self.regen_ssh;
+                        self.config.regenerate_ssh_keys = self.regen_ssh;
+                    }
+                    _ => {}
                 }
                 Outcome::Consumed
             }
             6 => {
-                if key.code == KeyCode::Enter {
-                    self.step = WizardStep::Localization;
-                    self.update_keybar();
+                match key.code {
+                    KeyCode::Right => self.user_focus = 7,
+                    KeyCode::Up => self.user_focus = 5,
+                    KeyCode::Enter => {
+                        self.step = WizardStep::Localization;
+                        self.update_keybar();
+                    }
+                    _ => {}
                 }
                 Outcome::Consumed
             }
             7 => {
-                if key.code == KeyCode::Enter {
-                    self.config.fullname = self.fullname_input.text().to_string();
-                    self.config.username = self.username_input.text().to_string();
-                    self.config.password = self.password_input.text().to_string();
-                    self.config.password_confirm = self.confirm_input.text().to_string();
-                    self.config.hostname = self.hostname_input.text().to_string();
-                    self.config.regenerate_ssh_keys = self.regen_ssh;
-
-                    if let Err(err) = self.config.validate_user_fields() {
-                        self.user_error = Some(err);
-                        return Outcome::Consumed;
-                    }
-                    self.user_error = None;
-                    self.step = WizardStep::DiskReview;
-                    self.disk_focus = 0; // Always start on Cancel!
-                    self.update_keybar();
+                match key.code {
+                    KeyCode::Left => self.user_focus = 6,
+                    KeyCode::Up => self.user_focus = 5,
+                    KeyCode::Enter => return self.try_advance_user_account(),
+                    _ => {}
                 }
                 Outcome::Consumed
             }
@@ -822,11 +1221,8 @@ impl InstallerScreen {
     }
 
     fn handle_disk_review_key(&mut self, key: KeyEvent) -> Outcome {
-        let max_focus = if self.preflight.candidates.len() > 1 {
-            4
-        } else {
-            3
-        };
+        let multi = self.preflight.candidates.len() > 1;
+        let max_focus = if multi { 4 } else { 3 };
         match key.code {
             KeyCode::Esc => {
                 self.step = WizardStep::UserAccount;
@@ -859,24 +1255,54 @@ impl InstallerScreen {
 
         match self.disk_focus {
             0 => {
-                if key.code == KeyCode::Enter {
-                    self.step = WizardStep::UserAccount;
-                    self.update_keybar();
+                match key.code {
+                    KeyCode::Right => self.disk_focus = 2,
+                    KeyCode::Up => self.disk_focus = 1,
+                    KeyCode::Enter => {
+                        self.step = WizardStep::UserAccount;
+                        self.update_keybar();
+                    }
+                    _ => {}
                 }
                 Outcome::Consumed
             }
             1 => {
+                match key.code {
+                    KeyCode::Up if multi => {
+                        self.disk_focus = 3;
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Down => {
+                        self.disk_focus = 0;
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Enter => {
+                        let token = self.target_short().to_string();
+                        if validate_confirmation(self.disk_confirm_input.text(), &token) {
+                            self.disk_focus = 2;
+                        }
+                        return Outcome::Consumed;
+                    }
+                    _ => {}
+                }
                 self.disk_confirm_input.handle(key);
                 Outcome::Consumed
             }
             2 => {
-                if key.code == KeyCode::Enter {
-                    let token = self.target_short().to_string();
-                    if validate_confirmation(self.disk_confirm_input.text(), &token) {
-                        self.step = WizardStep::Progress;
-                        self.update_keybar();
-                        self.start_worker();
+                match key.code {
+                    KeyCode::Left => self.disk_focus = 0,
+                    KeyCode::Up => self.disk_focus = 1,
+                    KeyCode::Enter => {
+                        let token = self.target_short().to_string();
+                        if validate_confirmation(self.disk_confirm_input.text(), &token) {
+                            self.step = WizardStep::Progress;
+                            self.update_keybar();
+                            self.start_worker();
+                        } else {
+                            self.disk_focus = 1;
+                        }
                     }
+                    _ => {}
                 }
                 Outcome::Consumed
             }
@@ -884,6 +1310,7 @@ impl InstallerScreen {
                 match key.code {
                     KeyCode::Left => self.cycle_target(-1),
                     KeyCode::Right | KeyCode::Enter => self.cycle_target(1),
+                    KeyCode::Down => self.disk_focus = 1,
                     _ => {}
                 }
                 Outcome::Consumed
@@ -892,7 +1319,13 @@ impl InstallerScreen {
         }
     }
 
-    fn draw_welcome(&self, area: Rect, buf: &mut ratatui::buffer::Buffer, design: &Design) {
+    fn draw_welcome(
+        &self,
+        area: Rect,
+        buf: &mut ratatui::buffer::Buffer,
+        design: &Design,
+        hits: &mut InstallerHits,
+    ) {
         let card = draw_card(
             buf,
             Rect {
@@ -1000,12 +1433,28 @@ impl InstallerScreen {
                 danger_area.width.saturating_sub(4),
                 design.style(TextStyle::Dim),
             );
+            let exit_y = (danger_area.bottom() + 1).min(card.bottom().saturating_sub(1));
+            if exit_y >= danger_area.bottom() && exit_y < card.bottom() {
+                let lbl = " [ Exit Installer ] ";
+                let w = (lbl.chars().count() as u16).min(card.width.saturating_sub(4));
+                let rect = Rect::new(card.x + 2, exit_y, w, 1);
+                put(
+                    buf,
+                    rect.x,
+                    rect.y,
+                    lbl,
+                    rect.width,
+                    design.style(TextStyle::Key).add_modifier(Modifier::BOLD),
+                );
+                hits.welcome_next = Some(rect);
+            }
         } else {
+            let badge_h = if card.height >= 20 { 3 } else { 1 };
             let badge_area = Rect {
                 x: card.x + 2,
                 y,
                 width: card.width.saturating_sub(4),
-                height: 3,
+                height: badge_h,
             };
             fill_rect(
                 buf,
@@ -1021,58 +1470,82 @@ impl InstallerScreen {
                     "✓ Pre-flight checks passed: target storage ready (U-Boot extlinux GPT)."
                 }
             };
+            let badge_y = if badge_h >= 3 {
+                badge_area.y + 1
+            } else {
+                badge_area.y
+            };
             put(
                 buf,
                 badge_area.x + 2,
-                badge_area.y + 1,
+                badge_y,
                 badge_msg,
                 badge_area.width.saturating_sub(4),
                 Style::default()
                     .fg(design.color(ColorRole::Accent))
+                    .bg(design.color(ColorRole::Surface))
                     .add_modifier(Modifier::BOLD),
             );
-            y += 4;
+            y += badge_h + 1;
 
-            put(
-                buf,
-                card.x + 2,
-                y,
-                "Verified Installer Utilities:",
-                card.width.saturating_sub(4),
-                design
-                    .style(TextStyle::Dim)
-                    .add_modifier(Modifier::UNDERLINED),
-            );
-            y += 1;
-            let mut col1_y = y;
-            let mut col2_y = y;
-            for (idx, tool) in self.preflight.tools.iter().enumerate() {
-                if col1_y >= card.bottom() || col2_y >= card.bottom() {
-                    break;
+            let btn_y = card.bottom().saturating_sub(1);
+            let list_bottom = btn_y.saturating_sub(1);
+            if y + 1 < list_bottom {
+                put(
+                    buf,
+                    card.x + 2,
+                    y,
+                    "Verified Installer Utilities:",
+                    card.width.saturating_sub(4),
+                    design
+                        .style(TextStyle::Dim)
+                        .add_modifier(Modifier::UNDERLINED),
+                );
+                y += 1;
+                let mut col1_y = y;
+                let mut col2_y = y;
+                for (idx, tool) in self.preflight.tools.iter().enumerate() {
+                    if col1_y >= list_bottom || col2_y >= list_bottom {
+                        break;
+                    }
+                    let status_icon = if tool.available { "✓" } else { "✗" };
+                    let text = format!("{status_icon} {:<14} ({})", tool.name, tool.description);
+                    if idx % 2 == 0 {
+                        put(
+                            buf,
+                            card.x + 4,
+                            col1_y,
+                            &text,
+                            (card.width / 2).saturating_sub(4),
+                            design.style(TextStyle::Body),
+                        );
+                        col1_y += 1;
+                    } else {
+                        put(
+                            buf,
+                            card.x + card.width / 2 + 2,
+                            col2_y,
+                            &text,
+                            (card.width / 2).saturating_sub(4),
+                            design.style(TextStyle::Body),
+                        );
+                        col2_y += 1;
+                    }
                 }
-                let status_icon = if tool.available { "✓" } else { "✗" };
-                let text = format!("{status_icon} {:<14} ({})", tool.name, tool.description);
-                if idx % 2 == 0 {
-                    put(
-                        buf,
-                        card.x + 4,
-                        col1_y,
-                        &text,
-                        (card.width / 2).saturating_sub(4),
-                        design.style(TextStyle::Body),
-                    );
-                    col1_y += 1;
-                } else {
-                    put(
-                        buf,
-                        card.x + card.width / 2 + 2,
-                        col2_y,
-                        &text,
-                        (card.width / 2).saturating_sub(4),
-                        design.style(TextStyle::Body),
-                    );
-                    col2_y += 1;
-                }
+            }
+            if btn_y > y && btn_y < card.bottom() {
+                let next_lbl = " [ Continue: Localization > ] ";
+                let w = (next_lbl.chars().count() as u16).min(card.width.saturating_sub(4));
+                let rect = Rect::new(card.x + 2, btn_y, w, 1);
+                put(
+                    buf,
+                    rect.x,
+                    rect.y,
+                    next_lbl,
+                    rect.width,
+                    design.style(TextStyle::Key).add_modifier(Modifier::BOLD),
+                );
+                hits.welcome_next = Some(rect);
             }
         }
     }
@@ -1082,6 +1555,7 @@ impl InstallerScreen {
         area: Rect,
         buf: &mut ratatui::buffer::Buffer,
         design: &Design,
+        hits: &mut InstallerHits,
     ) {
         let left_w = area.width / 2;
         let right_w = area.width.saturating_sub(left_w);
@@ -1099,37 +1573,48 @@ impl InstallerScreen {
             self.loc_focus == 0 || self.loc_focus == 1,
         );
 
+        let filter_label_style = if self.loc_focus == 0 {
+            Style::default()
+                .fg(design.color(ColorRole::Accent))
+                .add_modifier(Modifier::BOLD)
+        } else {
+            design.style(TextStyle::Dim)
+        };
         put(
             buf,
             tz_card.x + 1,
             tz_card.y,
             "Filter Timezones:",
             tz_card.width.saturating_sub(2),
-            design.style(TextStyle::Dim),
+            filter_label_style,
         );
-        self.tz_input.render(
-            Rect {
-                x: tz_card.x + 1,
-                y: tz_card.y + 1,
-                width: tz_card.width.saturating_sub(2),
-                height: 1,
-            },
+        let tz_input_rect = Rect {
+            x: tz_card.x + 1,
+            y: tz_card.y + 1,
+            width: tz_card.width.saturating_sub(2),
+            height: 1,
+        };
+        self.tz_input.render_field(
+            tz_input_rect,
             buf,
             design,
             "Type to filter (e.g. America, Europe)...",
+            self.loc_focus == 0,
+            self.cursor_blink_on,
+            ColorRole::Surface,
+            TextStyle::Body,
         );
+        hits.tz_input = Some(tz_input_rect);
 
-        self.tz_list.render(
-            Rect {
-                x: tz_card.x + 1,
-                y: tz_card.y + 3,
-                width: tz_card.width.saturating_sub(2),
-                height: tz_card.height.saturating_sub(4),
-            },
-            buf,
-            design,
-            self.loc_focus == 1,
-        );
+        let tz_list_rect = Rect {
+            x: tz_card.x + 1,
+            y: tz_card.y + 3,
+            width: tz_card.width.saturating_sub(2),
+            height: tz_card.height.saturating_sub(4),
+        };
+        self.tz_list
+            .render(tz_list_rect, buf, design, self.loc_focus == 1);
+        hits.tz_list = Some(tz_list_rect);
 
         let right_card = draw_card(
             buf,
@@ -1144,7 +1629,8 @@ impl InstallerScreen {
             self.loc_focus >= 2,
         );
 
-        let mut y = right_card.y + 1;
+        let compact = right_card.height < 18;
+        let mut y = right_card.y + if compact { 0 } else { 1 };
         put(
             buf,
             right_card.x + 2,
@@ -1160,68 +1646,94 @@ impl InstallerScreen {
         } else {
             design.style(TextStyle::Body)
         };
+        let loc_rect = Rect::new(right_card.x + 2, y, right_card.width.saturating_sub(4), 1);
         put(
             buf,
-            right_card.x + 2,
-            y,
+            loc_rect.x,
+            loc_rect.y,
             &format!("System Locale:  < {} >", self.locales[self.locale_idx]),
-            right_card.width.saturating_sub(4),
+            loc_rect.width,
             loc_style,
         );
-        put(
-            buf,
-            right_card.x + 2,
-            y + 1,
-            "(Use Left/Right arrow keys to switch locale)",
-            right_card.width.saturating_sub(4),
-            design.style(TextStyle::Dim),
-        );
-        y += 3;
+        hits.locale_rect = Some(loc_rect);
+        if !compact {
+            put(
+                buf,
+                right_card.x + 2,
+                y + 1,
+                "(Left/Right to switch locale)",
+                right_card.width.saturating_sub(4),
+                design.style(TextStyle::Dim),
+            );
+            y += 3;
+        } else {
+            y += 2;
+        }
 
         let kbd_style = if self.loc_focus == 3 {
             design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
         } else {
             design.style(TextStyle::Body)
         };
+        let kbd_rect = Rect::new(right_card.x + 2, y, right_card.width.saturating_sub(4), 1);
         put(
             buf,
-            right_card.x + 2,
-            y,
+            kbd_rect.x,
+            kbd_rect.y,
             &format!("Keyboard Layout:  < {} >", self.keymaps[self.keymap_idx]),
-            right_card.width.saturating_sub(4),
+            kbd_rect.width,
             kbd_style,
         );
-        put(
-            buf,
-            right_card.x + 2,
-            y + 1,
-            "(Use Left/Right arrow keys to switch keymap)",
-            right_card.width.saturating_sub(4),
-            design.style(TextStyle::Dim),
-        );
-        y += 3;
+        hits.keymap_rect = Some(kbd_rect);
+        if !compact {
+            put(
+                buf,
+                right_card.x + 2,
+                y + 1,
+                "(Left/Right to switch keymap)",
+                right_card.width.saturating_sub(4),
+                design.style(TextStyle::Dim),
+            );
+            y += 3;
+        } else {
+            y += 2;
+        }
 
+        let test_label_style = if self.loc_focus == 4 {
+            Style::default()
+                .fg(design.color(ColorRole::Accent))
+                .add_modifier(Modifier::BOLD)
+        } else {
+            design.style(TextStyle::Dim)
+        };
         put(
             buf,
             right_card.x + 2,
             y,
-            "Interactive Keyboard Test (Type here to verify symbols):",
+            "Interactive Keyboard Test (verify layout):",
             right_card.width.saturating_sub(4),
-            design.style(TextStyle::Dim),
+            test_label_style,
         );
         y += 1;
-        self.keymap_test.render(
-            Rect {
-                x: right_card.x + 2,
-                y,
-                width: right_card.width.saturating_sub(4),
-                height: 1,
-            },
+        let test_rect = Rect {
+            x: right_card.x + 2,
+            y,
+            width: right_card.width.saturating_sub(4),
+            height: 1,
+        };
+        self.keymap_test.render_field(
+            test_rect,
             buf,
             design,
-            "Type test keys: @ # $ % & / ( ) = ? ¡ ¿ ~",
+            "Type test keys: @ # $ % & / ( ) = ? ~",
+            self.loc_focus == 4,
+            self.cursor_blink_on,
+            ColorRole::Surface,
+            TextStyle::Body,
         );
-        y += 3;
+        hits.keymap_test = Some(test_rect);
+        y += if compact { 2 } else { 3 };
+        let btn_y = y.min(right_card.bottom().saturating_sub(1));
 
         let back_style = if self.loc_focus == 5 {
             design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
@@ -1234,15 +1746,21 @@ impl InstallerScreen {
             design.style(TextStyle::Body)
         };
 
-        put(buf, right_card.x + 4, y, "[ < Back ]", 10, back_style);
-        put(
-            buf,
-            right_card.x + 18,
-            y,
-            "[ Next: User Account > ]",
-            24,
-            next_style,
-        );
+        let back_lbl = "[ < Back ]";
+        let back_w = back_lbl.chars().count() as u16;
+        let back_x = right_card.x + 2;
+        put(buf, back_x, btn_y, back_lbl, back_w, back_style);
+        hits.loc_back = Some(Rect::new(back_x, btn_y, back_w, 1));
+
+        let next_lbl = if right_card.width >= 40 {
+            "[ Next: User Account > ]"
+        } else {
+            "[ Next: User > ]"
+        };
+        let next_w = next_lbl.chars().count() as u16;
+        let next_x = (back_x + back_w + 2).min(right_card.right().saturating_sub(next_w + 1));
+        put(buf, next_x, btn_y, next_lbl, next_w, next_style);
+        hits.loc_next = Some(Rect::new(next_x, btn_y, next_w, 1));
     }
 
     fn draw_user_account(
@@ -1250,122 +1768,255 @@ impl InstallerScreen {
         area: Rect,
         buf: &mut ratatui::buffer::Buffer,
         design: &Design,
+        hits: &mut InstallerHits,
     ) {
+        let card_rect = if area.width < 100 {
+            Rect {
+                x: area.x + 1,
+                y: area.y,
+                width: area.width.saturating_sub(2),
+                height: area.height,
+            }
+        } else {
+            let w = ((area.width * 2) / 3).clamp(72, 96);
+            Rect {
+                x: area.x + area.width.saturating_sub(w) / 2,
+                y: area.y,
+                width: w,
+                height: area.height,
+            }
+        };
         let card = draw_card(
             buf,
-            Rect {
-                x: area.x + area.width / 6,
-                y: area.y,
-                width: (area.width * 2) / 3,
-                height: area.height,
-            },
+            card_rect,
             design,
             Some("Primary User Account & Machine Identity"),
             true,
         );
 
-        let mut y = card.y + 1;
+        let compact = card.height < 21;
+        let mut y = card.y + if compact { 0 } else { 1 };
+        let pw_typed =
+            !self.password_input.text().is_empty() && !self.confirm_input.text().is_empty();
+        let pw_match = self.password_input.text() == self.confirm_input.text();
+
         let fields = [
             (
                 "Full Name (Display Name):",
+                "Full Name:",
                 "Your full name (e.g. Bruno)",
-                0,
+                0usize,
             ),
             (
                 "POSIX Username (Login & Sudo User):",
+                "POSIX Username:",
                 "lowercase login name (e.g. brunux)",
                 1,
             ),
-            ("Account Password:", "enter password", 2),
-            ("Confirm Password:", "re-type password", 3),
-            ("System Hostname:", "network hostname (default lazyos)", 4),
+            (
+                "Account Password:",
+                "Account Password:",
+                "enter password",
+                2,
+            ),
+            (
+                "Confirm Password:",
+                "Confirm Password:",
+                "re-type password",
+                3,
+            ),
+            (
+                "System Hostname:",
+                "System Hostname:",
+                "network hostname (default lazyos)",
+                4,
+            ),
         ];
 
-        for (label, ph, idx) in fields {
-            put(
-                buf,
-                card.x + 4,
-                y,
-                label,
-                card.width.saturating_sub(8),
-                design.style(TextStyle::Dim),
-            );
-            y += 1;
-            let rect = Rect {
-                x: card.x + 4,
-                y,
-                width: card.width.saturating_sub(8),
-                height: 1,
+        for (wide_label, short_label, ph, idx) in fields {
+            let focused = self.user_focus == idx;
+            let label_style = if focused {
+                Style::default()
+                    .fg(design.color(ColorRole::Accent))
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                design.style(TextStyle::Dim)
             };
-            match idx {
-                0 => self.fullname_input.render(rect, buf, design, ph),
-                1 => self.username_input.render(rect, buf, design, ph),
-                2 => self.password_input.render(rect, buf, design, ph),
-                3 => self.confirm_input.render(rect, buf, design, ph),
-                _ => self.hostname_input.render(rect, buf, design, ph),
-            }
-            y += 2;
+            let rect = if compact {
+                let lx = card.x + 2;
+                let lw = 19u16.min(card.width / 3);
+                put_trunc(buf, lx, y, short_label, lw, label_style);
+                let ix = lx + lw + 1;
+                let iw = card.width.saturating_sub(lw + 5);
+                let r = Rect::new(ix, y, iw, 1);
+                if idx == 3 && pw_typed && card.height >= 16 {
+                    let (badge, role) = if pw_match {
+                        ("✓ Passwords match", ColorRole::Ok)
+                    } else {
+                        ("✗ Passwords do not match", ColorRole::Danger)
+                    };
+                    put(
+                        buf,
+                        ix,
+                        y + 1,
+                        badge,
+                        iw,
+                        Style::default()
+                            .fg(design.color(role))
+                            .add_modifier(Modifier::BOLD),
+                    );
+                }
+                y += if card.height >= 16 { 2 } else { 1 };
+                r
+            } else {
+                let lx = card.x + 4;
+                let lw = card.width.saturating_sub(8);
+                put_trunc(buf, lx, y, wide_label, lw, label_style);
+                if idx == 3 && pw_typed {
+                    let (badge, role) = if pw_match {
+                        ("✓ Passwords match", ColorRole::Ok)
+                    } else {
+                        ("✗ Passwords do not match", ColorRole::Danger)
+                    };
+                    let bw = badge.chars().count() as u16;
+                    if lx + wide_label.chars().count() as u16 + 2 + bw <= card.right() - 4 {
+                        put(
+                            buf,
+                            card.right().saturating_sub(4 + bw),
+                            y,
+                            badge,
+                            bw,
+                            Style::default()
+                                .fg(design.color(role))
+                                .add_modifier(Modifier::BOLD),
+                        );
+                    }
+                }
+                y += 1;
+                let r = Rect::new(lx, y, lw, 1);
+                y += 2;
+                r
+            };
+
+            let input = match idx {
+                0 => &self.fullname_input,
+                1 => &self.username_input,
+                2 => &self.password_input,
+                3 => &self.confirm_input,
+                _ => &self.hostname_input,
+            };
+            input.render_field(
+                rect,
+                buf,
+                design,
+                ph,
+                focused,
+                self.cursor_blink_on,
+                ColorRole::Surface,
+                TextStyle::Body,
+            );
+            hits.user_inputs[idx] = Some(rect);
         }
 
+        if compact && card.height < 16 {
+            if pw_typed && y + 3 < card.bottom() {
+                let (badge, role) = if pw_match {
+                    ("✓ Passwords match", ColorRole::Ok)
+                } else {
+                    ("✗ Passwords do not match", ColorRole::Danger)
+                };
+                put(
+                    buf,
+                    card.x + 2,
+                    y,
+                    badge,
+                    card.width.saturating_sub(4),
+                    Style::default()
+                        .fg(design.color(role))
+                        .add_modifier(Modifier::BOLD),
+                );
+            }
+            y += 1;
+        }
+
+        let lx = if compact { card.x + 2 } else { card.x + 4 };
+        let lw = if compact {
+            card.width.saturating_sub(4)
+        } else {
+            card.width.saturating_sub(8)
+        };
         let check_mark = if self.regen_ssh { "[X]" } else { "[ ]" };
         let ssh_style = if self.user_focus == 5 {
             design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
         } else {
             design.style(TextStyle::Body)
         };
-        put(
-            buf,
-            card.x + 4,
-            y,
-            &format!("{check_mark} Generate fresh SSH host keys on first boot"),
-            card.width.saturating_sub(8),
-            ssh_style,
-        );
-        y += 2;
+        let ssh_text = format!("{check_mark} Generate fresh SSH host keys on first boot");
+        put_trunc(buf, lx, y, &ssh_text, lw, ssh_style);
+        hits.user_ssh = Some(Rect::new(lx, y, lw.min(ssh_text.chars().count() as u16), 1));
+        y += if compact { 1 } else { 2 };
 
         if let Some(err) = self.user_error {
-            put(
-                buf,
-                card.x + 4,
-                y,
-                &format!("⚠ Validation Error: {err}"),
-                card.width.saturating_sub(8),
-                Style::default()
-                    .fg(design.color(ColorRole::Danger))
-                    .add_modifier(Modifier::BOLD),
-            );
-            y += 2;
+            if y < card.bottom().saturating_sub(1) {
+                put_trunc(
+                    buf,
+                    lx,
+                    y,
+                    &format!("⚠ Validation Error: {err}"),
+                    lw,
+                    Style::default()
+                        .fg(design.color(ColorRole::Danger))
+                        .add_modifier(Modifier::BOLD),
+                );
+                y += if compact { 1 } else { 2 };
+            }
         }
 
-        let back_style = if self.user_focus == 6 {
-            design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
+        let btn_y = if compact {
+            card.bottom().saturating_sub(1)
         } else {
-            design.style(TextStyle::Body)
+            y.min(card.bottom().saturating_sub(1))
         };
-        let next_style = if self.user_focus == 7 {
-            design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
-        } else {
-            design.style(TextStyle::Body)
-        };
+        if btn_y < card.bottom() {
+            let back_style = if self.user_focus == 6 {
+                design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
+            } else {
+                design.style(TextStyle::Body)
+            };
+            let next_style = if self.user_focus == 7 {
+                design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
+            } else {
+                design.style(TextStyle::Body)
+            };
 
-        put(buf, card.x + 4, y, "[ < Back ]", 10, back_style);
-        put(
-            buf,
-            card.x + 20,
-            y,
-            "[ Next: Review & Confirm > ]",
-            28,
-            next_style,
-        );
+            let back_lbl = "[ < Back ]";
+            let back_w = back_lbl.chars().count() as u16;
+            put(buf, lx, btn_y, back_lbl, back_w, back_style);
+            hits.user_back = Some(Rect::new(lx, btn_y, back_w, 1));
+
+            let next_lbl = "[ Next: Review & Confirm > ]";
+            let next_w = next_lbl.chars().count() as u16;
+            let next_x = (lx + back_w + 4).min(card.right().saturating_sub(next_w + 2));
+            put(buf, next_x, btn_y, next_lbl, next_w, next_style);
+            hits.user_next = Some(Rect::new(next_x, btn_y, next_w, 1));
+        }
     }
 
-    fn draw_disk_review(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer, design: &Design) {
+    fn draw_disk_review(
+        &mut self,
+        area: Rect,
+        buf: &mut ratatui::buffer::Buffer,
+        design: &Design,
+        hits: &mut InstallerHits,
+    ) {
         let card = draw_card(
             buf,
             Rect {
-                x: area.x + 2,
+                x: area.x + if area.width < 90 { 0 } else { 2 },
                 y: area.y,
-                width: area.width.saturating_sub(4),
+                width: area
+                    .width
+                    .saturating_sub(if area.width < 90 { 0 } else { 4 }),
                 height: area.height,
             },
             design,
@@ -1373,7 +2024,8 @@ impl InstallerScreen {
             true,
         );
 
-        let mut y = card.y + 1;
+        let compact = card.height < 21 || card.width < 88;
+        let mut y = card.y + if compact { 0 } else { 1 };
         let selector_suffix = if self.preflight.candidates.len() > 1 {
             "  [< Left / Right >]"
         } else {
@@ -1384,77 +2036,136 @@ impl InstallerScreen {
         } else {
             design.style(TextStyle::Body).add_modifier(Modifier::BOLD)
         };
+        let target_rect = Rect::new(card.x + 2, y, card.width.saturating_sub(4), 1);
         put(
             buf,
-            card.x + 2,
-            y,
+            target_rect.x,
+            target_rect.y,
             &format!(
                 "Target Storage Device: {} ({}){selector_suffix}",
                 self.config.target_disk,
                 self.target_size()
             ),
-            card.width.saturating_sub(4),
+            target_rect.width,
             target_style,
         );
-        y += 2;
+        if self.preflight.candidates.len() > 1 {
+            hits.disk_target = Some(target_rect);
+        }
+        y += if compact { 1 } else { 2 };
 
-        y = self.draw_partition_diagram(card.x, y, card.width, buf, design);
-        y += 1;
+        y = self.draw_partition_diagram(card.x, y, card.width, compact, buf, design);
+        y += if compact { 0 } else { 1 };
 
+        let danger_h = if compact { 2 } else { 4 };
         let danger_box = Rect {
             x: card.x + 2,
             y,
             width: card.width.saturating_sub(4),
-            height: 4,
+            height: danger_h,
         };
         fill_rect(
             buf,
             danger_box,
-            Style::default().bg(design.color(ColorRole::SurfaceAlt)),
+            Style::default().bg(design.color(ColorRole::Surface)),
         );
-        put(
-            buf,
-            danger_box.x + 2,
-            danger_box.y + 1,
-            "⚠ WARNING: ALL EXISTING DATA ON TARGET DRIVE WILL BE PERMANENTLY ERASED!",
-            danger_box.width.saturating_sub(4),
-            Style::default()
-                .fg(design.color(ColorRole::Danger))
-                .add_modifier(Modifier::BOLD),
-        );
-        put(
-            buf,
-            danger_box.x + 2,
-            danger_box.y + 2,
-            &format!(
+        let warn_y = if compact {
+            danger_box.y
+        } else {
+            danger_box.y + 1
+        };
+        let warn_headline = if compact {
+            "⚠ WARNING: ALL DATA ON TARGET DRIVE WILL BE ERASED!"
+        } else {
+            "⚠ WARNING: ALL EXISTING DATA ON TARGET DRIVE WILL BE PERMANENTLY ERASED!"
+        };
+        let warn_sub = if compact {
+            format!(
+                "Destroys all existing partitions on {}.",
+                self.config.target_disk
+            )
+        } else {
+            format!(
                 "This action destroys all existing partitions and data on {}.",
                 self.config.target_disk
-            ),
-            danger_box.width.saturating_sub(4),
-            design.style(TextStyle::Body),
+            )
+        };
+        put_trunc(
+            buf,
+            danger_box.x + 1,
+            warn_y,
+            warn_headline,
+            danger_box.width.saturating_sub(2),
+            Style::default()
+                .fg(design.color(ColorRole::Danger))
+                .bg(design.color(ColorRole::Surface))
+                .add_modifier(Modifier::BOLD),
         );
-        y += 5;
+        put_trunc(
+            buf,
+            danger_box.x + 1,
+            warn_y + 1,
+            &warn_sub,
+            danger_box.width.saturating_sub(2),
+            design
+                .style(TextStyle::Body)
+                .bg(design.color(ColorRole::Surface)),
+        );
+        y += danger_h + 1;
 
         let short = self.target_short().to_string();
         let confirmed = validate_confirmation(self.disk_confirm_input.text(), &short);
+        let confirm_focused = self.disk_focus == 1;
+        let prompt_label = format!("Type \"{short}\" to confirm disk erasure:");
+        let prompt_style = if confirm_focused {
+            Style::default()
+                .fg(design.color(ColorRole::Accent))
+                .add_modifier(Modifier::BOLD)
+        } else {
+            design.style(TextStyle::Dim)
+        };
         put(
             buf,
             card.x + 2,
             y,
-            &format!("Type \"{short}\" to confirm disk erasure:"),
+            &prompt_label,
             card.width.saturating_sub(4),
-            design.style(TextStyle::Dim),
+            prompt_style,
         );
         y += 1;
+        let confirm_w = 32u16.min(card.width.saturating_sub(18));
         let confirm_box = Rect {
             x: card.x + 2,
             y,
-            width: 32,
+            width: confirm_w,
             height: 1,
         };
-        self.disk_confirm_input
-            .render(confirm_box, buf, design, &format!("type {short}"));
+        self.disk_confirm_input.render_field(
+            confirm_box,
+            buf,
+            design,
+            &format!("type {short}"),
+            confirm_focused,
+            self.cursor_blink_on,
+            ColorRole::Surface,
+            TextStyle::Body,
+        );
+        hits.disk_confirm = Some(confirm_box);
+
+        if confirmed && confirm_box.right() + 14 <= card.right() {
+            put(
+                buf,
+                confirm_box.right() + 2,
+                y,
+                "✓ Confirmed",
+                11,
+                Style::default()
+                    .fg(design.color(ColorRole::Ok))
+                    .add_modifier(Modifier::BOLD),
+            );
+        }
         y += 2;
+        let btn_y = y.min(card.bottom().saturating_sub(1));
 
         let cancel_style = if self.disk_focus == 0 {
             design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
@@ -1466,7 +2177,7 @@ impl InstallerScreen {
         } else if self.disk_focus == 2 {
             Style::default()
                 .bg(design.color(ColorRole::Danger))
-                .fg(design.color(ColorRole::Surface))
+                .fg(design.color(ColorRole::Bg))
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default()
@@ -1474,16 +2185,17 @@ impl InstallerScreen {
                 .add_modifier(Modifier::BOLD)
         };
 
-        if y < card.bottom() {
-            put(buf, card.x + 2, y, "[ Cancel / Back ]", 17, cancel_style);
-            put(
-                buf,
-                card.x + 22,
-                y,
-                "[ Erase Disk & Install LazyOS ]",
-                32,
-                erase_style,
-            );
+        if btn_y < card.bottom() {
+            let cancel_lbl = "[ Cancel / Back ]";
+            let cancel_w = cancel_lbl.chars().count() as u16;
+            put(buf, card.x + 2, btn_y, cancel_lbl, cancel_w, cancel_style);
+            hits.disk_cancel = Some(Rect::new(card.x + 2, btn_y, cancel_w, 1));
+
+            let erase_lbl = "[ Erase Disk & Install LazyOS ]";
+            let erase_w = erase_lbl.chars().count() as u16;
+            let erase_x = card.x + 22;
+            put(buf, erase_x, btn_y, erase_lbl, erase_w, erase_style);
+            hits.disk_erase = Some(Rect::new(erase_x, btn_y, erase_w, 1));
         }
     }
 
@@ -1492,6 +2204,7 @@ impl InstallerScreen {
         card_x: u16,
         mut y: u16,
         card_width: u16,
+        compact: bool,
         buf: &mut ratatui::buffer::Buffer,
         design: &Design,
     ) -> u16 {
@@ -1511,54 +2224,65 @@ impl InstallerScreen {
         );
         y += 1;
 
-        let (box_rows, bullets): ([&str; 4], Vec<String>) = match info.boot_type {
-            BootType::Depthcharge => (
-                [
-                    "┌─────────────────┬───────────────────┬──────────────────────────────────────┐",
-                    "│ p1: pmOS_kernel │   p2: pmOS_boot   │             p3: pmOS_root            │",
-                    "│     128 MiB     │      512 MiB      │          remaining storage           │",
-                    "└─────────────────┴───────────────────┴──────────────────────────────────────┘",
-                ],
-                vec![
-                    "• p1 (128 MiB): ChromeOS signed FIT kernel partition (Depthcharge bootloader)"
-                        .into(),
-                    format!(
-                        "• p2 ({} MiB): Boot filesystem ({}, mounted to /boot)",
-                        info.boot_size_mib, info.boot_filesystem
-                    ),
-                    "• p3 (Remainder): Debian arm64 root filesystem (ext4, mounted to /)".into(),
-                ],
-            ),
-            BootType::Uefi => (
-                [
-                    "┌───────────────────────────┬────────────────────────────────────────────────┐",
-                    "│      p1: lazyos_efi       │                p2: lazyos_root                 │",
-                    "│      256 MiB (FAT32)      │               remaining (ext4)                 │",
-                    "└───────────────────────────┴────────────────────────────────────────────────┘",
-                ],
-                vec![
-                    format!(
-                        "• p1 ({} MiB): EFI System Partition (FAT32, systemd-boot at /boot/efi)",
-                        info.boot_size_mib
-                    ),
-                    "• p2 (Remainder): Debian arm64 root filesystem (ext4, mounted to /)".into(),
-                ],
-            ),
-            BootType::Extlinux => (
-                [
-                    "┌───────────────────────────┬────────────────────────────────────────────────┐",
-                    "│     p1: lazyos_boot       │                p2: lazyos_root                 │",
-                    "│      512 MiB (ext2)       │               remaining (ext4)                 │",
-                    "└───────────────────────────┴────────────────────────────────────────────────┘",
-                ],
-                vec![
-                    format!(
-                        "• p1 ({} MiB): Boot partition ({}, extlinux + DTBs at /boot)",
-                        info.boot_size_mib, info.boot_filesystem
-                    ),
-                    "• p2 (Remainder): Debian arm64 root filesystem (ext4, mounted to /)".into(),
-                ],
-            ),
+        let bullets: Vec<String> = match info.boot_type {
+            BootType::Depthcharge => vec![
+                "• p1: pmOS_kernel  (128 MiB)   ChromeOS signed FIT kernel".into(),
+                format!(
+                    "• p2: pmOS_boot    ({} MiB)   Boot filesystem ({}, /boot)",
+                    info.boot_size_mib, info.boot_filesystem
+                ),
+                "• p3: pmOS_root    (Remainder) Debian arm64 root filesystem (ext4, /)".into(),
+            ],
+            BootType::Uefi => vec![
+                format!(
+                    "• p1: lazyos_efi   ({} MiB)   EFI System Partition (FAT32, /boot/efi)",
+                    info.boot_size_mib
+                ),
+                "• p2: lazyos_root  (Remainder) Debian arm64 root filesystem (ext4, /)".into(),
+            ],
+            BootType::Extlinux => vec![
+                format!(
+                    "• p1: lazyos_boot  ({} MiB)   Boot partition ({}, extlinux + DTBs)",
+                    info.boot_size_mib, info.boot_filesystem
+                ),
+                "• p2: lazyos_root  (Remainder) Debian arm64 root filesystem (ext4, /)".into(),
+            ],
+        };
+
+        if compact {
+            for b in bullets {
+                put_trunc(
+                    buf,
+                    card_x + 3,
+                    y,
+                    &b,
+                    card_width.saturating_sub(6),
+                    design.style(TextStyle::Body),
+                );
+                y += 1;
+            }
+            return y;
+        }
+
+        let box_rows: [&str; 4] = match info.boot_type {
+            BootType::Depthcharge => [
+                "┌─────────────────┬───────────────────┬──────────────────────────────────────┐",
+                "│ p1: pmOS_kernel │   p2: pmOS_boot   │             p3: pmOS_root            │",
+                "│     128 MiB     │      512 MiB      │          remaining storage           │",
+                "└─────────────────┴───────────────────┴──────────────────────────────────────┘",
+            ],
+            BootType::Uefi => [
+                "┌───────────────────────────┬────────────────────────────────────────────────┐",
+                "│      p1: lazyos_efi       │                p2: lazyos_root                 │",
+                "│      256 MiB (FAT32)      │               remaining (ext4)                 │",
+                "└───────────────────────────┴────────────────────────────────────────────────┘",
+            ],
+            BootType::Extlinux => [
+                "┌───────────────────────────┬────────────────────────────────────────────────┐",
+                "│     p1: lazyos_boot       │                p2: lazyos_root                 │",
+                "│      512 MiB (ext2)       │               remaining (ext4)                 │",
+                "└───────────────────────────┴────────────────────────────────────────────────┘",
+            ],
         };
 
         for (idx, row) in box_rows.iter().enumerate() {
@@ -1584,7 +2308,13 @@ impl InstallerScreen {
         y
     }
 
-    fn draw_progress(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer, design: &Design) {
+    fn draw_progress(
+        &mut self,
+        area: Rect,
+        buf: &mut ratatui::buffer::Buffer,
+        design: &Design,
+        hits: &mut InstallerHits,
+    ) {
         let card = draw_card(
             buf,
             Rect {
@@ -1629,8 +2359,7 @@ impl InstallerScreen {
             );
             y += 1;
 
-            let spinners = ["◴", "◷", "◶", "◵"];
-            let current_spinner = spinners[self.spinner_idx];
+            let current_spinner = BRAILLE_SPINNER[self.spinner_idx % BRAILLE_SPINNER.len()];
             let boot_type = self.preflight.device_info.boot_type;
 
             for idx in 0..PHASES.len() {
@@ -1696,6 +2425,7 @@ impl InstallerScreen {
             width: card.width.saturating_sub(4),
             height: log_height,
         };
+        hits.progress_log = Some(log_area);
         fill_rect(
             buf,
             log_area,
@@ -1721,21 +2451,32 @@ impl InstallerScreen {
         }
     }
 
-    fn draw_complete(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer, design: &Design) {
+    fn draw_complete(
+        &mut self,
+        area: Rect,
+        buf: &mut ratatui::buffer::Buffer,
+        design: &Design,
+        hits: &mut InstallerHits,
+    ) {
+        let compact = area.height < 21 || area.width < 96;
         let card = draw_card(
             buf,
             Rect {
-                x: area.x + area.width / 8,
-                y: area.y + 1,
-                width: (area.width * 3) / 4,
-                height: area.height.saturating_sub(2),
+                x: area.x + if compact { 1 } else { area.width / 8 },
+                y: area.y + if compact { 0 } else { 1 },
+                width: if compact {
+                    area.width.saturating_sub(2)
+                } else {
+                    (area.width * 3) / 4
+                },
+                height: area.height.saturating_sub(if compact { 0 } else { 2 }),
             },
             design,
             Some("Installation Finished"),
             true,
         );
 
-        let mut y = card.y + 2;
+        let mut y = card.y + if compact { 0 } else { 2 };
         put(
             buf,
             card.x + 4,
@@ -1746,9 +2487,9 @@ impl InstallerScreen {
                 .fg(design.color(ColorRole::Accent))
                 .add_modifier(Modifier::BOLD),
         );
-        y += 2;
+        y += if compact { 1 } else { 2 };
 
-        put(
+        put_trunc(
             buf,
             card.x + 4,
             y,
@@ -1761,7 +2502,7 @@ impl InstallerScreen {
             design.style(TextStyle::Body),
         );
         y += 1;
-        put(
+        put_trunc(
             buf,
             card.x + 4,
             y,
@@ -1775,7 +2516,7 @@ impl InstallerScreen {
             card.width.saturating_sub(8),
             design.style(TextStyle::Dim),
         );
-        y += 3;
+        y += if compact { 2 } else { 3 };
 
         put(
             buf,
@@ -1808,7 +2549,7 @@ impl InstallerScreen {
         };
 
         for line in steps {
-            put(
+            put_trunc(
                 buf,
                 card.x + 6,
                 y,
@@ -1818,7 +2559,8 @@ impl InstallerScreen {
             );
             y += 1;
         }
-        y += 3;
+        y += if compact { 1 } else { 3 };
+        let btn_y = y.min(card.bottom().saturating_sub(1));
 
         let reboot_style = if self.complete_focus == 0 {
             design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
@@ -1831,23 +2573,18 @@ impl InstallerScreen {
             design.style(TextStyle::Body)
         };
 
-        if y < card.bottom() {
-            put(
-                buf,
-                card.x + 6,
-                y,
-                "[ Reboot System Now ]",
-                22,
-                reboot_style,
-            );
-            put(
-                buf,
-                card.x + 32,
-                y,
-                "[ Stay in Live Session ]",
-                24,
-                exit_style,
-            );
+        if btn_y < card.bottom() {
+            let reboot_lbl = "[ Reboot System Now ]";
+            let reboot_w = reboot_lbl.chars().count() as u16;
+            let reboot_x = card.x + 4;
+            put(buf, reboot_x, btn_y, reboot_lbl, reboot_w, reboot_style);
+            hits.complete_reboot = Some(Rect::new(reboot_x, btn_y, reboot_w, 1));
+
+            let exit_lbl = "[ Stay in Live Session ]";
+            let exit_w = exit_lbl.chars().count() as u16;
+            let exit_x = (reboot_x + reboot_w + 4).min(card.right().saturating_sub(exit_w + 2));
+            put(buf, exit_x, btn_y, exit_lbl, exit_w, exit_style);
+            hits.complete_exit = Some(Rect::new(exit_x, btn_y, exit_w, 1));
         }
     }
 }
@@ -1855,9 +2592,7 @@ impl InstallerScreen {
 fn detect_live_timezone() -> Option<String> {
     let raw = fs::read_to_string("/etc/timezone").ok()?;
     let trimmed = raw.trim();
-    COMMON_TIMEZONES
-        .contains(&trimmed)
-        .then(|| trimmed.to_string())
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 fn detect_live_locale() -> Option<String> {
@@ -2021,6 +2756,135 @@ mod tests {
                 complete.contains(expect_complete),
                 "missing {expect_complete}"
             );
+        }
+    }
+
+    #[test]
+    fn step_header_keeps_legible_contrast_and_only_focused_input_blinks() {
+        let design = Design::solarized();
+        let mut scr =
+            InstallerScreen::from_preflight_isolated(mock_preflight(BootType::Depthcharge), true);
+        scr.step = WizardStep::UserAccount;
+        scr.user_focus = 0;
+
+        let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                let mut ctx = BodyCtx {
+                    area,
+                    buf: f.buffer_mut(),
+                    design: &design,
+                };
+                scr.draw(&mut ctx);
+            })
+            .unwrap();
+        let buf = terminal.backend().buffer();
+
+        // Badge " Step 3 of 6 " must have distinct fg != bg (fixing old Accent-on-Accent bug).
+        let badge_cell = buf.cell((3, 0)).unwrap();
+        assert_ne!(
+            badge_cell.fg, badge_cell.bg,
+            "step badge foreground and background collided"
+        );
+
+        // Focused field 0 draws left Accent bar; unfocused field 1 does not.
+        let r0 = scr.hits.borrow().user_inputs[0].expect("fullname hit rect");
+        let r1 = scr.hits.borrow().user_inputs[1].expect("username hit rect");
+        assert_eq!(buf.cell((r0.x, r0.y)).unwrap().symbol(), "\u{258d}");
+        assert_ne!(buf.cell((r1.x, r1.y)).unwrap().symbol(), "\u{258d}");
+
+        // Blink tick toggles cursor state cleanly while UserAccount input is focused.
+        assert!(scr.needs_tick().is_some());
+        assert!(scr.cursor_blink_on);
+        scr.last_blink -= Duration::from_millis(600);
+        scr.tick();
+        assert!(!scr.cursor_blink_on);
+
+        // Key press resets blink phase to solid-on and Enter advances to next field.
+        scr.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &design);
+        assert!(scr.cursor_blink_on);
+        assert_eq!(scr.user_focus, 1);
+    }
+
+    #[test]
+    fn compact_80x24_layout_keeps_all_step_buttons_and_confirm_visible() {
+        use lazyos_ui::App;
+        use lazyos_ui::widgets::Header;
+
+        let design = Design::solarized();
+        for step in [
+            WizardStep::Localization,
+            WizardStep::UserAccount,
+            WizardStep::DiskReview,
+        ] {
+            let mut scr = InstallerScreen::from_preflight_isolated(
+                mock_preflight(BootType::Depthcharge),
+                true,
+            );
+            scr.step = step;
+            scr.update_keybar();
+            let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+            let mut app = App::new(Header::new("LazyOS"))
+                .design(design.clone())
+                .screen(&mut scr);
+            terminal.draw(|f| app.render(f)).unwrap();
+            let buf = terminal.backend().buffer();
+            let mut text = String::new();
+            for y in 0..24 {
+                for x in 0..80 {
+                    text.push_str(buf[(x, y)].symbol());
+                }
+                text.push('\n');
+            }
+            match step {
+                WizardStep::Localization => {
+                    assert!(text.contains("[ Next: User > ]"), "clipped step 2:\n{text}");
+                    assert!(text.contains("[ < Back ]"), "clipped back step 2:\n{text}");
+                }
+                WizardStep::UserAccount => {
+                    assert!(
+                        text.contains("[ Next: Review & Confirm > ]"),
+                        "clipped step 3:\n{text}"
+                    );
+                    assert!(text.contains("SSH host keys"), "clipped ssh:\n{text}");
+                }
+                WizardStep::DiskReview => {
+                    assert!(
+                        text.contains("Type \"mmcblk0\" to confirm"),
+                        "clipped confirm step 4:\n{text}"
+                    );
+                    assert!(
+                        text.contains("[ Erase Disk & Install LazyOS ]"),
+                        "clipped erase btn:\n{text}"
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn disk_confirm_enter_arms_erase_without_skipping_confirmation_gate() {
+        let design = Design::solarized();
+        let mut scr =
+            InstallerScreen::from_preflight_isolated(mock_preflight(BootType::Depthcharge), true);
+        scr.step = WizardStep::DiskReview;
+        scr.disk_focus = 1;
+        for ch in "mmcblk0".chars() {
+            scr.key(
+                KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE),
+                &design,
+            );
+        }
+        // Pressing Enter inside confirmed input moves focus to Erase button without auto-starting.
+        scr.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &design);
+        assert_eq!(scr.step, WizardStep::DiskReview);
+        assert_eq!(scr.disk_focus, 2);
+
+        // Pre-selected timezone list cursor matches detected timezone row.
+        if let Some(sel) = scr.tz_list.selected() {
+            assert_eq!(sel.label, scr.selected_tz);
         }
     }
 }

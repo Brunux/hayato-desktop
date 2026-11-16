@@ -173,8 +173,8 @@ fn body_rows() -> ListState {
             .glyph(Glyph::Power)
             .detail("rofi-power")
             .value("Alt+Escape"),
-        // One name the stripped symbol set does not draw: the row shows its
-        // token (`bt`) and every other label keeps its column (spec 003).
+        // Bluetooth comes from Font Awesome 6 Brands (\u{f293}) while the
+        // rest come from Symbols Nerd Font Mono; every label keeps its column.
         Row::new("Bluetooth")
             .glyph(Glyph::Bluetooth)
             .detail("bluez")

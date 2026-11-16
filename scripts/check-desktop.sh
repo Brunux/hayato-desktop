@@ -3070,6 +3070,7 @@ if have lazyos && have fc-list; then
 	_fw_font=$(lazyos --glyph-font 2>/dev/null)
 	_fw_total=$(printf '%s\n' "$_fw_glyphs" | awk 'NF { n++ } END { print n + 0 }')
 	_fw_family=$(sed -n 's/^family=//p' <<<"$_fw_font")
+	_fw_extra=$(sed -n 's/^extra=//p' <<<"$_fw_font")
 	_fw_pin=$(sed -n 's/^sha256=//p' <<<"$_fw_font")
 	_fw_nerd=$(sed -n 's/^nerd=//p' <<<"$_fw_font")
 	_fw_fallback=$(sed -n 's/^fallback=//p' <<<"$_fw_font")
@@ -3092,6 +3093,24 @@ if have lazyos && have fc-list; then
 				fail "the alphabet's pin is for another font ($_fw_now != $_fw_pin): a font upgrade needs scripts/make-glyphs.sh, or the rows it changed are empty boxes"
 			fi
 			_fw_symbol=$(fc-query --format='%{charset}' "$_fw_path" 2>/dev/null)
+			if [ -n "$_fw_extra" ]; then
+				_fw_old_ifs=$IFS
+				IFS=','
+				for _ef in $_fw_extra; do
+					IFS=$_fw_old_ifs
+					_ef=${_ef# }
+					_ef=${_ef% }
+					[ -z "$_ef" ] && continue
+					_ep=$(fc-match -f '%{file}' "$_ef" 2>/dev/null) || _ep=
+					_efams=$(fc-query --format='%{family}' "$_ep" 2>/dev/null | tr ',' '\n' | sed 's/^ *//')
+					if [ -z "$_ep" ] || [ ! -r "$_ep" ] || ! grep -qxF "$_ef" <<<"$_efams"; then
+						fail "fontconfig resolves '$_ef' to ${_ep:-nothing}: install fonts-font-awesome-legacy"
+					else
+						_fw_symbol="$_fw_symbol $(fc-query --format='%{charset}' "$_ep" 2>/dev/null)"
+					fi
+				done
+				IFS=$_fw_old_ifs
+			fi
 			# The union of the installed character maps is far too big for an
 			# awk -v argument (ARG_MAX said so the first time this ran): it
 			# travels on stdin, one range per line.
@@ -3154,18 +3173,22 @@ if have lazyos && have fc-list; then
 					fail "no installed font renders:$_fw_miss_frame (a hole in every window that draws them, and nothing logs it)"
 				fi
 				if [ -z "$_fw_miss_alpha" ]; then
-					ok "the rows' glyphs render ($_fw_total codepoints, every one in $_fw_family)"
+					ok "the rows' glyphs render ($_fw_total codepoints, every one covered by $_fw_family${_fw_extra:+, $_fw_extra})"
 				else
-					fail "$_fw_family does not carry:$_fw_miss_alpha (a hole in every window that draws them, and nothing logs it)"
+					fail "$_fw_family${_fw_extra:+, $_fw_extra} does not carry:$_fw_miss_alpha (a hole in every window that draws them, and nothing logs it)"
 				fi
 			fi
-			_fw_bad_text=$(printf '%s\n' "$_fw_text" | sed -n '/^[a-z_]* [A-Za-z0-9=]\{1,4\}$/!p')
-			if [ "${_fw_fallback:-0}" -eq 0 ] || [ -z "$_fw_text" ]; then
-				fail "--glyph-font names no text fallbacks: the names the stripped symbol set lacks would draw boxes"
-			elif [ -n "$_fw_bad_text" ]; then
-				fail "a glyph name falls back to something that is not short text: $(printf '%s' "$_fw_bad_text" | tr '\n' ' ')"
+			if [ "${_fw_fallback:-0}" -eq 0 ]; then
+				ok "all $_fw_total alphabet names resolve to installed font codepoints (0 text fallbacks)"
 			else
-				ok "$_fw_fallback names the symbol set does not draw render text, not boxes"
+				_fw_bad_text=$(printf '%s\n' "$_fw_text" | sed -n '/^[a-z_]* [A-Za-z0-9=]\{1,4\}$/!p')
+				if [ -z "$_fw_text" ]; then
+					fail "--glyph-font reports $_fw_fallback fallbacks but names no text tokens"
+				elif [ -n "$_fw_bad_text" ]; then
+					fail "a glyph name falls back to something that is not short text: $(printf '%s' "$_fw_bad_text" | tr '\n' ' ')"
+				else
+					ok "$_fw_fallback names the symbol set does not draw render text, not boxes"
+				fi
 			fi
 		fi
 	fi
@@ -3556,7 +3579,7 @@ section "Fonts and icons"
 # ---------------------------------------------------------------------------
 if have fc-list; then
 	_families="$(fc-list : family 2>/dev/null | tr ',' '\n' | sed 's/^ *//' | sort -u)"
-	for _f in "JetBrains Mono" "FontAwesome" "Material Design Icons" "Symbols Nerd Font" "Liberation Mono"; do
+	for _f in "JetBrains Mono" "FontAwesome" "Font Awesome 6 Free Solid" "Font Awesome 6 Brands Regular" "Material Design Icons" "Symbols Nerd Font" "Liberation Mono"; do
 		if grep -qF "$_f" <<<"$_families"; then
 			ok "font family present: $_f"
 		else

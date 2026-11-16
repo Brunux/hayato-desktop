@@ -10,7 +10,7 @@ LazyOS · AI · Ask                                                      no agen
      │                                                                    │
      │                                                                    │
      │                                                                    │
-     │   What do you want to know?                                        │
+     │ ▍What do you want to know?                                         │
      │                                                                    │
      │ Enter asks · Esc goes back · it uses the agent's own account       │
      │                                                                    │
