@@ -1229,11 +1229,9 @@ impl Screen for GreeterScreen {
                 return Some(201);
             }
         }
-        for i in 0..hits.user_count {
-            if let Some((idx, r)) = hits.user_pills[i] {
-                if r.contains((x, y).into()) {
-                    return Some(10 + idx);
-                }
+        for &(idx, r) in hits.user_pills.iter().take(hits.user_count).flatten() {
+            if r.contains((x, y).into()) {
+                return Some(10 + idx);
             }
         }
         if let Some(r) = hits.username_box {
