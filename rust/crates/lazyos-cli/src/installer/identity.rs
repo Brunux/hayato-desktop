@@ -68,22 +68,21 @@ impl Drop for ChrootBinds {
     }
 }
 
-/// Synchronize live `/` to `mnt` with real-time `--info=progress2` reporting.
-pub fn copy_rootfs_with_progress<F>(
+/// Build `rsync` arguments for live `/` synchronization, excluding runtime mounts,
+/// `/boot/efi` (FAT32 ESP mounted before sync and populated by `install_boot_target`),
+/// and source-machine identity/cache state.
+pub fn build_copy_rootfs_args(
     mnt: &Path,
     state_dir: &Path,
     regenerate_ssh_keys: bool,
-    mut on_progress: F,
-) -> Result<(), String>
-where
-    F: FnMut(u8, &str),
-{
+) -> Vec<String> {
     let mnt_exclude = format!("--exclude={}", mnt.display());
     let state_exclude = format!("--exclude={}", state_dir.display());
     let mut args = vec![
         "-aHAX".to_string(),
         "--delete".to_string(),
         "--info=progress2".to_string(),
+        "--exclude=/boot/efi".to_string(),
         "--exclude=/proc".to_string(),
         "--exclude=/sys".to_string(),
         "--exclude=/dev".to_string(),
@@ -105,6 +104,20 @@ where
     }
     args.push("/".to_string());
     args.push(format!("{}/", mnt.display()));
+    args
+}
+
+/// Synchronize live `/` to `mnt` with real-time `--info=progress2` reporting.
+pub fn copy_rootfs_with_progress<F>(
+    mnt: &Path,
+    state_dir: &Path,
+    regenerate_ssh_keys: bool,
+    mut on_progress: F,
+) -> Result<(), String>
+where
+    F: FnMut(u8, &str),
+{
+    let args = build_copy_rootfs_args(mnt, state_dir, regenerate_ssh_keys);
 
     let mut child = Command::new("rsync")
         .args(&args)
@@ -576,5 +589,33 @@ mod tests {
         assert_eq!(v["boot_type"], "uefi");
         assert_eq!(v["target"], "/dev/nvme0n1");
         assert_eq!(v["root_uuid"], "1111-2222");
+    }
+
+    #[test]
+    fn copy_rootfs_args_exclude_esp_and_identity_state() {
+        let args = build_copy_rootfs_args(
+            Path::new("/run/lazyos-install/mnt"),
+            Path::new("/run/lazyos-install"),
+            true,
+        );
+        assert!(args.iter().any(|a| a == "--exclude=/boot/efi"));
+        assert!(args.iter().any(|a| a == "--exclude=/etc/machine-id"));
+        assert!(
+            args.iter()
+                .any(|a| a == "--exclude=/etc/lazyos/installation")
+        );
+        assert!(args.iter().any(|a| a == "--exclude=/etc/ssh/ssh_host_*"));
+        assert!(
+            args.iter()
+                .any(|a| a == "--exclude=/run/lazyos-install/mnt")
+        );
+
+        let no_ssh = build_copy_rootfs_args(
+            Path::new("/mnt/target"),
+            Path::new("/run/lazyos-install"),
+            false,
+        );
+        assert!(!no_ssh.iter().any(|a| a == "--exclude=/etc/ssh/ssh_host_*"));
+        assert!(no_ssh.iter().any(|a| a == "--exclude=/boot/efi"));
     }
 }
