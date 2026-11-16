@@ -553,6 +553,14 @@ pub const COMMANDS: &[CommandSpec] = &[
             "lazyos-install-log",
         ],
     },
+    CommandSpec {
+        // `lazyos greeter`: themed login greeter over greetd IPC (spec 021).
+        path: "greeter",
+        summary: "themed login greeter over greetd IPC (spec 021)",
+        shape: Shape::Full,
+        symlinks: &["lazyos-greeter"],
+        installed: &["lazyos-greeter"],
+    },
 ];
 
 /// A command the table resolved, with the arguments that belong to it.

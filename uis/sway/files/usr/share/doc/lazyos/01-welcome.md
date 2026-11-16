@@ -28,7 +28,7 @@ everything above the kernel.
 | the terminal | **foot**: solarized palette, no GPU renderer, about half the memory of an Alacritty window |
 | the launcher | **lazyos**: applications (`lazyos menu apps`), windows (`lazyos menu window`), commands (`lazyos menu run`), and the 35 ported session menus rendered in native Ratatui TUI inside floating foot windows |
 | notifications | **mako**, bottom of the top-right corner, under the bar |
-| the session | greetd starts sway at boot; swayidle runs the idle screen at 150 s and the lock at 300 s |
+| the session | `greetd` launches `lazyos-greeter` at boot and opens sway on login; swayidle runs the idle screen at 150 s and the lock at 300 s |
 
 **The workspace pills say what is in them.** Each pill is the number of the
 workspace plus one glyph per *kind* of window open there - a terminal, a

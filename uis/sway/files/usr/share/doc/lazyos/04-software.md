@@ -613,10 +613,18 @@ composition generated from the theme's palette with the LazyOS wordmark
 centered, cached at `~/.cache/lazyos/wallpapers/`. The first wallpaper is what
 `theme set` installs as the desktop background and the lock screen image.
 
-**The greeter and lock screen are themed.** The greeter (tuigreet) receives its
-colours from the active theme via generated flags. The lock screen (swaylock)
-uses the theme's colours for its indicator ring and the theme's wallpaper as
-its background image.
+**The greeter and lock screen are themed.** At boot, `greetd` launches
+`lazyos-greeter` (`/usr/bin/lazyos-greeter --session`), a native Ratatui login
+surface running fullscreen in `foot` over a minimal `sway` + theme wallpaper
+backdrop (with automatic VT7 console fallback if Wayland cannot start). It
+automatically picks up the active user theme (and lets you cycle all 16 themes
+live with **F4** or **Ctrl+T**, switch sessions with **F2** / **Ctrl+S**, or
+trigger Sleep / Reboot / Shut down with Cancel-first confirmation). To preview
+it inside an open session without logging out, run `lazyos greeter --preview`
+(press **Esc** to close); to revert to raw VT7 fallback in `/etc/greetd/config.toml`,
+add `--tty` to `/usr/bin/lazyos-greeter --session --tty`. The lock screen
+(`swaylock`) uses the theme's colours for its indicator ring and the theme's
+wallpaper as its background image.
 
 **A generated file says so on its first line.** If you edit one of them, the
 next switch will *report* the difference and leave your edit alone instead of
