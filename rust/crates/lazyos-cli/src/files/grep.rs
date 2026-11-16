@@ -585,7 +585,14 @@ impl Screen for GrepScreen {
             }
             Mode::Running(_) => Outcome::Consumed,
             Mode::Results => {
-                if control && key.code == KeyCode::Char('n') {
+                if key.code == KeyCode::Esc {
+                    if !self.list.filter().is_empty() {
+                        self.list.set_filter("");
+                    } else {
+                        self.mode = Mode::Prompt(Input::with_text(self.query.clone()));
+                    }
+                    Outcome::Consumed
+                } else if control && key.code == KeyCode::Char('n') {
                     self.mode = Mode::Prompt(Input::with_text(self.query.clone()));
                     Outcome::Consumed
                 } else if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace) && !control {

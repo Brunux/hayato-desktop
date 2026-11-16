@@ -124,6 +124,68 @@ pub trait Screen {
     fn design(&self) -> Option<Design> {
         None
     }
+
+    /// Optional target window pixel dimensions `(width_px, height_px)`.
+    /// When `Some((w, h))` changes during the session (for example when switching
+    /// from a network list to an inline Wi-Fi QR view, or expanding a summary list
+    /// into a log/manual viewer or `TaskView`), `App::run_until` dynamically resizes
+    /// and re-centers the floating `foot` window in Sway.
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        None
+    }
+}
+
+/// Resolve the active Sway IPC socket path, preferring `SWAYSOCK` when it exists
+/// on disk and falling back to discovering `sway-ipc.*.sock` in `$XDG_RUNTIME_DIR`.
+fn resolve_sway_socket() -> Option<std::path::PathBuf> {
+    if let Ok(sock) = std::env::var("SWAYSOCK") {
+        let p = std::path::PathBuf::from(&sock);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    let runtime = std::env::var("XDG_RUNTIME_DIR").ok()?;
+    let entries = std::fs::read_dir(runtime).ok()?;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let s = name.to_string_lossy();
+        if s.starts_with("sway-ipc.") && s.ends_with(".sock") {
+            return Some(entry.path());
+        }
+    }
+    None
+}
+
+/// Dynamically resize and re-center the hosting floating `foot` window in Sway
+/// after the surface has already mapped.
+///
+/// Safe in tests: does nothing unless `LAZYOS_UI=1` is set in the environment.
+pub fn request_window_size(width_px: u16, height_px: u16) {
+    if std::env::var_os("LAZYOS_UI").is_none() {
+        return;
+    }
+    let w = width_px.clamp(480, 1600);
+    let h = height_px.clamp(280, 1050);
+
+    if let Some(sock) = resolve_sway_socket() {
+        let ppid = unsafe { libc::getppid() };
+        let rule = format!(
+            "[pid={ppid}] floating enable, resize set width {w} px height {h} px, move position center"
+        );
+        let _ = std::process::Command::new("swaymsg")
+            .arg("-s")
+            .arg(sock)
+            .arg(rule)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+    } else if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        use std::io::Write as _;
+        let mut out = std::io::stdout();
+        let _ = write!(out, "\x1b[4;{h};{w}t");
+        let _ = out.flush();
+    }
 }
 
 /// How long an opening animation may run.
@@ -377,8 +439,29 @@ impl<'a> App<'a> {
     ) -> io::Result<i32> {
         self.motion.start(&self.design);
         let mut last_event = Instant::now();
+        let mut applied_size = self.screen.as_ref().and_then(|s| s.desired_size());
+        let mut first_frame = true;
         loop {
             terminal.draw(|frame| self.render(frame))?;
+            if first_frame {
+                first_frame = false;
+                if let Some((w, h)) = applied_size
+                    && std::env::var_os("LAZYOS_UI").is_some()
+                {
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_millis(45));
+                        request_window_size(w, h);
+                    });
+                }
+            } else {
+                let current_size = self.screen.as_ref().and_then(|s| s.desired_size());
+                if let Some((w, h)) = current_size
+                    && applied_size != Some((w, h))
+                {
+                    applied_size = Some((w, h));
+                    request_window_size(w, h);
+                }
+            }
             let screen_tick = self
                 .screen
                 .as_ref()

@@ -1,19 +1,19 @@
 //! Media Downloader (`rofi-download`, `lazyos menu download`).
 //!
 //! Prompts for video/audio URL (auto-populating from clipboard if valid),
-//! asks for download profile (video vs audio-only), and spawns yt-dlp into
-//! `~/Downloads/`.
+//! asks for download profile (video vs audio-only), and runs `yt-dlp` inside
+//! an in-window [`TaskView`] with live streaming progress and stop support.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
-use lazyos_ui::{Design, Glyph, Urgency};
+use lazyos_ui::{Design, Glyph, Task, TaskView};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 use super::pick::{Picker, Question, row};
-use super::{have, out, say};
+use super::{have, out};
 
 /// Get the first URL in the clipboard if valid.
 pub fn clipboard_url() -> Option<String> {
@@ -49,37 +49,26 @@ pub fn downloads_count() -> usize {
     }
 }
 
-/// Spawn yt-dlp download in background.
-pub fn spawn_download(url: &str, audio_only: bool) {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-    let dl = Path::new(&home).join("Downloads");
-    let _ = fs::create_dir_all(&dl);
-
-    say(
-        "Download",
-        format!("Fetching {}…", url.chars().take(48).collect::<String>()),
-        Urgency::Normal,
-        Glyph::Download,
-    );
-
-    let audio_flag = if audio_only {
-        "-x --audio-format m4a"
-    } else {
-        ""
-    };
-    let escaped_url = url.replace('\'', "'\\''");
-    let cmd = format!(
-        "out=$(yt-dlp -P '{dl}' --no-playlist --no-mtime --no-simulate {audio_flag} --print after_move:filepath -- '{escaped_url}' 2>&1); \
-        rc=$?; \
-        if [ $rc -eq 0 ]; then \
-            name=$(echo \"$out\" | tail -n 1); \
-            lazyos notify send --app Download --title 'Download complete' --body \"Saved ${{name##*/}}\" --glyph download; \
-        else \
-            lazyos notify send --app Download --title 'Download failed' --body 'yt-dlp failed to download URL' --glyph download --urgency critical; \
-        fi",
-        dl = dl.display()
-    );
-    crate::system::spawn_detached(&cmd);
+/// Build the yt-dlp argv for `url` into `dl_dir`.
+pub fn build_download_argv(url: &str, dl_dir: &Path, audio_only: bool) -> Vec<String> {
+    let mut argv = vec![
+        "yt-dlp".to_string(),
+        "--newline".to_string(),
+        "-P".to_string(),
+        dl_dir.display().to_string(),
+        "--no-playlist".to_string(),
+        "--no-mtime".to_string(),
+        "--no-simulate".to_string(),
+    ];
+    if audio_only {
+        argv.extend([
+            "-x".to_string(),
+            "--audio-format".to_string(),
+            "m4a".to_string(),
+        ]);
+    }
+    argv.extend(["--".to_string(), url.to_string()]);
+    argv
 }
 
 /// Interactive `lazyos menu download`.
@@ -88,121 +77,124 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if !have("yt-dlp") {
-        say(
+        return Err(crate::Failure::new(
             "Download",
             "yt-dlp is not installed (package yt-dlp)",
-            Urgency::Critical,
-            Glyph::Download,
-        );
-        return Ok(3);
-    }
-
-    let clip = clipboard_url();
-    let count = downloads_count();
-
-    let mut rows = Vec::new();
-    let mut keys = Vec::new();
-
-    rows.push(row(
-        "Paste a link",
-        "YouTube, Vimeo, SoundCloud, a direct file",
-        Glyph::Cloud,
-    ));
-    keys.push("link".to_string());
-
-    if let Some(ref url) = clip {
-        rows.push(row("The link in the clipboard", url, Glyph::Clipboard));
-        keys.push(format!("clip:{}", url));
-    }
-
-    let s = if count == 1 { "" } else { "s" };
-    rows.push(row(
-        "The Downloads folder",
-        format!("{count} file{s} · ~/Downloads"),
-        Glyph::Folder,
-    ));
-    keys.push("folder".to_string());
-
-    if is_downloading() {
-        rows.push(row(
-            "Stop the download",
-            "kills yt-dlp; the .part file stays",
-            Glyph::Warning,
         ));
-        keys.push("stop".to_string());
     }
 
-    let mut picker = Picker::new(
-        "Download",
-        vec![Question::choose(
-            "Download",
-            "Enter downloads · Escape closes",
-            rows,
-            keys,
-        )],
-    );
+    let mut banner: Option<String> = None;
 
-    let code = crate::run_screen(terminal, design, "Download", &mut picker)?;
-    if code != 0 {
-        return Ok(code);
-    }
+    loop {
+        let clip = clipboard_url();
+        let count = downloads_count();
 
-    let answers = picker.answers();
-    let Some(action) = answers.first() else {
-        return Ok(1);
-    };
+        let mut rows = Vec::new();
+        let mut keys = Vec::new();
 
-    match action.as_str() {
-        "folder" => {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-            let dl = Path::new(&home).join("Downloads");
-            crate::system::spawn_detached(&format!("exec lazyos menu files '{}'", dl.display()));
-            Ok(0)
+        if let Some(ref url) = clip {
+            rows.push(row("The link in the clipboard", url, Glyph::Clipboard));
+            keys.push(format!("clip:{url}"));
         }
-        "stop" => {
-            let _ = Command::new("pkill").args(["-f", "yt-dlp"]).status();
-            say(
-                "Download",
-                "Stopped · the .part file is still in ~/Downloads",
-                Urgency::Normal,
+
+        rows.push(row(
+            "Paste or type a link",
+            "YouTube, Vimeo, SoundCloud, or a direct file URL",
+            Glyph::Cloud,
+        ));
+        keys.push("link".to_string());
+
+        let s = if count == 1 { "" } else { "s" };
+        rows.push(row(
+            "The Downloads folder",
+            format!("{count} file{s} \u{00b7} ~/Downloads"),
+            Glyph::Folder,
+        ));
+        keys.push("folder".to_string());
+
+        if is_downloading() {
+            rows.push(row(
+                "Stop active background download",
+                "stops yt-dlp; partial .part file stays in ~/Downloads",
                 Glyph::Warning,
-            );
-            Ok(0)
+            ));
+            keys.push("stop".to_string());
         }
-        "link" => {
-            let mut url_picker = Picker::new(
-                "Link",
-                vec![Question::input(
-                    "Download URL",
-                    "Enter URL starting with http:// or https://",
-                    "https://...",
-                    false,
-                )],
-            );
-            let uc = crate::run_screen(terminal, design, "Link", &mut url_picker)?;
-            if uc != 0 {
-                return Ok(uc);
+
+        let note = banner
+            .take()
+            .unwrap_or_else(|| "Enter downloads in this window \u{00b7} Escape closes".to_string());
+
+        let mut picker = Picker::new(
+            "Download",
+            vec![Question::choose("Download", note, rows, keys)],
+        );
+
+        let code = crate::run_screen(terminal, design, "Download", &mut picker)?;
+        if code != 0 {
+            return Ok(code);
+        }
+
+        let Some(action) = picker.answers().first().cloned() else {
+            return Ok(1);
+        };
+
+        match action.as_str() {
+            "folder" => {
+                let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+                let dl = Path::new(&home).join("Downloads");
+                crate::system::spawn_detached(&format!(
+                    "exec lazyos menu files '{}'",
+                    dl.display()
+                ));
+                return Ok(0);
             }
-            let Some(raw_url) = url_picker.answers().first() else {
-                return Ok(1);
-            };
-            let url = raw_url.trim();
-            if !url.starts_with("http://") && !url.starts_with("https://") {
-                say(
-                    "Download",
-                    "That is not a valid link (must start with http:// or https://)",
-                    Urgency::Critical,
-                    Glyph::Warning,
+            "stop" => {
+                let _ = Command::new("pkill").args(["-f", "yt-dlp"]).status();
+                banner = Some(
+                    "Stopped active yt-dlp process \u{00b7} partial .part file remains in ~/Downloads"
+                        .to_string(),
                 );
-                return Ok(3);
             }
-            ask_kind_and_download(terminal, design, url)
+            "link" => {
+                let mut url_picker = Picker::new(
+                    "Link",
+                    vec![Question::input(
+                        "Download URL",
+                        "Enter URL starting with http:// or https:// \u{00b7} Escape goes back",
+                        "https://...",
+                        false,
+                    )],
+                );
+                let uc = crate::run_screen(terminal, design, "Link", &mut url_picker)?;
+                if uc != 0 {
+                    continue;
+                }
+                let Some(raw_url) = url_picker.answers().first() else {
+                    continue;
+                };
+                let url = raw_url.trim();
+                if !url.starts_with("http://") && !url.starts_with("https://") {
+                    banner =
+                        Some("Not a valid URL (must start with http:// or https://)".to_string());
+                    continue;
+                }
+                let res = ask_kind_and_download(terminal, design, url)?;
+                if res == lazyos_ui::app::exit::ESCAPE {
+                    continue;
+                }
+                return Ok(res);
+            }
+            act if act.starts_with("clip:") => {
+                let url = &act[5..];
+                let res = ask_kind_and_download(terminal, design, url)?;
+                if res == lazyos_ui::app::exit::ESCAPE {
+                    continue;
+                }
+                return Ok(res);
+            }
+            _ => return Ok(0),
         }
-        act if act.starts_with("clip:") => {
-            let url = &act[5..];
-            ask_kind_and_download(terminal, design, url)
-        }
-        _ => Ok(0),
     }
 }
 
@@ -214,12 +206,12 @@ fn ask_kind_and_download(
     let rows = vec![
         row(
             "Video",
-            "the best picture and sound it can merge",
+            "best video + audio streams merged into ~/Downloads",
             Glyph::Video,
         ),
         row(
             "Audio only",
-            "m4a, from the best audio stream",
+            "m4a extracted from the best audio stream",
             Glyph::Music,
         ),
     ];
@@ -236,8 +228,26 @@ fn ask_kind_and_download(
     }
 
     let audio_only = picker.answers().first().map(String::as_str) == Some("audio");
-    spawn_download(url, audio_only);
-    Ok(0)
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+    let dl = Path::new(&home).join("Downloads");
+    let _ = fs::create_dir_all(&dl);
+
+    let argv = build_download_argv(url, &dl, audio_only);
+    let kind_label = if audio_only { "Audio (m4a)" } else { "Video" };
+    let preview: String = url.chars().take(48).collect();
+    let tag = format!("download-{}", std::process::id());
+    let step_label = format!("yt-dlp {preview} \u{2192} ~/Downloads");
+    let task = Task::start_steps(
+        &tag,
+        format!("Download {kind_label}"),
+        vec![step_label],
+        true,
+        vec![argv],
+    )
+    .map_err(|e| crate::Failure::new("Download", e.to_string()))?;
+
+    let mut view = TaskView::new(task);
+    crate::run_screen(terminal, design, "Download", &mut view)
 }
 
 #[cfg(test)]
@@ -249,5 +259,12 @@ mod tests {
         assert!("https://example.com/video".starts_with("https://"));
         assert!("http://example.com/audio".starts_with("http://"));
         assert!(!"ftp://example.com".starts_with("http://"));
+    }
+
+    #[test]
+    fn build_download_argv_includes_audio_flags_when_requested() {
+        let argv = build_download_argv("https://example.com/v", Path::new("/tmp"), true);
+        assert!(argv.contains(&"-x".to_string()));
+        assert!(argv.contains(&"m4a".to_string()));
     }
 }

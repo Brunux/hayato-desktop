@@ -98,6 +98,7 @@ pub struct MenuScreen {
     /// The rows' height as last drawn: `Screen::key` has no area, and a page
     /// key needs to know how far a page is.
     rows_height: Cell<u16>,
+    power_error: Option<String>,
     /// Set when the window ends on a choice; the caller acts on it.
     pub chosen: Option<Picked>,
 }
@@ -157,6 +158,7 @@ impl MenuScreen {
             header: Header::new("LazyOS"),
             keybar: Vec::new(),
             rows_height: Cell::new(20),
+            power_error: None,
             chosen: None,
         };
         screen.refresh();
@@ -391,14 +393,25 @@ impl MenuScreen {
     fn draw_power(&self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Power"), true);
         let (filter, rows) = Self::list_layout(ctx.area);
-        put_trunc(
-            ctx.buf,
-            filter.x,
-            filter.y,
-            "Lock and sleep act at once; the last three ask once more first.",
-            filter.width,
-            ctx.design.style(TextStyle::Dim),
-        );
+        if let Some(err) = &self.power_error {
+            put_trunc(
+                ctx.buf,
+                filter.x,
+                filter.y,
+                err,
+                filter.width,
+                ctx.design.style(TextStyle::Danger),
+            );
+        } else {
+            put_trunc(
+                ctx.buf,
+                filter.x,
+                filter.y,
+                "Lock and sleep act at once; the last three ask once more first.",
+                filter.width,
+                ctx.design.style(TextStyle::Dim),
+            );
+        }
         self.power.render(rows, ctx.buf, ctx.design, true);
     }
 
@@ -527,13 +540,8 @@ impl Screen for MenuScreen {
                                 && let Some(reason) = self.setup.hibernate_gate.clone()
                             {
                                 // The row already says why; Enter says it
-                                // whole, and the list stays open.
-                                crate::system::say(
-                                    "Hibernate",
-                                    reason,
-                                    lazyos_ui::Urgency::Critical,
-                                    Glyph::Save,
-                                );
+                                // whole in the top banner, and the list stays open.
+                                self.power_error = Some(reason);
                             } else {
                                 self.chosen = Some(Picked::Session(action));
                                 outcome = Outcome::Done(OK);
@@ -619,6 +627,10 @@ impl Screen for MenuScreen {
 
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
+    }
+
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        Some((860, 560))
     }
 
     fn needs_tick(&self) -> Option<Duration> {

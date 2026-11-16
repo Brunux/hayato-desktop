@@ -1,17 +1,24 @@
 //! Process Manager & Killer (`rofi-kill`, `lazyos menu kill`).
 //!
 //! Lists current user processes with PID, command name, and memory usage.
-//! Filter as you type; Enter sends SIGTERM, with follow-up SIGKILL option if
-//! process refuses to terminate.
+//! Separates the `Refresh` action into an [`ActionStrip`] above the filter bar
+//! so the scrollable list holds strictly user processes. Filter as you type;
+//! Enter sends SIGTERM, with in-window SIGKILL confirmation if the process
+//! refuses to terminate.
 
+use std::cell::Cell;
 use std::process::Command;
 
-use lazyos_ui::{Design, Glyph, Urgency};
+use lazyos_ui::{
+    ActionItem, ActionStrip, ActionStripEvent, BodyCtx, Confirm, ConfirmAction, Design, Glyph,
+    Header, KeyHint, ListAction, ListState, Outcome, Row, Screen, draw_card, draw_filter_bar,
+};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::layout::Rect;
 
-use super::pick::{Picker, Question, row};
-use super::{out, say};
+use super::out;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProcessRecord {
@@ -42,126 +49,294 @@ pub fn parse_ps_table(raw: &str, self_pid: u32) -> Vec<ProcessRecord> {
     procs
 }
 
+enum KillMode {
+    List,
+    ConfirmKill {
+        pid: u32,
+        comm: String,
+        confirm: Confirm,
+    },
+}
+
+pub struct KillScreen {
+    self_pid: u32,
+    procs: Vec<ProcessRecord>,
+    strip: ActionStrip,
+    list: ListState,
+    mode: KillMode,
+    status_note: Option<String>,
+    header: Header,
+    keybar: Vec<KeyHint>,
+    rows_height: Cell<u16>,
+}
+
+impl KillScreen {
+    pub fn new() -> Self {
+        let self_pid = std::process::id();
+        let strip = ActionStrip::new(vec![
+            ActionItem::new("refresh", "^R", "Refresh processes").glyph(Glyph::Sync),
+        ]);
+        let mut screen = Self {
+            self_pid,
+            procs: Vec::new(),
+            strip,
+            list: ListState::new().with_empty("no matching processes"),
+            mode: KillMode::List,
+            status_note: None,
+            header: Header::new("End a process").subtitle("Process manager"),
+            keybar: vec![
+                KeyHint::new("Enter", "send SIGTERM"),
+                KeyHint::new("Ctrl+R", "refresh"),
+                KeyHint::new("Tab", "actions"),
+                KeyHint::new("Esc", "back"),
+            ],
+            rows_height: Cell::new(16),
+        };
+        screen.reload(false);
+        screen
+    }
+
+    fn reload(&mut self, preserve: bool) {
+        let ps_out = out(&["ps", "-eo", "pid=,rss=,comm=", "--sort=-rss"]).unwrap_or_default();
+        self.procs = parse_ps_table(&ps_out, self.self_pid);
+        let rows: Vec<Row> = self
+            .procs
+            .iter()
+            .take(60)
+            .map(|p| {
+                let mb = p.rss_kb / 1024;
+                Row::new(&p.comm)
+                    .glyph(Glyph::Bug)
+                    .detail(format!("pid {}", p.pid))
+                    .value(format!("{mb} MB"))
+            })
+            .collect();
+        if preserve {
+            self.list.update_rows(rows);
+        } else {
+            self.list.set_rows(rows);
+        }
+        let status = self.status_note.clone().unwrap_or_else(|| {
+            format!(
+                "{} user processes \u{00b7} Enter sends SIGTERM",
+                self.list.len()
+            )
+        });
+        self.header = Header::new("End a process")
+            .subtitle("Process manager")
+            .status(status);
+    }
+
+    fn layout(area: Rect) -> (Rect, Rect, Rect) {
+        let inner = Rect {
+            x: area.x + 2,
+            y: area.y + 1,
+            width: area.width.saturating_sub(4),
+            height: area.height.saturating_sub(2),
+        };
+        let strip = Rect {
+            x: inner.x,
+            y: inner.y,
+            width: inner.width,
+            height: 1.min(inner.height),
+        };
+        let filter = Rect {
+            x: inner.x,
+            y: inner.y.saturating_add(2).min(inner.bottom()),
+            width: inner.width,
+            height: 1.min(inner.height.saturating_sub(2)),
+        };
+        let rows_y = inner.y.saturating_add(4).min(inner.bottom());
+        let rows = Rect {
+            x: inner.x,
+            y: rows_y,
+            width: inner.width,
+            height: inner.bottom().saturating_sub(rows_y),
+        };
+        (strip, filter, rows)
+    }
+
+    fn signal_process(&mut self, index: usize) -> Outcome {
+        let Some(p) = self.procs.get(index).cloned() else {
+            return Outcome::Continue;
+        };
+        let pid_str = p.pid.to_string();
+        let term_res = Command::new("kill").args(["-TERM", &pid_str]).status();
+        if term_res.map(|s| s.success()).unwrap_or(false) {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            let alive = Command::new("kill")
+                .args(["-0", &pid_str])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if alive {
+                let confirm = Confirm::new(
+                    format!("Still running: {} (pid {})", p.comm, p.pid),
+                    "Force-kill with SIGKILL? Unsaved data in that process will be lost.",
+                )
+                .with_options(&["Leave running", "Force kill (SIGKILL)"]);
+                self.mode = KillMode::ConfirmKill {
+                    pid: p.pid,
+                    comm: p.comm,
+                    confirm,
+                };
+            } else {
+                self.status_note = Some(format!("Ended {} (pid {})", p.comm, p.pid));
+                self.reload(true);
+            }
+        } else {
+            self.status_note = Some(format!(
+                "Cannot signal {} ({}): not owned by you or already exited",
+                p.comm, p.pid
+            ));
+            self.reload(true);
+        }
+        Outcome::Consumed
+    }
+}
+
+impl Screen for KillScreen {
+    fn draw(&mut self, ctx: &mut BodyCtx) {
+        match &self.mode {
+            KillMode::ConfirmKill { confirm, .. } => {
+                confirm.render(ctx.area, ctx.buf, ctx.design);
+            }
+            KillMode::List => {
+                draw_card(ctx.buf, ctx.area, ctx.design, Some("End a process"), true);
+                let (strip, filter, rows) = Self::layout(ctx.area);
+                self.strip.render(strip, ctx.buf, ctx.design);
+                let hint = self.status_note.as_deref().unwrap_or(
+                    "Enter sends SIGTERM \u{00b7} type to filter \u{00b7} Ctrl+R refreshes",
+                );
+                draw_filter_bar(
+                    ctx.buf,
+                    filter,
+                    ctx.design,
+                    self.list.filter(),
+                    hint,
+                    self.list.visible_len(),
+                    self.list.len(),
+                );
+                self.rows_height.set(rows.height);
+                self.list
+                    .render(rows, ctx.buf, ctx.design, !self.strip.is_focused());
+            }
+        }
+    }
+
+    fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
+        if key.kind != KeyEventKind::Press {
+            return Outcome::Continue;
+        }
+        match &mut self.mode {
+            KillMode::ConfirmKill { pid, comm, confirm } => match confirm.handle(key) {
+                ConfirmAction::Chosen(1) => {
+                    let pid_val = *pid;
+                    let comm_val = comm.clone();
+                    let _ = Command::new("kill")
+                        .args(["-KILL", &pid_val.to_string()])
+                        .status();
+                    self.mode = KillMode::List;
+                    self.status_note = Some(format!("Force-killed {comm_val} (pid {pid_val})"));
+                    self.reload(true);
+                    Outcome::Consumed
+                }
+                ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                    let pid_val = *pid;
+                    let comm_val = comm.clone();
+                    self.mode = KillMode::List;
+                    self.status_note = Some(format!("Left {comm_val} (pid {pid_val}) running"));
+                    self.reload(true);
+                    Outcome::Consumed
+                }
+                ConfirmAction::None => Outcome::Consumed,
+            },
+            KillMode::List => {
+                match self.strip.handle(key) {
+                    ActionStripEvent::Activated("refresh") => {
+                        self.status_note = None;
+                        self.reload(true);
+                        return Outcome::Consumed;
+                    }
+                    ActionStripEvent::Activated(_) | ActionStripEvent::Consumed => {
+                        return Outcome::Consumed;
+                    }
+                    ActionStripEvent::Ignored => {}
+                }
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && matches!(key.code, KeyCode::Char('r') | KeyCode::Char('R'))
+                {
+                    self.status_note = None;
+                    self.reload(true);
+                    return Outcome::Consumed;
+                }
+                if key.code == KeyCode::Esc {
+                    if !self.list.filter().is_empty() {
+                        self.list.set_filter("");
+                        return Outcome::Consumed;
+                    }
+                    return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
+                }
+                let typed = matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
+                    && !key.modifiers.contains(KeyModifiers::CONTROL);
+                if typed {
+                    self.list.type_filter(key);
+                    return Outcome::Consumed;
+                }
+                match self.list.handle(key, self.rows_height.get(), design) {
+                    ListAction::Activated(index) => self.signal_process(index),
+                    _ => Outcome::Continue,
+                }
+            }
+        }
+    }
+
+    fn click(&mut self, row: Option<usize>) -> Outcome {
+        if !matches!(self.mode, KillMode::List) {
+            return Outcome::Continue;
+        }
+        if let Some(row) = row {
+            if row == 10_000 {
+                self.status_note = None;
+                self.reload(true);
+                return Outcome::Consumed;
+            }
+            self.strip.set_focused(false);
+            self.list.set_cursor(row);
+            if let Some(index) = self.list.selected_index() {
+                return self.signal_process(index);
+            }
+        }
+        Outcome::Continue
+    }
+
+    fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        if !matches!(self.mode, KillMode::List) {
+            return None;
+        }
+        let (strip, _, rows) = Self::layout(area);
+        if y == strip.y && x >= strip.x && x < strip.right() {
+            return Some(10_000);
+        }
+        self.list.hit_row(rows, x, y, design)
+    }
+
+    fn keybar(&self) -> Option<&[KeyHint]> {
+        Some(&self.keybar)
+    }
+
+    fn header(&self) -> Option<&Header> {
+        Some(&self.header)
+    }
+}
+
 /// Interactive `lazyos menu kill`.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
-    let self_pid = std::process::id();
-    let ps_out = out(&["ps", "-eo", "pid=,rss=,comm=", "--sort=-rss"]).unwrap_or_default();
-    let procs = parse_ps_table(&ps_out, self_pid);
-
-    if procs.is_empty() {
-        say(
-            "End a process",
-            "No user processes found",
-            Urgency::Normal,
-            Glyph::Bug,
-        );
-        return Ok(0);
-    }
-
-    let mut rows = Vec::new();
-    let mut keys = Vec::new();
-
-    for p in procs.iter().take(50) {
-        let mb = p.rss_kb / 1024;
-        rows.push(row(&p.comm, format!("{mb} MB · pid {}", p.pid), Glyph::Bug));
-        keys.push(format!("{}:{}", p.pid, p.comm));
-    }
-
-    let mut picker = Picker::new(
-        "End a process",
-        vec![Question::choose(
-            "End a process",
-            "Enter sends SIGTERM · Escape closes",
-            rows,
-            keys,
-        )],
-    );
-
-    let code = crate::run_screen(terminal, design, "End a process", &mut picker)?;
-    if code != 0 {
-        return Ok(code);
-    }
-
-    let answers = picker.answers();
-    let Some(action) = answers.first() else {
-        return Ok(1);
-    };
-
-    let Some((pid_str, comm)) = action.split_once(':') else {
-        return Ok(1);
-    };
-    let Ok(pid) = pid_str.parse::<i32>() else {
-        return Ok(1);
-    };
-
-    // Send SIGTERM
-    let term_res = Command::new("kill")
-        .args(["-TERM", &pid.to_string()])
-        .status();
-    if term_res.map(|s| s.success()).unwrap_or(false) {
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        // Check if still running
-        let alive = Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if alive {
-            // Prompt for SIGKILL
-            let mut kill_picker = Picker::new(
-                &format!("Still running: {comm}"),
-                vec![Question::choose(
-                    format!("Still running: {comm}"),
-                    "SIGKILL cannot be ignored, unsaved data is lost",
-                    vec![
-                        row(
-                            "Force it (SIGKILL)",
-                            "terminate immediately",
-                            Glyph::Warning,
-                        ),
-                        row("Leave it alone", "keep process running", Glyph::Bug),
-                    ],
-                    vec!["kill".to_string(), "leave".to_string()],
-                )],
-            );
-            let kc = crate::run_screen(
-                terminal,
-                design,
-                &format!("Still running: {comm}"),
-                &mut kill_picker,
-            )?;
-            if kc == 0 && kill_picker.answers().first().map(String::as_str) == Some("kill") {
-                let _ = Command::new("kill")
-                    .args(["-KILL", &pid.to_string()])
-                    .status();
-                say(
-                    "End a process",
-                    format!("{comm} ({pid}) killed"),
-                    Urgency::Normal,
-                    Glyph::Bug,
-                );
-            }
-        } else {
-            say(
-                "End a process",
-                format!("{comm} ({pid}) ended"),
-                Urgency::Normal,
-                Glyph::Bug,
-            );
-        }
-        Ok(0)
-    } else {
-        say(
-            "End a process",
-            format!("Cannot signal {comm} ({pid}): it is not yours or is gone"),
-            Urgency::Critical,
-            Glyph::Bug,
-        );
-        Ok(3)
-    }
+    let mut screen = KillScreen::new();
+    crate::run_screen(terminal, design, "End a process", &mut screen)
 }
 
 #[cfg(test)]

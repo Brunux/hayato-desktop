@@ -659,6 +659,14 @@ impl ListState {
         self.ranked
     }
 
+    pub fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+
     pub fn set_rows(&mut self, rows: Vec<Row>) {
         self.glyph_width = rows
             .iter()
@@ -678,6 +686,60 @@ impl ListState {
         self.visible.extend(0..self.rows.len());
         self.applied.clear();
         self.refilter();
+    }
+
+    /// Replace the rows in-place while preserving the active filter, the
+    /// selected row's identity (`value` or `label`), and the scroll offset.
+    /// Used when a background scan (`nmcli`, `bluetoothctl`, `du`, `ps`)
+    /// refreshes a live list while the person is navigating or typing.
+    pub fn update_rows(&mut self, rows: Vec<Row>) {
+        let selected_value = self.selected().and_then(|r| r.value.clone());
+        let selected_label = self.selected().map(|r| r.label.clone());
+        let prev_cursor = self.cursor;
+        let prev_offset = self.offset;
+
+        self.glyph_width = rows
+            .iter()
+            .filter_map(|row| row.glyph.as_deref())
+            .map(|glyph| UnicodeWidthStr::width(glyph) as u16)
+            .max()
+            .unwrap_or(0);
+        self.rows = rows;
+        if self.ranked {
+            self.tiers.clear();
+            self.tiers.resize(self.rows.len(), 0);
+        }
+        self.visible.clear();
+        self.visible.extend(0..self.rows.len());
+        self.applied.clear();
+        self.refilter();
+
+        if self.visible.is_empty() {
+            self.cursor = 0;
+            self.offset = 0;
+            return;
+        }
+
+        let matched_pos = selected_value
+            .as_deref()
+            .and_then(|val| {
+                self.visible
+                    .iter()
+                    .position(|&idx| self.rows[idx].value.as_deref() == Some(val))
+            })
+            .or_else(|| {
+                selected_label.as_deref().and_then(|lbl| {
+                    self.visible
+                        .iter()
+                        .position(|&idx| self.rows[idx].label == lbl)
+                })
+            });
+
+        self.cursor = matched_pos.unwrap_or_else(|| prev_cursor.min(self.visible.len() - 1));
+        self.offset = prev_offset.min(self.visible.len().saturating_sub(1));
+        if self.cursor < self.offset {
+            self.offset = self.cursor;
+        }
     }
 
     /// Append rows while the list is open, for a producer that streams them (a
@@ -1074,6 +1136,184 @@ impl ListState {
                 );
             }
         }
+        draw_scrollbar(
+            buf,
+            area,
+            design,
+            self.offset,
+            capacity,
+            self.visible.len(),
+            focused,
+        );
+    }
+}
+
+/// Standard card layout for a filter/hint row and a scrollable list body
+/// inside `draw_card(buf, area, design, ...)`.
+pub fn list_layout(area: Rect, _design: &Design) -> (Rect, Rect) {
+    let inner = Rect {
+        x: area.x + 2,
+        y: area.y + 1,
+        width: area.width.saturating_sub(4),
+        height: area.height.saturating_sub(2),
+    };
+    let filter_row = Rect {
+        height: 1.min(inner.height),
+        ..inner
+    };
+    let rows = Rect {
+        y: inner.y + 2,
+        height: inner.height.saturating_sub(2),
+        ..inner
+    };
+    (filter_row, rows)
+}
+
+/// A 1-column scrollbar on the right edge of `area` (`│` track, `█` thumb)
+/// drawn only when `total > capacity`, with zero heap allocations.
+pub fn draw_scrollbar(
+    buf: &mut Buffer,
+    area: Rect,
+    design: &Design,
+    offset: usize,
+    capacity: usize,
+    total: usize,
+    focused: bool,
+) {
+    if total <= capacity || capacity == 0 || area.height < 3 || area.width < 12 {
+        return;
+    }
+    let x = area.right() - 1;
+    let h = area.height as usize;
+    let thumb_h = ((capacity * h) / total).max(1).min(h);
+    let max_offset = total.saturating_sub(capacity).max(1);
+    let thumb_top = (offset.min(max_offset) * (h - thumb_h)) / max_offset;
+    let track_style = Style::default().fg(design.color(ColorRole::SurfaceAlt));
+    let thumb_style = Style::default().fg(design.color(if focused {
+        ColorRole::Accent
+    } else {
+        ColorRole::Dim
+    }));
+    for row in 0..h {
+        let y = area.y + row as u16;
+        if let Some(cell) = buf.cell_mut((x, y)) {
+            if row >= thumb_top && row < thumb_top + thumb_h {
+                cell.set_symbol("\u{2588}").set_style(thumb_style);
+            } else {
+                cell.set_symbol("\u{2502}").set_style(track_style);
+            }
+        }
+    }
+}
+
+fn write_usize_digits(mut n: usize, out: &mut [u8], pos: &mut usize) {
+    let start = *pos;
+    if n == 0 {
+        if *pos < out.len() {
+            out[*pos] = b'0';
+            *pos += 1;
+        }
+        return;
+    }
+    while n > 0 && *pos < out.len() {
+        out[*pos] = b'0' + (n % 10) as u8;
+        *pos += 1;
+        n /= 10;
+    }
+    out[start..*pos].reverse();
+}
+
+/// Zero-allocation search/filter bar for standard cards: draws the search glyph,
+/// either the dim hint or the active filter with a `█` cursor, and a right-aligned
+/// `visible / total` match counter.
+pub fn draw_filter_bar(
+    buf: &mut Buffer,
+    area: Rect,
+    design: &Design,
+    filter: &str,
+    hint: &str,
+    visible: usize,
+    total: usize,
+) {
+    if area.width < 4 || area.height == 0 {
+        return;
+    }
+    let active = !filter.is_empty();
+    let icon_style = if active {
+        design.style(TextStyle::Title)
+    } else {
+        design.style(TextStyle::Dim)
+    };
+    let mut x = put(
+        buf,
+        area.x,
+        area.y,
+        Glyph::Search.cell(),
+        area.width,
+        icon_style,
+    );
+    x = put(
+        buf,
+        x,
+        area.y,
+        " ",
+        area.right().saturating_sub(x),
+        design.style(TextStyle::Dim),
+    );
+    let mut scratch = [0u8; 24];
+    let mut counter_len = 0usize;
+    let show_counter = total > 0 && area.width >= 24 && (active || total > 5);
+    if show_counter {
+        write_usize_digits(visible, &mut scratch, &mut counter_len);
+        if counter_len + 3 < scratch.len() {
+            scratch[counter_len] = b' ';
+            scratch[counter_len + 1] = b'/';
+            scratch[counter_len + 2] = b' ';
+            counter_len += 3;
+        }
+        write_usize_digits(total, &mut scratch, &mut counter_len);
+    }
+    let reserve = if show_counter {
+        (counter_len as u16) + 2
+    } else {
+        0
+    };
+    if active {
+        x = put_trunc(
+            buf,
+            x,
+            area.y,
+            filter,
+            area.right().saturating_sub(x + reserve + 1),
+            design.style(TextStyle::Title),
+        );
+        x = put(
+            buf,
+            x,
+            area.y,
+            "\u{2588}",
+            area.right().saturating_sub(x),
+            Style::default().fg(design.color(ColorRole::Accent)),
+        );
+    } else {
+        x = put_trunc(
+            buf,
+            x,
+            area.y,
+            hint,
+            area.right().saturating_sub(x + reserve),
+            design.style(TextStyle::Dim),
+        );
+    }
+    if show_counter && let Ok(counter) = std::str::from_utf8(&scratch[..counter_len]) {
+        let count_style = if active && visible == 0 {
+            design.style(TextStyle::Danger)
+        } else if active {
+            design.style(TextStyle::Code)
+        } else {
+            design.style(TextStyle::Dim)
+        };
+        put_right(buf, area, area.y, counter, count_style, x);
     }
 }
 
@@ -1583,6 +1823,7 @@ pub enum InputAction {
 #[derive(Clone, Debug, Default)]
 pub struct Input {
     text: String,
+    cursor: usize,
     masked: bool,
 }
 
@@ -1592,8 +1833,11 @@ impl Input {
     }
 
     pub fn with_text(text: impl Into<String>) -> Self {
+        let text = text.into();
+        let cursor = text.len();
         Self {
-            text: text.into(),
+            text,
+            cursor,
             masked: false,
         }
     }
@@ -1615,17 +1859,94 @@ impl Input {
         &self.text
     }
 
+    pub fn cursor(&self) -> usize {
+        self.cursor.min(self.text.len())
+    }
+
+    pub fn set(&mut self, text: impl Into<String>) {
+        self.text = text.into();
+        self.cursor = self.text.len();
+    }
+
+    fn prev_boundary(&self, pos: usize) -> usize {
+        let pos = pos.min(self.text.len());
+        self.text[..pos]
+            .char_indices()
+            .next_back()
+            .map_or(0, |(idx, _)| idx)
+    }
+
+    fn next_boundary(&self, pos: usize) -> usize {
+        let pos = pos.min(self.text.len());
+        let mut iter = self.text[pos..].char_indices();
+        let _ = iter.next();
+        iter.next().map_or(self.text.len(), |(off, _)| pos + off)
+    }
+
     pub fn handle(&mut self, key: KeyEvent) -> InputAction {
         if key.kind != ratatui::crossterm::event::KeyEventKind::Press {
             return InputAction::Ignored;
         }
+        self.cursor = self.cursor.min(self.text.len());
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
             KeyCode::Esc => InputAction::Cancelled,
             KeyCode::Enter if self.text.trim().is_empty() => InputAction::Ignored,
             KeyCode::Enter => InputAction::Submitted,
+            KeyCode::Left => {
+                if self.cursor > 0 {
+                    self.cursor = self.prev_boundary(self.cursor);
+                    InputAction::Changed
+                } else {
+                    InputAction::Ignored
+                }
+            }
+            KeyCode::Right => {
+                if self.cursor < self.text.len() {
+                    self.cursor = self.next_boundary(self.cursor);
+                    InputAction::Changed
+                } else {
+                    InputAction::Ignored
+                }
+            }
+            KeyCode::Home => {
+                if self.cursor > 0 {
+                    self.cursor = 0;
+                    InputAction::Changed
+                } else {
+                    InputAction::Ignored
+                }
+            }
+            KeyCode::End => {
+                if self.cursor < self.text.len() {
+                    self.cursor = self.text.len();
+                    InputAction::Changed
+                } else {
+                    InputAction::Ignored
+                }
+            }
+            KeyCode::Char('a') if control => {
+                self.cursor = 0;
+                InputAction::Changed
+            }
+            KeyCode::Char('e') if control => {
+                self.cursor = self.text.len();
+                InputAction::Changed
+            }
             KeyCode::Backspace => {
-                if self.text.pop().is_some() {
+                if self.cursor > 0 {
+                    let prev = self.prev_boundary(self.cursor);
+                    self.text.drain(prev..self.cursor);
+                    self.cursor = prev;
+                    InputAction::Changed
+                } else {
+                    InputAction::Ignored
+                }
+            }
+            KeyCode::Delete => {
+                if self.cursor < self.text.len() {
+                    let next = self.next_boundary(self.cursor);
+                    self.text.drain(self.cursor..next);
                     InputAction::Changed
                 } else {
                     InputAction::Ignored
@@ -1633,18 +1954,22 @@ impl Input {
             }
             KeyCode::Char('u') if control => {
                 self.text.clear();
+                self.cursor = 0;
                 InputAction::Changed
             }
             KeyCode::Char('w') if control => {
-                let kept = self.text.trim_end().len();
-                let start = self.text[..kept]
+                let before = &self.text[..self.cursor];
+                let kept = before.trim_end().len();
+                let start = before[..kept]
                     .rfind(char::is_whitespace)
                     .map_or(0, |space| space + 1);
-                self.text.truncate(start);
+                self.text.drain(start..self.cursor);
+                self.cursor = start;
                 InputAction::Changed
             }
             KeyCode::Char(ch) if !control && !key.modifiers.contains(KeyModifiers::ALT) => {
-                self.text.push(ch);
+                self.text.insert(self.cursor, ch);
+                self.cursor += ch.len_utf8();
                 InputAction::Changed
             }
             _ => InputAction::Ignored,
@@ -1655,15 +1980,35 @@ impl Input {
     /// wider than the field shows its tail, because the end is where the
     /// person is typing.
     pub fn render(&self, area: Rect, buf: &mut Buffer, design: &Design, placeholder: &str) {
+        self.render_styled(
+            area,
+            buf,
+            design,
+            placeholder,
+            ColorRole::Surface,
+            TextStyle::Body,
+        );
+    }
+
+    /// Render the input field with a custom background role and text style,
+    /// drawing the active cursor at `self.cursor` with zero heap allocations.
+    pub fn render_styled(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        design: &Design,
+        placeholder: &str,
+        bg_role: ColorRole,
+        text_style: TextStyle,
+    ) {
         if area.width < 2 || area.height == 0 {
             return;
         }
+        let bg = design.color(bg_role);
         fill(
             buf,
             Rect { height: 1, ..area },
-            Style::default()
-                .bg(design.color(ColorRole::Surface))
-                .fg(design.color(ColorRole::Text)),
+            Style::default().bg(bg).fg(design.color(ColorRole::Text)),
         );
         let room = area.width.saturating_sub(2);
         let x = area.x + 1;
@@ -1674,13 +2019,13 @@ impl Input {
                 area.y,
                 placeholder,
                 room.saturating_sub(1),
-                design
-                    .style(TextStyle::Dim)
-                    .bg(design.color(ColorRole::Surface)),
+                design.style(TextStyle::Dim).bg(bg),
             );
             put(buf, x, area.y, " ", 1, design.style(TextStyle::Key));
             return;
         }
+        let normal_style = design.style(text_style).bg(bg);
+        let cursor_style = design.style(TextStyle::Key);
         if self.masked {
             const STARS: &str = "****************************************************************************************************";
             let count = self.text.chars().count();
@@ -1690,19 +2035,11 @@ impl Input {
             } else {
                 &STARS[..STARS.len()]
             };
-            let end = put(
-                buf,
-                x,
-                area.y,
-                stars_slice,
-                room,
-                design
-                    .style(TextStyle::Body)
-                    .bg(design.color(ColorRole::Surface)),
-            );
-            put(buf, end, area.y, " ", 1, design.style(TextStyle::Key));
+            let end = put(buf, x, area.y, stars_slice, room, normal_style);
+            put(buf, end, area.y, " ", 1, cursor_style);
             return;
         }
+        let cur = self.cursor.min(self.text.len());
         // The tail that fits, measured in cells from the end.
         let mut start = self.text.len();
         let mut width = 0u16;
@@ -1714,17 +2051,601 @@ impl Input {
             width += w;
             start = index;
         }
-        let end = put(
-            buf,
-            x,
-            area.y,
-            &self.text[start..],
-            room,
-            design
-                .style(TextStyle::Body)
-                .bg(design.color(ColorRole::Surface)),
-        );
-        put(buf, end, area.y, " ", 1, design.style(TextStyle::Key));
+        if cur < start {
+            start = cur;
+        }
+        if cur >= self.text.len() {
+            let end = put(buf, x, area.y, &self.text[start..], room, normal_style);
+            put(buf, end, area.y, " ", 1, cursor_style);
+        } else {
+            let next = self.next_boundary(cur);
+            let before = &self.text[start..cur];
+            let cur_str = &self.text[cur..next];
+            let after = &self.text[next..];
+            let c1 = put(buf, x, area.y, before, room, normal_style);
+            let used1 = c1.saturating_sub(x);
+            let c2 = put(
+                buf,
+                c1,
+                area.y,
+                cur_str,
+                room.saturating_sub(used1),
+                cursor_style,
+            );
+            let used2 = c2.saturating_sub(x);
+            put(
+                buf,
+                c2,
+                area.y,
+                after,
+                room.saturating_sub(used2),
+                normal_style,
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ActionStrip — Separating Tool Actions from Results
+// ---------------------------------------------------------------------------
+
+/// A single action pill inside an [`ActionStrip`].
+#[derive(Clone, Debug)]
+pub struct ActionItem {
+    pub id: &'static str,
+    pub key: &'static str,
+    pub label: String,
+    pub glyph: Option<Glyph>,
+}
+
+impl ActionItem {
+    pub fn new(id: &'static str, key: &'static str, label: impl Into<String>) -> Self {
+        Self {
+            id,
+            key,
+            label: label.into(),
+            glyph: None,
+        }
+    }
+
+    pub fn glyph(mut self, glyph: Glyph) -> Self {
+        self.glyph = Some(glyph);
+        self
+    }
+
+    fn pill_width(&self) -> u16 {
+        let g_w = self
+            .glyph
+            .map(|g| UnicodeWidthStr::width(g.cell()) as u16 + 1)
+            .unwrap_or(0);
+        let k_w = UnicodeWidthStr::width(self.key) as u16;
+        let l_w = UnicodeWidthStr::width(self.label.as_str()) as u16;
+        // " [key] glyph label "
+        2 + k_w + 1 + g_w + l_w + 1
+    }
+}
+
+/// What happened when an [`ActionStrip`] handled a key event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActionStripEvent {
+    Ignored,
+    Consumed,
+    Activated(&'static str),
+}
+
+/// Horizontal bar of action pills separating tool-level operations (Rescan,
+/// Toggle Radio, Clean All, Pick Pixel, etc.) from the scrollable domain
+/// results list.
+///
+/// Users can either:
+/// - Press `Tab` to focus the strip, use `Left`/`Right` to select a pill, and
+///   press `Enter`/`Space` to activate it (`Down`/`Tab`/`Esc` returns focus to
+///   the results list),
+/// - Click any pill directly with the mouse, or
+/// - Trigger actions anytime via their direct shortcut (`Ctrl+R`, `Ctrl+T`, etc.).
+#[derive(Clone, Debug, Default)]
+pub struct ActionStrip {
+    items: Vec<ActionItem>,
+    cursor: usize,
+    focused: bool,
+}
+
+impl ActionStrip {
+    pub fn new(items: Vec<ActionItem>) -> Self {
+        Self {
+            items,
+            cursor: 0,
+            focused: false,
+        }
+    }
+
+    pub fn set_items(&mut self, items: Vec<ActionItem>) {
+        self.items = items;
+        if self.cursor >= self.items.len() && !self.items.is_empty() {
+            self.cursor = self.items.len() - 1;
+        }
+    }
+
+    pub fn items(&self) -> &[ActionItem] {
+        &self.items
+    }
+
+    pub fn is_focused(&self) -> bool {
+        self.focused
+    }
+
+    pub fn set_focused(&mut self, focused: bool) {
+        self.focused = focused;
+    }
+
+    /// Handle keyboard navigation when `Tab` toggles focus or when the strip is focused.
+    pub fn handle(&mut self, key: KeyEvent) -> ActionStripEvent {
+        if key.kind != ratatui::crossterm::event::KeyEventKind::Press || self.items.is_empty() {
+            return ActionStripEvent::Ignored;
+        }
+        if matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
+            self.focused = !self.focused;
+            return ActionStripEvent::Consumed;
+        }
+        if !self.focused {
+            return ActionStripEvent::Ignored;
+        }
+        match key.code {
+            KeyCode::Left | KeyCode::Char('h') => {
+                if self.cursor > 0 {
+                    self.cursor -= 1;
+                } else {
+                    self.cursor = self.items.len() - 1;
+                }
+                ActionStripEvent::Consumed
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                self.cursor = (self.cursor + 1) % self.items.len();
+                ActionStripEvent::Consumed
+            }
+            KeyCode::Down | KeyCode::Up | KeyCode::Esc => {
+                self.focused = false;
+                ActionStripEvent::Consumed
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                let id = self.items[self.cursor].id;
+                self.focused = false;
+                ActionStripEvent::Activated(id)
+            }
+            _ => ActionStripEvent::Ignored,
+        }
+    }
+
+    /// Map a mouse click at `(col, row)` inside `area` to an action ID.
+    pub fn hit(&self, area: Rect, col: u16, row: u16) -> Option<&'static str> {
+        self.hit_index(area, col, row).map(|idx| self.items[idx].id)
+    }
+
+    /// Map a mouse click at `(col, row)` inside `area` to an action index.
+    pub fn hit_index(&self, area: Rect, col: u16, row: u16) -> Option<usize> {
+        if area.height == 0 || row != area.y || col < area.x || col >= area.right() {
+            return None;
+        }
+        let mut x = area.x;
+        for (idx, item) in self.items.iter().enumerate() {
+            let w = item.pill_width();
+            if x + w > area.right() {
+                break;
+            }
+            if col >= x && col < x + w {
+                return Some(idx);
+            }
+            x += w + 1;
+        }
+        None
+    }
+
+    /// Render the action strip on a single row with zero heap allocations.
+    pub fn render(&self, area: Rect, buf: &mut Buffer, design: &Design) {
+        if area.width < 8 || area.height == 0 || self.items.is_empty() {
+            return;
+        }
+        let y = area.y;
+        let mut x = area.x;
+        for (idx, item) in self.items.iter().enumerate() {
+            let w = item.pill_width();
+            if x + w > area.right() {
+                break;
+            }
+            let selected = self.focused && idx == self.cursor;
+            let pill_bg = if selected {
+                design.color(ColorRole::Accent)
+            } else {
+                design.color(ColorRole::SurfaceAlt)
+            };
+            let key_style = if selected {
+                Style::default()
+                    .fg(design.color(ColorRole::Bg))
+                    .bg(pill_bg)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(design.color(ColorRole::Accent))
+                    .bg(pill_bg)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
+            };
+            let label_style = if selected {
+                Style::default()
+                    .fg(design.color(ColorRole::Bg))
+                    .bg(pill_bg)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(design.color(ColorRole::Text))
+                    .bg(pill_bg)
+            };
+            fill(
+                buf,
+                Rect {
+                    x,
+                    y,
+                    width: w,
+                    height: 1,
+                },
+                label_style,
+            );
+            let mut col = put(buf, x, y, " ", 1, label_style);
+            col = put(buf, col, y, item.key, w, key_style);
+            col = put(buf, col, y, " ", 1, label_style);
+            if let Some(g) = item.glyph {
+                col = put(buf, col, y, g.cell(), 4, label_style);
+                col = put(buf, col, y, " ", 1, label_style);
+            }
+            put(
+                buf,
+                col,
+                y,
+                &item.label,
+                (x + w).saturating_sub(col + 1),
+                label_style,
+            );
+            x += w + 1;
+        }
+        let hint = if self.focused {
+            "[\u{2190}/\u{2192}] move  [Enter] run  [Esc] list"
+        } else {
+            "[Tab] actions"
+        };
+        let hint_w = UnicodeWidthStr::width(hint) as u16;
+        if x + hint_w < area.right() {
+            put(
+                buf,
+                area.right() - hint_w,
+                y,
+                hint,
+                hint_w,
+                design.style(TextStyle::Dim),
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Signal bars, half-block QR renderer, and non-blocking ActionRunner
+// ---------------------------------------------------------------------------
+
+/// Four-step Wi-Fi/radio signal bar string (`▂▄▆█`) using font-pinned block glyphs.
+pub fn signal_bars(signal: u8) -> &'static str {
+    match signal {
+        0..=9 => "    ",
+        10..=34 => "\u{2582}   ",
+        35..=59 => "\u{2582}\u{2584}  ",
+        60..=79 => "\u{2582}\u{2584}\u{2586} ",
+        _ => "\u{2582}\u{2584}\u{2586}\u{2588}",
+    }
+}
+
+/// Draw a 4-bar signal strength indicator (`▂▄▆█`) colored by signal quality,
+/// returning the column after the 4 bars.
+pub fn draw_signal_bars(buf: &mut Buffer, x: u16, y: u16, design: &Design, signal: u8) -> u16 {
+    const BARS: [&str; 4] = ["\u{2582}", "\u{2584}", "\u{2586}", "\u{2588}"];
+    let active_count = match signal {
+        0..=9 => 0,
+        10..=34 => 1,
+        35..=59 => 2,
+        60..=79 => 3,
+        _ => 4,
+    };
+    let active_role = if signal >= 65 {
+        ColorRole::Ok
+    } else if signal >= 35 {
+        ColorRole::Warn
+    } else {
+        ColorRole::Danger
+    };
+    let on_style = Style::default().fg(design.color(active_role));
+    let off_style = Style::default().fg(design.color(ColorRole::SurfaceAlt));
+    let mut col = x;
+    for (i, sym) in BARS.iter().enumerate() {
+        let style = if i < active_count {
+            on_style
+        } else {
+            off_style
+        };
+        col = put(buf, col, y, sym, 1, style);
+    }
+    col
+}
+
+/// A parsed QR module grid (`true` = dark module, `false` = light module / quiet zone).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QrCode {
+    pub width: u16,
+    pub height: u16,
+    pub modules: Vec<bool>,
+}
+
+impl QrCode {
+    /// Parse `qrencode -t ASCII -m 2` output into a module grid.
+    /// In `qrencode -t ASCII`, each dark module is `"##"` and each light module is `"  "`.
+    pub fn from_ascii(ascii: &str) -> Option<Self> {
+        let lines: Vec<&str> = ascii.lines().filter(|l| !l.is_empty()).collect();
+        if lines.is_empty() {
+            return None;
+        }
+        let max_chars = lines.iter().map(|l| l.len()).max().unwrap_or(0);
+        if max_chars < 2 {
+            return None;
+        }
+        let width = (max_chars / 2) as u16;
+        let height = lines.len() as u16;
+        let mut modules = Vec::with_capacity(width as usize * height as usize);
+        for line in &lines {
+            let bytes = line.as_bytes();
+            for col in 0..(width as usize) {
+                let idx = col * 2;
+                let dark = bytes.get(idx).copied() == Some(b'#');
+                modules.push(dark);
+            }
+        }
+        Some(Self {
+            width,
+            height,
+            modules,
+        })
+    }
+
+    /// Encode `payload` in-memory via `qrencode -t ASCII -m 2 -o -` without
+    /// creating temporary files or invoking a shell.
+    pub fn encode(payload: &str) -> Option<Self> {
+        if payload.is_empty() {
+            return None;
+        }
+        let output = std::process::Command::new("qrencode")
+            .args(["-t", "ASCII", "-m", "2", "-o", "-", "--", payload])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let ascii = String::from_utf8_lossy(&output.stdout);
+        Self::from_ascii(&ascii)
+    }
+
+    /// Terminal cell dimensions `(cols, rows)` required by `draw_qr`:
+    /// 2 horizontal cells per module (or 1 cell per module with 2 vertical modules per cell).
+    /// Using 2 horizontal chars × 1 vertical cell per 2×2 module block keeps the QR square
+    /// even when a font renders half-blocks 1 cell wide, or 1 cell wide × 1/2 cell tall when
+    /// `cell_aspect` is 1:2 (standard monospace). Here each cell is 1 module wide by 2 modules tall.
+    pub fn cell_size(&self) -> (u16, u16) {
+        (self.width, self.height.div_ceil(2))
+    }
+
+    /// Recommended floating window pixel dimensions `(width_px, height_px)` so
+    /// the QR code, quiet zone, card frame, header, and subtitle fit cleanly.
+    pub fn recommended_window_size(&self) -> (u16, u16) {
+        let (cols, rows) = self.cell_size();
+        let w = (cols.saturating_mul(11).saturating_add(240)).clamp(680, 1040);
+        let h = (rows.saturating_mul(22).saturating_add(260)).clamp(560, 860);
+        (w, h)
+    }
+
+    #[inline]
+    pub fn get(&self, col: u16, row: u16) -> bool {
+        if col >= self.width || row >= self.height {
+            return false;
+        }
+        self.modules
+            .get(row as usize * self.width as usize + col as usize)
+            .copied()
+            .unwrap_or(false)
+    }
+}
+
+/// Render a [`QrCode`] centered inside `area` using Unicode half-blocks
+/// (`█` `\u{2588}`, `▀` `\u{2580}`, `▄` `\u{2584}`, and `" "`) with zero heap allocations.
+pub fn draw_qr(buf: &mut Buffer, area: Rect, design: &Design, qr: &QrCode) {
+    let (qr_cols, qr_rows) = qr.cell_size();
+    if area.width < qr_cols || area.height < qr_rows || qr_cols == 0 || qr_rows == 0 {
+        return;
+    }
+    let start_x = area.x + (area.width - qr_cols) / 2;
+    let start_y = area.y + (area.height - qr_rows) / 2;
+    // Standard black-on-white (or inverted Text-on-Bg) quiet zone + modules:
+    // Using `Text` for light modules/quiet zone and `Bg` for dark modules (or vice-versa)
+    // ensures high contrast on both dark and light themes.
+    let style = Style::default()
+        .fg(design.color(ColorRole::Text))
+        .bg(design.color(ColorRole::Bg));
+
+    for r in 0..qr_rows {
+        let y = start_y + r;
+        let mod_y_top = r * 2;
+        let mod_y_bot = r * 2 + 1;
+        for c in 0..qr_cols {
+            let x = start_x + c;
+            // Invert so the quiet zone (`false`) is drawn as solid light (`Text`)
+            // and dark QR modules (`true`) are `Bg`, which phone cameras scan reliably
+            // on dark terminal themes!
+            let top_light = !qr.get(c, mod_y_top);
+            let bot_light = if mod_y_bot < qr.height {
+                !qr.get(c, mod_y_bot)
+            } else {
+                false
+            };
+            let sym = match (top_light, bot_light) {
+                (true, true) => "\u{2588}",
+                (true, false) => "\u{2580}",
+                (false, true) => "\u{2584}",
+                (false, false) => " ",
+            };
+            if let Some(cell) = buf.cell_mut((x, y)) {
+                cell.set_symbol(sym).set_style(style);
+            }
+        }
+    }
+}
+
+/// Ten-frame braille spinner sequence shared across tasks and in-window actions.
+pub const BRAILLE_SPINNER: [&str; 10] = [
+    "\u{280b}", "\u{2819}", "\u{2839}", "\u{2838}", "\u{283c}", "\u{2834}", "\u{2826}", "\u{2827}",
+    "\u{2807}", "\u{280f}",
+];
+
+/// Post-action status notice with an explicit transient vs. persistent lifecycle.
+///
+/// - **Routine discovery** (Wi-Fi/Bluetooth/Clean rescan) clears status immediately
+///   upon completion (`clear_status()`), so `"Scanning..."` disappears as soon as
+///   fresh results arrive.
+/// - **Positive state transitions** (connected, toggled radio, paired) show a
+///   **transient** notice (`set_transient`) that automatically disappears after 3s.
+/// - **Action failures or critical summaries** where the user *must* know the last
+///   triggered outcome override auto-dismissal (`set_persistent_error` /
+///   `set_persistent_info`) and stay visible until the next action is triggered.
+#[derive(Clone, Debug)]
+pub struct ActionNotice {
+    pub text: String,
+    pub is_error: bool,
+    pub expires_at: Option<std::time::Instant>,
+}
+
+/// Non-blocking background action runner for interactive `Screen`s (1–8s operations
+/// like Wi-Fi rescan/connect, Bluetooth toggle/pair, DNS switch, cache cleanup).
+pub struct ActionRunner<T> {
+    label: String,
+    rx: Option<std::sync::mpsc::Receiver<T>>,
+    frame: usize,
+    notice: Option<ActionNotice>,
+}
+
+impl<T: Send + 'static> ActionRunner<T> {
+    pub fn new() -> Self {
+        Self {
+            label: String::new(),
+            rx: None,
+            frame: 0,
+            notice: None,
+        }
+    }
+
+    /// Spawn a background closure, clear any previous notice, and enter the spinning state.
+    pub fn spawn(&mut self, label: impl Into<String>, f: impl FnOnce() -> T + Send + 'static) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.label = label.into();
+        self.rx = Some(rx);
+        self.frame = 0;
+        self.notice = None;
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.rx.is_some()
+    }
+
+    pub fn label(&self) -> Option<&str> {
+        self.rx.as_ref().map(|_| self.label.as_str())
+    }
+
+    pub fn spinner(&self) -> &'static str {
+        BRAILLE_SPINNER[self.frame % BRAILLE_SPINNER.len()]
+    }
+
+    /// Clear any post-action notice immediately (used when routine scans finish).
+    pub fn clear_status(&mut self) {
+        self.notice = None;
+    }
+
+    /// Show a transient confirmation notice that automatically disappears after 3 seconds.
+    pub fn set_transient(&mut self, text: impl Into<String>) {
+        self.notice = Some(ActionNotice {
+            text: text.into(),
+            is_error: false,
+            expires_at: Some(std::time::Instant::now() + std::time::Duration::from_secs(3)),
+        });
+    }
+
+    /// Show a persistent error notice (overrides auto-hide because the user must know why
+    /// the last triggered action failed).
+    pub fn set_persistent_error(&mut self, text: impl Into<String>) {
+        self.notice = Some(ActionNotice {
+            text: text.into(),
+            is_error: true,
+            expires_at: None,
+        });
+    }
+
+    /// Show a persistent informational summary (used when the user must read a final
+    /// measurement such as total freed disk space).
+    pub fn set_persistent_info(&mut self, text: impl Into<String>) {
+        self.notice = Some(ActionNotice {
+            text: text.into(),
+            is_error: false,
+            expires_at: None,
+        });
+    }
+
+    /// Active post-action notice (if not running and not expired).
+    pub fn notice(&self) -> Option<&ActionNotice> {
+        self.notice.as_ref()
+    }
+
+    pub fn tick_rate(&self) -> Option<std::time::Duration> {
+        if self.is_running() {
+            Some(std::time::Duration::from_millis(100))
+        } else if self.notice.as_ref().and_then(|n| n.expires_at).is_some() {
+            Some(std::time::Duration::from_millis(250))
+        } else {
+            None
+        }
+    }
+
+    /// Advance spinner, expire transient notices, and poll for completion;
+    /// returns `Some(result)` once the background closure finishes.
+    pub fn poll(&mut self) -> Option<T> {
+        if self
+            .notice
+            .as_ref()
+            .and_then(|n| n.expires_at)
+            .is_some_and(|exp| std::time::Instant::now() >= exp)
+        {
+            self.notice = None;
+        }
+        let rx = self.rx.as_ref()?;
+        self.frame = (self.frame + 1) % BRAILLE_SPINNER.len();
+        match rx.try_recv() {
+            Ok(val) => {
+                self.rx = None;
+                Some(val)
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => None,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.rx = None;
+                None
+            }
+        }
+    }
+}
+
+impl<T: Send + 'static> Default for ActionRunner<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1998,5 +2919,74 @@ mod tests {
             .map(|x| buf.cell((x, 0)).unwrap().symbol().to_string())
             .collect();
         assert_eq!(rendered, "******");
+    }
+
+    #[test]
+    fn update_rows_preserves_selected_value_and_filter() {
+        let mut list = ListState::new();
+        list.set_rows(vec![
+            Row::new("Alpha").value("ap:alpha"),
+            Row::new("HomeNet").value("ap:home"),
+            Row::new("OfficeNet").value("ap:office"),
+        ]);
+        list.set_filter("net");
+        list.set_cursor(1); // OfficeNet
+        assert_eq!(
+            list.selected().and_then(|r| r.value.as_deref()),
+            Some("ap:office")
+        );
+
+        // Background rescan inserts a stronger AP at the top and keeps OfficeNet
+        list.update_rows(vec![
+            Row::new("NewStrongNet").value("ap:strong"),
+            Row::new("HomeNet").value("ap:home"),
+            Row::new("OfficeNet (updated)").value("ap:office"),
+        ]);
+        assert_eq!(list.filter(), "net");
+        assert_eq!(list.visible_len(), 3);
+        assert_eq!(
+            list.selected().and_then(|r| r.value.as_deref()),
+            Some("ap:office"),
+            "cursor followed ap:office across row refresh"
+        );
+    }
+
+    #[test]
+    fn scrollbar_draws_only_when_rows_exceed_capacity() {
+        let design = Design::solarized();
+        let list = rows(25);
+        let area = Rect::new(0, 0, 40, 8);
+        let mut buf = Buffer::empty(area);
+        list.render(area, &mut buf, &design, true);
+        let right_col: String = (0..8)
+            .map(|y| buf.cell((39, y)).unwrap().symbol().to_string())
+            .collect();
+        assert!(
+            right_col.contains('\u{2588}') && right_col.contains('\u{2502}'),
+            "scrollbar draws thumb and track when 25 > 8: {right_col:?}"
+        );
+    }
+
+    #[test]
+    fn qr_from_ascii_and_draw_qr_render_half_blocks() {
+        let ascii = "        \n  ####  \n  ##    \n        \n";
+        let qr = QrCode::from_ascii(ascii).expect("parsed ascii qr");
+        assert_eq!(qr.width, 4);
+        assert_eq!(qr.height, 4);
+        assert!(!qr.get(0, 0));
+        assert!(qr.get(1, 1));
+        assert!(qr.get(2, 1));
+        assert!(qr.get(1, 2));
+        assert!(!qr.get(2, 2));
+
+        let design = Design::solarized();
+        let area = Rect::new(0, 0, 10, 4);
+        let mut buf = Buffer::empty(area);
+        draw_qr(&mut buf, area, &design, &qr);
+        let text = crate::screen(&buf);
+        assert!(
+            text.contains('\u{2588}') || text.contains('\u{2580}') || text.contains('\u{2584}'),
+            "draw_qr rendered half-block symbols: {text:?}"
+        );
     }
 }

@@ -110,6 +110,7 @@ fn setup(home: &Home, surface: Surface, agent: Option<Agent>) -> Setup {
         context: Context {
             agent: Some("opencode".to_string()),
             ask: None,
+            dictate_recording: false,
         },
         vars: home.vars(),
         exe: bin().to_string(),

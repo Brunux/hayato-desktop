@@ -10,15 +10,15 @@
 //! Nothing here is a daemon: every draw reads the state from nmcli,
 //! bluetoothctl, swaymsg, makoctl, the night-light helper and sysfs.
 
-use lazyos_ui::{Design, Glyph, Urgency};
+use lazyos_ui::{Design, Glyph};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 use super::pick::{Picker, Question, row};
-use super::{checked, out, say, sudo};
+use super::{checked, out, sudo};
 
 /// What the menu needs before it offers anything.
-pub const NEEDED: &[&str] = &["nmcli", "bluetoothctl", "swaymsg", "makoctl", "iw"];
+pub const NEEDED: &[&str] = &["nmcli", "bluetoothctl", "swaymsg", "iw"];
 
 fn bin_script(name: &str) -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
@@ -164,10 +164,16 @@ fn night_on() -> bool {
         .unwrap_or(false)
 }
 
+fn dnd_path() -> std::path::PathBuf {
+    let runtime = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
+    std::path::PathBuf::from(runtime)
+        .join("lazyos")
+        .join("notify")
+        .join("dnd")
+}
+
 fn dnd_on() -> bool {
-    out(&["makoctl", "mode"])
-        .map(|s| s.lines().any(|l| l == "do-not-disturb"))
-        .unwrap_or(false)
+    dnd_path().exists()
 }
 
 fn touchpad_on() -> bool {
@@ -356,6 +362,12 @@ fn build_rows() -> (Vec<lazyos_ui::Row>, Vec<String>) {
     rows.push(row("Display arrangement", display_status, Glyph::Display));
     keys.push("display".to_string());
 
+    // Appearance & Themes
+    let p = crate::theme::paths();
+    let theme_current = lazyos_theme::store::active(&p).unwrap_or_else(|| "solarized".to_string());
+    rows.push(row("Appearance & Themes", theme_current, Glyph::Palette));
+    keys.push("theme".to_string());
+
     // Auto-mount USB drives
     if automount_on() {
         rows.push(row(
@@ -439,241 +451,187 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        say(
+        return Err(crate::Failure::new(
             "Settings",
-            format!("{said} (network, bluetooth, sway, mako, iw)"),
-            Urgency::Critical,
-            Glyph::Sliders,
+            format!("{said} (network, bluetooth, sway, iw)"),
+        ));
+    }
+
+    let mut banner: Option<String> = None;
+
+    loop {
+        let (rows, keys) = build_rows();
+        let note = banner
+            .take()
+            .unwrap_or_else(|| "Enter switches or opens \u{00b7} Escape closes".to_string());
+
+        let mut picker = Picker::new(
+            "Settings",
+            vec![Question::choose("Settings", note, rows, keys)],
         );
-        return Ok(3);
-    }
 
-    let (rows, keys) = build_rows();
+        let code = crate::run_screen(terminal, design, "Settings", &mut picker)?;
+        if code != 0 {
+            return Ok(code);
+        }
 
-    let mut picker = Picker::new(
-        "Settings",
-        vec![Question::choose(
-            "Settings",
-            "Enter switches or opens · Escape closes",
-            rows,
-            keys,
-        )],
-    );
+        let Some(key) = picker.answers().first().cloned() else {
+            return Ok(1);
+        };
 
-    let code = crate::run_screen(terminal, design, "Settings", &mut picker)?;
-    if code != 0 {
-        return Ok(code);
-    }
-
-    let answers = picker.answers();
-    if answers.is_empty() {
-        return Ok(1);
-    }
-
-    // The shell version loops and re-renders. Here we handle the action once.
-    // For a full re-render loop, we'd need to re-run the picker. For now,
-    // handle the action and return.
-    let key = &answers[0];
-
-    match key.as_str() {
-        "wifi-radio" => {
-            let on = wifi_on();
-            let action = if on { "off" } else { "on" };
-            let msg = if on {
-                "Turning the radio off…"
-            } else {
-                "Turning the radio on…"
-            };
-            say("Wi-Fi", msg.to_string(), Urgency::Normal, Glyph::Wifi);
-            if checked(&["nmcli", "radio", "wifi", action]).is_err()
-                && sudo(&["nmcli", "radio", "wifi", action]).is_err()
-            {
-                say(
-                    "Wi-Fi",
-                    format!("Could not turn the radio {}", action),
-                    Urgency::Critical,
-                    Glyph::Wifi,
-                );
-                return Ok(3);
+        match key.as_str() {
+            "wifi-radio" => {
+                let on = wifi_on();
+                let action = if on { "off" } else { "on" };
+                if checked(&["nmcli", "radio", "wifi", action]).is_err()
+                    && sudo(&["nmcli", "radio", "wifi", action]).is_err()
+                {
+                    banner = Some(format!("Could not turn Wi-Fi radio {action}"));
+                } else {
+                    banner = Some(format!("Wi-Fi radio turned {action}"));
+                }
             }
-            say(
-                "Wi-Fi",
-                format!("Wi-Fi {}", action),
-                Urgency::Normal,
-                Glyph::Wifi,
-            );
-            Ok(0)
-        }
-        "bt-radio" => {
-            let on = bt_on();
-            let action = if on { "off" } else { "on" };
-            let msg = if on {
-                "Powering the controller off…"
-            } else {
-                "Powering the controller on…"
-            };
-            say(
-                "Bluetooth",
-                msg.to_string(),
-                Urgency::Normal,
-                Glyph::Bluetooth,
-            );
-            if checked(&["bluetoothctl", "power", action]).is_err()
-                && sudo(&["bluetoothctl", "power", action]).is_err()
-            {
-                say(
-                    "Bluetooth",
-                    format!("Could not power the controller {}", action),
-                    Urgency::Critical,
-                    Glyph::Bluetooth,
-                );
-                return Ok(3);
+            "bt-radio" => {
+                let on = bt_on();
+                let action = if on { "off" } else { "on" };
+                if checked(&["bluetoothctl", "power", action]).is_err()
+                    && sudo(&["bluetoothctl", "power", action]).is_err()
+                {
+                    banner = Some(format!("Could not power Bluetooth controller {action}"));
+                } else {
+                    banner = Some(format!("Bluetooth controller powered {action}"));
+                }
             }
-            say(
-                "Bluetooth",
-                action.to_string(),
-                Urgency::Normal,
-                Glyph::Bluetooth,
-            );
-            Ok(0)
-        }
-        "wifi" => {
-            spawn_subcommand(&bin_script("bar-net"), &[]);
-            Ok(0)
-        }
-        "bt" => {
-            spawn_subcommand(&bin_script("bar-bt"), &[]);
-            Ok(0)
-        }
-        "night" => {
-            let cmd = if night_on() { "stop" } else { "start" };
-            let _ = out(&[&bin_script("night-light"), cmd]);
-            Ok(0)
-        }
-        "dnd" => {
-            let _ = out(&["makoctl", "mode", "-t", "do-not-disturb"]);
-            Ok(0)
-        }
-        "notify" => {
-            spawn_subcommand("lazyos", &["menu", "notify"]);
-            Ok(0)
-        }
-        "vnc" => {
-            spawn_subcommand(&bin_script("rofi-vnc"), &[]);
-            Ok(0)
-        }
-        "touchpad" => {
-            let _ = out(&["swaymsg", "input", "type:touchpad", "events", "toggle"]);
-            Ok(0)
-        }
-        "rotation" => {
-            let cur = rotation_name();
-            let choices = [
-                ("normal", "Normal", "landscape (default)"),
-                ("90", "90° clockwise", "portrait"),
-                ("180", "180°", "inverted landscape"),
-                ("270", "270° clockwise", "portrait"),
-            ];
-            let r_rows: Vec<lazyos_ui::Row> = choices
-                .iter()
-                .map(|(k, l, d)| {
-                    let detail = if *k == cur { "current" } else { *d };
-                    row((*l).to_string(), detail.to_string(), Glyph::Rotate)
-                })
-                .collect();
-            let r_keys: Vec<String> = choices.iter().map(|(k, _, _)| (*k).to_string()).collect();
-            let mut r_picker = Picker::new(
-                "Rotation",
-                vec![Question::choose(
+            "wifi" => {
+                let _ = super::net::menu(terminal, design)?;
+            }
+            "bt" => {
+                let _ = super::bluetooth::menu(terminal, design)?;
+            }
+            "night" => {
+                let cmd = if night_on() { "stop" } else { "start" };
+                let _ = out(&[&bin_script("night-light"), cmd]);
+                banner = Some(format!(
+                    "Night light: {}",
+                    if cmd == "start" { "on" } else { "off" }
+                ));
+            }
+            "dnd" => {
+                let path = dnd_path();
+                if path.exists() {
+                    let _ = std::fs::remove_file(&path);
+                    banner = Some("Do not disturb: off (notifications allowed)".to_string());
+                } else {
+                    if let Some(parent) = path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    let _ = std::fs::write(&path, "1\n");
+                    banner = Some("Do not disturb: on".to_string());
+                }
+            }
+            "notify" => {
+                let _ = super::notify::menu(terminal, design)?;
+            }
+            "vnc" => {
+                let _ = super::vnc::menu(terminal, design)?;
+            }
+            "touchpad" => {
+                let _ = out(&["swaymsg", "input", "type:touchpad", "events", "toggle"]);
+                banner = Some(format!(
+                    "Touchpad {}",
+                    if touchpad_on() { "enabled" } else { "disabled" }
+                ));
+            }
+            "rotation" => {
+                let cur = rotation_name();
+                let choices = [
+                    ("normal", "Normal", "landscape (default)"),
+                    ("90", "90° clockwise", "portrait"),
+                    ("180", "180°", "inverted landscape"),
+                    ("270", "270° clockwise", "portrait"),
+                ];
+                let r_rows: Vec<lazyos_ui::Row> = choices
+                    .iter()
+                    .map(|(k, l, d)| {
+                        let detail = if *k == cur { "current" } else { *d };
+                        row((*l).to_string(), detail.to_string(), Glyph::Rotate)
+                    })
+                    .collect();
+                let r_keys: Vec<String> =
+                    choices.iter().map(|(k, _, _)| (*k).to_string()).collect();
+                let mut r_picker = Picker::new(
                     "Rotation",
-                    "Enter applies · Escape closes",
-                    r_rows,
-                    r_keys,
-                )],
-            );
-            let r_code = crate::run_screen(terminal, design, "Rotation", &mut r_picker)?;
-            if r_code == 0
-                && let Some(rot) = r_picker.answers().first()
-            {
-                let out_name = focused_output();
-                let _ = out(&["swaymsg", "output", &out_name, "transform", rot]);
-                say(
-                    "Rotation",
-                    format!("{out_name} → {rot}"),
-                    Urgency::Normal,
-                    Glyph::Rotate,
+                    vec![Question::choose(
+                        "Rotation",
+                        "Enter applies \u{00b7} Escape returns to Settings",
+                        r_rows,
+                        r_keys,
+                    )],
                 );
+                let r_code = crate::run_screen(terminal, design, "Rotation", &mut r_picker)?;
+                if r_code == 0
+                    && let Some(rot) = r_picker.answers().first()
+                {
+                    let out_name = focused_output();
+                    let _ = out(&["swaymsg", "output", &out_name, "transform", rot]);
+                    banner = Some(format!("Rotation: {out_name} \u{2192} {rot}"));
+                }
             }
-            Ok(0)
-        }
-        "display" => {
-            spawn_subcommand(&bin_script("rofi-display"), &[]);
-            Ok(0)
-        }
-        "automount" => {
-            let conf = automount_conf();
-            let (value, word) = if automount_on() {
-                ("no", "off · Places mounts a stick when you pick it")
-            } else {
-                ("yes", "on · a plugged USB drive mounts itself")
-            };
-            let part = conf.with_extension("part");
-            let conf_display = conf.display().to_string();
-            if std::fs::create_dir_all(conf.parent().unwrap()).is_ok()
-                && std::fs::write(&part, format!("enabled={}\n", value)).is_ok()
-                && std::fs::rename(&part, &conf).is_ok()
-            {
-                say(
-                    "Auto-mount",
-                    format!("USB drives: {}", word),
-                    Urgency::Normal,
-                    Glyph::Disk,
-                );
-            } else {
-                let _ = std::fs::remove_file(&part);
-                say(
-                    "Auto-mount",
-                    format!("Could not write {}", conf_display),
-                    Urgency::Critical,
-                    Glyph::Warning,
-                );
-                return Ok(3);
+            "display" => {
+                let _ = super::display::menu(terminal, design)?;
             }
-            Ok(0)
+            "theme" => {
+                let _ = super::theme_picker::menu(terminal, design)?;
+            }
+            "automount" => {
+                let conf = automount_conf();
+                let (value, word) = if automount_on() {
+                    ("no", "off \u{00b7} Places mounts a stick when you pick it")
+                } else {
+                    ("yes", "on \u{00b7} a plugged USB drive mounts itself")
+                };
+                let part = conf.with_extension("part");
+                let conf_display = conf.display().to_string();
+                if std::fs::create_dir_all(conf.parent().unwrap()).is_ok()
+                    && std::fs::write(&part, format!("enabled={value}\n")).is_ok()
+                    && std::fs::rename(&part, &conf).is_ok()
+                {
+                    banner = Some(format!("Auto-mount USB drives: {word}"));
+                } else {
+                    let _ = std::fs::remove_file(&part);
+                    banner = Some(format!("Could not write {conf_display}"));
+                }
+            }
+            "tablet" => {
+                let _ = out(&[&bin_script("tablet-mode"), "toggle"]);
+                banner = Some(format!("Tablet mode: {}", tablet_mode_detail()));
+            }
+            "tablet-calibrate" => {
+                let _ = out(&[&bin_script("tablet-mode"), "calibrate"]);
+                banner = Some("Calibrated rotation sensor".to_string());
+            }
+            "layout" => {
+                let _ = super::layout::menu(terminal, design)?;
+            }
+            "translate" => {
+                let _ = super::translate::menu(&["config".to_string()], terminal, design)?;
+            }
+            "audio" => {
+                let _ = super::audio::menu(terminal, design)?;
+            }
+            "mixer" => {
+                spawn_subcommand("pavucontrol", &[]);
+                return Ok(0);
+            }
+            "media" => {
+                let _ = super::media::menu(terminal, design)?;
+            }
+            "power" => {
+                spawn_subcommand("lazyos", &["menu", "power"]);
+                return Ok(0);
+            }
+            _ => {}
         }
-        "tablet" => {
-            let _ = out(&[&bin_script("tablet-mode"), "toggle"]);
-            Ok(0)
-        }
-        "tablet-calibrate" => {
-            let _ = out(&[&bin_script("tablet-mode"), "calibrate"]);
-            Ok(0)
-        }
-        "layout" => {
-            spawn_subcommand(&bin_script("rofi-layout"), &[]);
-            Ok(0)
-        }
-        "translate" => {
-            spawn_subcommand(&bin_script("translate"), &["config"]);
-            Ok(0)
-        }
-        "audio" => {
-            spawn_subcommand(&bin_script("bar-audio"), &[]);
-            Ok(0)
-        }
-        "mixer" => {
-            spawn_subcommand("pavucontrol", &[]);
-            Ok(0)
-        }
-        "media" => {
-            spawn_subcommand(&bin_script("rofi-media"), &[]);
-            Ok(0)
-        }
-        "power" => {
-            spawn_subcommand(&bin_script("bar-power"), &[]);
-            Ok(0)
-        }
-        _ => Ok(0),
     }
 }
 

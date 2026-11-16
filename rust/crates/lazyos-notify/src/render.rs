@@ -265,6 +265,14 @@ impl Renderer {
             || app_lower.contains("player")
         {
             "\u{ec1b}"
+        } else if icon_lower.contains("mic")
+            || icon_lower.contains("record")
+            || app_lower.contains("dictat")
+            || summary_lower.contains("dictat")
+        {
+            "\u{ec12}"
+        } else if icon_lower.contains("qr") || summary_lower.contains("qr") {
+            "\u{eb29}"
         } else if icon_lower.contains("settings") || app_lower.contains("settings") {
             "\u{ea82}"
         } else if urgency == Urgency::Critical

@@ -296,6 +296,22 @@ fn elapsed_between(start: SystemTime, end: SystemTime) -> Duration {
 // ---------------------------------------------------------------------------
 
 const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const SPINNER_GLYPHS: [&str; 10] = [
+    "\u{280b}", "\u{2819}", "\u{2839}", "\u{2838}", "\u{283c}", "\u{2834}", "\u{2826}", "\u{2827}",
+    "\u{2807}", "\u{280f}",
+];
+const RUNNING_LABELS: [&str; 10] = [
+    "\u{280b} running",
+    "\u{2819} running",
+    "\u{2839} running",
+    "\u{2838} running",
+    "\u{283c} running",
+    "\u{2834} running",
+    "\u{2826} running",
+    "\u{2827} running",
+    "\u{2807} running",
+    "\u{280f} running",
+];
 
 #[derive(Clone, Debug, Default)]
 struct Spinner {
@@ -307,8 +323,12 @@ impl Spinner {
         self.frame = (self.frame + 1) % SPINNER_FRAMES.len();
     }
 
-    fn glyph(&self) -> char {
-        SPINNER_FRAMES[self.frame]
+    fn glyph_str(&self) -> &'static str {
+        SPINNER_GLYPHS[self.frame % SPINNER_GLYPHS.len()]
+    }
+
+    fn running_label(&self) -> &'static str {
+        RUNNING_LABELS[self.frame % RUNNING_LABELS.len()]
     }
 }
 
@@ -340,6 +360,9 @@ pub struct Task {
     busy_icon: String,
 
     child: Option<RunningChild>,
+    step_queue: std::collections::VecDeque<Vec<String>>,
+    current_step_idx: usize,
+    total_queued_steps: usize,
     requested_stop: bool,
     stop_sent: Option<Instant>,
     term_sent: Option<Instant>,
@@ -376,6 +399,9 @@ impl Task {
             busy_tag,
             busy_icon: "system-software-install".to_string(),
             child: None,
+            step_queue: std::collections::VecDeque::new(),
+            current_step_idx: 0,
+            total_queued_steps: 0,
             requested_stop: false,
             stop_sent: None,
             term_sent: None,
@@ -490,6 +516,8 @@ impl Task {
         self.state = TaskState::Running;
         self.percent = 0;
         self.progress = 0.0;
+        self.current_step_idx = 0;
+        self.total_queued_steps = 1;
         if !self.steps.is_empty() {
             self.steps[0].state = StepState::Running;
         }
@@ -497,6 +525,48 @@ impl Task {
         self.write_state()?;
         self.write_busy()?;
         Ok(())
+    }
+
+    /// Start a multi-step sequence of commands, advancing through `self.steps`
+    /// one command at a time without blocking the TUI loop.
+    pub fn spawn_steps(&mut self, commands: Vec<Vec<String>>) -> io::Result<()> {
+        if commands.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cannot spawn an empty step sequence",
+            ));
+        }
+        let mut queue: std::collections::VecDeque<Vec<String>> = commands.into();
+        let first = queue.pop_front().expect("checked non-empty");
+        let total = queue.len() + 1;
+        let refs: Vec<&str> = first.iter().map(String::as_str).collect();
+        self.spawn(&refs)?;
+        self.step_queue = queue;
+        self.total_queued_steps = total;
+        Ok(())
+    }
+
+    /// Create a task in the default session state directory, add `step_labels`,
+    /// set `stoppable`, and start `commands` sequentially via `spawn_steps`.
+    pub fn start_steps(
+        id: impl Into<String>,
+        title: impl Into<String>,
+        step_labels: Vec<String>,
+        stoppable: bool,
+        commands: Vec<Vec<String>>,
+    ) -> io::Result<Self> {
+        let state_dir = std::env::var("XDG_STATE_HOME")
+            .map(PathBuf::from)
+            .or_else(|_| std::env::var("HOME").map(|h| PathBuf::from(h).join(".local/state")))
+            .unwrap_or_else(|_| PathBuf::from("/tmp"))
+            .join("lazyos");
+        let mut task = Self::new(id, title, state_dir);
+        task.set_stoppable(stoppable);
+        for label in step_labels {
+            task.add_step(label);
+        }
+        task.spawn_steps(commands)?;
+        Ok(task)
     }
 
     /// Stop a running, stoppable task. The stop contract is SIGINT first,
@@ -576,18 +646,60 @@ impl Task {
 
     fn finalize(&mut self, status: io::Result<std::process::ExitStatus>) -> io::Result<()> {
         self.child = None;
-        self.finished_at = Some(SystemTime::now());
-        self.clear_busy();
-        self.remove_stop_request_file();
 
         if self.requested_stop {
+            self.step_queue.clear();
+            self.finished_at = Some(SystemTime::now());
+            self.clear_busy();
+            self.remove_stop_request_file();
             self.state = TaskState::Stopped;
             self.result.get_or_insert_with(|| "Stopped".to_string());
             self.update_steps_after_stop();
         } else {
             match status {
                 Ok(status) if status.success() => {
+                    if let Some(next_cmd) = self.step_queue.pop_front() {
+                        if let Some(step) = self.steps.get_mut(self.current_step_idx) {
+                            step.state = StepState::Ok;
+                        }
+                        self.current_step_idx += 1;
+                        if let Some(step) = self.steps.get_mut(self.current_step_idx) {
+                            step.state = StepState::Running;
+                        }
+                        let total = self.total_queued_steps.max(self.steps.len()).max(1);
+                        self.set_progress(self.current_step_idx as f64 / total as f64);
+                        let refs: Vec<&str> = next_cmd.iter().map(String::as_str).collect();
+                        let log_path = self.log_file();
+                        match spawn_child(&refs, &log_path) {
+                            Ok((pid, rx)) => {
+                                self.child = Some(RunningChild { pid, receiver: rx });
+                                self.state_dirty = true;
+                                self.write_state()?;
+                                self.write_busy()?;
+                                return Ok(());
+                            }
+                            Err(err) => {
+                                self.push_line(&format!("ERROR: {err}"));
+                                self.step_queue.clear();
+                                self.finished_at = Some(SystemTime::now());
+                                self.clear_busy();
+                                self.remove_stop_request_file();
+                                self.state = TaskState::Failed;
+                                self.result = Some(format!("Failed: {err}"));
+                                if let Some(step) = self.steps.get_mut(self.current_step_idx) {
+                                    step.state = StepState::Failed;
+                                }
+                                self.state_dirty = true;
+                                return self.write_state();
+                            }
+                        }
+                    }
+
+                    self.finished_at = Some(SystemTime::now());
+                    self.clear_busy();
+                    self.remove_stop_request_file();
                     self.state = TaskState::Done;
+                    self.set_progress(1.0);
                     self.result.get_or_insert_with(|| "Finished".to_string());
                     for step in &mut self.steps {
                         if step.state == StepState::Waiting || step.state == StepState::Running {
@@ -596,6 +708,10 @@ impl Task {
                     }
                 }
                 _ => {
+                    self.step_queue.clear();
+                    self.finished_at = Some(SystemTime::now());
+                    self.clear_busy();
+                    self.remove_stop_request_file();
                     self.state = TaskState::Failed;
                     self.result.get_or_insert_with(|| "Failed".to_string());
                     for step in &mut self.steps {
@@ -729,6 +845,9 @@ impl Task {
             busy_tag: slugify(&id),
             busy_icon: "system-software-install".to_string(),
             child: None,
+            step_queue: std::collections::VecDeque::new(),
+            current_step_idx: 0,
+            total_queued_steps: 0,
             requested_stop: state == TaskState::Stopped,
             stop_sent: None,
             term_sent: None,
@@ -982,9 +1101,9 @@ impl Screen for TaskView {
         // Checklist.
         for step in &self.task.steps {
             let glyph = if step.state == StepState::Running {
-                self.task.spinner.glyph().to_string()
+                self.task.spinner.glyph_str()
             } else {
-                Self::step_glyph(step.state).to_string()
+                Self::step_glyph(step.state)
             };
             let glyph_style = match step.state {
                 StepState::Ok => ctx
@@ -995,7 +1114,7 @@ impl Screen for TaskView {
                 StepState::Running => ctx.design.style(TextStyle::Title),
                 _ => ctx.design.style(TextStyle::Dim),
             };
-            let mut x = put(ctx.buf, card_inner.x, y, &glyph, 2, glyph_style);
+            let mut x = put(ctx.buf, card_inner.x, y, glyph, 2, glyph_style);
             x = put(ctx.buf, x, y, " ", 1, ctx.design.style(TextStyle::Body));
             let label_style = if step.state == StepState::Running {
                 ctx.design.style(TextStyle::Title)
@@ -1037,6 +1156,13 @@ impl Screen for TaskView {
             0u16
         };
         if progress_height > 0 && y + progress_height <= card_inner.bottom() {
+            // Avoid drawing a second braille spinner on the progress bar when the
+            // active checklist step right above already renders one.
+            let progress_label = if self.task.steps.is_empty() {
+                self.task.spinner.running_label()
+            } else {
+                "running"
+            };
             draw_progress(
                 ctx.buf,
                 Rect {
@@ -1047,7 +1173,7 @@ impl Screen for TaskView {
                 },
                 ctx.design,
                 self.task.progress,
-                &format!("{} running", self.task.spinner.glyph()),
+                progress_label,
                 ColorRole::Accent,
             );
             y += progress_height * stride;
@@ -1163,6 +1289,21 @@ impl Screen for TaskView {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
                 Outcome::Done(crate::app::exit::ESCAPE)
             }
+            KeyCode::Enter
+                if matches!(
+                    self.task.state,
+                    TaskState::Done
+                        | TaskState::Failed
+                        | TaskState::Stopped
+                        | TaskState::DidNotFinish
+                ) =>
+            {
+                if self.task.state == TaskState::Done {
+                    Outcome::Done(crate::app::exit::OK)
+                } else {
+                    Outcome::Done(crate::app::exit::FAILED)
+                }
+            }
             KeyCode::Up
             | KeyCode::Down
             | KeyCode::PageUp
@@ -1203,6 +1344,10 @@ impl Screen for TaskView {
 
     fn keybar(&self) -> Option<&[KeyHint]> {
         Some(&self.keybar)
+    }
+
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        Some((940, 620))
     }
 }
 

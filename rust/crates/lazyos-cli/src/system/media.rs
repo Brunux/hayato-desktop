@@ -15,23 +15,25 @@
 use std::cell::Cell;
 
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row, Screen,
-    TextStyle, draw_card,
+    BodyCtx, Card, ColorRole, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row,
+    Screen, TextStyle, Urgency, draw_badge, draw_card, draw_filter_bar,
 };
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 
-use crate::system::{missing, out, say};
+use crate::system::{missing, out};
 
 const NEEDED: &[&str] = &["playerctl"];
 
 /// The media screen.
 pub struct MediaScreen {
     players: Vec<Player>,
+    actions: Vec<String>,
     list: ListState,
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
+    status_note: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -47,10 +49,16 @@ impl MediaScreen {
     pub fn new() -> Self {
         let mut screen = Self {
             players: Vec::new(),
+            actions: Vec::new(),
             list: ListState::new(),
             header: Header::new("LazyOS").subtitle("Media"),
-            keybar: vec![KeyHint::new("Enter", "act"), KeyHint::new("Esc", "close")],
+            keybar: vec![
+                KeyHint::new("Enter", "act"),
+                KeyHint::new("r", "refresh"),
+                KeyHint::new("Esc", "close"),
+            ],
             rows_height: Cell::new(20),
+            status_note: None,
         };
         screen.reload();
         screen
@@ -86,97 +94,153 @@ impl MediaScreen {
 
     fn build_rows(&mut self) {
         let mut rows = Vec::new();
+        let mut actions = Vec::new();
         if self.players.is_empty() {
             rows.push(
                 Row::new("Nothing is playing")
                     .glyph(Glyph::Music)
-                    .detail("no MPRIS player is running"),
+                    .detail("no MPRIS player is running · press Enter or r to refresh"),
             );
+            actions.push("refresh".to_string());
         } else {
             for p in &self.players {
                 let mut label = String::new();
-                if p.status == "Playing" {
-                    label.push_str(&format!("{} ", Glyph::Music.cell()));
-                }
                 if !p.artist.is_empty() {
                     label.push_str(&format!("{} — ", p.artist));
                 }
-                label.push_str(&p.title);
-                if !p.album.is_empty() {
-                    label.push_str(&format!(" · {}", p.album));
+                if p.title.is_empty() {
+                    label.push_str(&p.name);
+                } else {
+                    label.push_str(&p.title);
                 }
-                let detail = format!("{} · {}", p.name, p.status);
+                let detail = if p.album.is_empty() {
+                    p.name.clone()
+                } else {
+                    format!("{} · {}", p.name, p.album)
+                };
+                let badge = if p.status == "Playing" {
+                    "▶ playing"
+                } else {
+                    "⏸ paused"
+                };
                 rows.push(
                     Row::new(label)
                         .glyph(Glyph::Music)
                         .detail(detail)
-                        .value(format!("player:{}", p.name)),
+                        .value(badge),
                 );
+                actions.push(format!("player:{}", p.name));
             }
-            rows.push(Row::new("").glyph(Glyph::Music)); // separator
             if self.players.iter().any(|p| p.status == "Playing") {
                 rows.push(
                     Row::new("Pause")
                         .glyph(Glyph::Pause)
-                        .detail("pause playback")
-                        .value("pause"),
+                        .detail("pause playback"),
                 );
+                actions.push("pause".to_string());
             } else {
                 rows.push(
                     Row::new("Play")
                         .glyph(Glyph::Play)
-                        .detail("resume playback")
-                        .value("play"),
+                        .detail("resume playback"),
                 );
+                actions.push("play".to_string());
             }
             rows.push(
                 Row::new("Next track")
                     .glyph(Glyph::Next)
-                    .detail("skip to next")
-                    .value("next"),
+                    .detail("skip to next"),
             );
+            actions.push("next".to_string());
             rows.push(
                 Row::new("Previous track")
                     .glyph(Glyph::Prev)
-                    .detail("skip to previous")
-                    .value("previous"),
+                    .detail("skip to previous"),
             );
-            rows.push(
-                Row::new("Stop")
-                    .glyph(Glyph::Stop)
-                    .detail("stop playback")
-                    .value("stop"),
-            );
+            actions.push("previous".to_string());
+            rows.push(Row::new("Stop").glyph(Glyph::Stop).detail("stop playback"));
+            actions.push("stop".to_string());
             rows.push(
                 Row::new("Copy track")
                     .glyph(Glyph::Clipboard)
-                    .detail("artist — title to clipboard")
-                    .value("copy"),
+                    .detail("artist — title to clipboard"),
             );
+            actions.push("copy".to_string());
         }
-        self.list.set_rows(rows);
+        self.actions = actions;
+        self.list.update_rows(rows);
     }
 }
 
 impl Screen for MediaScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Media"), true);
-        let (filter, rows) = super::pick::list_layout(ctx.area);
-        if self.players.is_empty() {
-            ctx.buf.set_string(
-                filter.x,
-                filter.y,
-                "No MPRIS player is running",
-                ctx.design.style(TextStyle::Dim),
-            );
-        } else {
-            ctx.buf.set_string(
-                filter.x,
-                filter.y,
-                "Enter on a player pauses/resumes · transport keys below",
-                ctx.design.style(TextStyle::Dim),
-            );
+        let (hero, filter, rows) = Self::layout(ctx.area);
+
+        if let Some(h) = hero {
+            if let Some(active) = self
+                .players
+                .iter()
+                .find(|p| p.status == "Playing")
+                .or_else(|| self.players.first())
+            {
+                let (badge, role) = if active.status == "Playing" {
+                    ("▶ PLAYING", ColorRole::Success)
+                } else {
+                    ("⏸ PAUSED", ColorRole::Warn)
+                };
+                let mut x = draw_badge(ctx.buf, h.x, h.y, ctx.design, badge, role);
+                x += 2;
+                let title = if active.title.is_empty() {
+                    active.name.as_str()
+                } else {
+                    active.title.as_str()
+                };
+                ctx.buf
+                    .set_string(x, h.y, title, ctx.design.style(TextStyle::Title));
+                if h.height >= 2 {
+                    let sub = if !active.artist.is_empty() && !active.album.is_empty() {
+                        format!("{} · {} ({})", active.artist, active.album, active.name)
+                    } else if !active.artist.is_empty() {
+                        format!("{} ({})", active.artist, active.name)
+                    } else {
+                        active.name.clone()
+                    };
+                    ctx.buf
+                        .set_string(h.x, h.y + 1, sub, ctx.design.style(TextStyle::Dim));
+                }
+            } else {
+                let mut x = draw_badge(
+                    ctx.buf,
+                    h.x,
+                    h.y,
+                    ctx.design,
+                    "NO PLAYER",
+                    ColorRole::Border,
+                );
+                x += 2;
+                ctx.buf.set_string(
+                    x,
+                    h.y,
+                    "No MPRIS media player active",
+                    ctx.design.style(TextStyle::Dim),
+                );
+            }
         }
+
+        let note = self
+            .status_note
+            .as_deref()
+            .unwrap_or("Enter acts on player or transport · r refreshes");
+        draw_filter_bar(
+            ctx.buf,
+            filter,
+            ctx.design,
+            self.list.filter(),
+            note,
+            self.list.len(),
+            self.list.len(),
+        );
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
     }
@@ -187,11 +251,29 @@ impl Screen for MediaScreen {
         }
         let rows_height = self.rows_height.get();
         match key.code {
-            KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+            KeyCode::Esc => {
+                if !self.list.filter().is_empty() {
+                    self.list.set_filter("");
+                    return Outcome::Consumed;
+                }
+                return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
+            }
+            KeyCode::Char('r') if self.list.filter().is_empty() => {
+                self.reload();
+                self.status_note = Some("Refreshed player status".to_string());
+                return Outcome::Continue;
+            }
             KeyCode::Enter => {
                 if let Some(index) = self.list.selected_index() {
                     return self.activate(index);
                 }
+            }
+            KeyCode::Char(_) | KeyCode::Backspace
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                    && self.list.type_filter(key) =>
+            {
+                return Outcome::Continue;
             }
             _ => {}
         }
@@ -201,8 +283,18 @@ impl Screen for MediaScreen {
         }
     }
 
+    fn click(&mut self, row: Option<usize>) -> Outcome {
+        if let Some(row) = row {
+            self.list.set_cursor(row);
+            if let Some(index) = self.list.selected_index() {
+                return self.activate(index);
+            }
+        }
+        Outcome::Continue
+    }
+
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        let (_, rows) = super::pick::list_layout(area);
+        let (_, _, rows) = Self::layout(area);
         self.list.hit_row(rows, x, y, design)
     }
 
@@ -217,83 +309,35 @@ impl Screen for MediaScreen {
 
 impl MediaScreen {
     fn activate(&mut self, index: usize) -> Outcome {
-        if self.players.is_empty() {
-            return Outcome::Continue;
-        }
-        let rows = self.list.rows();
-        let Some(row) = rows.get(index) else {
+        let Some(key) = self.actions.get(index).cloned() else {
             return Outcome::Continue;
         };
-        let Some(key) = row.value.as_deref() else {
-            return Outcome::Continue;
-        };
-        if key.is_empty() || key == "-" {
+        if key == "refresh" {
+            self.reload();
             return Outcome::Continue;
         }
-        if key.starts_with("player:") {
-            let name = &key[7..];
+        if let Some(name) = key.strip_prefix("player:") {
             let status = self
                 .players
                 .iter()
                 .find(|p| p.name == name)
                 .map(|p| p.status.clone())
                 .unwrap_or_default();
-            if status == "Playing" {
-                let _ = std::process::Command::new("playerctl")
-                    .args(["pause", "-p", name])
-                    .stdin(std::process::Stdio::null())
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status();
-            } else {
-                let _ = std::process::Command::new("playerctl")
-                    .args(["play", "-p", name])
-                    .stdin(std::process::Stdio::null())
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status();
-            }
+            let subcmd = if status == "Playing" { "pause" } else { "play" };
+            let _ = std::process::Command::new("playerctl")
+                .args([subcmd, "-p", name])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
             self.reload();
             Outcome::Continue
         } else {
-            match key {
-                "play" | "pause" => {
+            match key.as_str() {
+                "play" | "pause" | "next" | "previous" | "stop" => {
                     for p in &self.players {
                         let _ = std::process::Command::new("playerctl")
-                            .args([key, "-p", &p.name])
-                            .stdin(std::process::Stdio::null())
-                            .stdout(std::process::Stdio::null())
-                            .stderr(std::process::Stdio::null())
-                            .status();
-                    }
-                    self.reload();
-                }
-                "next" => {
-                    for p in &self.players {
-                        let _ = std::process::Command::new("playerctl")
-                            .args(["next", "-p", &p.name])
-                            .stdin(std::process::Stdio::null())
-                            .stdout(std::process::Stdio::null())
-                            .stderr(std::process::Stdio::null())
-                            .status();
-                    }
-                    self.reload();
-                }
-                "previous" => {
-                    for p in &self.players {
-                        let _ = std::process::Command::new("playerctl")
-                            .args(["previous", "-p", &p.name])
-                            .stdin(std::process::Stdio::null())
-                            .stdout(std::process::Stdio::null())
-                            .stderr(std::process::Stdio::null())
-                            .status();
-                    }
-                    self.reload();
-                }
-                "stop" => {
-                    for p in &self.players {
-                        let _ = std::process::Command::new("playerctl")
-                            .args(["stop", "-p", &p.name])
+                            .args([key.as_str(), "-p", &p.name])
                             .stdin(std::process::Stdio::null())
                             .stdout(std::process::Stdio::null())
                             .stderr(std::process::Stdio::null())
@@ -314,12 +358,7 @@ impl MediaScreen {
                             .stdout(std::process::Stdio::null())
                             .stderr(std::process::Stdio::null())
                             .status();
-                        say(
-                            "Media",
-                            format!("Copied: {track}"),
-                            lazyos_ui::Urgency::Normal,
-                            Glyph::Clipboard,
-                        );
+                        self.status_note = Some(format!("Copied track to clipboard: {track}"));
                     }
                 }
                 _ => {}
@@ -328,23 +367,38 @@ impl MediaScreen {
         }
     }
 
-    fn list_layout(area: Rect) -> (Rect, Rect) {
+    fn layout(area: Rect) -> (Option<Rect>, Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
             y: area.y + 1,
             width: area.width.saturating_sub(4),
             height: area.height.saturating_sub(2),
         };
-        let filter = Rect {
-            height: 1.min(inner.height),
-            ..inner
-        };
-        let rows = Rect {
-            y: inner.y + 2,
-            height: inner.height.saturating_sub(2),
-            ..inner
-        };
-        (filter, rows)
+        if inner.height >= 12 {
+            let hero = Rect { height: 2, ..inner };
+            let filter = Rect {
+                y: inner.y + 3,
+                height: 1,
+                ..inner
+            };
+            let rows = Rect {
+                y: inner.y + 5,
+                height: inner.height.saturating_sub(5),
+                ..inner
+            };
+            (Some(hero), filter, rows)
+        } else {
+            let filter = Rect {
+                height: 1.min(inner.height),
+                ..inner
+            };
+            let rows = Rect {
+                y: inner.y + 2,
+                height: inner.height.saturating_sub(2),
+                ..inner
+            };
+            (None, filter, rows)
+        }
     }
 }
 
@@ -354,13 +408,7 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        say(
-            "Media",
-            format!("{said} (playerctl)"),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Music,
-        );
-        return Ok(3);
+        return Err(crate::Failure::new("Media", format!("{said} (playerctl)")));
     }
     let mut screen = MediaScreen::new();
     let code = crate::run_screen(terminal, design, "Media", &mut screen)?;

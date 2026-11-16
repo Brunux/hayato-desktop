@@ -176,12 +176,6 @@ impl RunScreen {
             .spawn();
 
         print(&format!("Ran: {}", cmd.name));
-        say(
-            "Run",
-            format!("Ran {} · copied to history", cmd.name),
-            lazyos_ui::Urgency::Normal,
-            Glyph::Terminal,
-        );
     }
 
     fn run_unknown(&mut self, input: &str, in_foot: bool) {
@@ -213,12 +207,6 @@ impl RunScreen {
             .spawn();
 
         print(&format!("Ran (unknown): {}", cmd));
-        say(
-            "Run",
-            format!("Ran {} · copied to history", cmd),
-            lazyos_ui::Urgency::Normal,
-            Glyph::Terminal,
-        );
     }
 }
 
@@ -285,6 +273,12 @@ impl Screen for RunScreen {
                 let input_text = self.input.text().trim().to_string();
                 let in_foot = key.modifiers.contains(KeyModifiers::SHIFT);
                 if input_text.is_empty() {
+                    if let Some(selected) = self.list.selected_index() {
+                        if let Some(cmd) = self.filtered.get(selected).cloned() {
+                            self.run_command(&cmd, in_foot);
+                            return Outcome::Done(lazyos_ui::app::exit::OK);
+                        }
+                    }
                     return Outcome::Continue;
                 }
                 let first_word = input_text.split_whitespace().next().unwrap_or("");
@@ -366,13 +360,10 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(&["setsid", "foot"]) {
-        say(
+        return Err(crate::Failure::new(
             "Run",
             format!("{said} (util-linux, foot)"),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Terminal,
-        );
-        return Ok(3);
+        ));
     }
     let mut screen = RunScreen::new();
     let code = crate::run_screen(terminal, design, "Run", &mut screen)?;

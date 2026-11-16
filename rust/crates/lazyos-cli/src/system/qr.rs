@@ -1,4 +1,4 @@
-//! QR codes: the Wi-Fi network this machine is on, or any text (`rofi-qr`).
+//! QR codes: the Wi-Fi network this machine is on, clipboard text, or any text (`rofi-qr`).
 //!
 //! The payload is the Wi-Fi QR format phones understand:
 //!
@@ -7,35 +7,108 @@
 //! ```
 //!
 //! with `\`, `;`, `,` and `:` escaped, which is what the ZXing reader expects.
-//! The password is read with `nmcli -s` through sudo. The payload is written to
-//! a 0600 temp file and drawn by `qrencode -t ANSIUTF8` in a foot popup.
+//! The password is read with `nmcli -s` through sudo, encoded in memory with
+//! `qrencode -t ASCII -m 2`, and rendered directly inside the Ratatui window
+//! using Unicode half-blocks (`▀`, `▄`, `█`) with dynamic window sizing.
+//! Generated QR codes can also be saved as high-resolution PNG files under
+//! `~/Pictures/Screenshots/<YYYY-MM-DD>/qr-<timestamp>.png`, matching the
+//! screenshot storage convention.
 
-#![allow(unused_imports)]
-#![allow(dead_code)]
-#![allow(clippy::collapsible_if)]
-#![allow(clippy::vec_init_then_push)]
 use std::cell::Cell;
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
 
+use lazyos_ui::widgets::put_trunc;
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, Input, InputAction, KeyHint, ListAction, ListState, Outcome,
-    Row, Screen, TextStyle, draw_card,
+    ActionItem, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Design, Glyph, Header, Input,
+    InputAction, KeyHint, ListAction, ListState, Outcome, QrCode, Row, Screen, TextStyle,
+    draw_card, draw_qr,
 };
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 
-use crate::system::{missing, out, say, sudo};
+use crate::system::{missing, out, sudo};
 
-const NEEDED: &[&str] = &["qrencode", "nmcli", "sudo", "foot"];
+const NEEDED: &[&str] = &["qrencode", "nmcli", "sudo"];
+
+enum QrMode {
+    Menu,
+    Typing(Input),
+    Viewing {
+        qr: QrCode,
+        title: String,
+        subtitle: String,
+        payload: String,
+        direct: bool,
+        saved_path: Option<PathBuf>,
+    },
+}
 
 /// The QR screen.
 pub struct QrScreen {
     wifi_detail: String,
-    wifi_colour: lazyos_ui::ColorRole,
+    wifi_colour: ColorRole,
     list: ListState,
+    view_strip: ActionStrip,
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
-    typing: Option<Input>,
+    mode: QrMode,
+    status: String,
+}
+
+/// Resolve the daily screenshot directory (`~/Pictures/Screenshots/<YYYY-MM-DD>`),
+/// matching `~/.config/bin/screenshot`.
+pub fn qr_target_dir() -> PathBuf {
+    let base = std::env::var("XDG_PICTURES_DIR")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .or_else(dirs::picture_dir)
+        .unwrap_or_else(|| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            PathBuf::from(home).join("Pictures")
+        });
+    let day = chrono::Local::now().format("%Y-%m-%d").to_string();
+    base.join("Screenshots").join(day)
+}
+
+/// Save a QR payload as a PNG image in `~/Pictures/Screenshots/<YYYY-MM-DD>/<prefix>-<timestamp>.png`.
+/// Pipes the payload via stdin so sensitive values (such as Wi-Fi PSKs) never appear in `argv`.
+pub fn save_qr_png(payload: &str, prefix: &str) -> Result<PathBuf, String> {
+    let dir = qr_target_dir();
+    fs::create_dir_all(&dir).map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
+    let stamp = chrono::Local::now().format("%Y-%m-%dT%H-%M-%S").to_string();
+    let file = dir.join(format!("{prefix}-{stamp}.png"));
+
+    let mut child = Command::new("qrencode")
+        .args([
+            "-t",
+            "PNG",
+            "-s",
+            "8",
+            "-m",
+            "2",
+            "-o",
+            file.to_str().unwrap_or(""),
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Could not run qrencode: {e}"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(payload.as_bytes());
+    }
+    let status = child.wait().map_err(|e| format!("qrencode failed: {e}"))?;
+    if status.success() && file.exists() {
+        Ok(file)
+    } else {
+        Err("qrencode did not write the PNG file".to_string())
+    }
 }
 
 /// Format a Wi-Fi QR payload (`WIFI:T:WPA;S:...;P:...;;` or `nopass`).
@@ -89,65 +162,92 @@ pub fn payload_wifi() -> Option<(String, String)> {
     .unwrap_or_default()
     .trim()
     .to_string();
-    Some((format_wifi_payload(&ssid, &psk), format!("Wi-Fi · {}", con)))
+    Some((
+        format_wifi_payload(&ssid, &psk),
+        format!("Wi-Fi \u{00b7} {ssid}"),
+    ))
 }
 
-/// Write `payload` to a 0600 temp file and draw it with `qrencode` in a `foot` popup.
-pub fn show(payload: &str, title: &str) {
-    let tmp = std::env::temp_dir().join(format!("qr-{}.txt", std::process::id()));
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .mode(0o600)
-            .open(&tmp)
-        {
-            let _ = f.write_all(payload.as_bytes());
-        }
+fn copy_to_clipboard(text: &str) -> bool {
+    let Ok(mut child) = Command::new("wl-copy")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(text.as_bytes());
     }
-    let escaped_title = title.replace('\'', "'\\''");
-    let escaped_tmp = tmp.display().to_string().replace('\'', "'\\''");
-    let script = format!(
-        "exec foot --app-id=popup -T '{escaped_title}' -e sh -c 'qrencode -t ANSIUTF8 -r \"$1\" || printf \"qrencode could not draw that\\n\"; rm -f \"$1\"; printf \"\\nEnter closes\\n\"; IFS= read -r _ || true' sh '{escaped_tmp}'"
-    );
-    crate::system::spawn_detached(&script);
+    child.wait().is_ok_and(|s| s.success())
 }
 
-/// `lazyos menu qr --wifi` (`rofi-qr --wifi`): show the current Wi-Fi QR directly.
-pub fn wifi_dialog() -> i32 {
-    if let Some((payload, title)) = payload_wifi() {
-        show(&payload, &title);
-        crate::EXIT_OK
-    } else {
-        say(
-            "QR code",
-            "Not connected to a Wi-Fi network",
-            lazyos_ui::Urgency::Normal,
-            Glyph::Wifi,
-        );
-        crate::EXIT_FAILED
+impl Default for QrScreen {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl QrScreen {
     pub fn new() -> Self {
+        let mut view_strip = ActionStrip::default();
+        view_strip.set_items(vec![
+            ActionItem::new("save", "^S", "Save PNG").glyph(Glyph::Save),
+            ActionItem::new("copy", "^C", "Copy payload").glyph(Glyph::Clipboard),
+            ActionItem::new("open", "^O", "Open folder").glyph(Glyph::Folder),
+        ]);
         let mut screen = Self {
             wifi_detail: "not connected".to_string(),
-            wifi_colour: lazyos_ui::ColorRole::Dim,
+            wifi_colour: ColorRole::Dim,
             list: ListState::new(),
+            view_strip,
             header: Header::new("LazyOS").subtitle("QR code"),
-            keybar: vec![
-                KeyHint::new("Enter", "show the code"),
-                KeyHint::new("Esc", "close"),
-            ],
+            keybar: Vec::new(),
             rows_height: Cell::new(20),
-            typing: None,
+            mode: QrMode::Menu,
+            status: "Enter shows the code \u{00b7} Escape closes".to_string(),
         };
         screen.reload();
+        screen.sync_chrome();
         screen
+    }
+
+    pub fn new_wifi_direct() -> Self {
+        let mut screen = Self::new();
+        screen.open_wifi_qr(true);
+        screen
+    }
+
+    fn sync_chrome(&mut self) {
+        match &self.mode {
+            QrMode::Menu => {
+                self.header = Header::new("LazyOS")
+                    .subtitle("QR code")
+                    .status(self.status.clone());
+                self.keybar = vec![
+                    KeyHint::new("Enter", "show the code"),
+                    KeyHint::new("Esc", "close"),
+                ];
+            }
+            QrMode::Typing(_) => {
+                self.header = Header::new("LazyOS")
+                    .subtitle("QR code \u{00b7} Any text")
+                    .status("Type text or URL \u{00b7} Enter encodes");
+                self.keybar = vec![KeyHint::new("Enter", "encode"), KeyHint::new("Esc", "back")];
+            }
+            QrMode::Viewing { title, .. } => {
+                self.header = Header::new("LazyOS")
+                    .subtitle(title.clone())
+                    .status(self.status.clone());
+                self.keybar = vec![
+                    KeyHint::new("s/^S", "save PNG"),
+                    KeyHint::new("c/^C", "copy payload"),
+                    KeyHint::new("o/^O", "open"),
+                    KeyHint::new("Esc", "back"),
+                ];
+            }
+        }
     }
 
     fn reload(&mut self) {
@@ -157,7 +257,7 @@ impl QrScreen {
         self.build_rows();
     }
 
-    fn get_wifi_status() -> (String, lazyos_ui::ColorRole) {
+    fn get_wifi_status() -> (String, ColorRole) {
         let dev =
             out(&["nmcli", "-t", "-f", "DEVICE,TYPE", "device", "status"]).unwrap_or_default();
         let dev = dev
@@ -170,126 +270,371 @@ impl QrScreen {
                 .unwrap_or_default();
             let con = con.lines().next().unwrap_or("").trim();
             if !con.is_empty() && con != "--" {
-                return (con.to_string(), lazyos_ui::ColorRole::Ok);
+                return (con.to_string(), ColorRole::Ok);
             }
         }
-        ("not connected".to_string(), lazyos_ui::ColorRole::Dim)
+        ("not connected".to_string(), ColorRole::Dim)
     }
 
     fn build_rows(&mut self) {
-        let mut rows = Vec::new();
-        rows.push(
+        let clip_detail = out(&["wl-paste", "--no-newline"])
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                let first = s.lines().next().unwrap_or("");
+                let short: String = first.chars().take(44).collect();
+                if first.chars().count() > 44 {
+                    format!("{short}\u{2026}")
+                } else {
+                    short
+                }
+            })
+            .unwrap_or_else(|| "encode current clipboard text".to_string());
+
+        let rows = vec![
             Row::new("Wi-Fi network")
                 .glyph(Glyph::Wifi)
                 .detail(self.wifi_detail.clone())
                 .value("wifi"),
-        );
-        rows.push(
+            Row::new("From the clipboard")
+                .glyph(Glyph::Clipboard)
+                .detail(clip_detail)
+                .value("clipboard"),
             Row::new("Any text")
                 .glyph(Glyph::Qr)
                 .detail("type it, and it becomes a code")
                 .value("text"),
-        );
+        ];
         self.list.set_rows(rows);
     }
 
-    fn qr_escape(s: &str) -> String {
+    pub fn qr_escape(s: &str) -> String {
         s.replace('\\', "\\\\")
             .replace(';', "\\;")
             .replace(',', "\\,")
             .replace(':', "\\:")
     }
 
-    fn show_qr(payload: &str, title: &str) {
-        show(payload, title);
+    fn open_wifi_qr(&mut self, direct: bool) {
+        let Some((payload, title)) = payload_wifi() else {
+            self.status = "Not connected to a Wi-Fi network".to_string();
+            self.sync_chrome();
+            return;
+        };
+        if let Some(qr) = QrCode::encode(&payload) {
+            self.view_strip.set_focused(false);
+            self.status =
+                "s saves PNG \u{00b7} c copies payload \u{00b7} Tab focuses actions".to_string();
+            self.mode = QrMode::Viewing {
+                qr,
+                title,
+                subtitle: "Scan with camera to join Wi-Fi".to_string(),
+                payload,
+                direct,
+                saved_path: None,
+            };
+            self.sync_chrome();
+        } else {
+            self.status = "Could not encode QR: payload too large".to_string();
+            self.sync_chrome();
+        }
     }
 
-    fn wifi_qr(&self) {
-        if let Some((payload, title)) = payload_wifi() {
-            Self::show_qr(&payload, &title);
+    fn open_text_qr(&mut self, payload: String) {
+        if let Some(qr) = QrCode::encode(&payload) {
+            let preview: String = payload.chars().take(42).collect();
+            self.view_strip.set_focused(false);
+            self.status =
+                "s saves PNG \u{00b7} c copies payload \u{00b7} Tab focuses actions".to_string();
+            self.mode = QrMode::Viewing {
+                qr,
+                title: "QR code".to_string(),
+                subtitle: preview,
+                payload,
+                direct: false,
+                saved_path: None,
+            };
+            self.sync_chrome();
         } else {
-            say(
-                "QR code",
-                "Not connected to a Wi-Fi network",
-                lazyos_ui::Urgency::Normal,
-                Glyph::Wifi,
-            );
+            self.status = "Could not encode QR: payload too large".to_string();
+            self.mode = QrMode::Menu;
+            self.sync_chrome();
         }
     }
 
     fn text_qr(&mut self) {
-        self.typing = Some(Input::new());
+        self.mode = QrMode::Typing(Input::new());
+        self.sync_chrome();
+    }
+
+    fn run_view_action(&mut self, id: &str) -> Outcome {
+        let QrMode::Viewing {
+            payload,
+            title,
+            saved_path,
+            ..
+        } = &mut self.mode
+        else {
+            return Outcome::Continue;
+        };
+        match id {
+            "save" => {
+                let prefix = if title.starts_with("Wi-Fi") {
+                    "wifi-qr"
+                } else {
+                    "qr"
+                };
+                match save_qr_png(payload, prefix) {
+                    Ok(path) => {
+                        let name = path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
+                        let day = path
+                            .parent()
+                            .and_then(|p| p.file_name())
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
+                        *saved_path = Some(path);
+                        self.status = format!("Saved Screenshots/{day}/{name}");
+                    }
+                    Err(err) => {
+                        self.status = err;
+                    }
+                }
+                self.sync_chrome();
+                Outcome::Consumed
+            }
+            "copy" => {
+                if copy_to_clipboard(payload) {
+                    self.status = "Copied QR payload to clipboard".to_string();
+                } else {
+                    self.status = "Could not copy payload (wl-copy unavailable)".to_string();
+                }
+                self.sync_chrome();
+                Outcome::Consumed
+            }
+            "open" => {
+                let target = if let Some(p) = saved_path.clone() {
+                    p
+                } else {
+                    let prefix = if title.starts_with("Wi-Fi") {
+                        "wifi-qr"
+                    } else {
+                        "qr"
+                    };
+                    match save_qr_png(payload, prefix) {
+                        Ok(p) => {
+                            *saved_path = Some(p.clone());
+                            p
+                        }
+                        Err(_) => qr_target_dir(),
+                    }
+                };
+                let _ = fs::create_dir_all(qr_target_dir());
+                crate::system::spawn_detached(&format!("exec xdg-open '{}'", target.display()));
+                self.status = format!("Opened {}", target.display());
+                self.sync_chrome();
+                Outcome::Consumed
+            }
+            _ => Outcome::Consumed,
+        }
     }
 }
 
 impl Screen for QrScreen {
-    fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("QR code"), true);
-        let (filter, rows) = super::pick::list_layout(ctx.area);
-        if let Some(input) = &self.typing {
-            ctx.buf.set_string(
-                filter.x,
-                filter.y,
-                "Type text or URL · Enter shows the code · Escape returns",
-                ctx.design.style(TextStyle::Dim),
-            );
-            let field = Rect {
-                height: 1.min(rows.height),
-                ..rows
-            };
-            input.render(field, ctx.buf, ctx.design, "text or URL…");
-            return;
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        match &self.mode {
+            QrMode::Menu | QrMode::Typing(_) => Some((680, 340)),
+            QrMode::Viewing { qr, .. } => {
+                let (w, h) = qr.recommended_window_size();
+                Some((w.max(560), h.saturating_add(28)))
+            }
         }
-        ctx.buf.set_string(
-            filter.x,
-            filter.y,
-            "Enter shows the code · Escape closes",
-            ctx.design.style(TextStyle::Dim),
-        );
-        self.rows_height.set(rows.height);
-        self.list.render(rows, ctx.buf, ctx.design, true);
+    }
+
+    fn draw(&mut self, ctx: &mut BodyCtx) {
+        match &self.mode {
+            QrMode::Viewing {
+                qr,
+                title,
+                subtitle,
+                ..
+            } => {
+                draw_card(ctx.buf, ctx.area, ctx.design, Some(title), true);
+                let strip_area = Rect {
+                    x: ctx.area.x + 2,
+                    y: ctx.area.y + 1,
+                    width: ctx.area.width.saturating_sub(4),
+                    height: 1.min(ctx.area.height.saturating_sub(2)),
+                };
+                self.view_strip.render(strip_area, ctx.buf, ctx.design);
+                if ctx.area.height >= 5 && !subtitle.is_empty() {
+                    put_trunc(
+                        ctx.buf,
+                        ctx.area.x + 2,
+                        ctx.area.y + 2,
+                        subtitle,
+                        ctx.area.width.saturating_sub(4),
+                        ctx.design.style(TextStyle::Dim),
+                    );
+                }
+                let inner = Rect {
+                    x: ctx.area.x + 2,
+                    y: ctx.area.y + 3,
+                    width: ctx.area.width.saturating_sub(4),
+                    height: ctx.area.height.saturating_sub(4),
+                };
+                draw_qr(ctx.buf, inner, ctx.design, qr);
+            }
+            QrMode::Typing(input) => {
+                draw_card(ctx.buf, ctx.area, ctx.design, Some("QR code"), true);
+                let (filter, rows) = super::pick::list_layout(ctx.area);
+                put_trunc(
+                    ctx.buf,
+                    filter.x,
+                    filter.y,
+                    "Type text or URL \u{00b7} Enter shows the code \u{00b7} Escape returns",
+                    filter.width,
+                    ctx.design.style(TextStyle::Dim),
+                );
+                let field = Rect {
+                    height: 1.min(rows.height),
+                    ..rows
+                };
+                input.render(field, ctx.buf, ctx.design, "text or URL\u{2026}");
+            }
+            QrMode::Menu => {
+                draw_card(ctx.buf, ctx.area, ctx.design, Some("QR code"), true);
+                let (filter, rows) = super::pick::list_layout(ctx.area);
+                put_trunc(
+                    ctx.buf,
+                    filter.x,
+                    filter.y,
+                    &self.status,
+                    filter.width,
+                    ctx.design.style(TextStyle::Dim),
+                );
+                self.rows_height.set(rows.height);
+                self.list.render(rows, ctx.buf, ctx.design, true);
+            }
+        }
     }
 
     fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
         }
-        if let Some(input) = &mut self.typing {
-            match input.handle(key) {
-                InputAction::Submitted => {
-                    let trimmed = input.text().trim().to_string();
-                    self.typing = None;
-                    if !trimmed.is_empty() {
-                        Self::show_qr(&trimmed, "QR code");
+        if matches!(self.mode, QrMode::Viewing { .. }) {
+            match self.view_strip.handle(key) {
+                ActionStripEvent::Activated(id) => return self.run_view_action(id),
+                ActionStripEvent::Consumed => return Outcome::Consumed,
+                ActionStripEvent::Ignored => {}
+            }
+            let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+            match key.code {
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    return self.run_view_action("save");
+                }
+                KeyCode::Char('c') | KeyCode::Char('C') => {
+                    return self.run_view_action("copy");
+                }
+                KeyCode::Char('o') | KeyCode::Char('O') => {
+                    return self.run_view_action("open");
+                }
+                KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') if !ctrl => {
+                    let is_direct = matches!(self.mode, QrMode::Viewing { direct: true, .. });
+                    if is_direct {
                         return Outcome::Done(lazyos_ui::app::exit::OK);
                     }
-                    return Outcome::Consumed;
-                }
-                InputAction::Cancelled => {
-                    self.typing = None;
+                    self.mode = QrMode::Menu;
+                    self.status = "Enter shows the code \u{00b7} Escape closes".to_string();
+                    self.sync_chrome();
                     return Outcome::Consumed;
                 }
                 _ => return Outcome::Consumed,
             }
         }
-        let rows_height = self.rows_height.get();
-        match key.code {
-            KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
-            KeyCode::Enter => {
-                if let Some(index) = self.list.selected_index() {
-                    return self.activate(index);
+
+        match &mut self.mode {
+            QrMode::Viewing { .. } => Outcome::Consumed,
+            QrMode::Typing(input) => match input.handle(key) {
+                InputAction::Submitted => {
+                    let trimmed = input.text().trim().to_string();
+                    if trimmed.is_empty() {
+                        self.mode = QrMode::Menu;
+                        self.sync_chrome();
+                        return Outcome::Consumed;
+                    }
+                    self.open_text_qr(trimmed);
+                    Outcome::Consumed
+                }
+                InputAction::Cancelled => {
+                    self.mode = QrMode::Menu;
+                    self.status = "Enter shows the code \u{00b7} Escape closes".to_string();
+                    self.sync_chrome();
+                    Outcome::Consumed
+                }
+                _ => Outcome::Consumed,
+            },
+            QrMode::Menu => {
+                let rows_height = self.rows_height.get();
+                match key.code {
+                    KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+                    KeyCode::Enter => {
+                        if let Some(index) = self.list.selected_index() {
+                            return self.activate(index);
+                        }
+                    }
+                    _ => {}
+                }
+                match self.list.handle(key, rows_height, design) {
+                    ListAction::Activated(index) => self.activate(index),
+                    _ => Outcome::Continue,
                 }
             }
-            _ => {}
-        }
-        match self.list.handle(key, rows_height, design) {
-            ListAction::Activated(index) => self.activate(index),
-            _ => Outcome::Continue,
         }
     }
 
+    fn click(&mut self, row: Option<usize>) -> Outcome {
+        if matches!(self.mode, QrMode::Viewing { .. }) {
+            if let Some(r) = row
+                && r >= 10_000
+                && let Some(item) = self.view_strip.items().get(r - 10_000)
+            {
+                return self.run_view_action(item.id);
+            }
+            return Outcome::Continue;
+        }
+        if !matches!(self.mode, QrMode::Menu) {
+            return Outcome::Continue;
+        }
+        let Some(row) = row else {
+            return Outcome::Continue;
+        };
+        self.list.set_cursor(row);
+        if let Some(index) = self.list.selected_index() {
+            return self.activate(index);
+        }
+        Outcome::Continue
+    }
+
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        if self.typing.is_some() {
+        if matches!(self.mode, QrMode::Viewing { .. }) {
+            let strip_area = Rect {
+                x: area.x + 2,
+                y: area.y + 1,
+                width: area.width.saturating_sub(4),
+                height: 1,
+            };
+            if let Some(idx) = self.view_strip.hit_index(strip_area, x, y) {
+                return Some(10_000 + idx);
+            }
+            return None;
+        }
+        if !matches!(self.mode, QrMode::Menu) {
             return None;
         }
         let (_, rows) = super::pick::list_layout(area);
@@ -319,8 +664,21 @@ impl QrScreen {
         }
         match key {
             "wifi" => {
-                self.wifi_qr();
-                Outcome::Done(lazyos_ui::app::exit::OK)
+                self.open_wifi_qr(false);
+                Outcome::Consumed
+            }
+            "clipboard" => {
+                let clip = out(&["wl-paste", "--no-newline"])
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_default();
+                if clip.is_empty() {
+                    self.status =
+                        "Clipboard is empty \u{00b7} copy text or a URL first".to_string();
+                    self.sync_chrome();
+                } else {
+                    self.open_text_qr(clip);
+                }
+                Outcome::Consumed
             }
             "text" => {
                 self.text_qr();
@@ -336,18 +694,28 @@ pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
+    menu_with_args(&[], terminal, design)
+}
+
+/// `lazyos menu qr [--wifi]`: opens in menu mode or directly in Wi-Fi QR view.
+pub fn menu_with_args(
+    args: &[String],
+    terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
+    design: &Design,
+) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        say(
+        return Err(crate::Failure::new(
             "QR code",
-            format!("{said} (qrencode, nmcli, sudo, foot)"),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Qr,
-        );
-        return Ok(3);
+            format!("{said} (qrencode, nmcli, sudo)"),
+        ));
     }
-    let mut screen = QrScreen::new();
-    let code = crate::run_screen(terminal, design, "QR code", &mut screen)?;
-    Ok(code)
+    let wifi_direct = args.iter().any(|a| a == "--wifi");
+    let mut screen = if wifi_direct {
+        QrScreen::new_wifi_direct()
+    } else {
+        QrScreen::new()
+    };
+    crate::run_screen(terminal, design, "QR code", &mut screen)
 }
 
 #[cfg(test)]
@@ -373,14 +741,25 @@ mod tests {
     }
 
     #[test]
+    fn qr_target_dir_uses_screenshots_date_subfolder() {
+        let dir = qr_target_dir();
+        let path_str = dir.to_string_lossy();
+        assert!(path_str.contains("Screenshots/"));
+    }
+
+    #[test]
     fn text_row_opens_input_and_esc_returns_to_list() {
         let mut screen = QrScreen::new();
         screen.build_rows();
-        assert_eq!(screen.activate(1), Outcome::Consumed);
-        assert!(screen.typing.is_some());
+        assert_eq!(screen.list.rows().len(), 3);
+        assert_eq!(screen.list.rows()[0].value.as_deref(), Some("wifi"));
+        assert_eq!(screen.list.rows()[1].value.as_deref(), Some("clipboard"));
+        assert_eq!(screen.list.rows()[2].value.as_deref(), Some("text"));
+        assert_eq!(screen.activate(2), Outcome::Consumed);
+        assert!(matches!(screen.mode, QrMode::Typing(_)));
         let design = Design::solarized();
         let esc = KeyEvent::from(KeyCode::Esc);
         assert_eq!(screen.key(esc, &design), Outcome::Consumed);
-        assert!(screen.typing.is_none());
+        assert!(matches!(screen.mode, QrMode::Menu));
     }
 }

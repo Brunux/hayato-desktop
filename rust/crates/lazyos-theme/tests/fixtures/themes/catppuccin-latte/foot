@@ -45,6 +45,9 @@ font=JetBrains Mono:size=11, Symbols Nerd Font Mono:size=12, Font Awesome 6 Free
 pad=6x6
 dpi-aware=no
 
+# Auto-copy selected text directly to both the PRIMARY selection and the system CLIPBOARD.
+selection-target=both
+
 [scrollback]
 lines=1000
 

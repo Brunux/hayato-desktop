@@ -1,8 +1,7 @@
 # Shortcuts
 
-`$mod` is **Alt** on this port. Omarchy (the desktop this session is ported from)
-uses Super, so the same actions usually keep the same letter and change the
-modifier; the table at the end says so where it matters.
+`$mod` is **Alt** on LazyOS. System panels use **Alt+Ctrl+<letter>**, while
+window and launcher actions use **Alt+<key>**.
 
 The live list is **Alt+Ctrl+K** (`lazyos menu keys`, also linked as `rofi-keys`): it is parsed from the
 configuration files, so it is never stale, it can be searched, and Enter copies
@@ -29,11 +28,11 @@ read. This page is the tour.
 | Alt+Ctrl+O | settings: the radio switches, night light, touchpad, rotation, display arrangement |
 | Alt+Ctrl+Shift+D | bring the internal panel back when the screen is black (no menu needed: it works with nothing on screen) |
 | Alt+Ctrl+N | notifications: the history, do-not-disturb, copy one |
-| Alt+Ctrl+Q | calculator: type it, Enter copies the result |
+| Alt+C (or Alt+Ctrl+Q) | calculator: type it, Enter copies the result |
 | Alt+Ctrl+V | clipboard history: Enter puts an entry back, Alt+1 deletes it |
 | Alt+Ctrl+E | emoji: type a name, Enter inserts the glyph at the cursor |
 | Alt+Return | terminal (foot) |
-| Alt+Shift+Return | the browser (firefox-esr; Omarchy has no key for it) |
+| Alt+Shift+Return | the browser (firefox-esr) |
 | Alt+Q (or Alt+Shift+Q) | close the focused window |
 | Alt+Shift+C | reload the configuration |
 | Alt+Shift+E | exit the session (asks first) |
@@ -118,8 +117,7 @@ terminal (or over ssh).
 
 ## Panels, lock and power
 
-These are the bar's panels without the mouse, on the same letters Omarchy uses
-with `Super+Ctrl`:
+These are the bar's panels and session controls on the keyboard:
 
 | Keys | Does |
 |---|---|
@@ -127,7 +125,7 @@ with `Super+Ctrl`:
 | Alt+Ctrl+B | Bluetooth (scan, connect, disconnect) |
 | Alt+Ctrl+W | network (Wi-Fi list, strongest first) |
 | Alt+Ctrl+P | power menu: lock, suspend, hibernate, log out, reboot, shut down |
-| Alt+Escape | the same power menu (Omarchy's Super+Escape) |
+| Alt+Escape | the same power menu |
 | Alt+Ctrl+L | lock the screen (the Lock key does the same and then suspends) |
 | Alt+Ctrl+X | dictation on/off (the notification stays while it records; press again to stop) |
 | Alt+Ctrl+M | the local model: Qwen3.5-0.8B on this machine, offline (see `04-software.md` § A local model) |
@@ -135,7 +133,7 @@ with `Super+Ctrl`:
 | Alt+Ctrl+O | settings: Wi-Fi and Bluetooth radios, night light, do-not-disturb, touchpad, tablet mode, rotation, display arrangement |
 | Alt+Ctrl+Shift+D | the internal panel back on, with nothing on screen: the way out of a black screen (it runs a sway command, not a menu) |
 | Alt+Ctrl+N | notifications: history, do-not-disturb, copy |
-| Alt+Ctrl+Q | calculator |
+| Alt+C / Alt+Ctrl+Q | calculator |
 | Alt+Ctrl+V | clipboard history (Enter copies back, Alt+1 deletes the entry) |
 | Alt+Ctrl+E | emoji picker (Enter inserts, Alt+1 copies only) |
 | Alt+Shift+Escape / Alt+Ctrl+Escape | lock then suspend / suspend |
@@ -222,15 +220,24 @@ not a mixer in the bar, and nothing starts it until the row is picked.
 
 A saved screenshot goes to **`~/Pictures/Screenshots/<today>/`**, under the name
 grimshot generates (`2026-10-21T18-04-11.png`), which is the name the
-notification shows. The capture menu's last row opens that folder.
+notification shows. Generated QR codes (**Make a QR code** or **Share QR** in
+Wi-Fi) save to the same daily folder (`qr-<timestamp>.png` or
+`wifi-qr-<timestamp>.png`) when you press **`s`** or **`Ctrl+S`**, and **`o`**
+opens the saved file or folder. The capture menu's last row opens that folder.
 
-Dictation (`Alt+Ctrl+X`) records up to 60 seconds and types what it heard into
-the focused window. It says what it is doing: the notification stays up while it
-records ("Alt+Ctrl+X stops it"), becomes "Transcribing…" while whisper works, and
-turns into the text it typed - or the reason it could not. Pressing the key again
-**stops and transcribes**, and the root menu's **Dictation** row does the same
-from the mouse. The text is also left on the clipboard, because a few surfaces
-(a launcher, a fullscreen game) refuse typed input.
+Dictation (`Alt+Ctrl+X`) supports both **push-to-talk** and **hands-free**
+capture without ever stealing focus from the window where the text will be typed:
+* **Hold `Alt+Ctrl+X`** while speaking and **release** to immediately transcribe
+  on the four Cortex-A76 performance cores (`taskset -c 4-7 whisper-cli -t 4`)
+  and type the result into the focused window.
+* **Tap `Alt+Ctrl+X` briefly** or pick **Dictation** from the root menu
+  (`Alt+Space`) to record hands-free. Stop and transcribe at any time by
+  clicking **`Stop & Transcribe`** (or **`Cancel`**) on the persistent
+  notification card, clicking the **`⠋ Dictation · Recording`** spinner on the
+  top bar, picking **Stop dictation** in the root menu, or pressing
+  `Alt+Ctrl+X` again. The notification morphs in-place from *Recording* to
+  *Transcribing…* and finally to the text it typed (also copied to the
+  clipboard).
 
 The top row of this keyboard sends action keys, not F1-F12: keyd turns
 **Ctrl+Alt+top row** into virtual terminals 1-10 and **Search+top row** into
@@ -293,56 +300,42 @@ back always leaves the screen upright, even after a session that died in tablet
 mode - the rotation is undone by asking the compositor for the focused output,
 not by reading the mode's state directory, which such a session takes with it.
 
-## What was copied from Omarchy, and what differs
+## Quick reference summary
 
-`Super` there is `Alt` here; the letters and Ctrl/Shift combinations are the same
-wherever sway does not already own the key.
+| Action | Shortcut |
+|---|---|
+| terminal | **Alt+Return** |
+| apps | **Alt+D** or the **Search key** |
+| root menu | **Alt+Space** |
+| window switcher | **Alt+Tab** |
+| keybindings | **Alt+Ctrl+K** (Alt+K is vim focus up, Alt+Shift+K moves the window) |
+| settings / control centre | **Alt+Ctrl+O** |
+| calculator | **Alt+C** or **Alt+Ctrl+Q** |
+| notifications | **Alt+Ctrl+N** |
+| clipboard history | **Alt+Ctrl+V** |
+| emoji picker | **Alt+Ctrl+E** |
+| dictation | **Alt+Ctrl+X** |
+| agents | **Alt+Ctrl+Shift+A** |
+| theme picker | **Alt+Ctrl+Shift+T** |
+| floating | **Alt+T** |
+| close window | **Alt+Q** (Alt+W is sway's tabbed layout) |
+| scratchpad | **Alt+grave** / **Alt+Shift+grave** |
+| lock | **Alt+Ctrl+L** (and the Lock key) |
+| power menu | **Alt+Escape** or **Alt+Ctrl+P** |
+| audio / Bluetooth / network panels | **Alt+Ctrl+A** / **Alt+Ctrl+B** / **Alt+Ctrl+W** |
+| browser | **Alt+Shift+Return** (`firefox-esr`) |
+| screenshot | **Alt+Shift+S**, **Alt+Shift+F**, **Alt+Ctrl+S** |
+| capture menu (screenshot, OCR, QR, recording) | **Alt+Ctrl+C** |
+| files | **Alt+Search**: newest 500 files; **Alt+Ctrl+Shift+F**: `favnyr` window; **Search+Shift**: `lazyos-find`; **Alt+Ctrl+F**: browse directory |
+| fullscreen | **Alt+F** |
+| volume, brightness, media keys | **XF86 keys** |
+| workspaces | **Alt+1..0** and three-finger swipe |
+| layouts | **Alt+S** / **Alt+W** / **Alt+E** (stacking / tabbed / split) |
 
-| Action | Omarchy | Here |
-|---|---|---|
-| terminal | Super+Return | Alt+Return |
-| apps | Super+Alt+Space | Alt+D or the Search key |
-| root menu | Super+Space | **Alt+Space** |
-| window switcher | Alt+Tab | **Alt+Tab** (rofi's window mode) |
-| keybindings | Super+K | **Alt+Ctrl+K** (Alt+K is vim focus up, Alt+Shift+K moves the window) |
-| settings / control centre | Super+Ctrl+O | **Alt+Ctrl+O** (one list of switches and panels) |
-| calculator | Super+Ctrl+Q | **Alt+Ctrl+Q** |
-| notifications | bar panel | **Alt+Ctrl+N** |
-| clipboard history | Super+Ctrl+V | **Alt+Ctrl+V** |
-| emoji picker | Super+Ctrl+E | **Alt+Ctrl+E** |
-| dictation | Super+Ctrl+X | Alt+Ctrl+X |
-| agents | Super+Shift+Ctrl+A | Alt+Ctrl+Shift+A |
-| floating | Super+T | Alt+T |
-| close window | Super+Q (or Super+W) | Alt+Q (Alt+W is sway's tabbed layout) |
-| scratchpad | Super+grave | Alt+grave |
-| lock | Super+Ctrl+L | Alt+Ctrl+L (and the Lock key) |
-| system menu | Super+Escape | Alt+Escape → the power menu |
-| audio / Bluetooth / network panels | Super+Ctrl+A/B/W | Alt+Ctrl+A/B/W |
-| power menu | Super+Ctrl+P | **Alt+Ctrl+P** |
-| browser | no key (its launcher) | **Alt+Shift+Return** (firefox-esr) |
-| screenshot | Super+Shift+S, Print | Alt+Shift+S, Alt+Shift+F, Alt+Ctrl+S |
-| capture menu (screenshot, OCR, QR, recording) | Super+Ctrl+C | **Alt+Ctrl+C** |
-| files | Super+Shift+F opens the file manager | Alt+Search: `rofi-files --search` (the newest 500); **Alt+Ctrl+Shift+F**: favnyr, the same files in a window; **Search+Shift**: `lazyos-find`, every file as it is found; **Alt+Ctrl+F**: browse a directory |
-| fullscreen | Super+F | Alt+F |
-| volume, brightness, media keys | XF86 keys | the same keys |
-| workspaces | Super+Tab cycles | Alt+1..0 and three-finger swipe |
-| layouts | Super+L cycles | Alt+S/W/E (sway's three layouts) |
+Clipboard history (`Alt+Ctrl+V`) is backed by `cliphist` fed by `wl-paste --watch`
+— the one resident user process this session keeps (~2 MB) — and the emoji picker
+(`Alt+Ctrl+E`) inserts via the clipboard plus a virtual `Shift+Insert`.
 
-**Three deliberate deviations**, all because sway's defaults own the key Omarchy
-uses: the key view is `Alt+Ctrl+K` (not `Alt+K`, which is vim focus up, nor `Alt+Shift+K`, which moves the window), closing
-is `Alt+Q` (not `Alt+W`, which is the tabbed layout), and there is no single
-"cycle layout" key because sway's layouts are stacking/tabbed/split rather than
-dwindle/master/scrolling.
-
-Clipboard history (`Alt+Ctrl+V`) and emoji (`Alt+Ctrl+E`) use the same letters as
-Omarchy, and both are built: the history is `cliphist`, fed by `wl-paste --watch`
-— the one resident process this session has, about 2 MB — and the picker is a
-rofi list over the table `scripts/make-emojis.sh` generates, inserting with the
-clipboard plus a virtual Shift+Insert. The capture menu `Alt+Ctrl+C` is built too
-(screenshots, annotation, OCR, QR and recording). `docs/omarchy-gap.md` has the
-full list.
-
-Everything else lives in the root menu instead of on a key: Places, Media, Time
-zone, Free space, End a process, SSH, DNS, Packages, Colour, Reminders, About and
-the manual. `Alt+Space` then a few letters of the name is enough: the menu
-filters as you type and Enter opens the best match.
+Everything else lives in the root menu (`Alt+Space`): Places, Media, Time zone,
+Free space, End a process, SSH, DNS, Packages, Colour, Reminders, About and
+Learn. Press `Alt+Space`, type a few letters of the name, and press Enter.

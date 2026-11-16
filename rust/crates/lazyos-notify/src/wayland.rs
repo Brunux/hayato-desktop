@@ -263,9 +263,9 @@ impl WaylandState {
                 } else if let Some(action_key) = clicked_action {
                     let id = self.notifications[idx].id;
                     let _ = self.event_tx.send(UiEvent::ActionInvoked(id, action_key));
+                    let _ = self.event_tx.send(UiEvent::NotificationClosed(id, 2));
                     if reduced {
                         self.notifications.remove(idx);
-                        let _ = self.event_tx.send(UiEvent::NotificationClosed(id, 2));
                         if self.notifications.is_empty() {
                             self.destroy_surface();
                         } else {
@@ -277,7 +277,7 @@ impl WaylandState {
                     } else {
                         self.notifications[idx].anim_state = AnimState::Closing {
                             start: Instant::now(),
-                            reason: 2,
+                            reason: 0,
                         };
                         self.notifications[idx].is_hovered = false;
                         self.notifications[idx].hovered_action = None;

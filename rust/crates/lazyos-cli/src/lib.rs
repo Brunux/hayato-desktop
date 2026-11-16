@@ -334,7 +334,6 @@ fn query(resolved: &Resolved) -> Option<i32> {
             println!("{}", system::bluetooth::status());
             Some(EXIT_OK)
         }
-        ("menu qr", ["--wifi"]) => Some(system::qr::wifi_dialog()),
         ("menu format" | "menu swap", ["--candidates"]) => {
             let mut out = io::stdout();
             for d in system::disk::candidates_from_machine() {
@@ -443,7 +442,7 @@ fn run_direct(resolved: &Resolved) -> i32 {
         "mcp" => mcp::run(resolved),
         "task stop" => task_cmd::stop(resolved),
         "open" => open_path(resolved),
-        "menu dictate" => system::dictate::toggle(),
+        "menu dictate" => system::dictate::run(&resolved.args),
         other => {
             eprintln!("lazyos {other}: this command has no direct handler");
             EXIT_USAGE
@@ -513,7 +512,7 @@ fn execute(
         "menu clip" => system::clip::menu(terminal, design),
         "menu emoji" => system::emoji::menu(terminal, design),
         "menu capture" => system::capture::menu(terminal, design),
-        "menu qr" => system::qr::menu(terminal, design),
+        "menu qr" => system::qr::menu_with_args(&resolved.args, terminal, design),
         "menu remind" => system::remind::menu(terminal, design),
         "menu calc" => system::calc::menu(terminal, design),
         "menu colour" => system::colour::menu(terminal, design),
@@ -536,7 +535,7 @@ fn execute(
         "menu layout" => system::layout::menu(terminal, design),
         "menu file-actions" => system::file_actions::menu(&resolved.args, terminal, design),
         "menu translate" => system::translate::menu(&resolved.args, terminal, design),
-        "menu dictate" => system::dictate::menu(),
+        "menu dictate" => system::dictate::menu_with_args(&resolved.args),
         "menu theme" => system::theme_picker::menu(terminal, design),
         "task attach" => task_cmd::attach(resolved, terminal, design),
         "installer" => {
@@ -600,14 +599,42 @@ fn session_menu(
         .cloned()
         .unwrap_or_else(|| "/".into());
     let mut screen = menu::screen::MenuScreen::new(setup);
-    let code = App::new(Header::new("LazyOS"))
-        .design(design.clone())
-        .screen(&mut screen)
-        .run(terminal)
-        .map_err(|error| Failure::new("the terminal stopped answering", error.to_string()))?;
-    match screen.chosen.take() {
-        None => Ok(code),
-        Some(picked) => act(picked, &state, &home),
+    loop {
+        let code = App::new(Header::new("LazyOS"))
+            .design(design.clone())
+            .screen(&mut screen)
+            .run(terminal)
+            .map_err(|error| Failure::new("the terminal stopped answering", error.to_string()))?;
+        match screen.chosen.take() {
+            None => return Ok(code),
+            Some(menu::screen::Picked::Run { key, argv }) => {
+                if !argv.is_empty()
+                    && let Ok(sub_resolved) = command::resolve(&argv[0], &argv[1..])
+                    && sub_resolved.spec.shape != command::Shape::Direct
+                    && !matches!(
+                        sub_resolved.spec.path,
+                        "menu"
+                            | "menu palette"
+                            | "ask"
+                            | "menu capture"
+                            | "menu translate"
+                            | "menu dictate"
+                    )
+                {
+                    menu::remember(&state, &key);
+                    match execute(&sub_resolved, terminal, design) {
+                        Ok(sub_code) if sub_code == lazyos_ui::app::exit::ESCAPE => continue,
+                        Ok(sub_code) => return Ok(sub_code),
+                        Err(failure) => {
+                            show_failure(terminal, design, &failure);
+                            return Ok(EXIT_FAILED);
+                        }
+                    }
+                }
+                return act(menu::screen::Picked::Run { key, argv }, &state, &home);
+            }
+            Some(picked) => return act(picked, &state, &home),
+        }
     }
 }
 

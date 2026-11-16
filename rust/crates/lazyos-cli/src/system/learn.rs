@@ -12,15 +12,19 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, Input, KeyHint, ListAction, ListState, Outcome, Row, Screen,
-    TextStyle, draw_card,
+    ActionItem, ActionStrip, ActionStripEvent, BodyCtx, Design, Glyph, Header, Input, KeyHint,
+    ListAction, ListState, Outcome, Row, Screen, TextStyle, draw_card, draw_filter_bar,
+    draw_scrollbar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
+use unicode_width::UnicodeWidthChar;
 
-use crate::system::{have, missing, print, say};
+use crate::system::{have, missing};
 
 const DOCS_DIR: &str = "/usr/share/doc/lazyos";
+const PAGE_WRAP_WIDTH: usize = 88;
+const ACTION_BASE: usize = 10_000;
 
 /// A manual page entry.
 #[derive(Clone, Debug)]
@@ -30,19 +34,28 @@ pub struct ManualPage {
     pub summary: String,
 }
 
+/// A pre-styled span in a rendered document line (zero allocations during draw).
+#[derive(Clone, Debug)]
+struct DocSpan {
+    text: String,
+    style: TextStyle,
+}
+
 /// The learn state.
 pub struct LearnScreen {
     input: Input,
     pages: Vec<ManualPage>,
     filtered: Vec<ManualPage>,
     list: ListState,
+    strip: ActionStrip,
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
     view_mode: LearnMode,
-    content_lines: Vec<String>,
+    page_title: String,
+    content_lines: Vec<Vec<DocSpan>>,
     content_scroll: Cell<u16>,
-    search_query: String,
+    search_input: Input,
     search_results: Vec<SearchResult>,
     search_list: ListState,
     page_keyhints: Vec<KeyHint>,
@@ -76,41 +89,53 @@ pub enum LearnMode {
 impl LearnScreen {
     pub fn new() -> Self {
         let pages = Self::load_pages();
-        let mut list = ListState::new()
+        let list = ListState::new()
             .with_empty("no manual pages found")
             .ranked();
-        list.set_rows(pages.iter().map(Self::page_row).collect());
+        let strip = ActionStrip::new(vec![
+            ActionItem::new("search", "^F", "Search manuals").glyph(Glyph::Search),
+            ActionItem::new("apropos", "^M", "Man pages (apropos)").glyph(Glyph::Book),
+        ]);
 
-        Self {
+        let mut screen = Self {
             input: Input::new(),
             pages: pages.clone(),
             filtered: pages,
             list,
+            strip,
             header: Header::new("LazyOS").subtitle("Learn"),
             keybar: vec![
                 KeyHint::new("Enter", "open"),
-                KeyHint::new("type", "filter"),
-                KeyHint::new("\u{2191}\u{2193}", "move"),
+                KeyHint::new("^F", "search manuals"),
+                KeyHint::new("^M", "man pages"),
+                KeyHint::new("Tab", "actions"),
                 KeyHint::new("Esc", "back/close"),
             ],
             rows_height: Cell::new(20),
             view_mode: LearnMode::List,
+            page_title: "Learn".to_string(),
             content_lines: Vec::new(),
             content_scroll: Cell::new(0),
-            search_query: String::new(),
+            search_input: Input::new(),
             search_results: Vec::new(),
-            search_list: ListState::new().ranked(),
+            search_list: ListState::new()
+                .with_empty("type a query above to search")
+                .ranked(),
             page_keyhints: vec![
                 KeyHint::new("\u{2191}\u{2193}", "scroll"),
                 KeyHint::new("PgUp/PgDn", "page"),
+                KeyHint::new("Home/End", "top/bottom"),
                 KeyHint::new("Esc", "back"),
             ],
             search_keyhints: vec![
                 KeyHint::new("Enter", "open"),
-                KeyHint::new("type", "filter"),
+                KeyHint::new("type", "query"),
+                KeyHint::new("\u{2191}\u{2193}", "move"),
                 KeyHint::new("Esc", "back"),
             ],
-        }
+        };
+        screen.filter_pages();
+        screen
     }
 
     fn load_pages() -> Vec<ManualPage> {
@@ -132,7 +157,14 @@ impl LearnScreen {
                             .lines()
                             .skip(1)
                             .find(|l| !l.trim().is_empty() && !l.starts_with('#'))
-                            .map(|l| l.trim().chars().take(80).collect::<String>())
+                            .map(|l| {
+                                l.trim()
+                                    .replace("**", "")
+                                    .replace('`', "")
+                                    .chars()
+                                    .take(80)
+                                    .collect::<String>()
+                            })
                             .unwrap_or_default();
                         pages.push(ManualPage {
                             path,
@@ -143,7 +175,7 @@ impl LearnScreen {
                 }
             }
         }
-        pages.sort_by(|a, b| a.title.cmp(&b.title));
+        pages.sort_by(|a, b| a.path.cmp(&b.path));
         pages
     }
 
@@ -174,102 +206,60 @@ impl LearnScreen {
                 .cloned()
                 .collect();
         }
-        self.list
-            .set_rows(self.filtered.iter().map(Self::page_row).collect());
+
+        let rows: Vec<Row> = self.filtered.iter().map(Self::page_row).collect();
+        self.list.set_rows(rows);
     }
 
-    fn search_manuals(&mut self) {
-        let query = self.input.text().trim();
-        if query.is_empty() {
-            return;
-        }
-        self.search_query = query.to_string();
-
-        // Search with ripgrep
-        let output = std::process::Command::new("rg")
-            .args([
-                "-n",
-                "-i",
-                "--no-heading",
-                "--with-filename",
-                "--max-count",
-                "5",
-                query,
-                DOCS_DIR,
-            ])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output();
-
-        let mut results = Vec::new();
-        if let Ok(output) = output {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    let parts: Vec<&str> = line.splitn(3, ':').collect();
-                    if parts.len() == 3 {
-                        let file = parts[0];
-                        let line_num = parts[1];
-                        let text = parts[2].trim();
-                        let title = Path::new(file)
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or(file);
-                        let clean_text = text
-                            .chars()
-                            .filter(|c| !matches!(c, '*' | '_' | '`' | '#'))
-                            .take(70)
-                            .collect::<String>();
-                        results.push(SearchResult {
-                            title: format!("{} · line {}", title, line_num),
-                            detail: clean_text,
-                            action: SearchAction::OpenPage(PathBuf::from(file)),
-                        });
-                    }
-                }
-            }
-        }
-
-        self.search_results = results.clone();
-        self.search_list
-            .set_rows(results.iter().map(Self::search_row).collect());
+    fn enter_search_manuals(&mut self) {
+        let seed = self.input.text().trim().to_string();
+        self.search_input.set(seed);
         self.view_mode = LearnMode::Search;
+        self.refresh_search_manuals();
     }
 
-    fn run_apropos(&mut self) {
-        let query = self.input.text().trim();
-        if query.is_empty() {
-            return;
-        }
-        self.search_query = query.to_string();
-
-        let output = std::process::Command::new("apropos")
-            .args(["--", query])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output();
-
+    fn refresh_search_manuals(&mut self) {
+        let query = self.search_input.text().trim();
         let mut results = Vec::new();
-        if let Ok(output) = output {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines().take(60) {
-                    // Format: "name (section) - description"
-                    if let Some(dash_pos) = line.find(" - ") {
-                        let left = &line[..dash_pos];
-                        let desc = &line[dash_pos + 3..];
-                        if let Some(paren) = left.rfind('(') {
-                            let name = &left[..paren].trim();
-                            let section = &left[paren + 1..left.len() - 1].trim();
+        if !query.is_empty() {
+            let output = std::process::Command::new("rg")
+                .args([
+                    "-n",
+                    "-i",
+                    "--no-heading",
+                    "--with-filename",
+                    "--max-count",
+                    "8",
+                    query,
+                    DOCS_DIR,
+                ])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .output();
+
+            if let Ok(output) = output {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    for line in stdout.lines() {
+                        let parts: Vec<&str> = line.splitn(3, ':').collect();
+                        if parts.len() == 3 {
+                            let file = parts[0];
+                            let line_num = parts[1];
+                            let text = parts[2].trim();
+                            let title = Path::new(file)
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or(file);
+                            let clean_text = text
+                                .chars()
+                                .filter(|c| !matches!(c, '*' | '_' | '`' | '#'))
+                                .take(70)
+                                .collect::<String>();
                             results.push(SearchResult {
-                                title: format!("{} ({})", name, section),
-                                detail: desc.to_string(),
-                                action: SearchAction::OpenManPage(
-                                    name.to_string(),
-                                    section.to_string(),
-                                ),
+                                title: format!("{} · line {}", title, line_num),
+                                detail: clean_text,
+                                action: SearchAction::OpenPage(PathBuf::from(file)),
                             });
                         }
                     }
@@ -280,12 +270,73 @@ impl LearnScreen {
         self.search_results = results.clone();
         self.search_list
             .set_rows(results.iter().map(Self::search_row).collect());
+    }
+
+    fn enter_apropos(&mut self) {
+        let seed = self.input.text().trim().to_string();
+        self.search_input.set(seed);
         self.view_mode = LearnMode::Apropos;
+        self.refresh_apropos();
+    }
+
+    fn refresh_apropos(&mut self) {
+        let query = self.search_input.text().trim();
+        let mut results = Vec::new();
+        if !query.is_empty() {
+            let output = std::process::Command::new("apropos")
+                .args(["--", query])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .output();
+
+            if let Ok(output) = output {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    for line in stdout.lines().take(60) {
+                        if let Some(dash_pos) = line.find(" - ") {
+                            let left = &line[..dash_pos];
+                            let desc = &line[dash_pos + 3..];
+                            if let Some(paren) = left.rfind('(') {
+                                let name = left[..paren].trim();
+                                let section = left[paren + 1..left.len() - 1].trim();
+                                results.push(SearchResult {
+                                    title: format!("{} ({})", name, section),
+                                    detail: desc.to_string(),
+                                    action: SearchAction::OpenManPage(
+                                        name.to_string(),
+                                        section.to_string(),
+                                    ),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.search_results = results.clone();
+        self.search_list
+            .set_rows(results.iter().map(Self::search_row).collect());
+    }
+
+    fn trigger_strip_action(&mut self, id: &str) {
+        match id {
+            "search" => self.enter_search_manuals(),
+            "apropos" => self.enter_apropos(),
+            _ => {}
+        }
     }
 
     fn open_page(&mut self, path: &Path) {
         if let Ok(content) = fs::read_to_string(path) {
-            self.content_lines = Self::render_markdown(&content);
+            self.page_title = content
+                .lines()
+                .next()
+                .and_then(|l| l.strip_prefix("# "))
+                .map(|s| s.trim().to_string())
+                .unwrap_or_else(|| "Learn".to_string());
+            self.content_lines = Self::render_markdown_styled(Some(path), &content);
             self.content_scroll.set(0);
             self.view_mode = LearnMode::Page;
         }
@@ -293,6 +344,8 @@ impl LearnScreen {
 
     fn open_man_page(&mut self, page: &str, section: &str) {
         let output = std::process::Command::new("man")
+            .env("MANWIDTH", PAGE_WRAP_WIDTH.to_string())
+            .env("MAN_KEEP_FORMATTING", "0")
             .args([section, page])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
@@ -302,11 +355,143 @@ impl LearnScreen {
         if let Ok(output) = output {
             if output.status.success() {
                 let content = String::from_utf8_lossy(&output.stdout).to_string();
-                self.content_lines = Self::render_man(&content);
+                self.page_title = format!("{page}({section})");
+                self.content_lines = Self::render_man(&content)
+                    .into_iter()
+                    .map(|l| {
+                        vec![DocSpan {
+                            text: l,
+                            style: TextStyle::Body,
+                        }]
+                    })
+                    .collect();
                 self.content_scroll.set(0);
                 self.view_mode = LearnMode::Page;
             }
         }
+    }
+
+    fn render_markdown_styled(path: Option<&Path>, content: &str) -> Vec<Vec<DocSpan>> {
+        if let Some(p) = path {
+            if have("glow") {
+                if let Ok(output) = std::process::Command::new("glow")
+                    .args(["-s", "dark", "-w", &PAGE_WRAP_WIDTH.to_string()])
+                    .arg(p)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::null())
+                    .output()
+                {
+                    if output.status.success() {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let parsed = Self::parse_glow_ansi(&stdout);
+                        if !parsed.is_empty() {
+                            return parsed;
+                        }
+                    }
+                }
+            }
+        }
+        Self::render_markdown(content)
+            .into_iter()
+            .map(|l| {
+                let trimmed = l.trim_start();
+                let style =
+                    if trimmed.starts_with('│') || trimmed.starts_with("┌─") || trimmed == "```"
+                    {
+                        TextStyle::Code
+                    } else {
+                        TextStyle::Body
+                    };
+                vec![DocSpan { text: l, style }]
+            })
+            .collect()
+    }
+
+    fn parse_glow_ansi(ansi: &str) -> Vec<Vec<DocSpan>> {
+        let mut lines = Vec::new();
+        for raw_line in ansi.lines() {
+            let mut spans: Vec<DocSpan> = Vec::new();
+            let mut current_style = TextStyle::Body;
+            let mut current_text = String::new();
+            let mut chars = raw_line.chars().peekable();
+            while let Some(ch) = chars.next() {
+                if ch == '\x1b' && chars.peek() == Some(&'[') {
+                    let _ = chars.next();
+                    let mut seq = String::new();
+                    while let Some(&c) = chars.peek() {
+                        let _ = chars.next();
+                        if c.is_ascii_alphabetic() {
+                            break;
+                        }
+                        seq.push(c);
+                    }
+                    if !current_text.is_empty() {
+                        spans.push(DocSpan {
+                            text: std::mem::take(&mut current_text),
+                            style: current_style,
+                        });
+                    }
+                    if seq == "0" || seq.is_empty() {
+                        current_style = TextStyle::Body;
+                    } else if seq.split(';').any(|p| p == "1") {
+                        current_style = TextStyle::Title;
+                    } else if seq == ";" {
+                        current_style = TextStyle::Code;
+                    }
+                } else {
+                    current_text.push(ch);
+                }
+            }
+            if !current_text.is_empty() {
+                spans.push(DocSpan {
+                    text: current_text,
+                    style: current_style,
+                });
+            }
+            // Trim trailing spaces padded by glow from the last span(s).
+            while let Some(last) = spans.last_mut() {
+                let trimmed = last.text.trim_end_matches(' ');
+                if trimmed.is_empty() {
+                    spans.pop();
+                } else {
+                    last.text.truncate(trimmed.len());
+                    break;
+                }
+            }
+            lines.push(spans);
+        }
+        lines
+    }
+
+    fn wrap_plain_line(line: &str, max_width: usize) -> Vec<String> {
+        if line.is_empty() || line.chars().count() <= max_width {
+            return vec![line.to_string()];
+        }
+        let indent_len = line.chars().take_while(|c| *c == ' ').count().min(8);
+        let indent = " ".repeat(indent_len);
+        let mut out = Vec::new();
+        let mut current = String::new();
+        for word in line.split_whitespace() {
+            if current.is_empty() {
+                current.push_str(&indent);
+                current.push_str(word);
+            } else if current.chars().count() + 1 + word.chars().count() <= max_width {
+                current.push(' ');
+                current.push_str(word);
+            } else {
+                out.push(std::mem::take(&mut current));
+                current.push_str(&indent);
+                current.push_str(word);
+            }
+        }
+        if !current.is_empty() {
+            out.push(current);
+        }
+        if out.is_empty() {
+            out.push(String::new());
+        }
+        out
     }
 
     fn render_markdown(content: &str) -> Vec<String> {
@@ -317,7 +502,6 @@ impl LearnScreen {
         for line in content.lines() {
             let trimmed = line.trim();
 
-            // Code fences
             if trimmed.starts_with("```") {
                 if in_code {
                     in_code = false;
@@ -335,33 +519,36 @@ impl LearnScreen {
                 continue;
             }
 
-            // Headings
-            if trimmed.starts_with("### ") {
-                lines.push(format!("  {}", &trimmed[4..]));
-            } else if trimmed.starts_with("## ") {
-                lines.push(format!(" {}", &trimmed[3..]));
-            } else if trimmed.starts_with("# ") {
-                lines.push(format!("{}", &trimmed[2..]));
-            }
-            // Bold
-            else if trimmed.contains("**") {
-                let mut l = line.to_string();
-                // Simple bold rendering - just remove **
-                l = l.replace("**", "");
-                lines.push(l);
-            }
-            // Lists
-            else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
-                lines.push(format!("  • {}", &trimmed[2..]));
-            }
-            // Numbered lists
-            else if trimmed.len() > 2
-                && trimmed.chars().nth(1) == Some('.')
-                && trimmed.chars().next().unwrap().is_ascii_digit()
+            let clean = line.replace("**", "").replace('`', "");
+            let clean_trimmed = clean.trim();
+
+            if clean_trimmed.starts_with("### ") {
+                lines.push(format!("  {}", &clean_trimmed[4..]));
+            } else if clean_trimmed.starts_with("## ") {
+                lines.push(format!(" {}", &clean_trimmed[3..]));
+            } else if clean_trimmed.starts_with("# ") {
+                lines.push(clean_trimmed[2..].to_string());
+            } else if clean_trimmed.starts_with("- ") || clean_trimmed.starts_with("* ") {
+                for wrapped in
+                    Self::wrap_plain_line(&format!("  • {}", &clean_trimmed[2..]), PAGE_WRAP_WIDTH)
+                {
+                    lines.push(wrapped);
+                }
+            } else if clean_trimmed.len() > 2
+                && clean_trimmed.chars().nth(1) == Some('.')
+                && clean_trimmed.chars().next().unwrap().is_ascii_digit()
             {
-                lines.push(format!("  {}", trimmed));
-            } else if trimmed.starts_with('|') && trimmed.ends_with('|') || !trimmed.is_empty() {
-                lines.push(line.to_string());
+                for wrapped in
+                    Self::wrap_plain_line(&format!("  {}", clean_trimmed), PAGE_WRAP_WIDTH)
+                {
+                    lines.push(wrapped);
+                }
+            } else if clean_trimmed.starts_with('|') && clean_trimmed.ends_with('|') {
+                lines.push(clean);
+            } else if !clean_trimmed.is_empty() {
+                for wrapped in Self::wrap_plain_line(&clean, PAGE_WRAP_WIDTH) {
+                    lines.push(wrapped);
+                }
             } else {
                 lines.push(String::new());
             }
@@ -370,43 +557,58 @@ impl LearnScreen {
         lines
     }
 
+    fn strip_overstrike(line: &str) -> String {
+        let mut out: Vec<char> = Vec::new();
+        for ch in line.chars() {
+            if ch == '\x08' {
+                out.pop();
+            } else {
+                out.push(ch);
+            }
+        }
+        out.into_iter().collect()
+    }
+
     fn render_man(content: &str) -> Vec<String> {
-        // Simple man page rendering - just wrap lines
-        content.lines().map(|l| l.to_string()).collect()
+        let mut out = Vec::new();
+        for line in content.lines() {
+            let clean = Self::strip_overstrike(line);
+            for wrapped in Self::wrap_plain_line(&clean, PAGE_WRAP_WIDTH) {
+                out.push(wrapped);
+            }
+        }
+        out
     }
 }
 
 impl Screen for LearnScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Learn"), true);
+        let card_title = match self.view_mode {
+            LearnMode::List => "Learn",
+            LearnMode::Page => self.page_title.as_str(),
+            LearnMode::Search => "Learn · Manual Search",
+            LearnMode::Apropos => "Learn · System Man Pages (apropos)",
+        };
+        draw_card(ctx.buf, ctx.area, ctx.design, Some(card_title), true);
 
         match self.view_mode {
             LearnMode::List => {
-                let (filter, rows) = Self::list_layout(ctx.area);
-                let x = ctx.buf.set_string(
-                    filter.x,
-                    filter.y,
-                    &format!("{} ", Glyph::Search.cell()),
-                    ctx.design.style(TextStyle::Title),
-                );
-                let x = filter.x + 1 + Glyph::Search.cell().len() as u16;
-                if self.input.text().is_empty() {
-                    ctx.buf.set_string(
-                        x,
-                        filter.y,
-                        "type to filter · Enter on first row searches · second row is apropos",
-                        ctx.design.style(TextStyle::Dim),
-                    );
-                } else {
-                    ctx.buf.set_string(
-                        x,
-                        filter.y,
-                        self.input.text(),
-                        ctx.design.style(TextStyle::Body),
-                    );
+                let (strip_rect, filter, rows) = Self::list_layout(ctx.area);
+                if let Some(sr) = strip_rect {
+                    self.strip.render(sr, ctx.buf, ctx.design);
                 }
+                draw_filter_bar(
+                    ctx.buf,
+                    filter,
+                    ctx.design,
+                    self.input.text(),
+                    "Enter opens manual page · type to filter · ^F search manuals · ^M man pages",
+                    self.list.len(),
+                    self.pages.len(),
+                );
                 self.rows_height.set(rows.height);
-                self.list.render(rows, ctx.buf, ctx.design, true);
+                self.list
+                    .render(rows, ctx.buf, ctx.design, !self.strip.is_focused());
             }
             LearnMode::Page => {
                 let inner = Rect {
@@ -415,51 +617,52 @@ impl Screen for LearnScreen {
                     width: ctx.area.width.saturating_sub(4),
                     height: ctx.area.height.saturating_sub(2),
                 };
+                let max_x = inner.x.saturating_add(inner.width.saturating_sub(2));
                 let scroll = self.content_scroll.get() as usize;
-                for (i, line) in self.content_lines.iter().skip(scroll).enumerate() {
+                for (i, spans) in self.content_lines.iter().skip(scroll).enumerate() {
                     if i as u16 >= inner.height {
                         break;
                     }
-                    ctx.buf.set_string(
-                        inner.x,
-                        inner.y + i as u16,
-                        line,
-                        ctx.design.style(TextStyle::Body),
-                    );
+                    let y = inner.y + i as u16;
+                    let mut x = inner.x;
+                    for span in spans {
+                        let style = ctx.design.style(span.style);
+                        for ch in span.text.chars() {
+                            let w = UnicodeWidthChar::width(ch).unwrap_or(1) as u16;
+                            if x.saturating_add(w) > max_x {
+                                break;
+                            }
+                            let mut buf = [0u8; 4];
+                            ctx.buf.set_string(x, y, ch.encode_utf8(&mut buf), style);
+                            x = x.saturating_add(w);
+                        }
+                    }
                 }
-                // Scroll indicator
-                if self.content_lines.len() > inner.height as usize {
-                    let indicator = format!(
-                        "↓ {} more lines",
-                        self.content_lines.len() - inner.height as usize - scroll
-                    );
-                    ctx.buf.set_string(
-                        inner.x,
-                        inner.y + inner.height - 1,
-                        &indicator,
-                        ctx.design.style(TextStyle::Dim),
-                    );
-                }
+                draw_scrollbar(
+                    ctx.buf,
+                    inner,
+                    ctx.design,
+                    scroll,
+                    inner.height as usize,
+                    self.content_lines.len(),
+                    true,
+                );
             }
             LearnMode::Search | LearnMode::Apropos => {
-                let (filter, rows) = Self::list_layout(ctx.area);
-                let x = ctx.buf.set_string(
-                    filter.x,
-                    filter.y,
-                    &format!("{} ", Glyph::Search.cell()),
-                    ctx.design.style(TextStyle::Title),
-                );
-                let x = filter.x + 1 + Glyph::Search.cell().len() as u16;
-                let mode_name = if self.view_mode == LearnMode::Search {
-                    "Manual search"
+                let (_, filter, rows) = Self::list_layout(ctx.area);
+                let hint = if self.view_mode == LearnMode::Search {
+                    "Type to search /usr/share/doc/lazyos with ripgrep · Enter opens · Esc back"
                 } else {
-                    "Apropos"
+                    "Type to search system man pages with apropos · Enter opens · Esc back"
                 };
-                ctx.buf.set_string(
-                    x,
-                    filter.y,
-                    &format!("{} for \"{}\"", mode_name, self.search_query),
-                    ctx.design.style(TextStyle::Dim),
+                draw_filter_bar(
+                    ctx.buf,
+                    filter,
+                    ctx.design,
+                    self.search_input.text(),
+                    hint,
+                    self.search_list.len(),
+                    self.search_results.len(),
                 );
                 self.rows_height.set(rows.height);
                 self.search_list.render(rows, ctx.buf, ctx.design, true);
@@ -474,78 +677,107 @@ impl Screen for LearnScreen {
 
         match self.view_mode {
             LearnMode::List => {
+                if self.strip.is_focused() {
+                    match self.strip.handle(key) {
+                        ActionStripEvent::Activated(id) => {
+                            self.strip.set_focused(false);
+                            self.trigger_strip_action(id);
+                            return Outcome::Consumed;
+                        }
+                        ActionStripEvent::Consumed => return Outcome::Consumed,
+                        ActionStripEvent::Ignored => {}
+                    }
+                }
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    match key.code {
+                        KeyCode::Char('f') | KeyCode::Char('F') => {
+                            self.enter_search_manuals();
+                            return Outcome::Consumed;
+                        }
+                        KeyCode::Char('m') | KeyCode::Char('M') => {
+                            self.enter_apropos();
+                            return Outcome::Consumed;
+                        }
+                        _ => {}
+                    }
+                }
+                if matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
+                    self.strip.set_focused(!self.strip.is_focused());
+                    return Outcome::Consumed;
+                }
                 let rows_height = self.rows_height.get();
                 if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
                     && !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
                 {
                     let _ = self.input.handle(key);
                     self.filter_pages();
-                    return Outcome::Continue;
+                    return Outcome::Consumed;
                 }
                 match key.code {
                     KeyCode::Enter => {
                         if let Some(selected) = self.list.selected_index() {
-                            if selected == 0 {
-                                // Search the manual
-                                self.search_manuals();
-                                return Outcome::Continue;
-                            } else if selected == 1 {
-                                // Apropos
-                                self.run_apropos();
-                                return Outcome::Continue;
-                            } else if let Some(page) = self.filtered.get(selected - 2).cloned() {
-                                self.open_page(&page.path);
-                                return Outcome::Continue;
-                            }
+                            self.activate_list_row(selected);
                         }
+                        return Outcome::Consumed;
                     }
-                    KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+                    KeyCode::Esc => {
+                        if !self.input.text().is_empty() {
+                            self.input.set("");
+                            self.filter_pages();
+                            return Outcome::Consumed;
+                        }
+                        return Outcome::Done(lazyos_ui::app::exit::ESCAPE);
+                    }
                     _ => {}
                 }
                 match self.list.handle(key, rows_height, design) {
                     ListAction::Activated(index) => {
-                        if index == 0 {
-                            self.search_manuals();
-                        } else if index == 1 {
-                            self.run_apropos();
-                        } else if let Some(page) = self.filtered.get(index - 2).cloned() {
-                            self.open_page(&page.path);
-                        }
-                        Outcome::Continue
+                        self.activate_list_row(index);
+                        Outcome::Consumed
                     }
                     _ => Outcome::Continue,
                 }
             }
             LearnMode::Page => match key.code {
-                KeyCode::Esc => {
+                KeyCode::Esc | KeyCode::Char('q') => {
                     self.view_mode = LearnMode::List;
-                    Outcome::Continue
+                    Outcome::Consumed
                 }
-                KeyCode::Up => {
+                KeyCode::Up | KeyCode::Char('k') => {
                     let scroll = self.content_scroll.get();
                     if scroll > 0 {
                         self.content_scroll.set(scroll - 1);
                     }
-                    Outcome::Continue
+                    Outcome::Consumed
                 }
-                KeyCode::Down => {
+                KeyCode::Down | KeyCode::Char('j') => {
                     let scroll = self.content_scroll.get() as usize;
                     let max = self.content_lines.len().saturating_sub(1);
                     if scroll < max {
                         self.content_scroll.set((scroll + 1) as u16);
                     }
-                    Outcome::Continue
+                    Outcome::Consumed
                 }
                 KeyCode::PageUp => {
                     let scroll = self.content_scroll.get() as usize;
-                    self.content_scroll.set((scroll.saturating_sub(10)) as u16);
-                    Outcome::Continue
+                    self.content_scroll.set((scroll.saturating_sub(15)) as u16);
+                    Outcome::Consumed
                 }
                 KeyCode::PageDown => {
                     let scroll = self.content_scroll.get() as usize;
                     let max = self.content_lines.len().saturating_sub(1);
-                    self.content_scroll.set(((scroll + 10).min(max)) as u16);
-                    Outcome::Continue
+                    self.content_scroll.set(((scroll + 15).min(max)) as u16);
+                    Outcome::Consumed
+                }
+                KeyCode::Home => {
+                    self.content_scroll.set(0);
+                    Outcome::Consumed
+                }
+                KeyCode::End => {
+                    let max = self.content_lines.len().saturating_sub(1);
+                    self.content_scroll.set(max as u16);
+                    Outcome::Consumed
                 }
                 _ => Outcome::Continue,
             },
@@ -553,9 +785,15 @@ impl Screen for LearnScreen {
                 let rows_height = self.rows_height.get();
                 if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
                     && !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
                 {
-                    let _ = self.input.handle(key);
-                    return Outcome::Continue;
+                    let _ = self.search_input.handle(key);
+                    if self.view_mode == LearnMode::Search {
+                        self.refresh_search_manuals();
+                    } else {
+                        self.refresh_apropos();
+                    }
+                    return Outcome::Consumed;
                 }
                 match key.code {
                     KeyCode::Enter => {
@@ -569,12 +807,11 @@ impl Screen for LearnScreen {
                                 }
                             }
                         }
-                        return Outcome::Continue;
+                        return Outcome::Consumed;
                     }
                     KeyCode::Esc => {
                         self.view_mode = LearnMode::List;
-                        self.input = Input::new();
-                        return Outcome::Continue;
+                        return Outcome::Consumed;
                     }
                     _ => {}
                 }
@@ -588,7 +825,7 @@ impl Screen for LearnScreen {
                                 }
                             }
                         }
-                        Outcome::Continue
+                        Outcome::Consumed
                     }
                     _ => Outcome::Continue,
                 }
@@ -600,18 +837,21 @@ impl Screen for LearnScreen {
         match self.view_mode {
             LearnMode::List => {
                 if let Some(row) = row {
+                    if row >= ACTION_BASE {
+                        let id = match row - ACTION_BASE {
+                            0 => "search",
+                            1 => "apropos",
+                            _ => "",
+                        };
+                        self.trigger_strip_action(id);
+                        return Outcome::Consumed;
+                    }
                     self.list.set_cursor(row);
                     if let Some(index) = self.list.selected_index() {
-                        if index == 0 {
-                            self.search_manuals();
-                        } else if index == 1 {
-                            self.run_apropos();
-                        } else if let Some(page) = self.filtered.get(index - 2).cloned() {
-                            self.open_page(&page.path);
-                        }
+                        self.activate_list_row(index);
                     }
                 }
-                Outcome::Continue
+                Outcome::Consumed
             }
             LearnMode::Search | LearnMode::Apropos => {
                 if let Some(row) = row {
@@ -627,7 +867,7 @@ impl Screen for LearnScreen {
                         }
                     }
                 }
-                Outcome::Continue
+                Outcome::Consumed
             }
             LearnMode::Page => Outcome::Continue,
         }
@@ -636,11 +876,16 @@ impl Screen for LearnScreen {
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
         match self.view_mode {
             LearnMode::List => {
-                let (_, rows) = Self::list_layout(area);
+                let (strip_rect, _, rows) = Self::list_layout(area);
+                if let Some(sr) = strip_rect {
+                    if let Some(idx) = self.strip.hit_index(sr, x, y) {
+                        return Some(ACTION_BASE + idx);
+                    }
+                }
                 self.list.hit_row(rows, x, y, design)
             }
             LearnMode::Search | LearnMode::Apropos => {
-                let (_, rows) = Self::list_layout(area);
+                let (_, _, rows) = Self::list_layout(area);
                 self.search_list.hit_row(rows, x, y, design)
             }
             LearnMode::Page => None,
@@ -658,26 +903,54 @@ impl Screen for LearnScreen {
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }
+
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        match self.view_mode {
+            LearnMode::Page => Some((1060, 740)),
+            LearnMode::List | LearnMode::Search | LearnMode::Apropos => Some((860, 540)),
+        }
+    }
 }
 
 impl LearnScreen {
-    fn list_layout(area: Rect) -> (Rect, Rect) {
+    fn activate_list_row(&mut self, index: usize) {
+        if let Some(page) = self.filtered.get(index).cloned() {
+            self.open_page(&page.path);
+        }
+    }
+
+    fn list_layout(area: Rect) -> (Option<Rect>, Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
             y: area.y + 1,
             width: area.width.saturating_sub(4),
             height: area.height.saturating_sub(2),
         };
-        let filter = Rect {
-            height: 1.min(inner.height),
-            ..inner
-        };
-        let rows = Rect {
-            y: inner.y + 2,
-            height: inner.height.saturating_sub(2),
-            ..inner
-        };
-        (filter, rows)
+        if inner.height >= 10 {
+            let strip = Rect { height: 1, ..inner };
+            let filter = Rect {
+                y: inner.y + 2,
+                height: 1,
+                ..inner
+            };
+            let rows = Rect {
+                y: inner.y + 4,
+                height: inner.height.saturating_sub(4),
+                ..inner
+            };
+            (Some(strip), filter, rows)
+        } else {
+            let filter = Rect {
+                height: 1.min(inner.height),
+                ..inner
+            };
+            let rows = Rect {
+                y: inner.y + 2,
+                height: inner.height.saturating_sub(2),
+                ..inner
+            };
+            (None, filter, rows)
+        }
     }
 }
 
@@ -687,13 +960,10 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(&["rg", "apropos", "man"]) {
-        say(
+        return Err(crate::Failure::new(
             "Learn",
             format!("{said} (ripgrep, man-db)"),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Book,
-        );
-        return Ok(3);
+        ));
     }
     let mut screen = LearnScreen::new();
     let code = crate::run_screen(terminal, design, "Learn", &mut screen)?;

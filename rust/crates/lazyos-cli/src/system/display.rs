@@ -10,12 +10,12 @@
 
 use std::path::PathBuf;
 
-use lazyos_ui::{Design, Glyph, Urgency};
+use lazyos_ui::{Design, Glyph};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 use super::pick::{Picker, Question, row};
-use super::{checked, out, print, say};
+use super::{checked, out, print};
 
 /// What the menu needs before it offers anything.
 pub const NEEDED: &[&str] = &["swaymsg", "jq"];
@@ -461,358 +461,156 @@ fn display_menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        say(
-            "Display",
-            format!("{said} (sway, jq)"),
-            Urgency::Critical,
-            Glyph::Display,
-        );
-        return Ok(3);
+        return Err(crate::Failure::new("Display", format!("{said} (sway, jq)")));
     }
 
-    let outputs = read_outputs();
-    let (mon, panel) = find_monitor_and_panel(&outputs);
+    let mut banner: Option<String> = None;
 
-    if mon.is_none() {
-        // No external monitor
+    loop {
+        let outputs = read_outputs();
+        let (mon, _panel) = find_monitor_and_panel(&outputs);
         let entries = rows_for(&outputs);
         let rows: Vec<lazyos_ui::Row> = entries
             .iter()
             .map(|(k, l, d)| {
                 let g = if k == "wd" {
                     Glyph::Mouse
-                } else {
+                } else if k.starts_with("mono:") || k.starts_with("enable:") {
                     Glyph::Desktop
+                } else {
+                    Glyph::Display
                 };
                 row(l.clone(), d.clone(), g)
             })
             .collect();
         let keys: Vec<String> = entries.into_iter().map(|(k, _, _)| k).collect();
+
+        let default_note = if mon.is_none() {
+            "No external monitor \u{00b7} plug one into a USB-C port".to_string()
+        } else {
+            format!(
+                "Enter applies \u{00b7} saved in {} \u{00b7} Escape closes",
+                config_path().display()
+            )
+        };
+        let note = banner.take().unwrap_or(default_note);
+
         let mut picker = Picker::new(
             "Display",
-            vec![Question::choose(
-                "Display",
-                "No external monitor · plug one into a USB-C port",
-                rows,
-                keys,
-            )],
+            vec![Question::choose("Display", note, rows, keys)],
         );
+
         let code = run_picker(terminal, design, "Display", &mut picker)?;
         if code != 0 {
             return Ok(code);
         }
-        let answers = picker.answers();
-        if let Some(key) = answers.first() {
-            match key.as_str() {
-                "enable:panel" => {
-                    if let Err(e) = checked(&["swaymsg", "output", PANEL, "enable"]) {
-                        say(
-                            "Display",
-                            format!("Could not enable panel: {e}"),
-                            Urgency::Critical,
-                            Glyph::Display,
-                        );
-                        return Ok(3);
-                    }
-                }
-                "wd" => {
-                    if !have("wdisplays") {
-                        say(
-                            "Display",
-                            "wdisplays is not installed (apt install wdisplays)".to_string(),
-                            Urgency::Critical,
-                            Glyph::Display,
-                        );
-                        return Ok(3);
-                    }
-                    if out(&["pgrep", "-x", "wdisplays"]).is_some() {
-                        let _ = out(&["swaymsg", "[app_id=\"wdisplays\"]", "focus"]);
-                        return Ok(0);
-                    }
-                    let _ = out(&["swaymsg", "workspace", "number", "11"]);
-                    crate::system::spawn_detached("exec wdisplays");
-                }
-                _ => {}
-            }
-        }
-        return Ok(0);
-    }
 
-    let mon = mon.unwrap();
-    let panel = panel.unwrap_or_default();
-    let cur_arr = arrangement(&mon, &panel);
+        let Some(key) = picker.answers().first().cloned() else {
+            return Ok(1);
+        };
 
-    let mut rows = Vec::new();
-    let mut keys = Vec::new();
-
-    if mon.active && panel.active {
-        rows.push(row("Arrangement", "where the monitor sits", Glyph::Display));
-        keys.push("-".to_string());
-        for a in ["right", "left", "above", "below", "mirror"] {
-            let (name, hint) = match a {
-                "right" => ("Monitor on the right", "panel | monitor"),
-                "left" => ("Monitor on the left", "monitor | panel"),
-                "above" => ("Monitor above", "monitor over the panel"),
-                "below" => ("Monitor below", "monitor under the panel"),
-                "mirror" => ("Mirrored", "both show the same picture"),
-                _ => continue,
-            };
-            if a == cur_arr {
-                rows.push(row(name, "current", Glyph::Display));
-            } else {
-                rows.push(row(name, hint, Glyph::Display));
-            }
-            keys.push(format!("pos:{}", a));
-        }
-    }
-
-    rows.push(row("One screen", "", Glyph::Desktop));
-    keys.push("-".to_string());
-    if panel.active {
-        rows.push(row(
-            "Only the monitor",
-            "internal panel off · not remembered",
-            Glyph::Desktop,
-        ));
-        keys.push("mono:monitor".to_string());
-    } else {
-        rows.push(row(
-            "Bring the internal panel back",
-            format!("{} enable", PANEL),
-            Glyph::Desktop,
-        ));
-        keys.push("enable:panel".to_string());
-    }
-    if mon.active {
-        rows.push(row(
-            "Only the internal panel",
-            "monitor off · not remembered",
-            Glyph::Desktop,
-        ));
-        keys.push("mono:panel".to_string());
-    } else {
-        rows.push(row(
-            "Bring the monitor back",
-            format!("{} enable", mon.name),
-            Glyph::Desktop,
-        ));
-        keys.push("enable:monitor".to_string());
-    }
-
-    rows.push(row("The monitor", "", Glyph::Display));
-    keys.push("-".to_string());
-    rows.push(row(
-        "Resolution",
-        format!("{} @ {} Hz", mon.mode_str(), hz(mon.mode_refresh)),
-        Glyph::Display,
-    ));
-    rows.push(row("Scale", format!("{}", mon.scale), Glyph::Display));
-    keys.push("res".to_string());
-    keys.push("scale".to_string());
-
-    rows.push(row("Manual", "", Glyph::Mouse));
-    keys.push("-".to_string());
-    rows.push(row("Open wdisplays", "arrange by dragging", Glyph::Mouse));
-    keys.push("wd".to_string());
-
-    rows.push(row(
-        "Saved for next login",
-        config_path().display().to_string(),
-        Glyph::Gear,
-    ));
-    keys.push("-".to_string());
-
-    let mut picker = Picker::new(
-        "Display",
-        vec![Question::choose(
-            "Display",
-            "Enter applies · Escape closes",
-            rows,
-            keys,
-        )],
-    );
-
-    let code = run_picker(terminal, design, "Display", &mut picker)?;
-    if code != 0 {
-        return Ok(code);
-    }
-
-    let answers = picker.answers();
-    if answers.is_empty() {
-        return Ok(1);
-    }
-    let key = &answers[0];
-
-    match key.as_str() {
-        k if k.starts_with("pos:") => {
-            let arr = &k[4..];
-            let outputs = read_outputs();
-            if let (Some(m), Some(p)) = find_monitor_and_panel(&outputs)
-                && let Err(e) = apply_and_save(arr, &m, &p)
-            {
-                say(
-                    "Display",
-                    format!("Could not apply arrangement: {e}"),
-                    Urgency::Critical,
-                    Glyph::Display,
-                );
-                return Ok(3);
-            }
-            Ok(0)
-        }
-        "res" => {
-            let mut picker = resolution_picker(&mon);
-            let code = run_picker(terminal, design, "Resolution", &mut picker)?;
-            if code != 0 {
-                return Ok(code);
-            }
-            if let Some(mode) = picker.answers().first() {
-                if let Err(e) = checked(&["swaymsg", "output", &mon.name, "resolution", mode]) {
-                    say(
-                        "Display",
-                        format!("Could not set resolution: {e}"),
-                        Urgency::Critical,
-                        Glyph::Display,
-                    );
-                    return Ok(3);
-                }
+        match key.as_str() {
+            k if k.starts_with("pos:") => {
+                let arr = &k[4..];
                 let outputs = read_outputs();
                 if let (Some(m), Some(p)) = find_monitor_and_panel(&outputs) {
-                    let cur = arrangement(&m, &p);
-                    if ["right", "left", "above", "below", "mirror"].contains(&cur.as_str())
-                        && let Err(e) = apply_and_save(&cur, &m, &p)
-                    {
-                        say(
-                            "Display",
-                            format!("Could not re-apply arrangement: {e}"),
-                            Urgency::Critical,
-                            Glyph::Display,
-                        );
-                        return Ok(3);
+                    match apply_and_save(arr, &m, &p) {
+                        Ok(()) => banner = Some(format!("Applied arrangement: {arr}")),
+                        Err(e) => banner = Some(format!("Could not apply arrangement: {e}")),
                     }
                 }
             }
-            Ok(0)
-        }
-        "scale" => {
-            let mut picker = scale_picker(&mon);
-            let code = run_picker(terminal, design, "Scale", &mut picker)?;
-            if code != 0 {
-                return Ok(code);
-            }
-            if let Some(scale) = picker.answers().first() {
-                if let Err(e) = checked(&["swaymsg", "output", &mon.name, "scale", scale]) {
-                    say(
-                        "Display",
-                        format!("Could not set scale: {e}"),
-                        Urgency::Critical,
-                        Glyph::Display,
-                    );
-                    return Ok(3);
-                }
-                let outputs = read_outputs();
-                if let (Some(m), Some(p)) = find_monitor_and_panel(&outputs) {
-                    let cur = arrangement(&m, &p);
-                    if ["right", "left", "above", "below", "mirror"].contains(&cur.as_str())
-                        && let Err(e) = apply_and_save(&cur, &m, &p)
-                    {
-                        say(
-                            "Display",
-                            format!("Could not re-apply arrangement: {e}"),
-                            Urgency::Critical,
-                            Glyph::Display,
-                        );
-                        return Ok(3);
+            "res" => {
+                let Some(mon) = mon.as_ref() else { continue };
+                let mut res_picker = resolution_picker(mon);
+                let code = run_picker(terminal, design, "Resolution", &mut res_picker)?;
+                if code == 0
+                    && let Some(mode) = res_picker.answers().first()
+                {
+                    match checked(&["swaymsg", "output", &mon.name, "resolution", mode]) {
+                        Ok(_) => {
+                            let outputs = read_outputs();
+                            if let (Some(m), Some(p)) = find_monitor_and_panel(&outputs) {
+                                let cur = arrangement(&m, &p);
+                                if ["right", "left", "above", "below", "mirror"]
+                                    .contains(&cur.as_str())
+                                {
+                                    let _ = apply_and_save(&cur, &m, &p);
+                                }
+                            }
+                            banner = Some(format!("Resolution set to {mode}"));
+                        }
+                        Err(e) => banner = Some(format!("Could not set resolution: {e}")),
                     }
                 }
             }
-            Ok(0)
-        }
-        "wd" => {
-            if !have("wdisplays") {
-                say(
-                    "Display",
-                    "wdisplays is not installed (apt install wdisplays)".to_string(),
-                    Urgency::Critical,
-                    Glyph::Display,
-                );
-                return Ok(3);
+            "scale" => {
+                let Some(mon) = mon.as_ref() else { continue };
+                let mut sc_picker = scale_picker(mon);
+                let code = run_picker(terminal, design, "Scale", &mut sc_picker)?;
+                if code == 0
+                    && let Some(scale) = sc_picker.answers().first()
+                {
+                    match checked(&["swaymsg", "output", &mon.name, "scale", scale]) {
+                        Ok(_) => {
+                            let outputs = read_outputs();
+                            if let (Some(m), Some(p)) = find_monitor_and_panel(&outputs) {
+                                let cur = arrangement(&m, &p);
+                                if ["right", "left", "above", "below", "mirror"]
+                                    .contains(&cur.as_str())
+                                {
+                                    let _ = apply_and_save(&cur, &m, &p);
+                                }
+                            }
+                            banner = Some(format!("Scale set to {scale}"));
+                        }
+                        Err(e) => banner = Some(format!("Could not set scale: {e}")),
+                    }
+                }
             }
-            if out(&["pgrep", "-x", "wdisplays"]).is_some() {
-                let _ = out(&["swaymsg", "[app_id=\"wdisplays\"]", "focus"]);
+            "wd" => {
+                if !have("wdisplays") {
+                    banner = Some("wdisplays is not installed (apt install wdisplays)".to_string());
+                    continue;
+                }
+                if out(&["pgrep", "-x", "wdisplays"]).is_some() {
+                    let _ = out(&["swaymsg", "[app_id=\"wdisplays\"]", "focus"]);
+                    return Ok(0);
+                }
+                let _ = out(&["swaymsg", "workspace", "number", "11"]);
+                crate::system::spawn_detached("exec wdisplays");
                 return Ok(0);
             }
-            let _ = out(&["swaymsg", "workspace", "number", "11"]);
-            crate::system::spawn_detached("exec wdisplays");
-            Ok(0)
-        }
-        "enable:panel" => {
-            if let Err(e) = checked(&["swaymsg", "output", PANEL, "enable"]) {
-                say(
-                    "Display",
-                    format!("Could not enable panel: {e}"),
-                    Urgency::Critical,
-                    Glyph::Display,
-                );
+            "enable:panel" => match checked(&["swaymsg", "output", PANEL, "enable"]) {
+                Ok(_) => banner = Some(format!("Enabled {PANEL}")),
+                Err(e) => banner = Some(format!("Could not enable panel: {e}")),
+            },
+            "enable:monitor" => {
+                if let Some(m) = read_outputs().iter().find(|o| o.name.starts_with("DP-")) {
+                    match checked(&["swaymsg", "output", &m.name, "enable"]) {
+                        Ok(_) => banner = Some(format!("Enabled {}", m.name)),
+                        Err(e) => banner = Some(format!("Could not enable monitor: {e}")),
+                    }
+                }
             }
-            Ok(0)
-        }
-        "enable:monitor" => {
-            if let Some(m) = read_outputs().iter().find(|o| o.name.starts_with("DP-"))
-                && let Err(e) = checked(&["swaymsg", "output", &m.name, "enable"])
-            {
-                say(
-                    "Display",
-                    format!("Could not enable monitor: {e}"),
-                    Urgency::Critical,
-                    Glyph::Display,
-                );
+            "mono:monitor" => match checked(&["swaymsg", "output", PANEL, "disable"]) {
+                Ok(_) => {
+                    banner = Some(format!(
+                        "Internal panel disabled \u{00b7} select 'Bring the internal panel back' to restore"
+                    ));
+                }
+                Err(e) => banner = Some(format!("Could not disable panel: {e}")),
+            },
+            "mono:panel" => {
+                if let Some(mon) = mon.as_ref() {
+                    match checked(&["swaymsg", "output", &mon.name, "disable"]) {
+                        Ok(_) => banner = Some(format!("Disabled {}", mon.name)),
+                        Err(e) => banner = Some(format!("Could not disable monitor: {e}")),
+                    }
+                }
             }
-            Ok(0)
+            _ => {}
         }
-        "mono:monitor" => {
-            if let Err(e) = checked(&["swaymsg", "output", PANEL, "disable"]) {
-                say(
-                    "Display",
-                    format!("Could not disable panel: {e}"),
-                    Urgency::Critical,
-                    Glyph::Display,
-                );
-            } else {
-                say(
-                    "Display",
-                    format!(
-                        "Only {}. Bring the panel back with: swaymsg output {} enable",
-                        mon.name, PANEL
-                    ),
-                    Urgency::Normal,
-                    Glyph::Display,
-                );
-            }
-            Ok(0)
-        }
-        "mono:panel" => {
-            if let Err(e) = checked(&["swaymsg", "output", &mon.name, "disable"]) {
-                say(
-                    "Display",
-                    format!("Could not disable monitor: {e}"),
-                    Urgency::Critical,
-                    Glyph::Display,
-                );
-            } else {
-                say(
-                    "Display",
-                    format!(
-                        "Only {}. Bring the monitor back with: swaymsg output {} enable",
-                        PANEL, mon.name
-                    ),
-                    Urgency::Normal,
-                    Glyph::Display,
-                );
-            }
-            Ok(0)
-        }
-        _ => Ok(0),
     }
 }
 

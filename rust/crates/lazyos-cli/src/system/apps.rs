@@ -14,26 +14,32 @@
 #![allow(clippy::vec_init_then_push)]
 
 use std::cell::Cell;
-use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, Input, KeyHint, ListAction, ListState, Outcome, Row, Screen,
-    TextStyle, draw_card,
+    BodyCtx, Card, Design, Glyph, Header, Input, KeyHint, ListAction, ListState, Outcome, Row,
+    Screen, Urgency, draw_card, draw_filter_bar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 
+use crate::menu::frecency::Frecency;
 use crate::paths::Paths;
-use crate::system::{busy, busy_end, busy_fail, have, missing, print, say};
+use crate::system::{missing, print};
 
-const MAX_HISTORY: usize = 50;
-const DESKTOP_DIRS: &[&str] = &[
-    "/usr/share/applications",
-    "/usr/local/share/applications",
-    "/home/brunux/.local/share/applications",
-];
+fn desktop_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![
+        PathBuf::from("/usr/share/applications"),
+        PathBuf::from("/usr/local/share/applications"),
+    ];
+    if let Ok(data_home) = std::env::var("XDG_DATA_HOME") {
+        dirs.push(PathBuf::from(data_home).join("applications"));
+    } else if let Ok(home) = std::env::var("HOME") {
+        dirs.push(PathBuf::from(home).join(".local/share/applications"));
+    }
+    dirs
+}
 
 /// A parsed `.desktop` entry.
 #[derive(Clone, Debug)]
@@ -56,13 +62,14 @@ pub struct AppsScreen {
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
-    frecency: HashMap<String, u64>,
+    frecency: Frecency,
 }
 
 impl AppsScreen {
     pub fn new() -> Self {
         let entries = Self::load_entries();
         let frecency = Self::load_frecency();
+        let now = Self::now_secs();
 
         let mut list = ListState::new()
             .with_empty("no applications found")
@@ -70,7 +77,7 @@ impl AppsScreen {
         list.set_rows(
             entries
                 .iter()
-                .map(|e| Self::entry_row(e, &frecency))
+                .map(|e| Self::entry_row(e, &frecency, now))
                 .collect(),
         );
 
@@ -92,20 +99,28 @@ impl AppsScreen {
         }
     }
 
+    fn now_secs() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+    }
+
     fn load_entries() -> Vec<DesktopEntry> {
         let mut entries = Vec::new();
-        for dir in DESKTOP_DIRS {
+        for dir in desktop_dirs() {
             if let Ok(read_dir) = fs::read_dir(dir) {
                 for entry in read_dir.flatten() {
                     if entry.path().extension().and_then(|s| s.to_str()) == Some("desktop") {
                         if let Ok(parsed) = Self::parse_desktop(&entry.path()) {
-                            entries.push(parsed);
+                            if !parsed.no_display {
+                                entries.push(parsed);
+                            }
                         }
                     }
                 }
             }
         }
-        // Sort by name
         entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         entries
     }
@@ -208,40 +223,94 @@ impl AppsScreen {
         result
     }
 
-    fn load_frecency() -> HashMap<String, u64> {
+    fn load_frecency() -> Frecency {
         let path = Paths::resolve(&std::env::vars().collect())
             .ok()
-            .map(|p| p.state.join("frecency.json"));
-        path.and_then(|p| fs::read_to_string(p).ok())
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+            .map(|p| p.state.join("frecency.json"))
+            .unwrap_or_else(|| PathBuf::from("/tmp/lazyos-frecency.json"));
+        Frecency::load(path)
     }
 
-    fn save_frecency(&self) {
-        if let Ok(paths) = Paths::resolve(&std::env::vars().collect()) {
-            let path = paths.state.join("frecency.json");
-            let _ = fs::write(
-                path,
-                serde_json::to_string(&self.frecency).unwrap_or_default(),
-            );
+    fn entry_glyph(entry: &DesktopEntry) -> Glyph {
+        if entry.terminal {
+            return Glyph::Terminal;
+        }
+        let icon = entry.icon.as_deref().unwrap_or("").to_lowercase();
+        let cats = entry.categories.join(" ").to_lowercase();
+        if icon.contains("browser")
+            || icon.contains("firefox")
+            || icon.contains("chromium")
+            || cats.contains("webbrowser")
+            || cats.contains("network")
+        {
+            Glyph::Globe
+        } else if icon.contains("folder") || icon.contains("file") || cats.contains("filemanager") {
+            Glyph::Folder
+        } else if icon.contains("code")
+            || icon.contains("nvim")
+            || icon.contains("editor")
+            || cats.contains("development")
+            || cats.contains("texteditor")
+        {
+            Glyph::Code
+        } else if icon.contains("audio")
+            || icon.contains("music")
+            || cats.contains("audio")
+            || cats.contains("music")
+        {
+            Glyph::Music
+        } else if icon.contains("video") || icon.contains("mpv") || cats.contains("video") {
+            Glyph::Video
+        } else if icon.contains("image")
+            || icon.contains("photo")
+            || icon.contains("imv")
+            || cats.contains("graphics")
+        {
+            Glyph::Image
+        } else if icon.contains("settings")
+            || icon.contains("preferences")
+            || cats.contains("settings")
+        {
+            Glyph::Gear
+        } else if icon.contains("pdf")
+            || icon.contains("book")
+            || icon.contains("zathura")
+            || cats.contains("office")
+        {
+            Glyph::Book
+        } else if icon.contains("terminal") || cats.contains("terminalemulator") {
+            Glyph::Terminal
+        } else {
+            Glyph::Desktop
         }
     }
 
-    fn entry_row(entry: &DesktopEntry, frecency: &HashMap<String, u64>) -> Row {
-        let freq = frecency.get(&entry.name).copied().unwrap_or(0);
-        let mut row = Row::new(&entry.name);
-        if freq > 0 {
-            row = row.detail(&format!("frecency: {freq}"));
+    fn entry_row(entry: &DesktopEntry, frecency: &Frecency, now: u64) -> Row {
+        let freq = frecency.count(&entry.name);
+        let boost = frecency.boost(&entry.name, now);
+        let mut details = Vec::new();
+        if let Some(comment) = &entry.comment {
+            if !comment.is_empty() {
+                details.push(comment.clone());
+            }
         }
         if entry.terminal {
-            let existing_detail = row.detail.clone();
-            let existing_detail = existing_detail.as_deref().unwrap_or("");
-            row = row.detail(&format!("{} · terminal", existing_detail));
+            details.push("terminal".to_string());
+        }
+        if freq > 0 {
+            details.push(format!("★ {freq}"));
+        }
+        let mut row = Row::new(&entry.name)
+            .glyph(Self::entry_glyph(entry))
+            .boost(boost);
+        if !details.is_empty() {
+            row = row.detail(details.join(" · "));
         }
         row
     }
 
     fn filter_entries(&mut self) {
+        let now = Self::now_secs();
         let query = self.input.text().trim().to_lowercase();
         if query.is_empty() {
             self.filtered = self.entries.clone();
@@ -262,23 +331,15 @@ impl AppsScreen {
         self.list.set_rows(
             self.filtered
                 .iter()
-                .map(|e| Self::entry_row(e, &self.frecency))
+                .map(|e| Self::entry_row(e, &self.frecency, now))
                 .collect(),
         );
     }
 
     fn launch_entry(&mut self, entry: &DesktopEntry, in_foot: bool) {
-        // Update frecency
-        *self.frecency.entry(entry.name.clone()).or_insert(0) += 1;
-        self.save_frecency();
-
-        // Refresh the row with new frecency
-        self.list.set_rows(
-            self.filtered
-                .iter()
-                .map(|e| Self::entry_row(e, &self.frecency))
-                .collect(),
-        );
+        let now = Self::now_secs();
+        self.frecency.record(&entry.name, now);
+        let _ = self.frecency.save();
 
         // Build the command
         let exec_cmd = if in_foot && !entry.terminal || entry.terminal {
@@ -297,12 +358,6 @@ impl AppsScreen {
             .spawn();
 
         print(&format!("Launched: {}", entry.name));
-        say(
-            "Applications",
-            format!("Launched {} · copied to history", entry.name),
-            lazyos_ui::Urgency::Normal,
-            Glyph::Desktop,
-        );
     }
 }
 
@@ -310,29 +365,15 @@ impl Screen for AppsScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Applications"), true);
         let (filter, rows) = Self::list_layout(ctx.area);
-        let x = ctx.buf.set_string(
-            filter.x,
-            filter.y,
-            &format!("{} ", Glyph::Search.cell()),
-            ctx.design.style(TextStyle::Title),
+        draw_filter_bar(
+            ctx.buf,
+            filter,
+            ctx.design,
+            self.input.text(),
+            "type to filter applications...",
+            self.list.len(),
+            self.entries.len(),
         );
-        let x = filter.x + 1 + Glyph::Search.cell().len() as u16;
-        let room = filter.right().saturating_sub(x);
-        if self.input.text().is_empty() {
-            ctx.buf.set_string(
-                x,
-                filter.y,
-                "type to filter applications...",
-                ctx.design.style(TextStyle::Dim),
-            );
-        } else {
-            ctx.buf.set_string(
-                x,
-                filter.y,
-                self.input.text(),
-                ctx.design.style(TextStyle::Body),
-            );
-        }
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
     }
@@ -431,13 +472,10 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(&["setsid", "foot"]) {
-        say(
+        return Err(crate::Failure::new(
             "Applications",
             format!("{said} (util-linux, foot)"),
-            lazyos_ui::Urgency::Critical,
-            Glyph::Desktop,
-        );
-        return Ok(3);
+        ));
     }
     let mut screen = AppsScreen::new();
     let code = crate::run_screen(terminal, design, "Applications", &mut screen)?;

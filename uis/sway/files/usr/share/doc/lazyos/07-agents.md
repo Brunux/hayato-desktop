@@ -1,11 +1,10 @@
 # Coding agents
 
-Omarchy ships an "agents" feature: a bar panel with subscription usage meters,
-plus a set of scripts that keep several accounts per provider and can switch
-accounts automatically near a rate limit. This image carries the local half of
-that - launching and account profiles - and not the usage meters.
+LazyOS includes a native **Agents** manager (`lazyos menu agents`) for launching
+AI coding assistants in `~/Work`, managing multiple provider accounts, and
+installing CLIs into `~/.local` without root privileges.
 
-**The menu**: `rofi-agents`, on **Alt+Ctrl+Shift+A** (Omarchy's `Super+Shift+Ctrl+A`),
+**The menu**: `rofi-agents`, on **Alt+Ctrl+Shift+A**,
 or "Agents" in the root menu / the launcher.
 
 **A session in one click.** The root menu's AI group (`Alt+Space`) opens with
@@ -135,12 +134,9 @@ directory, so an account built on that variable alone would share the login.
 
 ## What is not here, and why
 
-* **Usage meters.** Omarchy's bar panel reads subscription usage through
-  provider APIs and local session logs. Those change shape when a provider
-  changes, they need credentials, and a broken meter is worse than none. If they
-  come back, the shape that fits this port is one `python3` script (standard
-  library only, already in the image) printing a single line for a waybar
-  `custom` module on an interval - no daemon and no new language.
+* **Usage meters.** Polling subscription usage through provider APIs and local
+  session logs is omitted by default: those endpoints change shape when a
+  provider changes, require credentials, and a broken meter is worse than none.
 * **Automatic account switching** near a limit: it depends on the meters above.
 
 ## Cost

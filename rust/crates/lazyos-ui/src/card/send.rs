@@ -81,17 +81,19 @@ pub fn arguments(message: &Message) -> Vec<String> {
 /// The reason a refused call gives, in words a person can act on. The bus
 /// errors are matched in `notify-send`'s own text.
 fn describe(stderr: &str) -> String {
+    let line = stderr.lines().next().unwrap_or_default().trim();
     if stderr.contains("ServiceUnknown") || stderr.contains("NameHasNoOwner") {
         "no notification daemon answers on the session bus (is mako running?)".to_string()
     } else if stderr.contains("Could not connect") {
-        "no session bus (DBUS_SESSION_BUS_ADDRESS does not reach one)".to_string()
-    } else {
-        let line = stderr.lines().next().unwrap_or_default().trim();
         if line.is_empty() {
-            "notify-send failed without a reason".to_string()
+            "no session bus (DBUS_SESSION_BUS_ADDRESS does not reach one)".to_string()
         } else {
-            format!("notify-send failed: {line}")
+            format!("no session bus (DBUS_SESSION_BUS_ADDRESS does not reach one): {line}")
         }
+    } else if line.is_empty() {
+        "notify-send failed without a reason".to_string()
+    } else {
+        format!("notify-send failed: {line}")
     }
 }
 

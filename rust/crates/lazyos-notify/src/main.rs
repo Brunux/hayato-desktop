@@ -161,6 +161,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let matches_id = notif.id == existing.id;
 
                         if matches_id || matches_tag {
+                            if existing.id != notif.id {
+                                let _ = ui_tx.send(UiEvent::NotificationClosed(existing.id, 2));
+                                existing.id = notif.id;
+                            }
                             existing.summary = notif.summary.clone();
                             existing.body = notif.body.clone();
                             existing.app_icon = notif.app_icon.clone();
@@ -170,6 +174,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             existing.created_at = Instant::now();
                             existing.timeout = notif.timeout;
                             existing.anim_state = AnimState::Active;
+                            existing.hovered_action = None;
                             replaced = true;
                             dirty = true;
                             break;
@@ -260,7 +265,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .notifications
                 .retain(|n| !closed.iter().any(|(id, _)| *id == n.id));
             for (id, reason) in closed {
-                let _ = ui_tx.send(UiEvent::NotificationClosed(id, reason));
+                if reason != 0 {
+                    let _ = ui_tx.send(UiEvent::NotificationClosed(id, reason));
+                }
             }
             dirty = true;
         }

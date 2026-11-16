@@ -26,12 +26,12 @@
 
 use std::time::Duration;
 
-use lazyos_ui::{Design, Glyph, Urgency};
+use lazyos_ui::{Card, Design, Glyph, Urgency};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
+use super::out;
 use super::pick::{Picker, Question, row};
-use super::{out, say};
 
 /// What the menu needs before it offers anything.
 pub const NEEDED: &[&str] = &["wayvnc", "ss"];
@@ -220,28 +220,25 @@ pub fn menu(
     design: &Design,
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
-        say(
+        return Err(crate::Failure::new(
             "Share this screen",
             format!("{said} (wayvnc, iproute2)"),
-            Urgency::Critical,
-            Glyph::Eye,
-        );
-        return Ok(3);
+        ));
     }
 
-    if sharing() {
-        // Already sharing: offer stop and tunnel
-        let mut picker = Picker::new(
-            "Share this screen",
-            vec![Question::choose(
-                "sharing",
-                "Enter acts · Escape closes",
+    let mut status_note: Option<String> = None;
+
+    loop {
+        let is_sharing = sharing();
+        let (rows, keys, default_note) = if is_sharing {
+            (
                 vec![
                     row(
                         "Sharing this screen",
-                        format!("localhost:{} · read-only", PORT),
+                        format!("localhost:{PORT} · read-only"),
                         Glyph::Eye,
-                    ),
+                    )
+                    .value("● active"),
                     row("Stop sharing", "the viewer loses the picture", Glyph::Stop),
                     row("Copy the tunnel command", tunnel_cmd(), Glyph::Link),
                     row(
@@ -251,77 +248,17 @@ pub fn menu(
                     ),
                 ],
                 vec!["none".into(), "stop".into(), "tunnel".into(), "info".into()],
-            )],
-        );
-        let code = crate::run_screen(terminal, design, "Share this screen", &mut picker)?;
-        if code != 0 {
-            return Ok(code);
-        }
-        let answers = picker.answers();
-        if answers.is_empty() {
-            return Ok(1);
-        }
-        match answers[0].as_str() {
-            "stop" => {
-                if let Err(e) = stop() {
-                    say(
-                        "Share this screen",
-                        format!("Could not stop: {}", e),
-                        Urgency::Critical,
-                        Glyph::Eye,
-                    );
-                    return Ok(3);
-                }
-                say(
-                    "Share this screen",
-                    "Stopped. The viewer loses the picture.".to_string(),
-                    Urgency::Normal,
-                    Glyph::Eye,
-                );
-                Ok(0)
-            }
-            "tunnel" => {
-                // Copy to clipboard
-                let cmd = tunnel_cmd();
-                let _ = out(&["wl-copy", &cmd]);
-                say(
-                    "Share this screen",
-                    format!(
-                        "Run on the other machine, then open a VNC viewer on localhost:{}",
-                        PORT
-                    ),
-                    Urgency::Normal,
-                    Glyph::Eye,
-                );
-                Ok(0)
-            }
-            "info" => {
-                say(
-                    "Share this screen",
-                    format!(
-                        "wayvnc serves this session on 127.0.0.1:{}, read-only: the viewer sees the screen and cannot type. It is loopback only because wayvnc 0.10 needs a certificate and a password file to serve a network, which this image does not ship - the ssh login is what authenticates, and the tunnel row has the command. Nothing runs until it is started, and the bar keeps an eye while it is.",
-                        PORT
-                    ),
-                    Urgency::Normal,
-                    Glyph::Eye,
-                );
-                Ok(0)
-            }
-            _ => Ok(0),
-        }
-    } else {
-        // Not sharing: offer start
-        let mut picker = Picker::new(
-            "Share this screen",
-            vec![Question::choose(
-                "Share this screen",
-                "read-only · localhost:5900 · watched from another machine",
+                format!("Sharing read-only on localhost:{PORT} · Enter acts"),
+            )
+        } else {
+            (
                 vec![
                     row(
-                        "Share this screen",
-                        "read-only · localhost:5900 · watched from another machine",
+                        "Start sharing this screen",
+                        format!("read-only · localhost:{PORT} · watched over ssh"),
                         Glyph::Eye,
-                    ),
+                    )
+                    .value("○ off"),
                     row("Copy the tunnel command", tunnel_cmd(), Glyph::Link),
                     row(
                         "What this does",
@@ -330,7 +267,14 @@ pub fn menu(
                     ),
                 ],
                 vec!["start".into(), "tunnel".into(), "info".into()],
-            )],
+                "Read-only · localhost:5900 · watched from another machine".to_string(),
+            )
+        };
+
+        let note = status_note.clone().unwrap_or(default_note);
+        let mut picker = Picker::new(
+            "Share this screen",
+            vec![Question::choose("Share this screen", note, rows, keys)],
         );
         let code = crate::run_screen(terminal, design, "Share this screen", &mut picker)?;
         if code != 0 {
@@ -341,55 +285,38 @@ pub fn menu(
             return Ok(1);
         }
         match answers[0].as_str() {
-            "start" => {
-                if let Err(e) = start() {
-                    say(
-                        "Share this screen",
-                        format!("It did not start: {}", e),
-                        Urgency::Critical,
-                        Glyph::Eye,
-                    );
-                    return Ok(3);
-                }
-                say(
-                    "Share this screen",
-                    format!(
-                        "Read-only on localhost:{}. From the other machine: {}",
-                        PORT,
+            "start" => match start() {
+                Ok(()) => {
+                    status_note = Some(format!(
+                        "Sharing read-only on localhost:{PORT}. Tunnel: {}",
                         tunnel_cmd()
-                    ),
-                    Urgency::Normal,
-                    Glyph::Eye,
-                );
-                Ok(0)
-            }
+                    ));
+                }
+                Err(e) => {
+                    status_note = Some(format!("Could not start wayvnc: {e}"));
+                }
+            },
+            "stop" => match stop() {
+                Ok(()) => {
+                    status_note = Some("Stopped sharing. The viewer lost the picture.".to_string());
+                }
+                Err(e) => {
+                    status_note = Some(format!("Could not stop wayvnc: {e}"));
+                }
+            },
             "tunnel" => {
                 let cmd = tunnel_cmd();
                 let _ = out(&["wl-copy", &cmd]);
-                say(
-                    "Share this screen",
-                    format!(
-                        "Run on the other machine, then open a VNC viewer on localhost:{}",
-                        PORT
-                    ),
-                    Urgency::Normal,
-                    Glyph::Eye,
-                );
-                Ok(0)
+                status_note = Some(format!(
+                    "Copied tunnel command ({cmd}) · connect VNC viewer to localhost:{PORT}"
+                ));
             }
             "info" => {
-                say(
-                    "Share this screen",
-                    format!(
-                        "wayvnc serves this session on 127.0.0.1:{}, read-only: the viewer sees the screen and cannot type. It is loopback only because wayvnc 0.10 needs a certificate and a password file to serve a network, which this image does not ship - the ssh login is what authenticates, and the tunnel row has the command. Nothing runs until it is started, and the bar keeps an eye while it is.",
-                        PORT
-                    ),
-                    Urgency::Normal,
-                    Glyph::Eye,
-                );
-                Ok(0)
+                status_note = Some(format!(
+                    "wayvnc serves 127.0.0.1:{PORT} read-only; authenticate via SSH tunnel"
+                ));
             }
-            _ => Ok(0),
+            _ => {}
         }
     }
 }

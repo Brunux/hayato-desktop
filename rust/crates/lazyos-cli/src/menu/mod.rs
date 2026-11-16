@@ -78,6 +78,8 @@ pub struct Context {
     pub agent: Option<String>,
     /// Why the Ask row's agent is not the default, when it is not.
     pub ask: Option<String>,
+    /// Whether voice dictation is currently recording (`XDG_RUNTIME_DIR/dictate/pid`).
+    pub dictate_recording: bool,
 }
 
 impl Context {
@@ -90,6 +92,7 @@ impl Context {
         Self {
             agent: Some(default),
             ask,
+            dictate_recording: crate::system::dictate::is_recording(),
         }
     }
 }
@@ -108,6 +111,11 @@ pub fn entries(surface: Surface, context: &Context) -> Vec<Entry> {
                 if let Some(ask) = &context.ask {
                     entry.detail = ask.clone();
                 }
+            }
+            "dictate" if context.dictate_recording => {
+                entry.label = "Stop dictation".to_string();
+                entry.detail =
+                    "\u{25cf} recording \u{00b7} transcribe and type into window".to_string();
             }
             _ => {}
         }
@@ -564,6 +572,7 @@ mod tests {
         let context = Context {
             agent: Some("claude".to_string()),
             ask: Some("Claude Code, the answer here".to_string()),
+            dictate_recording: false,
         };
         let rows = entries(Surface::Root, &context);
         let detail = |key: &str| rows.iter().find(|e| e.key == key).unwrap().detail.clone();

@@ -36,10 +36,15 @@ that is built. For the machine in front of you, `apt install` is the answer.
 
 ## The terminal
 
-**foot**, solarized, JetBrains Mono with a Nerd Font fallback for glyphs.
+**foot**, themed in the active session palette, JetBrains Mono with a Nerd Font
+fallback for glyphs. Selecting text with the mouse automatically copies it to
+both the PRIMARY selection and the system CLIPBOARD (`selection-target=both` in
+`~/.config/foot/foot.ini`), so you can immediately paste in any application with
+`Ctrl+V` or `Ctrl+Shift+V` without pressing `Ctrl+Shift+C` first.
 
 | Keys | Does |
 |---|---|
+| Mouse drag / select | auto-copy selection to clipboard and primary |
 | Ctrl+Shift+C / Ctrl+Shift+V | copy / paste |
 | Ctrl+Shift+N | new window |
 | Ctrl+Plus / Ctrl+Minus | text size |
@@ -629,6 +634,33 @@ with the release that ships it; until then every theme names the same picture.
 which is what to use over ssh. The last generated body is kept in
 `~/.local/state/lazyos/theme/`, which is how "the template moved on" is told from
 "a person edited this file".
+
+### Frictionless in-window UX
+
+Every interactive `lazyos` window is self-contained and anticipates your primary
+intent on open:
+
+- **Immediate discovery without blocking first paint**: opening Wi-Fi (`menu net`)
+  or Bluetooth (`menu bluetooth`) renders cached state immediately and triggers a
+  live background scan automatically; opening Free Space (`menu clean`) measures
+  reclaimable caches asynchronously; opening the Calculator (`menu calc`) evaluates
+  expressions live as you type. Toggling a setting or rescanning updates the list
+  in-place instead of closing the window.
+- **In-window progress instead of external toasts**: short operations show an
+  in-window braille spinner and status banner, while heavy multi-step operations
+  (package install/upgrade, disk format, swap setup, profile backup/restore, media
+  download, agent install) transition in-window into `TaskView` with step
+  checklists, progress bars, and a persistent final card. External desktop
+  notifications (`lazyos-notify`) are reserved strictly for headless events with no
+  active TUI window (hardware volume/brightness OSD, post-close screenshot or
+  recording confirmation, in-place translation/dictation, and masked clipboard
+  secret copy).
+- **Consistent foundation and adaptive geometry**: menus share `draw_card` spacing,
+  single-advance Nerd Font icons, case-folded filtering (`draw_filter_bar`), and
+  scrollbars (`draw_scrollbar`), while resizing the floating window live via Sway
+  IPC when switching modes (for example displaying an inline half-block Wi-Fi QR
+  code in `menu net` or `menu qr`, or expanding `menu about` / `menu learn` into a
+  wide reader).
 
 ## Translate
 

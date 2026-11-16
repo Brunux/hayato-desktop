@@ -89,7 +89,9 @@ if [ "${1:-}" = stop ] || [ "${1:-}" = --stop ]; then
 	# first (same mako tag, so nothing stacks) and only then is the command run,
 	# so a producer that starts a card of its own from inside it finds an empty
 	# state instead of racing against the removal of its own.
-	"$bin/busy" end "$tag" "Stopped $label"
+	if [ "$tag" != dictate ]; then
+		"$bin/busy" end "$tag" "Stopped $label"
+	fi
 	sh -c "$stopcmd" >/dev/null 2>&1 || true
 	pkill -RTMIN+8 waybar 2>/dev/null || true
 	exit 0

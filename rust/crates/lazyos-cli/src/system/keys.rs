@@ -206,6 +206,7 @@ impl KeysScreen {
                     };
 
                     let rest = &trimmed[binding_type.len()..].trim_start();
+                    let is_release = rest.starts_with("--release ");
                     let rest = rest.strip_prefix("--release ").unwrap_or(rest);
                     let rest = rest.strip_prefix("--locked ").unwrap_or(rest);
                     let rest = rest.strip_prefix("--no-repeat ").unwrap_or(rest);
@@ -217,7 +218,7 @@ impl KeysScreen {
                         None => continue,
                     };
 
-                    if cmd.is_empty() {
+                    if cmd.is_empty() || (is_release && cmd.contains("dictate --release")) {
                         continue;
                     }
 

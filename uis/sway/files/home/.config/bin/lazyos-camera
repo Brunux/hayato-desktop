@@ -67,8 +67,8 @@ mkdir -p "${log%/*}" 2>/dev/null || :
 # that is already up and say so, instead of starting an invisible instance.
 if pgrep -x guvcview >/dev/null 2>&1; then
 	swaymsg -q '[app_id="guvcview"] focus' 2>/dev/null || :
-	ui_say Camera 'The camera is already open (one program can use it at a time).' \
-		normal "$UI_ICON_INFO"
+	notify-send -a LazyOS -i camera Camera \
+		'The camera is already open (one program can use it at a time).' 2>/dev/null || :
 	exit 0
 fi
 
@@ -81,7 +81,7 @@ fi
 # -g gtk3 -r sdl are not defaults repeated for symmetry: guvcview *remembers*
 # the gui and render api in ~/.config/guvcview2/<device>, and a headless run
 # (`-g none -r none`, which is how one captures a photo from a script) stores
-# exactly that - after which every later launch reads gui=none back and opens no
+# exactly that - after which every launch reads gui=none back and opens no
 # window at all while holding the camera. It looks like a dead row with a
 # process behind it. Passing both on the command line wins over the file.
 start=$(date +%s)
@@ -97,8 +97,7 @@ elapsed=$(( $(date +%s) - start ))
 # is why the elapsed time is part of the test and not only the exit status.
 if [ "$rc" -ne 0 ] && [ "$elapsed" -lt 5 ]; then
 	reason=$(grep -vE 'UVCIOC_CTRL_MAP|Unknown PCM cards' "$log" 2>/dev/null | tail -n 1) || :
-	ui_say Camera "The camera did not start (guvcview exited $rc). ${reason:-See $log}" \
-		critical "$UI_ICON_ERROR"
+	say_err Camera "The camera did not start (guvcview exited $rc). ${reason:-See $log}"
 	exit 1
 fi
 exit 0
