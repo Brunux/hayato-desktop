@@ -405,7 +405,7 @@ in the history until deleted or cleared.
 the same list shape over `~/.config/emojis.tsv`: about 1300 rows of *name*,
 *glyph* and *block*. Typing filters by any word of the name, and since the block
 is in the row too, `faces`, `transport` or `dingbats` narrow it to a category.
-The table is generated on the build host by `scripts/make-emojis.sh` from
+The table is generated on the build host by `desktop/scripts/make-emojis.sh` from
 Python's Unicode database and shipped as a file, so the image needs no Python and
 no extra package for it. It is filtered against the font that draws it: only the
 codepoints `fonts-noto-color-emoji` actually carries become rows, because a
@@ -526,7 +526,7 @@ Two kinds of picture:
 
 Debian's Adwaita ships only monochrome symbolic icons and none of this session's
 names, so the image carries a small **LazyOS** icon theme: rendered once to 48×48 PNGs
-by `scripts/make-icons.sh`. Its `index.theme` inherits Adwaita and hicolor, so an
+by `desktop/scripts/make-icons.sh`. Its `index.theme` inherits Adwaita and hicolor, so an
 application that brings its own icon still shows it in colour.
 
 ## Adding things to the launcher
@@ -535,7 +535,7 @@ application that brings its own icon still shows it in colour.
   For a terminal program, `Terminal=true` is enough - `lazyos menu apps` starts it in foot.
   This is how `org.lazyos.*` entries are made (they live in `/usr/share/applications/`, shipped by the image).
 * **An icon for it**: put the name in its `Icon=`, and either let the application ship the
-  image or add a line to `scripts/make-icons.sh` and run it on the build host.
+  image or add a line to `desktop/scripts/make-icons.sh` and run it on the build host.
 * **A menu or tool**: implement a native subcommand in `lazyos` using `lazyos-ui` design
   system components (`List`, `Picker`, `Task`, `Card`).
 

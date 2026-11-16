@@ -1,35 +1,54 @@
 # The system
 
-## The disk, and why the third partition is not the whole story
+## The disk, by boot backend
 
-The disk has three partitions, the ChromeOS layout this machine's firmware
-expects:
+LazyOS uses pluggable boot backends selected by `/etc/lazyos/deviceinfo`
+(`deviceinfo_boot_type`), rather than assuming ChromeOS partitions on every board:
+
+* **`depthcharge` (Google Hayato / `google-asurada`)** — three partitions matching ChromeOS firmware:
 
 | Partition | Size | What |
 |---|---|---|
-| `p1` `pmOS_kernel` | 128 MiB | the **signed FIT** ("kpart") the firmware boots: a kernel, the initramfs and the device trees in one file |
-| `p2` `pmOS_boot` | 512 MiB | ext2, mounted on `/boot`: the same kernel and initramfs, unpacked |
-| `p3` `pmOS_root` | the rest | the Debian root filesystem |
+| `p1` `pmOS_kernel` | 128 MiB | the **signed FIT** ("kpart") the firmware boots: kernel, initramfs, and DTBs in one file |
+| `p2` `pmOS_boot` | 512 MiB | ext2, mounted on `/boot`: kernel, initramfs, and DTBs unpacked |
+| `p3` `pmOS_root` | the rest | ext4 root filesystem |
 
-The firmware does not read `/boot`. It loads `p1`, which is why a kernel update
-is only half done after `apt`: the new kernel lands in `/boot` and `/lib/modules`,
-but `p1` still carries the old one. Finish it from the repository copy:
+  ChromeOS firmware does not read `/boot` directly; it loads `p1`. When you
+  update a kernel on Hayato, finish by refreshing the active kernel partition:
 
-```sh
-sudo ~/Dev/LazyOS/scripts/install-kpart.sh
-```
+  ```sh
+  CONFIRM=yes /usr/libexec/lazyos/install-kpart.sh
+  ```
 
-That script finds the partition this machine booted from (it compares
-`kern_guid` in `/proc/cmdline`), builds a fresh kpart, verifies it is dev-signed,
-backs up what it replaces to `~/.cache/debian-aarch64/work/`, and writes it.
-`CONFIRM=yes` is required.
+  (Or `sudo CONFIRM=yes /usr/libexec/lazyos/install-boot.sh`, which dispatches to
+  it.) `install-kpart.sh` finds the running partition via `kern_guid` in
+  `/proc/cmdline`, builds a fresh kpart, verifies it is dev-signed, backs up the
+  previous partition image to `~/.cache/debian-aarch64/work/`, and writes it
+  when `CONFIRM=yes` is set.
+
+* **`uefi` (`arm64-uefi`)** — two GPT partitions: `p1` `lazyos_efi` (256 MiB,
+  FAT32 labeled `LAZYOS_EFI`, `systemd-boot` EFI System Partition) and `p2`
+  `lazyos_root` (ext4 labeled `lazyos_root`).
+* **`extlinux` (`arm64-extlinux`)** — two GPT partitions starting after the
+  16 MiB U-Boot reservation: `p1` `lazyos_boot` (512 MiB, ext2 labeled
+  `lazyos_boot`, `/boot/extlinux/extlinux.conf`) and `p2` `lazyos_root` (ext4
+  labeled `lazyos_root`).
+
+On `uefi` and `extlinux`, Debian's `/etc/kernel/postinst.d/zz-lazyos-boot` hook
+runs `/usr/libexec/lazyos/install-boot.sh` automatically on `apt upgrade` to
+sync DTBs and regenerate boot entries.
 
 ## The kernel
 
-Linux **7.2.7-mt81**, built here with clang and lld from
-`kernels/mediatek-mt81/`. It is not a Debian kernel: the MediaTek display, MMC,
-panfrost (the GPU) and ext4 are built in, and the configuration carries this
-machine's tuning:
+Generic targets (`arm64-uefi`, `arm64-extlinux`) use Debian `forky`'s packaged
+`linux-image-arm64` (`debian-arm64`), while custom mainline ARM64 boards can
+assemble `devices/kernels/arm64-mainline/` from `base.config` plus SoC
+fragments.
+
+On **Google Hayato** (`google-asurada`), LazyOS keeps Linux **7.2.7-mt81**,
+built from `devices/kernels/mediatek-mt81/` with clang and lld. It is not a
+Debian kernel: the MediaTek display, MMC, panfrost (the GPU) and ext4 are built
+in, and the configuration carries this machine's tuning:
 
 * **MGLRU** enabled by default - page reclaim by generation instead of a full
   scan, which is what 4 GB under pressure wants;
@@ -97,7 +116,7 @@ Two caches are built once, inside the image, instead of on your first session:
 * **the icon theme's index** (`/usr/share/icons/LazyOS/icon-theme.cache`) -
   without it the first launcher or notification lookup scans 220 files before it shows a picture.
 
-Both are rebuilt by `scripts/rootfs-setup.sh` at build time. `check-system.sh`
+Both are rebuilt by `core/scripts/rootfs-setup.sh` at build time. `check-system.sh`
 warns when either is missing - a rebuilt theme that did not refresh its index is
 the silent case, because the launcher still opens, just later.
 
@@ -134,7 +153,7 @@ notification bodies: tokens and passwords go directly to the clipboard.
 ## Health and backups
 
 ```sh
-check-system.sh ~/Dev/LazyOS    # OK / WARN / FAIL, one line per check
+check-system.sh                 # OK / WARN / FAIL, one line per check
 ```
 
 Every check corresponds to a bug this port has already hit, so a `FAIL` is a
@@ -153,8 +172,8 @@ broken machine.
 Backups are made of the *parts* a disk cannot be regenerated from:
 
 ```sh
-sudo ~/Dev/LazyOS/scripts/backup-system.sh /media/you/BACKUP
-sudo ~/Dev/LazyOS/scripts/restore-system.sh /media/you/BACKUP /dev/mmcblk0
+sudo /usr/libexec/lazyos/backup-system.sh /media/you/BACKUP
+sudo /usr/libexec/lazyos/restore-system.sh /media/you/BACKUP /dev/mmcblk0
 ```
 
 The kernel partition, the partition table, `/boot` and the root filesystem go
@@ -295,7 +314,7 @@ line change and needs the kernel partition rebuilt. The image ships the checkout
 it was built from, so this is done once, on the machine:
 
 ```sh
-CONFIRM=yes RESUME=yes ~/Dev/LazyOS/scripts/install-kpart.sh
+CONFIRM=yes RESUME=yes /usr/libexec/lazyos/install-kpart.sh
 ```
 
 `install-kpart.sh` asks for `CONFIRM=yes` because it rewrites the partition this
@@ -322,7 +341,7 @@ partition's size and not how much of it is in use.
 ## The microSD and the firmware
 
 The internal eMMC and the microSD are written with matching layouts
-(`scripts/write-sd.sh`, `lazyos installer`, or fallback `scripts/install-emmc.sh`), so a card is a full rescue
+(`core/scripts/write-sd.sh`, `lazyos installer`, or fallback `/usr/libexec/lazyos/install-emmc.sh`), so a card is a full rescue
 system: the same three partitions, the same signed kpart, the same session. The
 stock firmware's developer-mode menu picks **internal disk** (the eMMC) or
 **external disk** (the card), so a broken install on the eMMC is recoverable by

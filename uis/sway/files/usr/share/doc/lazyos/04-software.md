@@ -21,15 +21,15 @@ repository.
 
 ## What is installed, and where the lists are
 
-The image is built from four package lists in the repository, copied on the
-machine at `~/Dev/LazyOS/`:
+The image is built from four package lists across the LazyOS submodules
+(`core/`, `desktop/`, and `devices/`):
 
 | List | Holds |
 |---|---|
-| `packages/base.list` | what the system needs: systemd, NetworkManager, ssh, filesystems, audio plumbing, zram, the clock |
-| `packages/tools.list` | the terminal tools (below) |
-| `uis/sway/packages.list` | the session: sway, waybar, foot, rofi, mako, swayfx's dependencies, fonts |
-| `devices/google-asurada/packages.list` | this hardware: the firmware, cgpt, vboot, depthcharge-tools, rsync |
+| `core/packages/base.list` | what the system needs: systemd, NetworkManager, ssh, filesystems, audio plumbing, zram, the clock |
+| `desktop/packages/tools.list` | the terminal tools (below) |
+| `desktop/uis/sway/packages.list` | the session: sway, waybar, foot, rofi, mako, swayfx's dependencies, fonts |
+| `devices/devices/<codename>/packages.list` | target hardware: firmware, bootloader tools (`cgpt`, `vboot`, `depthcharge-tools` on `google-asurada`), and `linux-image-arm64` on `debian-arm64` targets |
 
 Editing a list does not change the running machine; it changes the next image
 that is built. For the machine in front of you, `apt install` is the answer.
@@ -189,7 +189,7 @@ of `fonts-noto-color-emoji`, so a symbol the font does not carry is never offere
 instead of being inserted as an empty box. `~/.config/emojis.font` next to it
 pins the SHA256 and the family of the font the filter used, which is how
 `check-system.sh` notices a font upgrade; after one, re-running
-`scripts/make-emojis.sh` on a host with `fontconfig` and the font rebuilds the
+`desktop/scripts/make-emojis.sh` on a host with `fontconfig` and the font rebuilds the
 table. Nothing of this runs on the machine: the picker is one rofi window and the
 table is a file.
 
@@ -359,7 +359,7 @@ one: tile it, move it to another workspace, close it with **Alt+Q**.
   palette by itself, and what it takes from the GTK files is the **icon theme**:
   it reads `gtk-icon-theme-name=` from `~/.config/gtk-3.0/settings.ini` and asks
   that theme for the folder, trash and drive names it draws, which is why the
-  **LazyOS** theme carries them (`scripts/make-icons.sh`'s fourth table). The
+  **LazyOS** theme carries them (`desktop/scripts/make-icons.sh`'s fourth table). The
   `gtk-3.0/gtk.css` next to it paints GTK3 programs instead - the camera window
   (`guvcview`), waybar, and anything a person installs later.
 * **The document reader gets the same palette, from a different pair of files.**
@@ -455,7 +455,7 @@ list below says why.
   for a camera, a TV or another computer: Windows, macOS and Linux all read it,
   and unlike FAT32 it has no 4 GB file limit) or ext4 (for a Linux machine), and
   the whole disk becomes one partition. Internal system installation uses `lazyos installer`
-  (with `scripts/install-emmc.sh` preserved as a manual fallback); this menu is for sticks and cards. It is not
+  (with `/usr/libexec/lazyos/install-emmc.sh` preserved as a manual fallback); this menu is for sticks and cards. It is not
   stoppable: a killed `mkfs` leaves a disk that looks formatted and is not.
 * A failed mount says why in the notification, in udisks' own words: "not
   authorized" is a policy problem, "already mounted" means it is already in the

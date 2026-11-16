@@ -3,7 +3,7 @@
 Start with the report; it is faster than reading logs:
 
 ```sh
-check-system.sh ~/Dev/LazyOS
+check-system.sh
 journalctl -b -p err --no-pager | tail -50
 ```
 
@@ -163,14 +163,15 @@ The firmware boots `p1`, not `/boot`. If the machine comes back to the firmware
 menu, or boots the old kernel, the kernel partition was not rewritten:
 
 ```sh
-sudo ~/Dev/LazyOS/scripts/install-kpart.sh
+CONFIRM=yes /usr/libexec/lazyos/install-kpart.sh
 ```
 
-To see the boot messages (they are quiet by default), build a verbose kpart once:
+To see the boot messages on Hayato (they are quiet by default), either build a
+verbose kpart on the build host or rebuild and install one on the device:
 
 ```sh
 KERNEL_CMDLINE_OVERRIDE="console=tty0 ignore_loglevel loglevel=7" \
-  sudo -E ~/Dev/LazyOS/scripts/make-kpart.sh
+  sudo -E ~/Dev/LazyOS/core/scripts/make-kpart.sh
 ```
 
 Never append a bare `debug`: initramfs-tools then sends its own output to a file
@@ -239,7 +240,7 @@ CRTC has no gamma table and the panel's own backlight is the monitor's.
 * **A hole where an icon should be.** The launcher draws application *images*,
   and the session's own entries take theirs from the small **LazyOS** theme
   (`/usr/share/icons/LazyOS`, 48x48 PNGs rendered from the icon fonts). If the
-  theme is missing, rebuild it with `sudo ~/Dev/LazyOS/scripts/make-icons.sh` - it
+  theme is missing, rebuild it with `sudo ~/Dev/LazyOS/desktop/scripts/make-icons.sh` - it
   needs ImageMagick - or reinstall the image. An application you installed that
   shows no icon is a packaging problem of that application, not this one.
 
@@ -314,7 +315,7 @@ it. mako reads no icon-theme metadata - it walks the roots named by
 `icon-path` in `~/.config/mako/config`, which is where the session's own
 `/usr/share/icons/LazyOS` has to be. `check-system.sh` reports both halves
 (`icons=1` and an existing `icon-path`), and the names themselves are rendered by
-`scripts/make-icons.sh` on the build host.
+`desktop/scripts/make-icons.sh` on the build host.
 
 ## Icons render as boxes
 
@@ -806,14 +807,14 @@ hibernate=no
 * **`resume=no`** - the kernel command line does not say where the image goes, so
   a hibernation could not be restored. That value is baked into the kernel
   partition, so it is added once with `CONFIRM=yes RESUME=yes
-  ~/Dev/LazyOS/scripts/install-kpart.sh` and kept across kernel updates (see
+  /usr/libexec/lazyos/install-kpart.sh` and kept across kernel updates (see
   **The system** page, § Suspend and hibernate).
 * **`resume=yes` but `resume_broken=yes`** - the command line says where the
   image goes, but no device on this boot answers to that name: the swap card was
   relabelled, repartitioned or left at home. Hibernating would write the image and
   the next boot would start a fresh session, so the helper refuses. Fix the card
   (`sudo swaplabel -L lazyos_swap <device>`) or take the spec out of the boot
-  (`CONFIRM=yes RESUME=no ~/Dev/LazyOS/scripts/install-kpart.sh`).
+  (`CONFIRM=yes RESUME=no /usr/libexec/lazyos/install-kpart.sh`).
 * **A card says *Hibernating to /dev/...* and then *systemd refused to hibernate:
   ...*** - the helper's own conditions passed, and `systemctl hibernate` said no
   afterwards. It prints its reason in that card instead of the journal, because a
@@ -825,7 +826,7 @@ hibernate=no
   written and the reboot could not find it: `resume=` names a card that is
   missing or was relabelled. `check-system.sh` resolves `resume=` and fails naming
   the spec it cannot find; `sudo swaplabel -L lazyos_swap <device>` fixes a
-  relabelled card, and `CONFIRM=yes RESUME=no ~/Dev/LazyOS/scripts/install-kpart.sh`
+  relabelled card, and `CONFIRM=yes RESUME=no /usr/libexec/lazyos/install-kpart.sh`
   takes a card that is gone out of the boot.
 
 ## The Developer menu does not offer the stick

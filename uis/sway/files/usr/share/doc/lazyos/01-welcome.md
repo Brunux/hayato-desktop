@@ -1,9 +1,12 @@
 # Welcome to LazyOS
 
-LazyOS is Debian (**forky**, arm64) running on a Google **Hayato**: the ASUS
-Chromebook Detachable CM3 with a MediaTek **MT8192** ("Asurada") SoC, 4 GB of RAM
-and a 58 GB eMMC. It is not a Debian remix: the hardware support comes from
-Nura (the postmarketOS-based system this port started from), and Debian supplies
+LazyOS is Debian (**forky**, arm64) with a keyboard-first `swayfx` desktop built
+first for the **Google Hayato** Chromebook (ASUS Chromebook Detachable CM3,
+MediaTek **MT8192** "Asurada" SoC, 4 GB RAM, 58 GB eMMC) and extended to generic
+**ARM64 UEFI** (`arm64-uefi`) and **ARM64 U-Boot/SBC** (`arm64-extlinux`)
+targets. On the Hayato, hardware support comes from our tuned `mediatek-mt81`
+kernel (`7.2.7`, started from postmarketOS/Nura); on generic ARM64 targets,
+Debian's packaged `linux-image-arm64` drives the hardware and Debian supplies
 everything above the kernel.
 
 ## The first five minutes
@@ -121,18 +124,19 @@ the thing to press is on the screen.
 | `~/.config/bin/` | the commands the bar and the keys call (symlinks to `/usr/bin/lazyos` for ported surfaces, plus shell helpers) |
 | `~/.config/{waybar,foot,rofi,mako}/` | the look of each piece |
 | `/usr/share/doc/lazyos/` | these pages |
-| `~/Dev/LazyOS/` | a **snapshot** of the repository this image was built from, with a `REVISION` file naming the commit. The directory is named after the repository: if it is ever renamed, the copy takes the new name |
+| `/etc/lazyos/` | device metadata (`deviceinfo`, `kernel-cmdline*.conf`, `installation`) read directly by the installer and boot helpers |
+| `/usr/libexec/lazyos/` | installed runtime helpers (`install-boot.sh`, `backup-system.sh`, `restore-system.sh`, `install-kpart.sh`, fallback `install-emmc.sh`, and modular `check/*.sh`) |
+| `~/Dev/LazyOS/` | optional **source checkout** (if present) organized as an umbrella over `core/`, `desktop/`, and `devices/` submodules |
 
-That last one matters: the image carries the tested tree, and the scripts that
-rewrite the kernel partition (`scripts/install-kpart.sh`) or back the system up
-(`backup-system.sh`) are meant to be run *from it*, on the machine. If you see a
-`REVISION` that does not match what you expect, the card or the install is older
-than you think.
+Every running image works standalone without a source checkout: runtime helpers live
+under `/usr/libexec/lazyos/` and read `/etc/lazyos/`. If you carry a checkout at
+`~/Dev/LazyOS/` for development, rebuilds and validation use its `core/`,
+`desktop/`, and `devices/` submodules.
 
 ## Is everything healthy?
 
 ```sh
-check-system.sh ~/Dev/LazyOS
+check-system.sh
 ```
 
 It prints one line per check (`OK`, `WARN`, `FAIL`, `SKIP`), and every check maps
