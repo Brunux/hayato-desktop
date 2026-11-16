@@ -5,6 +5,8 @@ pub struct FontRenderer {
     regular: Option<Font>,
     bold: Option<Font>,
     symbols: Option<Font>,
+    symbols_fa_solid: Option<Font>,
+    symbols_fa_brands: Option<Font>,
 }
 
 impl FontRenderer {
@@ -34,10 +36,22 @@ impl FontRenderer {
             "/usr/share/fonts/truetype/nerd-fonts-symbols/SymbolsNerdFont-Regular.ttf",
         ]);
 
+        let symbols_fa_solid = Self::load_font(&[
+            "/usr/share/fonts/truetype/font-awesome/fa-6.7.2-solid-900.ttf",
+            "/usr/share/fonts/truetype/font-awesome/fa-solid-900.ttf",
+        ]);
+
+        let symbols_fa_brands = Self::load_font(&[
+            "/usr/share/fonts/truetype/font-awesome/fa-6.7.2-brands-400.ttf",
+            "/usr/share/fonts/truetype/font-awesome/fa-brands-400.ttf",
+        ]);
+
         Self {
             regular,
             bold,
             symbols,
+            symbols_fa_solid,
+            symbols_fa_brands,
         }
     }
 
@@ -55,11 +69,18 @@ impl FontRenderer {
     }
 
     pub fn pick_font(&self, ch: char, bold: bool) -> Option<&Font> {
-        // For private-use codepoints (Nerd Font icon symbols), check symbol font first
+        // For private-use codepoints (Nerd Font Octicons / Font Awesome 6),
+        // check symbol faces in the same precedence order as foot.ini.
         if ch >= '\u{e000}' {
-            if let Some(ref f) = self.symbols {
-                if f.lookup_glyph_index(ch) != 0 {
-                    return Some(f);
+            for face in [
+                &self.symbols,
+                &self.symbols_fa_solid,
+                &self.symbols_fa_brands,
+            ] {
+                if let Some(f) = face.as_ref() {
+                    if f.lookup_glyph_index(ch) != 0 {
+                        return Some(f);
+                    }
                 }
             }
         }
@@ -78,9 +99,15 @@ impl FontRenderer {
             }
         }
 
-        if let Some(ref f) = self.symbols {
-            if f.lookup_glyph_index(ch) != 0 {
-                return Some(f);
+        for face in [
+            &self.symbols,
+            &self.symbols_fa_solid,
+            &self.symbols_fa_brands,
+        ] {
+            if let Some(f) = face.as_ref() {
+                if f.lookup_glyph_index(ch) != 0 {
+                    return Some(f);
+                }
             }
         }
 
@@ -88,6 +115,8 @@ impl FontRenderer {
             .as_ref()
             .or(self.bold.as_ref())
             .or(self.symbols.as_ref())
+            .or(self.symbols_fa_solid.as_ref())
+            .or(self.symbols_fa_brands.as_ref())
     }
 
     pub fn measure_width(&self, text: &str, size: f32, bold: bool) -> f32 {
@@ -253,8 +282,16 @@ mod tests {
         }
 
         if renderer.symbols.is_some() {
-            let icon_font = renderer.pick_font('\u{eb75}', false);
+            let icon_font = renderer.pick_font('\u{f485}', false);
             assert!(icon_font.is_some());
+        }
+        if let Some(ref fa) = renderer.symbols_fa_solid {
+            assert_ne!(fa.lookup_glyph_index('\u{f00d}'), 0);
+            assert!(renderer.pick_font('\u{f00d}', false).is_some());
+        }
+        if let Some(ref fa_b) = renderer.symbols_fa_brands {
+            assert_ne!(fa_b.lookup_glyph_index('\u{f293}'), 0);
+            assert!(renderer.pick_font('\u{f293}', false).is_some());
         }
 
         // Measure width and font picking must always succeed without panicking

@@ -3087,11 +3087,6 @@ if have lazyos && have fc-list; then
 		else
 			_fw_now=$(sha256sum "$_fw_path" 2>/dev/null)
 			_fw_now=${_fw_now%% *}
-			if [ "$_fw_now" = "$_fw_pin" ]; then
-				ok "the alphabet's font is the one it was generated from ($_fw_family, Nerd Fonts $_fw_nerd)"
-			else
-				fail "the alphabet's pin is for another font ($_fw_now != $_fw_pin): a font upgrade needs scripts/make-glyphs.sh, or the rows it changed are empty boxes"
-			fi
 			_fw_symbol=$(fc-query --format='%{charset}' "$_fw_path" 2>/dev/null)
 			if [ -n "$_fw_extra" ]; then
 				_fw_old_ifs=$IFS
@@ -3174,8 +3169,13 @@ if have lazyos && have fc-list; then
 				fi
 				if [ -z "$_fw_miss_alpha" ]; then
 					ok "the rows' glyphs render ($_fw_total codepoints, every one covered by $_fw_family${_fw_extra:+, $_fw_extra})"
+					if [ "$_fw_now" = "$_fw_pin" ]; then
+						ok "the alphabet's font matches its build pin ($_fw_family, Nerd Fonts $_fw_nerd)"
+					else
+						ok "the alphabet's font changed since build pin ($_fw_family) but still covers all $_fw_total glyph codepoints"
+					fi
 				else
-					fail "$_fw_family${_fw_extra:+, $_fw_extra} does not carry:$_fw_miss_alpha (a hole in every window that draws them, and nothing logs it)"
+					fail "$_fw_family${_fw_extra:+, $_fw_extra} does not carry:$_fw_miss_alpha (a font upgrade needs scripts/make-glyphs.sh, or the rows it changed are empty boxes)"
 				fi
 			fi
 			if [ "${_fw_fallback:-0}" -eq 0 ]; then

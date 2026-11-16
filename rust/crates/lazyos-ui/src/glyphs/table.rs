@@ -40,35 +40,35 @@ pub(crate) struct Entry {
 pub(crate) const TABLE: &[Entry] = &[
     Entry {
         glyph: Glyph::Folder,
-        draw: Some("\u{ea83}"),
+        draw: Some("\u{f413}"),
     },
     Entry {
         glyph: Glyph::File,
-        draw: Some("\u{ea7b}"),
+        draw: Some("\u{f4a5}"),
     },
     Entry {
         glyph: Glyph::Document,
-        draw: Some("\u{ebaf}"),
+        draw: Some("\u{f4f6}"),
     },
     Entry {
         glyph: Glyph::Pdf,
-        draw: Some("\u{eaeb}"),
+        draw: Some("\u{f1c1}"),
     },
     Entry {
         glyph: Glyph::Html,
-        draw: Some("\u{eae9}"),
+        draw: Some("\u{f40d}"),
     },
     Entry {
         glyph: Glyph::Archive,
-        draw: Some("\u{eaef}"),
+        draw: Some("\u{f410}"),
     },
     Entry {
         glyph: Glyph::Executable,
-        draw: Some("\u{eae8}"),
+        draw: Some("\u{f471}"),
     },
     Entry {
         glyph: Glyph::Hidden,
-        draw: Some("\u{eae7}"),
+        draw: Some("\u{f4c5}"),
     },
     Entry {
         glyph: Glyph::BrokenLink,
@@ -84,15 +84,15 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Music,
-        draw: Some("\u{ec1b}"),
+        draw: Some("\u{f001}"),
     },
     Entry {
         glyph: Glyph::Library,
-        draw: Some("\u{eb9c}"),
+        draw: Some("\u{f02d}"),
     },
     Entry {
         glyph: Glyph::Home,
-        draw: Some("\u{eb06}"),
+        draw: Some("\u{f46d}"),
     },
     Entry {
         glyph: Glyph::Desktop,
@@ -100,11 +100,11 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Terminal,
-        draw: Some("\u{ea85}"),
+        draw: Some("\u{f489}"),
     },
     Entry {
         glyph: Glyph::Window,
-        draw: Some("\u{eb7f}"),
+        draw: Some("\u{f488}"),
     },
     Entry {
         glyph: Glyph::Disk,
@@ -112,11 +112,11 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Gear,
-        draw: Some("\u{eaf8}"),
+        draw: Some("\u{f423}"),
     },
     Entry {
         glyph: Glyph::Book,
-        draw: Some("\u{eaa4}"),
+        draw: Some("\u{f405}"),
     },
     Entry {
         glyph: Glyph::People,
@@ -124,23 +124,23 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Globe,
-        draw: Some("\u{eb01}"),
+        draw: Some("\u{f484}"),
     },
     Entry {
         glyph: Glyph::Link,
-        draw: Some("\u{eb15}"),
+        draw: Some("\u{f44c}"),
     },
     Entry {
         glyph: Glyph::Volume,
-        draw: Some("\u{eb75}"),
+        draw: Some("\u{f485}"),
     },
     Entry {
         glyph: Glyph::Bell,
-        draw: Some("\u{eaa2}"),
+        draw: Some("\u{f49a}"),
     },
     Entry {
         glyph: Glyph::BellOff,
-        draw: Some("\u{ec08}"),
+        draw: Some("\u{f478}"),
     },
     Entry {
         glyph: Glyph::Clock,
@@ -148,23 +148,23 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Calendar,
-        draw: Some("\u{eab0}"),
+        draw: Some("\u{f455}"),
     },
     Entry {
         glyph: Glyph::History,
-        draw: Some("\u{ea82}"),
+        draw: Some("\u{f464}"),
     },
     Entry {
         glyph: Glyph::Trash,
-        draw: Some("\u{ea81}"),
+        draw: Some("\u{f48e}"),
     },
     Entry {
         glyph: Glyph::Bug,
-        draw: Some("\u{eaaf}"),
+        draw: Some("\u{f46f}"),
     },
     Entry {
         glyph: Glyph::Mic,
-        draw: Some("\u{ec12}"),
+        draw: Some("\u{f130}"),
     },
     Entry {
         glyph: Glyph::Sliders,
@@ -172,15 +172,15 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Lock,
-        draw: Some("\u{ea75}"),
+        draw: Some("\u{f456}"),
     },
     Entry {
         glyph: Glyph::Unlock,
-        draw: Some("\u{eb74}"),
+        draw: Some("\u{f52a}"),
     },
     Entry {
         glyph: Glyph::Eye,
-        draw: Some("\u{ea70}"),
+        draw: Some("\u{f441}"),
     },
     Entry {
         glyph: Glyph::Moon,
@@ -212,23 +212,23 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Network,
-        draw: Some("\u{eb34}"),
+        draw: Some("\u{f43c}"),
     },
     Entry {
         glyph: Glyph::Server,
-        draw: Some("\u{eb50}"),
+        draw: Some("\u{f473}"),
     },
     Entry {
         glyph: Glyph::Database,
-        draw: Some("\u{eace}"),
+        draw: Some("\u{f1c0}"),
     },
     Entry {
         glyph: Glyph::Chip,
-        draw: Some("\u{ec19}"),
+        draw: Some("\u{f4bc}"),
     },
     Entry {
         glyph: Glyph::Display,
-        draw: Some("\u{eb4d}"),
+        draw: Some("\u{e163}"),
     },
     Entry {
         glyph: Glyph::Power,
@@ -236,43 +236,43 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Logout,
-        draw: Some("\u{ea6e}"),
+        draw: Some("\u{f426}"),
     },
     Entry {
         glyph: Glyph::Reboot,
-        draw: Some("\u{ead2}"),
+        draw: Some("\u{f021}"),
     },
     Entry {
         glyph: Glyph::Rotate,
-        draw: Some("\u{eb37}"),
+        draw: Some("\u{f2f9}"),
     },
     Entry {
         glyph: Glyph::Search,
-        draw: Some("\u{ea6d}"),
+        draw: Some("\u{f422}"),
     },
     Entry {
         glyph: Glyph::Warning,
-        draw: Some("\u{ea6c}"),
+        draw: Some("\u{f421}"),
     },
     Entry {
         glyph: Glyph::Info,
-        draw: Some("\u{ea74}"),
+        draw: Some("\u{f449}"),
     },
     Entry {
         glyph: Glyph::Check,
-        draw: Some("\u{eab2}"),
+        draw: Some("\u{f42e}"),
     },
     Entry {
         glyph: Glyph::Undo,
-        draw: Some("\u{eae2}"),
+        draw: Some("\u{f2ea}"),
     },
     Entry {
         glyph: Glyph::Save,
-        draw: Some("\u{eb4b}"),
+        draw: Some("\u{f0c7}"),
     },
     Entry {
         glyph: Glyph::Sync,
-        draw: Some("\u{ea77}"),
+        draw: Some("\u{f46a}"),
     },
     Entry {
         glyph: Glyph::Download,
@@ -280,11 +280,11 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Capture,
-        draw: Some("\u{eb4c}"),
+        draw: Some("\u{f50c}"),
     },
     Entry {
         glyph: Glyph::Camera,
-        draw: Some("\u{eada}"),
+        draw: Some("\u{f446}"),
     },
     Entry {
         glyph: Glyph::Crop,
@@ -296,31 +296,31 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Clipboard,
-        draw: Some("\u{ebcc}"),
+        draw: Some("\u{f429}"),
     },
     Entry {
         glyph: Glyph::Smile,
-        draw: Some("\u{eb54}"),
+        draw: Some("\u{f4a2}"),
     },
     Entry {
         glyph: Glyph::Filter,
-        draw: Some("\u{eaf1}"),
+        draw: Some("\u{f4d7}"),
     },
     Entry {
         glyph: Glyph::Tag,
-        draw: Some("\u{ea66}"),
+        draw: Some("\u{f412}"),
     },
     Entry {
         glyph: Glyph::Key,
-        draw: Some("\u{eb11}"),
+        draw: Some("\u{f43d}"),
     },
     Entry {
         glyph: Glyph::Map,
-        draw: Some("\u{ec05}"),
+        draw: Some("\u{f279}"),
     },
     Entry {
         glyph: Glyph::Theme,
-        draw: Some("\u{eb5c}"),
+        draw: Some("\u{f53f}"),
     },
     Entry {
         glyph: Glyph::Brush,
@@ -328,7 +328,7 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Box,
-        draw: Some("\u{eb29}"),
+        draw: Some("\u{f487}"),
     },
     Entry {
         glyph: Glyph::Calculator,
@@ -336,75 +336,75 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Play,
-        draw: Some("\u{eb2c}"),
+        draw: Some("\u{f500}"),
     },
     Entry {
         glyph: Glyph::Pause,
-        draw: Some("\u{ead1}"),
+        draw: Some("\u{f04c}"),
     },
     Entry {
         glyph: Glyph::Stop,
-        draw: Some("\u{ead7}"),
+        draw: Some("\u{f46e}"),
     },
     Entry {
         glyph: Glyph::Next,
-        draw: Some("\u{eab6}"),
+        draw: Some("\u{f460}"),
     },
     Entry {
         glyph: Glyph::Prev,
-        draw: Some("\u{eab5}"),
+        draw: Some("\u{f47d}"),
     },
     Entry {
         glyph: Glyph::ArrowUp,
-        draw: Some("\u{eaa1}"),
+        draw: Some("\u{f431}"),
     },
     Entry {
         glyph: Glyph::ArrowDown,
-        draw: Some("\u{ea9a}"),
+        draw: Some("\u{f433}"),
     },
     Entry {
         glyph: Glyph::ArrowLeft,
-        draw: Some("\u{ea9b}"),
+        draw: Some("\u{f434}"),
     },
     Entry {
         glyph: Glyph::ArrowRight,
-        draw: Some("\u{ea9c}"),
+        draw: Some("\u{f432}"),
     },
     Entry {
         glyph: Glyph::Target,
-        draw: Some("\u{ebf8}"),
+        draw: Some("\u{f140}"),
     },
     Entry {
         glyph: Glyph::Star,
-        draw: Some("\u{eb59}"),
+        draw: Some("\u{f41e}"),
     },
     Entry {
         glyph: Glyph::Heart,
-        draw: Some("\u{eb05}"),
+        draw: Some("\u{f4e1}"),
     },
     Entry {
         glyph: Glyph::Pin,
-        draw: Some("\u{eb2b}"),
+        draw: Some("\u{f435}"),
     },
     Entry {
         glyph: Glyph::Lightbulb,
-        draw: Some("\u{ea61}"),
+        draw: Some("\u{f400}"),
     },
     Entry {
         glyph: Glyph::Cloud,
-        draw: Some("\u{ebaa}"),
+        draw: Some("\u{f4ac}"),
     },
     Entry {
         glyph: Glyph::Code,
-        draw: Some("\u{eac4}"),
+        draw: Some("\u{f44f}"),
     },
     Entry {
         glyph: Glyph::Agent,
-        draw: Some("\u{eb08}"),
+        draw: Some("\u{f477}"),
     },
     Entry {
         glyph: Glyph::Sparkle,
-        draw: Some("\u{ec10}"),
+        draw: Some("\u{f51b}"),
     },
     Entry {
         glyph: Glyph::Git,
@@ -412,7 +412,7 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Github,
-        draw: Some("\u{ea84}"),
+        draw: Some("\u{f408}"),
     },
     Entry {
         glyph: Glyph::Docker,
@@ -440,6 +440,6 @@ pub(crate) const TABLE: &[Entry] = &[
     },
     Entry {
         glyph: Glyph::Shield,
-        draw: Some("\u{eb53}"),
+        draw: Some("\u{f49c}"),
     },
 ];

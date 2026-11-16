@@ -6,7 +6,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::Local;
@@ -77,6 +77,23 @@ impl PowerAction {
             PowerAction::Poweroff => "poweroff",
         }
     }
+}
+
+fn format_power_failure(action: PowerAction, status: ExitStatus, stderr: &[u8]) -> String {
+    let text = String::from_utf8_lossy(stderr);
+    let detail = text
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            status
+                .code()
+                .map(|c| format!("exit {c}"))
+                .unwrap_or_else(|| "signaled".to_string())
+        });
+    format!("{} refused by systemd ({detail})", action.label())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -610,24 +627,31 @@ impl GreeterScreen {
             self.status = Some((
                 StatusKind::Ok,
                 format!(
-                    "Preview: would execute `systemctl {}`",
+                    "Preview: would execute `systemctl {} -i`",
                     action.systemd_verb()
                 ),
             ));
             return Outcome::Consumed;
         }
+        // Redirect stdio so systemd warnings/inhibitors never paint over the raw
+        // Ratatui terminal, and pass `-i` so an idle lock or background TTY does
+        // not block a deliberate console power button press.
         match Command::new("systemctl")
             .arg(action.systemd_verb())
-            .status()
+            .arg("-i")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
         {
-            Ok(st) if st.success() => {
+            Ok(out) if out.status.success() => {
                 self.status = Some((StatusKind::Info, format!("Executing {}…", action.label())));
                 Outcome::Consumed
             }
-            Ok(st) => {
+            Ok(out) => {
                 self.status = Some((
                     StatusKind::Err,
-                    format!("{} refused by systemd (exit {})", action.label(), st),
+                    format_power_failure(action, out.status, &out.stderr),
                 ));
                 Outcome::Consumed
             }
@@ -2022,5 +2046,22 @@ mod tests {
             other_cell.fg, other_cell.bg,
             "unselected + Other pill text must contrast cleanly against pill fill"
         );
+    }
+
+    #[test]
+    fn power_failure_formats_concise_status_without_duplicate_exit_prefix() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            let status = ExitStatus::from_raw(1 << 8);
+            let empty = format_power_failure(PowerAction::Reboot, status, b"");
+            assert_eq!(empty, "Reboot refused by systemd (exit 1)");
+            let with_err = format_power_failure(
+                PowerAction::Poweroff,
+                status,
+                b"User brunux is logged in on tty7.\nAccess denied\n",
+            );
+            assert_eq!(with_err, "Shut down refused by systemd (Access denied)");
+        }
     }
 }

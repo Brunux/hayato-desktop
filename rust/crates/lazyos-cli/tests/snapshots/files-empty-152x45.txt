@@ -1,10 +1,10 @@
 Files · ~/src                                                                                                               0 dirs · 0 files · ### free
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ Files ──────────────────────────────────────────────────────────────────────────╮╭ home ─────────────────────────────────────────────────────────────╮
-│ type to filter, or a path - Enter opens it                                     ││  2 folders · 4 files                                              │
+│ type to filter, or a path - Enter opens it                                     ││  2 folders · 4 files                                              │
 │                                                                                 ││                                                                   │
-│▍   ..  parent directory                                                        ││  Photos/                                                          │
-│    hidden files  hidden - Enter shows them                                     ││  src/                                                             │
+│▍   ..  parent directory                                                        ││  Photos/                                                          │
+│    hidden files  hidden - Enter shows them                                     ││  src/                                                             │
 │                                                                                 ││  film.mkv                                                         │
 │                                                                                 ││  gone                                                             │
 │                                                                                 ││  notes.md                                                         │

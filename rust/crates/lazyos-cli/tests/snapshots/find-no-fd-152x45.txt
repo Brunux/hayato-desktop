@@ -1,7 +1,7 @@
 Find · ~                                                                                                                                  fd is missing
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ Find ───────────────────────────────────────────────────────────────────────────╮
-│ type to narrow it while it walks                                               │
+│ type to narrow it while it walks                                               │
 │                                                                                 │
 │ fd is missing (package fd-find): there is nothing to walk with                  │
 │                                                                                 │

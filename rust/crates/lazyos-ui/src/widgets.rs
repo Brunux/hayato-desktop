@@ -2950,7 +2950,7 @@ mod tests {
         assert_eq!(Glyph::Bluetooth.codepoint(), Some('\u{f293}'));
         assert_eq!(Glyph::Bluetooth.cell(), "\u{f293}");
         assert_eq!(Glyph::Bluetooth.token(), "bt");
-        assert_eq!(Glyph::Folder.cell(), "\u{ea83}");
+        assert_eq!(Glyph::Folder.cell(), "\u{f413}");
         let row = Row::new("x").glyph(Glyph::Bluetooth);
         assert_eq!(row.glyph.as_deref(), Some("\u{f293}"));
     }

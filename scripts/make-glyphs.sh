@@ -2,8 +2,9 @@
 # Regenerate the TUI alphabet: the codepoint behind every `Glyph` name.
 #
 # The session's Rust framework (`rust/crates/lazyos-ui`) draws its rows in
-# `foot`, using `Symbols Nerd Font Mono` (`fonts-nerd-symbols`, DFSG-stripped:
-# Octicons, Codicons, Devicons, Seti, Powerline, IEC) plus the two Font Awesome
+# `foot`, using `Symbols Nerd Font Mono` (`fonts-nerd-symbols`, Debian's
+# DFSG-stripped build: Octicons, Devicons, Seti, Powerline, IEC — note Debian
+# `3.4.0+dfsg2-1` removed Codicons `ea60..ec1e`) plus the two Font Awesome
 # faces from `fonts-font-awesome-legacy` (`Font Awesome 6 Free Solid` and `Font
 # Awesome 6 Brands Regular`) listed in `foot.ini`.  `Glyph` is the handle a
 # command names (`Glyph::Bluetooth`, not `'\u{f293}'`); this script is where a
@@ -171,43 +172,43 @@ trap 'rm -rf "$tmp"' EXIT INT TERM HUP
 # ---------------------------------------------------------------------------
 cat >"$tmp/candidates" <<'EOF'
 # files and places
-Folder ea83			# cod-folder
-File ea7b			# cod-file
-Document ebaf			# cod-notebook
-Pdf eaeb			# cod-file_pdf
-Html eae9			# cod-file_code
-Archive eaef			# cod-file_zip
-Executable eae8			# cod-file_binary
-Hidden eae7			# cod-eye_closed
+Folder f413			# oct-file_directory
+File f4a5			# oct-file
+Document f4f6			# oct-note
+Pdf f1c1			# fa-file-pdf (Font Awesome 6 Free Solid)
+Html f40d			# oct-file_code
+Archive f410			# oct-file_zip
+Executable f471			# oct-file_binary
+Hidden f4c5			# oct-eye_closed
 BrokenLink f529			# oct-unlink
 Image f4e5			# oct-image
 Video f52c			# oct-video
-Music ec1b			# cod-music
-Library eb9c			# cod-library
-Home eb06			# cod-home
+Music f001			# fa-music (Font Awesome 6 Free Solid)
+Library f02d			# fa-book (Font Awesome 6 Free Solid)
+Home f46d			# oct-home
 Desktop f4a9			# oct-device_desktop
-Terminal ea85			# cod-terminal
+Terminal f489			# oct-terminal
 # the machine
-Window eb7f			# cod-window
+Window f488			# oct-browser
 Disk f472			# oct-database (the closest thing to a drive this set has)
-Gear eaf8			# cod-gear
-Book eaa4			# cod-book
+Gear f423			# oct-gear
+Book f405			# oct-book
 People f4fd			# oct-people
-Globe eb01			# cod-globe
-Link eb15			# cod-link
-Volume eb75			# cod-unmute
-Bell eaa2			# cod-bell
-BellOff ec08			# cod-bell_slash
+Globe f484			# oct-globe
+Link f44c			# oct-link
+Volume f485			# oct-unmute
+Bell f49a			# oct-bell
+BellOff f478			# oct-bell_slash
 Clock f43a			# oct-clock
-Calendar eab0			# cod-calendar
-History ea82			# cod-history
-Trash ea81			# cod-trash
-Bug eaaf			# cod-bug
-Mic ec12			# cod-mic
+Calendar f455			# oct-calendar
+History f464			# oct-history
+Trash f48e			# oct-trash
+Bug f46f			# oct-bug
+Mic f130			# fa-microphone (Font Awesome 6 Free Solid)
 Sliders f462			# oct-sliders
-Lock ea75			# cod-lock
-Unlock eb74			# cod-unlock
-Eye ea70			# cod-eye
+Lock f456			# oct-lock
+Unlock f52a			# oct-unlock
+Eye f441			# oct-eye
 Moon f4ee			# oct-moon
 Brightness f522			# oct-sun
 Keyboard f11c			# fa-keyboard (Font Awesome 6 Free Solid)
@@ -215,66 +216,66 @@ Wifi f1eb			# fa-wifi (Font Awesome 6 Free Solid)
 Bluetooth f293			# fa-bluetooth-b (Font Awesome 6 Brands Regular)
 Battery f240			# fa-battery-full (Font Awesome 6 Free Solid)
 Mouse f245			# fa-arrow-pointer (Font Awesome 6 Free Solid)
-Network eb34			# cod-radio_tower
-Server eb50			# cod-server
-Database eace			# cod-database
-Chip ec19			# cod-chip
-Display eb4d			# cod-screen_normal
+Network f43c			# oct-broadcast
+Server f473			# oct-server
+Database f1c0			# fa-database (Font Awesome 6 Free Solid)
+Chip f4bc			# oct-cpu
+Display e163			# fa-display (Font Awesome 6 Free Solid)
 Power 23fb			# iec-power
-Logout ea6e			# cod-sign_out
-Reboot ead2			# cod-debug_restart
-Rotate eb37			# cod-refresh
+Logout f426			# oct-sign_out
+Reboot f021			# fa-arrows-rotate (Font Awesome 6 Free Solid)
+Rotate f2f9			# fa-rotate-right (Font Awesome 6 Free Solid)
 # actions
-Search ea6d			# cod-search
-Warning ea6c			# cod-warning
-Info ea74			# cod-info
-Check eab2			# cod-check
-Undo eae2			# cod-discard
-Save eb4b			# cod-save
-Sync ea77			# cod-sync
+Search f422			# oct-search
+Warning f421			# oct-alert
+Info f449			# oct-info
+Check f42e			# oct-check
+Undo f2ea			# fa-rotate-left (Font Awesome 6 Free Solid)
+Save f0c7			# fa-floppy-disk (Font Awesome 6 Free Solid)
+Sync f46a			# oct-sync
 Download f409			# oct-download
-Capture eb4c			# cod-screen_full
-Camera eada			# cod-device_camera
+Capture f50c			# oct-screen_full
+Camera f446			# oct-device_camera
 Crop f125			# fa-crop (Font Awesome 6 Free Solid)
 Qr f029				# fa-qrcode (Font Awesome 6 Free Solid)
-Clipboard ebcc			# cod-copy (the set has no clipboard proper)
-Smile eb54			# cod-smiley
-Filter eaf1			# cod-filter
-Tag ea66			# cod-tag
-Key eb11			# cod-key
-Map ec05			# cod-map
-Theme eb5c			# cod-symbol_color
+Clipboard f429			# oct-paste
+Smile f4a2			# oct-smiley
+Filter f4d7			# oct-filter
+Tag f412			# oct-tag
+Key f43d			# oct-key
+Map f279			# fa-map (Font Awesome 6 Free Solid)
+Theme f53f			# fa-palette (Font Awesome 6 Free Solid)
 Brush f48f			# oct-paintbrush
-Box eb29			# cod-package
+Box f487			# oct-package
 Calculator f1ec			# fa-calculator (Font Awesome 6 Free Solid)
-Play eb2c			# cod-play
-Pause ead1			# cod-debug_pause
-Stop ead7			# cod-debug_stop
-Next eab6			# cod-chevron_right
-Prev eab5			# cod-chevron_left
-ArrowUp eaa1			# cod-arrow_up
-ArrowDown ea9a			# cod-arrow_down
-ArrowLeft ea9b			# cod-arrow_left
-ArrowRight ea9c			# cod-arrow_right
-Target ebf8			# cod-target
-Star eb59			# cod-star_full
-Heart eb05			# cod-heart
-Pin eb2b			# cod-pin
-Lightbulb ea61			# cod-lightbulb
-Cloud ebaa			# cod-cloud
+Play f500			# oct-play
+Pause f04c			# fa-pause (Font Awesome 6 Free Solid)
+Stop f46e			# oct-stop
+Next f460			# oct-chevron_right
+Prev f47d			# oct-chevron_left
+ArrowUp f431			# oct-arrow_up
+ArrowDown f433			# oct-arrow_down
+ArrowLeft f434			# oct-arrow_left
+ArrowRight f432			# oct-arrow_right
+Target f140			# fa-bullseye (Font Awesome 6 Free Solid)
+Star f41e			# oct-star
+Heart f4e1			# oct-heart_fill
+Pin f435			# oct-pin
+Lightbulb f400			# oct-light_bulb
+Cloud f4ac			# oct-cloud
 # the tools and the agents
-Code eac4			# cod-code
-Agent eb08			# cod-hubot
-Sparkle ec10			# cod-sparkle
+Code f44f			# oct-code
+Agent f477			# oct-hubot
+Sparkle f51b			# oct-sparkle_fill
 Git f418			# oct-git_branch
-Github ea84			# cod-github
+Github f408			# oct-mark_github
 Docker e7b0			# dev-docker
 Rust e68b			# seti-rust
 Python e606			# seti-python
 Node e719			# dev-nodejs
 Linux e712			# dev-linux
 Debian e77d			# dev-debian
-Shield eb53			# cod-shield
+Shield f49c			# oct-shield
 EOF
 
 CHARSET=$charset awk -v stats="$tmp/stats" '

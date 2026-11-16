@@ -1,10 +1,10 @@
 Files · ~/src                                       0 dirs · 0 files · ### free
 ────────────────────────────────────────────────────────────────────────────────
 ╭ Files ───────────────────────────────────────────────────────────────────────╮
-│ type to filter, or a path - Enter opens it                                  │
+│ type to filter, or a path - Enter opens it                                  │
 │                                                                              │
-│▍   ..  parent directory                                                     │
-│    hidden files  hidden - Enter shows them                                  │
+│▍   ..  parent directory                                                     │
+│    hidden files  hidden - Enter shows them                                  │
 │                                                                              │
 │                                                                              │
 │                                                                              │

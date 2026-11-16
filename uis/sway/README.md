@@ -873,7 +873,7 @@ it at all. waybar needs none of this: it is a Pango program.
   |---|---|
   | Font Awesome, `U+F000`-`U+F2FF` | `fonts-font-awesome-legacy` |
   | Material Design Icons, plane 15 | `fonts-materialdesignicons-legacy` (the *older* MDI numbering: it has `U+F0219`, not the Nerd Fonts v3 `nf-md` set) |
-  | Octicons, Codicons, Devicons, Powerline | `fonts-nerd-symbols` |
+  | Octicons, Devicons, Seti, Powerline, IEC | `fonts-nerd-symbols` |
 
   `fonts-nerd-symbols` alone is not enough: Debian stripped Font Awesome and Material Design
   Icons from it for DFSG reasons, so every waybar icon would render as a tofu box with the hex

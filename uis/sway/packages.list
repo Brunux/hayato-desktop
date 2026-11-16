@@ -267,7 +267,7 @@ fonts-liberation
 # draws the text; the icon glyphs come from fontconfig fallback:
 #   * Font Awesome (U+F000-U+F2FF)      -> fonts-font-awesome-legacy
 #   * Material Design Icons (plane 15)  -> fonts-materialdesignicons-legacy
-#   * Octicons / Codicons / Devicons    -> fonts-nerd-symbols
+#   * Octicons / Devicons / Seti / IEC  -> fonts-nerd-symbols
 # The two "legacy" packages are required: Debian's fonts-nerd-symbols is
 # DFSG-stripped (no FA, no MDI) and on its own every waybar icon renders as a
 # tofu box with the hex codepoint inside. Verified by rendering the icons with

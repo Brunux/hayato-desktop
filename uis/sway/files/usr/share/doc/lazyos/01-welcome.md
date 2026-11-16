@@ -68,8 +68,8 @@ tall so a finger can hit one, and a click on the blank line between two of them
 does nothing at all.
 
 The pictures in these windows are one-cell glyphs drawn in `foot` from
-**Symbols Nerd Font Mono** (`fonts-nerd-symbols`: Octicons, Codicons, Devicons,
-Seti, Powerline, IEC) and **Font Awesome 6** (`Font Awesome 6 Free Solid` and
+**Symbols Nerd Font Mono** (`fonts-nerd-symbols`: Octicons, Devicons,
+Seti, Powerline, IEC — excluding Codicons stripped in Debian `dfsg2`) and **Font Awesome 6** (`Font Awesome 6 Free Solid` and
 `Font Awesome 6 Brands Regular` from `fonts-font-awesome-legacy`), matching the
 order named in `foot.ini` after JetBrains Mono. All 101 UI names — including
 **Bluetooth**, **Wi-Fi**, the **battery**, the **keyboard**, the **touchpad**,

@@ -218,70 +218,70 @@ impl Renderer {
         let summary_lower = summary.to_lowercase();
 
         if icon_lower.contains("muted") || summary_lower.contains("muted") {
-            "\u{ea67}"
+            "\u{f466}" // oct-mute
         } else if icon_lower.contains("volume")
             || app_lower.contains("volume")
             || summary_lower.contains("volume")
         {
-            "\u{eb75}"
+            lazyos_ui::Glyph::Volume.cell()
         } else if icon_lower.contains("brightness")
             || app_lower.contains("brightness")
             || summary_lower.contains("brightness")
         {
-            "\u{f522}"
+            lazyos_ui::Glyph::Brightness.cell()
         } else if icon_lower.contains("wifi")
             || icon_lower.contains("network")
             || app_lower.contains("wifi")
             || summary_lower.contains("wifi")
         {
-            "\u{eb76}"
+            lazyos_ui::Glyph::Wifi.cell()
         } else if icon_lower.contains("bluetooth")
             || app_lower.contains("bluetooth")
             || summary_lower.contains("bluetooth")
         {
-            "\u{eb77}"
+            lazyos_ui::Glyph::Bluetooth.cell()
         } else if icon_lower.contains("battery")
             || app_lower.contains("battery")
             || summary_lower.contains("battery")
             || summary_lower.contains("power")
         {
-            "\u{eb5c}"
+            lazyos_ui::Glyph::Battery.cell()
         } else if icon_lower.contains("camera")
             || app_lower.contains("camera")
             || summary_lower.contains("capture")
             || summary_lower.contains("screenshot")
         {
-            "\u{f4e5}"
+            lazyos_ui::Glyph::Image.cell()
         } else if icon_lower.contains("download") || app_lower.contains("download") {
-            "\u{eb79}"
+            lazyos_ui::Glyph::Download.cell()
         } else if icon_lower.contains("terminal")
             || app_lower.contains("terminal")
             || app_lower.contains("foot")
         {
-            "\u{ea85}"
+            lazyos_ui::Glyph::Terminal.cell()
         } else if icon_lower.contains("music")
             || icon_lower.contains("media")
             || app_lower.contains("music")
             || app_lower.contains("player")
         {
-            "\u{ec1b}"
+            lazyos_ui::Glyph::Music.cell()
         } else if icon_lower.contains("mic")
             || icon_lower.contains("record")
             || app_lower.contains("dictat")
             || summary_lower.contains("dictat")
         {
-            "\u{ec12}"
+            lazyos_ui::Glyph::Mic.cell()
         } else if icon_lower.contains("qr") || summary_lower.contains("qr") {
-            "\u{eb29}"
+            lazyos_ui::Glyph::Qr.cell()
         } else if icon_lower.contains("settings") || app_lower.contains("settings") {
-            "\u{ea82}"
+            lazyos_ui::Glyph::Gear.cell()
         } else if urgency == Urgency::Critical
             || icon_lower.contains("error")
             || summary_lower.contains("error")
         {
-            "\u{ea6c}"
+            lazyos_ui::Glyph::Warning.cell()
         } else {
-            "\u{ea74}" // info
+            lazyos_ui::Glyph::Info.cell()
         }
     }
 
@@ -351,11 +351,11 @@ impl Renderer {
 
         // 4. Vector glyph in penguin accent color
         let icon_glyph = if is_brightness {
-            "\u{f522}" // brightness
+            lazyos_ui::Glyph::Brightness.cell()
         } else if is_muted {
-            "\u{ea67}" // mute
+            "\u{f466}" // oct-mute
         } else {
-            "\u{eb75}" // volume
+            lazyos_ui::Glyph::Volume.cell()
         };
 
         let icon_color = if is_muted {
@@ -597,7 +597,7 @@ impl Renderer {
         };
         self.font.draw_text(
             pixmap,
-            "\u{ea76}", // Codicons close
+            "\u{f00d}", // Font Awesome xmark
             map_x(close_x),
             map_y(close_y),
             12.0 * scale,

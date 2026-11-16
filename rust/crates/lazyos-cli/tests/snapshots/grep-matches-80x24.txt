@@ -1,10 +1,10 @@
 Search inside files · line                                            2 matches
 ────────────────────────────────────────────────────────────────────────────────
 ╭ Matches ─────────────────────────────────────────────────────────────────────╮
-│ type to narrow the matches                                                  │
+│ type to narrow the matches                                                  │
 │                                                                              │
-│▍   # Notes  ~/notes.md:1                                                    │
-│    last line  ~/notes.md:5                                                  │
+│▍   # Notes  ~/notes.md:1                                                    │
+│    last line  ~/notes.md:5                                                  │
 │                                                                              │
 │                                                                              │
 │                                                                              │

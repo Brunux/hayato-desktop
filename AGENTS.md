@@ -37,7 +37,9 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
 5. **Dual density support**: `Screen::key` and `Screen::hit` receive `&Design` (`$XDG_RUNTIME_DIR/lazyos-tablet`)
    rather than caching hit boxes across normal vs tablet row spacing.
 6. **Generated glyph & icon tables**:
-   - Glyph codepoints (`Symbols Nerd Font Mono` + `Font Awesome 6 Free Solid` + `Font Awesome 6 Brands Regular`): edit `scripts/make-glyphs.sh`, never hand-edit `glyphs/table.rs`.
+   - Glyph codepoints (`Symbols Nerd Font Mono` + `Font Awesome 6 Free Solid` + `Font Awesome 6 Brands Regular`, avoiding Codicons `ea60..ec1e` stripped in Debian `fonts-nerd-symbols 3.4.0+dfsg2-1`): edit `scripts/make-glyphs.sh`, never hand-edit `glyphs/table.rs`.
+   - `lazyos-notify` (`FontRenderer`) loads both `SymbolsNerdFontMono` and `Font Awesome 6` (`Solid`/`Brands`) and resolves UI glyph codepoints via `lazyos_ui::Glyph`.
+   - Greeter console power buttons (`^Z`/`^R`/`^P`) invoke `systemctl <verb> -i` with stdio redirected (never inheriting raw TTY over Ratatui), authorized for local active `_greetd` via `/etc/polkit-1/rules.d/49-lazyos-greeter-power.rules`.
    - PNG app/notification icons: edit `scripts/make-icons.sh` tables and regenerate PNGs.
    - Brand SVGs -> PNGs: `scripts/make-brand.sh` (outputs `brand/apple-touch-icon.png`, wallpapers, wordmark).
    - Theme templates: edit `rust/crates/lazyos-theme/templates/` + `scripts/make-theme.sh`.

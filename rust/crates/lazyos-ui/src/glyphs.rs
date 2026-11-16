@@ -10,14 +10,14 @@
 //! Two rules come out of that filter:
 //!
 //! - **a name the symbol package does not draw shows text, never a box.**
-//!   `fonts-nerd-symbols` is DFSG-stripped: it carries the Octicons, Codicons,
-//!   Devicons, Seti and Powerline sets and none of Font Awesome or the MDI
-//!   plane, so `Bluetooth`, `Wifi`, `Battery`, `Keyboard`, `Mouse`,
-//!   `Calculator`, `Qr` and `Crop` have no codepoint at all and draw their
-//!   short token instead (`bt`, `wifi`, `bat`, `kbd`, `pad`, `=`, `qr`,
-//!   `crop`).  A box is a hole in the row that logs nothing, and that is the
-//!   failure this module exists to make impossible.
-//! - **the codepoints stay escaped in the source** (`"\u{ea85}"`): a literal
+//!   `fonts-nerd-symbols` is DFSG-stripped (`3.4.0+dfsg2-1` removed Codicons
+//!   alongside Font Awesome and MDI, leaving Octicons, Devicons, Seti,
+//!   Powerline and IEC); missing names resolve via Font Awesome 6
+//!   (`fonts-font-awesome-legacy`) or fall back cleanly to short text tokens
+//!   (`bt`, `wifi`, `bat`, `kbd`, `pad`, `=`, `qr`, `crop`).  A box is a hole
+//!   in the row that logs nothing, and that is the failure this module exists
+//!   to make impossible.
+//! - **the codepoints stay escaped in the source** (`"\u{f489}"`): a literal
 //!   private-use character does not survive every editor, and this repository
 //!   has already shipped a row of empty spans that way.
 //!

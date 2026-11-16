@@ -4,9 +4,9 @@
 //! One test runs `scripts/make-glyphs.sh` against a fixture character map and a
 //! fixture "font", which is what makes the filter observable without depending
 //! on the fonts of the machine running the tests: the map below carries every
-//! candidate except `U+EA85` (the terminal), so the generated table must give
-//! `Folder` a codepoint and `Terminal` its text fallback, and the pin must count
-//! both.  The other test runs the same script with `--check` against the real
+//! non-Font-Awesome candidate except `U+F489` (the terminal), so the generated
+//! table must give `Folder` a codepoint and `Terminal` its text fallback, and
+//! the pin must count both.  The other test runs the same script with `--check`
 //! font, and skips where there is none - a runner without
 //! `fonts-nerd-symbols` has nothing to check against, and pretending otherwise
 //! would make CI red for a package the tests do not need.
@@ -54,13 +54,13 @@ fn count(text: &str, needle: &str) -> usize {
 #[test]
 fn the_generator_drops_exactly_the_codepoint_the_font_lacks() {
     let dir = scratch("fixture");
-    // Every range a candidate needs except U+EA85: `ea60-ea84` stops just
-    // before the terminal and `ea86-ea88` starts just after it.
+    // Every non-Font-Awesome range a candidate needs except U+F489:
+    // `f400-f488` stops just before Terminal and `f48a-f533` starts right
+    // after it.
     fs::write(
         dir.join("charset"),
         "23fb-23fe e000-e00a e0a0-e0a3 e0b0-e0c8 e0ca e0cc-e0d2 e0d4 e0d6-e0d7 \
-         e5fa-e6b8 e700-e8ef ea60-ea84 ea86-ea88 ea8a-ea8c ea8f-eac7 eac9 \
-         eacc-eb09 eb0b-eb4e eb50-ec1e ee00-ee0b f400-f533",
+         e5fa-e6b8 e700-e8ef ee00-ee0b f400-f488 f48a-f533",
     )
     .expect("the fixture character map");
     fs::write(dir.join("font.ttf"), b"not a font, a pin\n").expect("the fixture font");
@@ -83,7 +83,7 @@ fn the_generator_drops_exactly_the_codepoint_the_font_lacks() {
         "the generated table carries a literal private-use character"
     );
     assert!(
-        table.contains("glyph: Glyph::Folder,\n        draw: Some(\"\\u{ea83}\")"),
+        table.contains("glyph: Glyph::Folder,\n        draw: Some(\"\\u{f413}\")"),
         "Folder lost the codepoint the fixture carries"
     );
     assert!(

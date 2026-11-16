@@ -2,17 +2,17 @@
 LazyOS · the session menu                                               13 rows
 ────────────────────────────────────────────────────────────────────────────────
 ╭ the session menu ────────────────────────────────────────────────────────────╮
-│ ▍   Files  rofi-files                                          Alt+Ctrl+F   │
-│     Files (window)  pcmanfm                              Alt+Ctrl+Shift+F   │
-│     Capture  screenshot                                        Alt+Ctrl+C   │
-│     Translate  selection                                       Alt+Ctrl+T   │
-│     Search inside files  ripgrep                               Alt+Ctrl+G   │
+│ ▍   Files  rofi-files                                          Alt+Ctrl+F   │
+│     Files (window)  pcmanfm                              Alt+Ctrl+Shift+F   │
+│     Capture  screenshot                                        Alt+Ctrl+C   │
+│     Translate  selection                                       Alt+Ctrl+T   │
+│     Search inside files  ripgrep                               Alt+Ctrl+G   │
 │     Download  yt-dlp                                           Alt+Ctrl+U   │
-│     Settings  radios                                           Alt+Ctrl+O   │
-│     Notifications  mako history                                Alt+Ctrl+N   │
-│     Clipboard  cliphist                                        Alt+Ctrl+V   │
-│     Emoji  1,296 rows                                          Alt+Ctrl+E   │
-│     Camera  uvcvideo                                                  row   │
+│     Settings  radios                                           Alt+Ctrl+O   │
+│     Notifications  mako history                                Alt+Ctrl+N   │
+│     Clipboard  cliphist                                        Alt+Ctrl+V   │
+│     Emoji  1,296 rows                                          Alt+Ctrl+E   │
+│     Camera  uvcvideo                                                  row   │
 │   ⏻  Power  rofi-power                                          Alt+Escape   │
 │     Bluetooth  bluez                                           Alt+Ctrl+B   │
 │                                                                              │
@@ -27,17 +27,17 @@ LazyOS · the session menu                                               13 rows
 LazyOS · the session menu                                                                                                                       13 rows
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ the session menu ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ▍   Files  rofi-files                                                                                                                  Alt+Ctrl+F   │
-│     Files (window)  pcmanfm                                                                                                      Alt+Ctrl+Shift+F   │
-│     Capture  screenshot                                                                                                                Alt+Ctrl+C   │
-│     Translate  selection                                                                                                               Alt+Ctrl+T   │
-│     Search inside files  ripgrep                                                                                                       Alt+Ctrl+G   │
+│ ▍   Files  rofi-files                                                                                                                  Alt+Ctrl+F   │
+│     Files (window)  pcmanfm                                                                                                      Alt+Ctrl+Shift+F   │
+│     Capture  screenshot                                                                                                                Alt+Ctrl+C   │
+│     Translate  selection                                                                                                               Alt+Ctrl+T   │
+│     Search inside files  ripgrep                                                                                                       Alt+Ctrl+G   │
 │     Download  yt-dlp                                                                                                                   Alt+Ctrl+U   │
-│     Settings  radios                                                                                                                   Alt+Ctrl+O   │
-│     Notifications  mako history                                                                                                        Alt+Ctrl+N   │
-│     Clipboard  cliphist                                                                                                                Alt+Ctrl+V   │
-│     Emoji  1,296 rows                                                                                                                  Alt+Ctrl+E   │
-│     Camera  uvcvideo                                                                                                                          row   │
+│     Settings  radios                                                                                                                   Alt+Ctrl+O   │
+│     Notifications  mako history                                                                                                        Alt+Ctrl+N   │
+│     Clipboard  cliphist                                                                                                                Alt+Ctrl+V   │
+│     Emoji  1,296 rows                                                                                                                  Alt+Ctrl+E   │
+│     Camera  uvcvideo                                                                                                                          row   │
 │   ⏻  Power  rofi-power                                                                                                                  Alt+Escape   │
 │     Bluetooth  bluez                                                                                                                   Alt+Ctrl+B   │
 │                                                                                                                                                      │
