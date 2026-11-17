@@ -211,3 +211,74 @@ fn usage_error(message: &str) -> i32 {
     say!("lazyos notify: {message}");
     usage()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(words: &[&str]) -> Vec<String> {
+        words.iter().map(|word| word.to_string()).collect()
+    }
+
+    #[test]
+    fn parse_collects_positional_words_and_flags() {
+        let options = parse(&args(&[
+            "Title",
+            "Body",
+            "--urgency",
+            "critical",
+            "--group",
+            "build",
+            "--progress",
+            "42",
+        ]))
+        .unwrap();
+        assert_eq!(options.words, vec!["Title", "Body"]);
+        assert_eq!(options.urgency, Some(Urgency::Critical));
+        assert_eq!(options.group.as_deref(), Some("build"));
+        assert_eq!(options.progress, Some(42));
+    }
+
+    #[test]
+    fn parse_accepts_every_urgency_word() {
+        for (word, urgency) in [
+            ("low", Urgency::Low),
+            ("normal", Urgency::Normal),
+            ("critical", Urgency::Critical),
+        ] {
+            let options = parse(&args(&["T", "--urgency", word])).unwrap();
+            assert_eq!(options.urgency, Some(urgency), "{word}");
+        }
+        assert!(parse(&args(&["T", "--urgency", "loud"])).is_err());
+    }
+
+    #[test]
+    fn a_flag_without_a_value_is_an_error() {
+        let error = parse(&args(&["--body"])).unwrap_err();
+        assert!(error.contains("--body needs a value"), "{error}");
+    }
+
+    #[test]
+    fn an_unknown_option_is_an_error() {
+        let error = parse(&args(&["T", "--loud"])).unwrap_err();
+        assert!(error.contains("unknown option '--loud'"), "{error}");
+    }
+
+    #[test]
+    fn percent_is_zero_to_one_hundred() {
+        assert_eq!(percent("0").unwrap(), 0);
+        assert_eq!(percent("100").unwrap(), 100);
+        assert!(percent("101").unwrap_err().contains("0 to 100"));
+        assert!(percent("-1").is_err());
+        assert!(percent("ten").is_err());
+    }
+
+    #[test]
+    fn timeout_takes_milliseconds_or_never() {
+        let never = parse(&args(&["T", "--timeout", "never"])).unwrap();
+        assert_eq!(never.timeout, Some(Timeout::Never));
+        let millis = parse(&args(&["T", "--timeout", "1500"])).unwrap();
+        assert_eq!(millis.timeout, Some(Timeout::Millis(1500)));
+        assert!(parse(&args(&["T", "--timeout", "soon"])).is_err());
+    }
+}

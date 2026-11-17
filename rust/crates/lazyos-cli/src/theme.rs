@@ -624,3 +624,32 @@ pub fn wallpaper_next(paths: &Paths) -> i32 {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_builtin_slug_parses_into_a_named_theme() {
+        let mut count = 0;
+        for slug in builtin::slugs() {
+            let theme = theme(slug).unwrap_or_else(|error| panic!("{slug}: {error}"));
+            assert!(!theme.name.is_empty(), "{slug} has no display name");
+            assert!(!theme.wallpapers.is_empty(), "{slug} names no wallpaper");
+            count += 1;
+        }
+        assert_eq!(count, builtin::ALL.len());
+    }
+
+    #[test]
+    fn solarized_is_the_default_named_theme() {
+        assert_eq!(theme("solarized").unwrap().name, "Solarized Dark");
+    }
+
+    #[test]
+    fn an_unknown_slug_lists_the_builtin_names() {
+        let error = theme("no-such-theme").unwrap_err();
+        assert!(error.contains("'no-such-theme' is not a theme"), "{error}");
+        assert!(error.contains("solarized"), "{error}");
+    }
+}

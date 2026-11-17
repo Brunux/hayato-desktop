@@ -77,3 +77,12 @@ Every user-facing change ships with:
 1. Automated test(s) in `rust/crates/*/tests/` and/or a probe in `scripts/check-desktop.sh`.
 2. User documentation in `uis/sway/files/usr/share/doc/lazyos/` (`01`–`07`).
 3. A note in this file when adding or altering an architectural contract.
+
+## Tests
+- Rust unit tests live beside the module (`#[cfg(test)]`) when the logic is pure: task ids, notify
+  argument parsing, built-in theme lookup and wallpaper gradient interpolation, plus the existing
+  workspace suites.
+- The procedural wallpaper scripts are imported by `scripts/tests/test_*.py`; keep generation behind
+  `main()` so importing them does not write files or run `ffmpeg`. Run them with
+  `python3 -m unittest discover -s scripts/tests -p 'test_*.py'`.
+- `.github/workflows/rust.yml` runs both `cargo test --workspace --all-targets` and the Python suite.

@@ -16,9 +16,6 @@ DEST_DIRS = [
     os.path.expanduser("~/Pictures/Wallpapers"),
 ]
 
-for d in DEST_DIRS:
-    os.makedirs(d, exist_ok=True)
-
 def clamp(v):
     return max(0, min(255, int(v)))
 
@@ -185,7 +182,13 @@ WALLPAPERS = [
     ("one-dark-space.jpg", gen_one_dark),
 ]
 
-for name, gen in WALLPAPERS:
-    render_wallpaper(name, gen)
+def main():
+    for d in DEST_DIRS:
+        os.makedirs(d, exist_ok=True)
+    for name, gen in WALLPAPERS:
+        render_wallpaper(name, gen)
+    print("All wallpapers generated successfully!")
 
-print("All wallpapers generated successfully!")
+
+if __name__ == "__main__":
+    main()
