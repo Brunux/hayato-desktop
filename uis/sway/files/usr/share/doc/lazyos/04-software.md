@@ -491,13 +491,11 @@ not nest themselves). It writes
 `lazyos-profile-<host>-<date>.tar.zst.gpg` and a `.txt` manifest beside it
 (`scope: profile` or `scope: home`).
 
-* **It is encrypted, and it has to be**: the archive carries `~/.ssh` (private
-  keys), `~/.gnupg` (secret keys) and the Firefox password store
-  (`logins.db` + `key4.db`), and a stick that is lost must not be an identity
-  that is lost. The passphrase is typed into rofi, kept in a private
-  staging file and handed to `gpg` through a file descriptor, so it never
-  appears on a command line; the plaintext tar is removed on every exit path,
-  including a stop from the bar.
+* **It streams directly to the target drive**: `tar | zstd | gpg` writes one
+  encrypted file straight onto the destination (`lazyos-profile-...tar.zst.gpg`),
+  so exporting even a full home folder uses no multi-gigabyte staging copy on local
+  storage and never writes plaintext tar data onto the stick. A trap removes any
+  partial file on cancel or `Ctrl-C`.
 * **It is a tar, not a copy of the files**, because the disks this menu is
   pointed at are usually exFAT (that is what **Format a disk** writes): exFAT
   has no permission bits and no symlinks, so a plain copy would leave

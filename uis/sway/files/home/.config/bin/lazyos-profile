@@ -30,8 +30,10 @@
 # what a rofi prompt is; gpg's --passphrase-fd is.  The passphrase is typed,
 # written to a 0600 file inside the private staging directory and handed over as
 # file descriptor 3 - never on the command line, where /proc/PID/cmdline would
-# show it to every process of the session.  The plaintext tar never leaves that
-# directory: a trap removes it on every exit path, including Ctrl-C.
+# show it to every process of the session.  On export, `tar | zstd | gpg` streams
+# directly to the target drive so no large archive copy touches local storage and
+# no unencrypted tarball ever hits the target drive either; a trap removes any
+# partial target file and the tiny staging dir on every exit path, including Ctrl-C.
 #
 # **What is inside** is the list in ENTRIES below: the keys, the shell, the
 # configs of the tools this image ships, the agents' account directories (which
@@ -51,6 +53,7 @@ UI_BIN=$(dirname "$0")
 CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/lazyos
 BACKUPS=$CACHE/backups
 WORK=
+_tmp_out=
 
 # The entries, relative to $HOME, in the order they are added.  Directories are
 # added whole; anything that does not exist is skipped, so a machine with no
@@ -153,6 +156,10 @@ die() {
 # it goes on every exit path - a successful run, a failure, a Ctrl-C or a click
 # on the bar's stop button.
 cleanup() {
+	if [ -n "${_tmp_out:-}" ]; then
+		rm -f "$_tmp_out" 2>/dev/null || :
+	fi
+	_tmp_out=
 	if [ -n "${WORK:-}" ]; then
 		rm -rf "$WORK"
 	fi
@@ -235,7 +242,22 @@ write_entries_nul() {
 	fi
 }
 
+target_self_exclude() {
+	[ -n "${1:-}" ] || return 0
+	_tse_home=$(readlink -f "$HOME" 2>/dev/null || printf '%s' "$HOME")
+	_tse_tgt=$(readlink -f "$1" 2>/dev/null || printf '%s' "$1")
+	case $_tse_tgt in
+	"$_tse_home")
+		printf 'lazyos-profile-*.tar.zst*\n'
+		;;
+	"$_tse_home"/*)
+		printf '%s/lazyos-profile-*.tar.zst*\n' "${_tse_tgt#"$_tse_home"/}"
+		;;
+	esac
+}
+
 entries_size_kb() {
+	_esk_target=${1:-}
 	if [ "${_include_home:-no}" = yes ]; then
 		_esk_tmp=
 		if [ -n "${WORK:-}" ]; then
@@ -247,12 +269,15 @@ entries_size_kb() {
 		write_entries_nul "$_esk_nul" home
 		_esk_cache_rel=
 		case $CACHE in "$HOME"/*) _esk_cache_rel=${CACHE#"$HOME"/} ;; esac
+		_esk_self_excl=$(target_self_exclude "$_esk_target")
 		if [ -s "$_esk_nul" ]; then
 			_esk=$(
 				cd "$HOME" || exit 1
 				du -skc --files0-from="$_esk_nul" \
 					--exclude='.cache' --exclude='.local/share/Trash' \
+					--exclude='.lazyos-profile-*.partial.*' \
 					${_esk_cache_rel:+--exclude="$_esk_cache_rel"} \
+					${_esk_self_excl:+--exclude="$_esk_self_excl"} \
 					2>/dev/null | awk 'END { print $1 + 0 }'
 			) || _esk=0
 		else
@@ -370,15 +395,14 @@ manifest() {
 	} >"$_out"
 }
 
-# build_tar OUT [MODE] [ARG]: stream compressed archive directly via tar | zstd so
-# large home backups never double disk usage in $WORK. MODE is `profile` (default
-# curated ENTRIES), `home` (all top-level $HOME entries, ARG = optional target
-# dir to avoid bundling prior profile exports under ~/Downloads), or `filelist`
-# (ARG = NUL-delimited path list under $HOME, used for pre-restore backups).
+# build_tar OUT [MODE] [ARG] [PASS_FILE]: stream tar | zstd (and optionally gpg
+# -c into OUT) directly onto the target filesystem so no multi-GB archive copy
+# touches local staging storage and no plaintext archive hits the target disk.
 build_tar() {
 	_bt_out=$1
 	_bt_mode=${2:-profile}
 	_bt_arg=${3:-}
+	_bt_pass=${4:-}
 	if [ "$_bt_mode" = filelist ]; then
 		_bt_list=$_bt_arg
 	else
@@ -392,16 +416,7 @@ build_tar() {
 
 	_bt_self_excl=
 	if [ "$_bt_mode" = home ] && [ -n "$_bt_arg" ]; then
-		_bt_home_real=$(readlink -f "$HOME" 2>/dev/null || printf '%s' "$HOME")
-		_bt_tgt_real=$(readlink -f "$_bt_arg" 2>/dev/null || printf '%s' "$_bt_arg")
-		case $_bt_tgt_real in
-		"$_bt_home_real")
-			_bt_self_excl='lazyos-profile-*.tar.zst*'
-			;;
-		"$_bt_home_real"/*)
-			_bt_self_excl=${_bt_tgt_real#"$_bt_home_real"/}/lazyos-profile-*.tar.zst*
-			;;
-		esac
+		_bt_self_excl=$(target_self_exclude "$_bt_arg")
 	fi
 
 	set -- \
@@ -410,6 +425,7 @@ build_tar() {
 		--exclude='.local/share/Trash' \
 		--exclude='.dbus' \
 		--exclude='.gvfs' \
+		--exclude='.lazyos-profile-*.partial.*' \
 		--exclude='.ssh/control*' \
 		--exclude='.gnupg/S.*' \
 		--exclude='.gnupg/*.lock' \
@@ -466,30 +482,49 @@ build_tar() {
 			--exclude='*mozilla/firefox/Crash Reports'
 	fi
 
-	rm -f "$WORK/tar.rc"
-	if ! {
-		(
-			cd "$HOME" || exit 1
-			exec tar "$@" --null -T "$_bt_list" -cf -
-		) || printf '%s\n' "$?" >"$WORK/tar.rc"
-	} | zstd -q -3 -T0 -o "$_bt_out"; then
-		return 1
+	rm -f "$WORK/tar.rc" "$WORK/zstd.rc"
+	if [ -n "$_bt_pass" ]; then
+		_bt_gpg_rc=0
+		{
+			{
+				(
+					cd "$HOME" || exit 1
+					exec tar "$@" --null -T "$_bt_list" -cf -
+				) || printf '%s\n' "$?" >"$WORK/tar.rc"
+			} | {
+				zstd -q -3 -T0 || printf '%s\n' "$?" >"$WORK/zstd.rc"
+			}
+		} | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+			--cipher-algo AES256 --s2k-digest-algo SHA512 -c \
+			-o "$_bt_out" 3<"$_bt_pass" 2>"$WORK/gpg.log" || _bt_gpg_rc=$?
+		[ ! -s "$WORK/tar.rc" ] && [ ! -s "$WORK/zstd.rc" ] && [ "$_bt_gpg_rc" -eq 0 ]
+	else
+		_bt_zstd_rc=0
+		{
+			(
+				cd "$HOME" || exit 1
+				exec tar "$@" --null -T "$_bt_list" -cf -
+			) || printf '%s\n' "$?" >"$WORK/tar.rc"
+		} | zstd -q -3 -T0 -o "$_bt_out" || _bt_zstd_rc=$?
+		[ ! -s "$WORK/tar.rc" ] && [ "$_bt_zstd_rc" -eq 0 ]
 	fi
-	[ ! -s "$WORK/tar.rc" ] || return 1
 }
 
-# gpg_encrypt IN OUT PASSFILE / gpg_decrypt IN OUT PASSFILE
-# --pinentry-mode loopback is what makes --passphrase-fd authoritative in gpg
-# 2.1 and later; without it the agent is asked instead and the fd is ignored.
-gpg_encrypt() {
-	gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
-		--cipher-algo AES256 --s2k-digest-algo SHA512 -c \
-		-o "$2" "$1" 3<"$3" 2>"$WORK/gpg.log"
-}
-
-gpg_decrypt() {
-	gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
-		-d -o "$2" "$1" 3<"$3" 2>"$WORK/gpg.log"
+# stream_archive_open ARCHIVE PASSFILE: emit decrypted .tar.zst stream on
+# stdout so import checks and restores directly from the target archive without
+# copying an unencrypted archive onto local storage.
+stream_archive_open() {
+	_sao_arch=$1
+	_sao_pass=${2:-}
+	case $_sao_arch in
+	*.gpg)
+		gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+			-d "$_sao_arch" 3<"$_sao_pass" 2>"$WORK/gpg.log"
+		;;
+	*)
+		cat -- "$_sao_arch"
+		;;
+	esac
 }
 
 # The one line of gpg's own message that explains a failure ("Bad passphrase",
@@ -562,20 +597,14 @@ cmd_export() {
 
 	mkdir -p "$CACHE"
 	work_dir
-	_stage=$WORK/archive.tar.zst
 
-	# Room for the archive plus the encrypted copy, with slack.  The staging tar
-	# is written to ~/.cache, so what the target needs is the compressed size,
-	# but an estimate that is too kind is a half-written stick: ask for both.
-	_esk=$(entries_size_kb)
+	# Stream directly into the target drive so local storage is never consumed by
+	# a multi-GB staging archive. Check target space against compressed estimate.
+	_esk=$(entries_size_kb "$_target")
 	_need=$(((_esk / 2) + 4096))
 	_free=$(available_kb "$_target" || :)
 	if [ -n "${_free:-}" ] && [ "$_free" -lt "$_need" ]; then
 		die "not enough free space on $_target: $((_need / 1024)) MB needed, $((_free / 1024)) MB free"
-	fi
-	_cache_free=$(available_kb "$CACHE" || :)
-	if [ -n "${_cache_free:-}" ] && [ "$_cache_free" -lt "$_need" ]; then
-		die "not enough staging space in $CACHE: $((_need / 1024)) MB needed, $((_cache_free / 1024)) MB free"
 	fi
 
 	_archive=$(archive_path "$_target" "$_suffix")
@@ -583,50 +612,49 @@ cmd_export() {
 		die "$_archive already exists: wait a minute and try again"
 	fi
 
-	_busy_msg='Packing the profile…'
-	[ "$_mode" = home ] && _busy_msg='Packing the profile and home folder…'
+	_export_pass=
+	if [ "$_encrypt" = yes ]; then
+		if [ -n "$_pass_file" ]; then
+			[ -r "$_pass_file" ] || die "cannot read the passphrase file: $_pass_file"
+			_export_pass=$WORK/pass
+			head -n 1 "$_pass_file" >"$_export_pass" || :
+			chmod 600 "$_export_pass"
+		else
+			have_prompt || die "no terminal and no session for the passphrase (use --passphrase-file FILE)"
+			_pass=$(ask_passphrase confirm) || exit 0
+			_export_pass=$WORK/pass
+			passphrase_file "$_pass" "$_export_pass"
+			_pass=
+		fi
+	fi
+
+	_tmp_out="$_target/.$(basename "$_archive").partial.$$"
+	_busy_msg='Packing & writing profile directly to target…'
+	[ "$_mode" = home ] && _busy_msg='Streaming profile & home folder to target…'
 	_busy_started=
 	if BUSY_STOP='pkill -f "[l]azyos-profile\."' \
 		"$UI_BIN/busy" start dev 'Developer' "$_busy_msg" package-x-generic 2>/dev/null; then
 		_busy_started=yes
 	fi
-	build_tar "$_stage" "$_mode" "$_target" || {
-		"$UI_BIN/busy" fail dev 'Developer' 'Packing the profile failed' dialog-error 2>/dev/null || :
-		die "tar/zstd failed to build the archive"
-	}
 
-	if [ "$_encrypt" = yes ]; then
-		if [ -n "$_pass_file" ]; then
-			[ -r "$_pass_file" ] || die "cannot read the passphrase file: $_pass_file"
-			pass_file=$WORK/pass
-			head -n 1 "$_pass_file" >"$pass_file" || :
-			chmod 600 "$pass_file"
-		else
-			have_prompt || die "no terminal and no session for the passphrase (use --passphrase-file FILE)"
-			"$UI_BIN/busy" update dev 'Waiting for the passphrase…' 2>/dev/null || :
-			_pass=$(ask_passphrase confirm) || {
-				"$UI_BIN/busy" stop dev 2>/dev/null || :
-				exit 0
-			}
-			pass_file=$WORK/pass
-			passphrase_file "$_pass" "$pass_file"
-			_pass=
-		fi
-		"$UI_BIN/busy" update dev 'Encrypting the profile…' 2>/dev/null || :
-		if ! gpg_encrypt "$_stage" "$_archive" "$pass_file"; then
-			rm -f "$_archive"
+	if ! build_tar "$_tmp_out" "$_mode" "$_target" "$_export_pass"; then
+		rm -f "$_tmp_out"
+		_tmp_out=
+		if [ "$_encrypt" = yes ] && [ -s "$WORK/gpg.log" ] && [ ! -s "$WORK/tar.rc" ] && [ ! -s "$WORK/zstd.rc" ]; then
 			"$UI_BIN/busy" fail dev "$(gpg_error)" dialog-error 2>/dev/null || :
 			die "encryption failed: $(gpg_error)"
 		fi
-	else
-		cp -- "$_stage" "$_archive" || die "cannot write $_archive"
+		"$UI_BIN/busy" fail dev 'Developer' 'Writing archive to target failed' dialog-error 2>/dev/null || :
+		die "failed writing archive to $_target"
 	fi
-	chmod 600 "$_archive"
+	mv -f "$_tmp_out" "$_archive" || die "cannot finalize $_archive"
+	_tmp_out=
+	chmod 600 "$_archive" 2>/dev/null || :
 
 	_manifest=${_archive%.gpg}
 	_manifest=${_manifest%.tar.zst}.txt
 	manifest "$_manifest"
-	chmod 600 "$_manifest"
+	chmod 600 "$_manifest" 2>/dev/null || :
 
 	_size=$(du -h "$_archive" 2>/dev/null | awk '{ print $1 }' || printf '?')
 	"$UI_BIN/busy" end dev "Profile saved ($_size): $(basename "$_archive")" 2>/dev/null || :
@@ -692,7 +720,6 @@ cmd_import() {
 
 	mkdir -p "$CACHE"
 	work_dir
-	_unpacked=$WORK/restore.tar.zst
 
 	"$UI_BIN/busy" start dev 'Developer' "Opening $(basename "$_archive")…" package-x-generic 2>/dev/null || :
 
@@ -711,12 +738,6 @@ cmd_import() {
 			passphrase_file "$_pass" "$_pass_file"
 			_pass=
 		fi
-		if ! gpg_decrypt "$_archive" "$_unpacked" "$_pass_file"; then
-			die "cannot open the archive: $(gpg_error)"
-		fi
-		;;
-	*)
-		_unpacked=$_archive
 		;;
 	esac
 
@@ -724,8 +745,14 @@ cmd_import() {
 	# (an absolute path, a `..`) is refused before a single file is written:
 	# extraction happens in $HOME, and one bad member would land outside it.
 	_members_file=$WORK/members.txt
-	tar --zstd -tf "$_unpacked" >"$_members_file" 2>/dev/null ||
+	rm -f "$WORK/open.rc"
+	if ! {
+		stream_archive_open "$_archive" "${_pass_file:-}" ||
+			printf '%s\n' "$?" >"$WORK/open.rc"
+	} | tar --zstd -tf - >"$_members_file" 2>/dev/null || [ -s "$WORK/open.rc" ]; then
+		[ -s "$WORK/open.rc" ] && die "cannot open the archive: $(gpg_error)"
 		die 'that is not a LazyOS profile archive (tar could not read it)'
+	fi
 	_bad=$(awk '/^\// || /(^|\/)\.\.(\/|$)/ { print; exit }' "$_members_file")
 	[ -z "$_bad" ] || die "refusing an archive with a path that leaves \$HOME: $_bad"
 	_count=$(wc -l <"$_members_file" | tr -d ' ')
@@ -787,7 +814,11 @@ cmd_import() {
 	# Not stoppable on purpose: a killed extraction leaves a home half restored,
 	# which is worse than waiting for a few seconds of disk.
 	"$UI_BIN/busy" update dev 'Restoring the profile…' 2>/dev/null || :
-	if ! tar --zstd --no-same-owner -xpf "$_unpacked" -C "$HOME"; then
+	rm -f "$WORK/open.rc"
+	if ! {
+		stream_archive_open "$_archive" "${_pass_file:-}" ||
+			printf '%s\n' "$?" >"$WORK/open.rc"
+	} | tar --zstd --no-same-owner -xpf - -C "$HOME" || [ -s "$WORK/open.rc" ]; then
 		"$UI_BIN/busy" fail dev 'Extraction failed; the backup is in ~/.cache/lazyos/backups' dialog-error 2>/dev/null || :
 		exit 1
 	fi

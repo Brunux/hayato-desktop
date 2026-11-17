@@ -1084,10 +1084,12 @@ if [ -x "$HOME/.config/bin/lazyos-profile" ]; then
 	rm -rf "$_dev_tmp"
 	if printf '%s\n' "$_dev_out" | grep -qs '^scope: home$' &&
 		printf '%s\n' "$_dev_out" | grep -qs '^  Documents$' &&
-		! printf '%s\n' "$_dev_out" | grep -qs '^  \.cache$'; then
-		ok "bin/lazyos-profile supports optional full-home export (--include-home)"
+		! printf '%s\n' "$_dev_out" | grep -qs '^  \.cache$' &&
+		grep -qs 'stream_archive_open' "$HOME/.config/bin/lazyos-profile" &&
+		! grep -qs 'archive\.tar\.zst' "$HOME/.config/bin/lazyos-profile"; then
+		ok "bin/lazyos-profile supports target-direct streaming full-home export (--include-home)"
 	else
-		fail "bin/lazyos-profile --include-home --dry-run did not report scope: home and user folders without .cache"
+		fail "bin/lazyos-profile failed target-direct --include-home verification"
 	fi
 fi
 
