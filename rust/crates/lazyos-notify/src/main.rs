@@ -20,7 +20,7 @@ use zbus::blocking::connection::Builder;
 
 use crate::dbus::{DbusCommand, NotificationServer};
 use crate::history::{append_record, record_from_notification};
-use crate::model::{ANIM_DURATION, AnimState};
+use crate::model::{ANIM_DURATION, AnimState, Notification, Urgency};
 use crate::render::CardTheme;
 use crate::wayland::{UiEvent, WaylandState};
 
@@ -43,6 +43,29 @@ extern "C" fn sigusr1_handler(_: libc::c_int) {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // A question, not a daemon: `check-desktop.sh` asks whether a card of this
+    // urgency would be drawn right now, so the "no cards in a recording" rule
+    // has an executable witness that needs no Wayland session.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("--would-draw") {
+        let critical = args
+            .iter()
+            .skip(1)
+            .any(|arg| arg == "--critical" || arg == "--urgency=critical")
+            || args
+                .windows(2)
+                .any(|pair| pair[0] == "--urgency" && pair[1] == "critical");
+        println!(
+            "{}",
+            if lazyos_ui::recording::would_draw(critical) {
+                "draw"
+            } else {
+                "suppress"
+            }
+        );
+        return Ok(());
+    }
+
     let (dbus_tx, dbus_rx) = channel::<DbusCommand>();
     let (ui_tx, ui_rx) = channel::<UiEvent>();
 
@@ -152,6 +175,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let notif = *notif;
                     append_record(&record_from_notification(&notif));
                     state.renderer.theme = CardTheme::from_active();
+
+                    // A recorder is writing the screen to a file, so a card
+                    // drawn now is a card in that file. History above keeps
+                    // the record; the card itself is dropped. Critical cards
+                    // still draw: a dying battery outranks a clean capture.
+                    if !lazyos_ui::recording::would_draw(notif.urgency == Urgency::Critical) {
+                        close_non_critical(&mut state.notifications, &mut dirty);
+                        // The card was never shown, so it is closed as far as
+                        // the client is concerned (reason 1: expired).
+                        let _ = ui_tx.send(UiEvent::NotificationClosed(notif.id, 1));
+                        continue;
+                    }
 
                     // Check for in-place replacement (replaces_id or matching sync_tag)
                     let mut replaced = false;
@@ -348,5 +383,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         event_queue.dispatch_pending(&mut state)?;
         let _ = conn.flush();
+    }
+}
+
+/// Close the cards that a recorder would capture. Critical cards stay: a dying
+/// battery matters more than a clean file.
+fn close_non_critical(notifications: &mut [Notification], dirty: &mut bool) {
+    let reduced = std::env::var("LAZYOS_REDUCED_MOTION").is_ok();
+    for notification in notifications {
+        if notification.urgency != Urgency::Critical && !notification.is_closing() {
+            notification.anim_state = AnimState::Closing {
+                start: if reduced {
+                    Instant::now() - ANIM_DURATION
+                } else {
+                    Instant::now()
+                },
+                reason: 2,
+            };
+            *dirty = true;
+        }
     }
 }
