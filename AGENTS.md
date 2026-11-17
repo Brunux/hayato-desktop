@@ -57,6 +57,11 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `lazyos_ui::recording` reports a live recorder, `lazyos-notify` holds back non-critical cards
    (history still records them) because anything drawn is in the video; critical cards still show,
    and the "saved" card is sent only after the recorder is gone.
+11. **A modal replaces the body; it never floats over a live list**: a `Confirm` or a
+   `centered` card is drawn on its own screen (like the Ask strip and the kill screen), or the
+   screen first clears the card area. At 80×24 a 56-wide card cuts list rows in half
+   (`Hiber╭`, `Log o│t`); `tests/menu.rs` asserts the Power confirm contains no list text and
+   the snapshots are regenerated at 80×24 and 152×45.
 
 ## Cross-Repo Boundaries & Pure-Rust Installer (No Hardcoded Paths!)
 - Never put device-specific keymaps, udev rules, IRQ tuning, or board hacks into `uis/sway/files/`.

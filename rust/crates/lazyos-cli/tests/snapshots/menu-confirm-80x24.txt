@@ -1,24 +1,24 @@
 LazyOS · Power                                               Cancel is selected
 ────────────────────────────────────────────────────────────────────────────────
-╭ Power ───────────────────────────────────────────────────────────────────────╮
-│ Lock and sleep act at once; the last three ask once more first.              │
-│                                                                              │
-│     Lock  the session lock, now                                             │
-│     Suspend  lock, then sleep                                               │
-│     Hiber╭ Power ───────────────────────────────────────────────╮           │
-│     Log o│t  back to the grReboot the machine?                  │           │
-│ ▍   Reboo│  asks first                                          │           │
-│   ⏻  Shut │own  asks first                                       │           │
-│           │                                                      │           │
-│           │                                                      │           │
-│           │                                                      │           │
-│           │                                                      │           │
-│           │                  Cancel    Reboot                    │           │
-│           │                                                      │           │
-│           ╰──────────────────────────────────────────────────────╯           │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+            ╭ Power ───────────────────────────────────────────────╮
+            │                 Reboot the machine?                  │
+            │                                                      │
+            │                                                      │
+            │                                                      │
+            │                                                      │
+            │                                                      │
+            │                                                      │
+            │                  Cancel    Reboot                    │
+            │                                                      │
+            ╰──────────────────────────────────────────────────────╯
+
+
+
+
+
  [←→]  choose   [Enter]  answer   [Esc]  cancel

@@ -755,6 +755,14 @@ fn the_power_confirm_a_proposal_opens() {
     };
     snapshot("menu-power-propose", || open(SessionAction::Reboot));
 
+    // The confirmation is its own screen: no row of the power list may show
+    // through. At 80x24 the 56-wide card used to cut "Hibernate" and "Log out"
+    // in half, so this stays an explicit assertion and not only a snapshot.
+    let text = render(&mut open(SessionAction::Reboot), 80, 24);
+    assert!(!text.contains("Lock and sleep"), "{text}");
+    assert!(!text.contains("Hibernate"), "{text}");
+    assert!(text.contains("Reboot the machine?"), "{text}");
+
     // A stray Enter answers Cancel, and Cancel is the end.
     let mut screen = open(SessionAction::Reboot);
     assert_eq!(
