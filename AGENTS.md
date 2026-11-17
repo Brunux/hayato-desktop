@@ -63,6 +63,15 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    (`Hiber╭`, `Log o│t`); `tests/menu.rs` asserts the Power confirm contains no list text and
    the snapshots are regenerated at 80×24 and 152×45.
 
+## Developer Profile Export
+- `lazyos-profile export --include-home` streams the whole home through tar. The single
+  `home_excludes` list in `bin/lazyos-profile` is used by both the `du` size estimate and the
+  `tar` command, so the two never disagree.
+- It must skip rootless container storage (`~/.local/share/containers`, `~/.local/share/docker`,
+  `~/.local/share/buildah`): those layers are owned by subuids, unreadable to the user, and tar
+  aborts the whole archive with `Cannot open: Permission denied` after copying the rest.
+  `check-desktop.sh` reproduces that with a `000` directory and asserts `Documents` still travels.
+
 ## Cross-Repo Boundaries & Pure-Rust Installer (No Hardcoded Paths!)
 - Never put device-specific keymaps, udev rules, IRQ tuning, or board hacks into `uis/sway/files/`.
 - Pure-Rust installer (`lazyos installer` / `lazyos installer apply` under `src/installer/`) reads
