@@ -42,7 +42,7 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    - Greeter console power buttons (`^Z`/`^R`/`^P`) invoke `systemctl <verb> -i` with stdio redirected (never inheriting raw TTY over Ratatui), authorized for local active `_greetd` via `/etc/polkit-1/rules.d/49-lazyos-greeter-power.rules`.
    - PNG app/notification icons: edit `scripts/make-icons.sh` tables and regenerate PNGs.
    - Brand SVGs -> PNGs: `scripts/make-brand.sh` (outputs `brand/apple-touch-icon.png`, wallpapers, wordmark).
-   - Theme templates: edit `rust/crates/lazyos-theme/templates/` + `scripts/make-theme.sh`.
+   - Theme templates: edit `rust/crates/lazyos-theme/templates/` + `scripts/make-theme.sh` (Waybar outer end spacing lives in `.modules-left` / `.modules-right` to match `config.jsonc` `spacing: 4`, keeping edge pills inset cleanly even when terminal modules are hidden).
 7. **Image codecs**: `image` crate features stay minimal (`png`, `jpeg`) to protect build time & binary size.
 8. **Version invariant**: `VERSION` at the repo root is compiled into `lazyos --version` via
    `include_str!`. Keep it valid semver `x.y.z` matching releases.

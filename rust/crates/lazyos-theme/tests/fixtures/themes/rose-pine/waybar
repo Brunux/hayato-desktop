@@ -24,6 +24,15 @@ window#waybar {
     border-bottom: 1px solid #1f1d2e;
 }
 
+/* Match horizontal edge inset at both ends of the bar to the 4px widget spacing. */
+.modules-left {
+    margin-left: 4px;
+}
+
+.modules-right {
+    margin-right: 4px;
+}
+
 tooltip {
     background: #1f1d2e;
     color: #e0def4;

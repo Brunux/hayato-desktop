@@ -593,7 +593,7 @@ it - see § *An external monitor*.
 The colours of this session come from **one file**, not from a dozen edited
 configs: `theme.toml` holds the 16 terminal colours and the roles a surface asks
 for (background, text, accent, danger…), and every other file is *generated*
-from it — foot, waybar, mako, rofi, btop, lazygit, nvim, fzf, the lock screen,
+from it — foot, waybar (including the uniform 4 px bar end insets matching widget spacing), mako, rofi, btop, lazygit, nvim, fzf, the lock screen,
 the prompt (starship), the greeter, the window frame sway uses, and the wallpaper.
 
 ```

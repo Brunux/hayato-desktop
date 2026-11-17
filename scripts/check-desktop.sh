@@ -566,8 +566,10 @@ if ! grep -qs '"idle_inhibitor"' "$HOME/.config/waybar/config.jsonc"; then
 	warn "the bar has no idle_inhibitor module: there is no way to keep the screen awake by hand"
 elif ! grep -qs 'idle_inhibitor\.activated' "$HOME/.config/waybar/style.css"; then
 	warn "style.css has no #idle_inhibitor.activated rule: the coffee cup does not show whether it is on"
+elif ! grep -qs '^\.modules-left' "$HOME/.config/waybar/style.css" || ! grep -qs '^\.modules-right' "$HOME/.config/waybar/style.css"; then
+	warn "style.css lacks .modules-left/.modules-right 4px end spacing (run \`lazyos theme set\`)"
 else
-	ok "the bar carries a keep-awake toggle (idle_inhibitor, yellow when on)"
+	ok "the bar carries a keep-awake toggle (idle_inhibitor) and 4px end spacing"
 fi
 
 # The on-screen display the volume and brightness keys draw.  The keys used to

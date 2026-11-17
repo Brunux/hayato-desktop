@@ -112,6 +112,13 @@ fn every_surface_renders_for_every_theme_without_a_literal_or_a_placeholder() {
                 body.lines().next().unwrap_or(""),
                 name = surface.name
             );
+            if surface.name == "waybar" {
+                assert!(
+                    body.contains(".modules-left {\n    margin-left: 4px;\n}")
+                        && body.contains(".modules-right {\n    margin-right: 4px;\n}"),
+                    "{slug}/waybar: missing 4px horizontal end spacing on .modules-left / .modules-right"
+                );
+            }
         }
     }
 }
