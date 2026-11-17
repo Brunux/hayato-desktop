@@ -200,7 +200,8 @@ The **Capture** menu (Alt+Ctrl+C, and the root menu) offers screenshots
 (screen, area, window), annotation (swappy), OCR (tesseract), QR code reading
 (zbarimg), and recording (wf-recorder). Each action ends with a card showing
 the path or result. Recordings start/stop from the same menu and write to
-`~/Videos/`.
+`~/Videos/`; while one runs the bar carries the spinner and no card is drawn
+into the file (normal notifications wait, critical ones still show).
 
 
 

@@ -332,15 +332,23 @@ ends before the list closes again:
 | **Make a QR code** | the Wi-Fi network's password (read from the saved profile, so it is not typed again) or any text, drawn in a floating terminal by `qrencode`; nothing is left on disk |
 | **Record** · the whole screen / an area | `wf-recorder` starts writing an `.mp4` into `~/Videos`, and the same menu row turns into **Stop recording** |
 
-The recording is the one thing that outlives the list, so it says so twice: the
-mako card stays until it is stopped, and the bar shows the spinner with
-`Recording` in it. It encodes with x264 on the CPU because this SoC has no
-hardware encoder (`veryfast`, crf 28, 30 fps - the point where a full-screen
+The recording is the one thing that outlives the list, so it says so on the bar:
+the spinner carries `Recording` until it is stopped. **No card is drawn while a
+capture runs** - a card is part of the screen, so it would be in the file (the
+old "Recording" toast sat in the top-right corner of every video and looked
+like a broken region). Other notifications are held back for the same reason
+and still land in the notification history; critical ones (a failing disk, a
+dying battery) still show. It encodes with x264 on the CPU because this SoC has
+no hardware encoder (`veryfast`, crf 28, 30 fps - the point where a full-screen
 recording still leaves the compositor its frame budget). There is **no audio
 track**: that needs a PipeWire monitor source and nothing here wires one, so
 `wf-recorder -a` would record the microphone instead. The file is finalised on
-SIGINT, which is what Stop sends; a recorder that had to be killed leaves a file
-the notification calls empty rather than claiming success.
+SIGINT, which is what Stop sends to `wf-recorder` itself; the menu starts the
+recorder as its own process (never through a shell), so the pid it saves is the
+recorder's and Stop cannot signal a wrapper. If it ignores SIGINT, Stop sends
+SIGTERM and then kills it, and says the file may be incomplete instead of
+claiming success. The "saved" card appears only after the recorder is gone, so
+it is not in the video either.
 
 The QR the Wi-Fi row shows is the phone-readable `WIFI:T:WPA;S:…;P:…;;`, with
 `\`, `;`, `,` and `:` escaped. It contains the password, so the temporary file it

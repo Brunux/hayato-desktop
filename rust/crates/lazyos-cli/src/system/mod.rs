@@ -268,13 +268,21 @@ pub fn busy_fail(tag: &str, _title: &str, message: &str, icon: &str) {
         .status();
 }
 
-/// Spawn a command detached in a new session (`setsid`), removing `LAZYOS_UI`
-/// and disconnecting stdio, so it survives terminal/foot closure and SIGHUP.
-pub fn spawn_detached(cmd: &str) {
+/// Is the session's `busy` helper installed? Without it a caller falls back to
+/// a card instead of a spinner on the bar.
+pub fn have_busy() -> bool {
+    let bin = busy_bin();
+    (bin.is_absolute() && bin.exists()) || have("busy")
+}
+
+/// Spawn a program detached in a new session (`setsid`), removing `LAZYOS_UI`
+/// and disconnecting stdio, so it survives the window that asked for it. The
+/// caller owns the argv: nothing here is handed to a shell.
+pub fn spawn_detached_argv(program: impl AsRef<std::ffi::OsStr>, args: &[&str]) {
     use std::os::unix::process::CommandExt;
-    let mut command = std::process::Command::new("sh");
+    let mut command = std::process::Command::new(program);
     command
-        .args(["-c", cmd])
+        .args(args)
         .env_remove("LAZYOS_UI")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -288,6 +296,13 @@ pub fn spawn_detached(cmd: &str) {
         });
     }
     let _ = command.spawn();
+}
+
+/// Spawn a shell line detached in a new session. Kept for the surfaces that
+/// still sequence several external tools; new work builds an argv instead
+/// (`spawn_detached_argv`).
+pub fn spawn_detached(cmd: &str) {
+    spawn_detached_argv("sh", &["-c", cmd]);
 }
 
 #[cfg(test)]

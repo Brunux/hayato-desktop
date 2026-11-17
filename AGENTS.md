@@ -51,6 +51,12 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    so only the active input shows the accent bar and blinking 500 ms cursor (solid when
    `reduced_motion`), and inputs inside `ColorRole::Surface` cards use `ColorRole::Bg` to preserve
    palette contrast across Solarized Dark (`Surface == Selection`) and light themes.
+10. **A recording is a file of the screen**: the capture menu starts `wf-recorder` as its own argv
+   (`lazyos menu capture --start`, a detached re-exec; never a shell line, so the saved pid is the
+   recorder), verifies `/proc/<pid>/comm`, and signals that exact pid (INT, then TERM). While
+   `lazyos_ui::recording` reports a live recorder, `lazyos-notify` holds back non-critical cards
+   (history still records them) because anything drawn is in the video; critical cards still show,
+   and the "saved" card is sent only after the recorder is gone.
 
 ## Cross-Repo Boundaries & Pure-Rust Installer (No Hardcoded Paths!)
 - Never put device-specific keymaps, udev rules, IRQ tuning, or board hacks into `uis/sway/files/`.

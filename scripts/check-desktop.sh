@@ -61,6 +61,19 @@ else
 	fi
 fi
 
+# `sway -C` and kitty's config test want the session's runtime directory. This
+# hook runs standalone and sourced by check-system.sh, neither of which sets
+# this variable; under `set -u` an unset one aborts the whole report before the
+# capture witness is reached.
+RUNTIME="${RUNTIME:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}}"
+
+# The root menu's table, read once. `menu_runs` matches the command a row runs
+# and `menu_label` the label it draws; both lived in the pre-split
+# check-system.sh and were lost when the desktop hook moved into its own repo.
+MENU_ROWS="$(lazyos menu --rows 2>/dev/null || true)"
+menu_runs() { awk -F'\t' -v want="$1" '$4 == want { found = 1 } END { exit !found }' <<<"$MENU_ROWS"; }
+menu_label() { awk -F'\t' -v want="$1" '$3 == want { found = 1 } END { exit !found }' <<<"$MENU_ROWS"; }
+
 section "Session"
 # ---------------------------------------------------------------------------
 check_svc greetd "greetd is active"
@@ -1507,6 +1520,144 @@ if [ -r /usr/share/applications/org.lazyos.screenshot-area.desktop ]; then
 	grep -qs 'Exec=.*bin/screenshot' /usr/share/applications/org.lazyos.screenshot-area.desktop &&
 		ok "the Screenshot (area) launcher entry uses bin/screenshot" ||
 		fail "org.lazyos.screenshot-area.desktop still runs grimshot: that entry saves into \$HOME"
+fi
+
+# A recording is a file of the screen, so two reported defects meet there: the
+# pid Stop signals has to be wf-recorder itself (the old `eval ... &` saved the
+# shell that wrapped it, and SIGINT went to the wrapper), and a card drawn while
+# it runs is a card in the file (the persistent "Recording" toast sat in the
+# top-right corner of every capture and looked like a broken region). The
+# recorder is pure Rust now: the check reads the argv it builds, runs a fake
+# session end to end, and then asks the notification daemon itself.
+_rec_argv=$(lazyos menu capture --argv /home/brunux/Videos/a.mp4 2>/dev/null || true)
+_rec_argv_area=$(lazyos menu capture --argv /tmp/a.mp4 "10,20 300x200" 2>/dev/null || true)
+if [ "$(printf '%s\n' "$_rec_argv" | sed -n '1p')" = "wf-recorder" ] &&
+	printf '%s\n' "$_rec_argv" | grep -qsx -- 'libx264' &&
+	printf '%s\n' "$_rec_argv" | grep -qsx -- '-f' &&
+	printf '%s\n' "$_rec_argv" | grep -qsx '/home/brunux/Videos/a.mp4'; then
+	ok "the recorder is one argv (wf-recorder ... -f FILE), never a shell line"
+else
+	fail "lazyos menu capture --argv is not wf-recorder's own argv: Stop cannot trust the pid"
+fi
+_rec_geom=$(printf '%s\n' "$_rec_argv_area" | awk '
+	$0 == "-g" { g = NR }
+	$0 == "-f" { f = NR }
+	$0 == "10,20 300x200" { geom = NR }
+	END { print (g && f && geom == g + 1 && g < f) ? "yes" : "no" }')
+if [ "$_rec_geom" = "yes" ]; then
+	ok "an area recording passes the slurp geometry as its own -g argument"
+else
+	fail "an area recording drops -g or puts it after the output file: the chosen region is not the recorded region"
+fi
+
+# The session itself: a fake `wf-recorder` (a script keeps `/proc/<pid>/comm`
+# equal to its file name), a fake `slurp`, and a fake `busy` that records what
+# it was told. The recorder writes the file named by `-f` and logs its argv, so
+# the check can prove the area geometry reached the recorder itself.
+_rec_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-record.XXXXXX" 2>/dev/null || true)
+if [ -n "$_rec_tmp" ]; then
+	mkdir -p "$_rec_tmp/bin" "$_rec_tmp/run/lazyos-capture" "$_rec_tmp/home"
+	cat >"$_rec_tmp/bin/wf-recorder" <<-'REC'
+		#!/bin/sh
+		trap 'exit 0' INT TERM
+		out=""
+		prev=""
+		for arg in "$@"; do
+			[ "$prev" = "-f" ] && out=$arg
+			prev=$arg
+		done
+		printf '%s\n' "$*" >"${RECORDER_ARGV:?}"
+		[ -n "$out" ] && printf 'fake recording\n' >"$out"
+		while :; do sleep 0.1; done
+	REC
+	printf '#!/bin/sh\nprintf "10,20 300x200\\n"\n' >"$_rec_tmp/bin/slurp"
+	printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s/busy.log"\n' "$_rec_tmp" >"$_rec_tmp/bin/busy"
+	chmod +x "$_rec_tmp/bin/wf-recorder" "$_rec_tmp/bin/slurp" "$_rec_tmp/bin/busy"
+	env HOME="$_rec_tmp/home" XDG_RUNTIME_DIR="$_rec_tmp/run" \
+		PATH="$_rec_tmp/bin:$PATH" RECORDER_ARGV="$_rec_tmp/argv.log" \
+		lazyos menu capture --start area >/dev/null 2>&1 || true
+	_rec_pid=$(cat "$_rec_tmp/run/lazyos-capture/recording.pid" 2>/dev/null || true)
+	_rec_file=$(cat "$_rec_tmp/run/lazyos-capture/recording.file" 2>/dev/null || true)
+	if [ -n "$_rec_pid" ] && [ "$(cat "/proc/$_rec_pid/comm" 2>/dev/null)" = "wf-recorder" ]; then
+		ok "a recording saves the pid of wf-recorder itself (comm=wf-recorder)"
+	else
+		fail "a recording did not save a live wf-recorder pid (pid=${_rec_pid:-none}): Stop would signal the wrong process"
+	fi
+	if printf '%s\n' "$_rec_file" | grep -qs "^$_rec_tmp/home/Videos/lazyos-.*\.mp4$"; then
+		ok "the recording writes a timestamped mp4 under ~/Videos"
+	else
+		fail "the recording's output file is not ~/Videos/lazyos-<date>-<time>.mp4 (${_rec_file:-none})"
+	fi
+	if grep -qs -- '-g 10,20 300x200' "$_rec_tmp/argv.log" 2>/dev/null; then
+		ok "an area recording hands the slurp geometry to wf-recorder itself"
+	else
+		fail "the recorder never saw the slurp geometry: the chosen region is not the recorded region"
+	fi
+	_rec_status=$(env HOME="$_rec_tmp/home" XDG_RUNTIME_DIR="$_rec_tmp/run" \
+		lazyos menu capture --status 2>/dev/null || true)
+	if printf '%s\n' "$_rec_status" | grep -qs '^recording'; then
+		ok "lazyos menu capture --status sees the live recorder"
+	else
+		fail "lazyos menu capture --status does not see the recorder it just started (${_rec_status:-none})"
+	fi
+	if [ -n "$_rec_pid" ]; then
+		env HOME="$_rec_tmp/home" XDG_RUNTIME_DIR="$_rec_tmp/run" PATH="$_rec_tmp/bin:$PATH" \
+			lazyos menu capture --stop-wait "$_rec_pid" "$_rec_file" >/dev/null 2>&1 || true
+		_rec_after=$(env HOME="$_rec_tmp/home" XDG_RUNTIME_DIR="$_rec_tmp/run" \
+			lazyos menu capture --status 2>/dev/null || true)
+		_rec_state=$(awk '{print $3}' "/proc/$_rec_pid/stat" 2>/dev/null || true)
+		if [ "$_rec_after" = "idle" ] &&
+			[ ! -e "$_rec_tmp/run/lazyos-capture/recording.pid" ] &&
+			{ [ -z "$_rec_state" ] || [ "$_rec_state" = "Z" ]; }; then
+			ok "Stop finalises the recorder (SIGINT, then wait) and clears the state"
+		else
+			fail "Stop left the recorder or its state behind (status=${_rec_after:-?}, pid=$_rec_pid, state=${_rec_state:-gone})"
+		fi
+		if grep -qs 'end record' "$_rec_tmp/busy.log"; then
+			ok "Stop reports the saved file only after the recorder is gone"
+		else
+			fail "Stop did not report the saved recording after the recorder exited"
+		fi
+	fi
+	kill "$_rec_pid" 2>/dev/null || true
+	rm -rf "$_rec_tmp"
+else
+	warn "could not make a fake recording session: the start/stop probe was skipped"
+fi
+
+# The daemon's half: with a live process named wf-recorder behind the state
+# file, a normal card is held back (the recorder would capture it) and a
+# critical one still draws; once the process is gone, both draw again.
+_rec_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-record.XXXXXX" 2>/dev/null || true)
+if [ -n "$_rec_tmp" ] && have lazyos-notify && [ -x /bin/sleep ]; then
+	mkdir -p "$_rec_tmp/lazyos-capture"
+	cp /bin/sleep "$_rec_tmp/wf-recorder" 2>/dev/null || true
+	if [ -x "$_rec_tmp/wf-recorder" ]; then
+		"$_rec_tmp/wf-recorder" 30 &
+		_rec_pid=$!
+		printf '%s\n' "$_rec_pid" >"$_rec_tmp/lazyos-capture/recording.pid"
+		printf '%s\n' "$_rec_tmp/out.mp4" >"$_rec_tmp/lazyos-capture/recording.file"
+		sleep 0.1
+		_rec_normal=$(XDG_RUNTIME_DIR="$_rec_tmp" lazyos-notify --would-draw 2>/dev/null || true)
+		_rec_critical=$(XDG_RUNTIME_DIR="$_rec_tmp" lazyos-notify --would-draw --critical 2>/dev/null || true)
+		_rec_status=$(XDG_RUNTIME_DIR="$_rec_tmp" lazyos menu capture --status 2>/dev/null || true)
+		kill "$_rec_pid" 2>/dev/null || true
+		wait "$_rec_pid" 2>/dev/null || true
+		_rec_after=$(XDG_RUNTIME_DIR="$_rec_tmp" lazyos-notify --would-draw 2>/dev/null || true)
+		if [ "$_rec_normal" = suppress ] && [ "$_rec_critical" = draw ] && [ "$_rec_after" = draw ]; then
+			ok "no card is drawn into a recording (critical ones still show; nothing is held back after it stops)"
+		else
+			fail "lazyos-notify would draw a card into a recording (normal=${_rec_normal:-?}, critical=${_rec_critical:-?}, after=${_rec_after:-?})"
+		fi
+		if printf '%s\n' "$_rec_status" | grep -qs "recording.*$_rec_tmp/out.mp4"; then
+			ok "lazyos menu capture --status names the recorder and its file"
+		else
+			fail "lazyos menu capture --status did not report the live recorder: the bar and the check cannot see a capture"
+		fi
+	else
+		warn "could not copy /bin/sleep to a wf-recorder name: the card-in-recording probe was skipped"
+	fi
+	rm -rf "$_rec_tmp"
 fi
 
 # Screen sharing (Settings > Share this screen, and the root menu) is wayvnc

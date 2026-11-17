@@ -32,6 +32,7 @@ pub mod app;
 pub mod card;
 pub mod design;
 pub mod glyphs;
+pub mod recording;
 pub mod task;
 pub mod widgets;
 
