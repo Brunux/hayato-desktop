@@ -492,9 +492,10 @@ impl Screen for MenuScreen {
             Mode::List => self.draw_list(ctx),
             Mode::Power => self.draw_power(ctx),
             Mode::Confirm(_, confirm) => {
-                // The list stays behind the question, so the person sees what
-                // they were choosing from.
-                self.draw_power(ctx);
+                // A confirmation is its own screen, like the Ask strip. At
+                // 80x24 the 70x11 card would sit on top of the power list and
+                // cut rows in half ("Hiber╭", "Log o│t"), so the list is not
+                // drawn behind it; the header still says which list it was.
                 confirm.render(ctx.area, ctx.buf, ctx.design);
             }
             Mode::Ask(input) => self.draw_ask(ctx, input),
