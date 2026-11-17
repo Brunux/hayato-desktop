@@ -28,12 +28,12 @@ pub struct PackageEntry {
     pub installed: bool,
 }
 
-/// Stage of the package screen.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Stage of the package screen. `Installing` owns the task view, so a stage
+/// that says "installing" cannot exist without the view that draws it.
 pub enum PkgStage {
     Query,
     Results,
-    Installing,
+    Installing(Box<TaskView>),
 }
 
 /// The package screen state.
@@ -42,7 +42,6 @@ pub struct PkgScreen {
     packages: Vec<PackageEntry>,
     list: ListState,
     quick_list: ListState,
-    task_view: Option<TaskView>,
     header: Header,
     keybar: Vec<KeyHint>,
     results_keyhints: Vec<KeyHint>,
@@ -77,7 +76,6 @@ impl PkgScreen {
             packages: Vec::new(),
             list,
             quick_list,
-            task_view: None,
             header: Header::new("LazyOS")
                 .subtitle("Packages")
                 .status("Type a package name and press Enter \u{00b7} or pick an action below"),
@@ -219,8 +217,7 @@ impl PkgScreen {
             false,
             vec![cmd],
         ) {
-            self.task_view = Some(TaskView::new(task));
-            self.stage = PkgStage::Installing;
+            self.stage = PkgStage::Installing(Box::new(TaskView::new(task)));
         }
     }
 
@@ -242,8 +239,7 @@ impl PkgScreen {
             false,
             vec![cmd],
         ) {
-            self.task_view = Some(TaskView::new(task));
-            self.stage = PkgStage::Installing;
+            self.stage = PkgStage::Installing(Box::new(TaskView::new(task)));
         }
     }
 
@@ -262,8 +258,7 @@ impl PkgScreen {
             true,
             vec![cmd],
         ) {
-            self.task_view = Some(TaskView::new(task));
-            self.stage = PkgStage::Installing;
+            self.stage = PkgStage::Installing(Box::new(TaskView::new(task)));
         }
     }
 
@@ -299,8 +294,7 @@ impl PkgScreen {
             false,
             steps,
         ) {
-            self.task_view = Some(TaskView::new(task));
-            self.stage = PkgStage::Installing;
+            self.stage = PkgStage::Installing(Box::new(TaskView::new(task)));
         }
     }
 }
@@ -309,39 +303,33 @@ impl Screen for PkgScreen {
     fn desired_size(&self) -> Option<(u16, u16)> {
         match self.stage {
             PkgStage::Query => Some((780, 420)),
-            PkgStage::Results | PkgStage::Installing => Some((940, 620)),
+            PkgStage::Results | PkgStage::Installing(_) => Some((940, 620)),
         }
     }
 
     fn needs_tick(&self) -> Option<Duration> {
-        if self.stage == PkgStage::Installing
-            && let Some(tv) = &self.task_view
-        {
-            return tv.needs_tick();
+        match &self.stage {
+            PkgStage::Installing(tv) => tv.needs_tick(),
+            _ => None,
         }
-        None
     }
 
     fn tick(&mut self) -> Outcome {
-        if self.stage == PkgStage::Installing
-            && let Some(tv) = &mut self.task_view
-        {
-            return tv.tick();
+        match &mut self.stage {
+            PkgStage::Installing(tv) => tv.tick(),
+            _ => Outcome::Continue,
         }
-        Outcome::Continue
     }
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        if self.stage == PkgStage::Installing
-            && let Some(tv) = &mut self.task_view
-        {
+        if let PkgStage::Installing(tv) = &mut self.stage {
             tv.draw(ctx);
             return;
         }
 
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Packages"), true);
 
-        match self.stage {
+        match &self.stage {
             PkgStage::Query => {
                 let (filter, rows) = Self::list_layout(ctx.area);
                 let mut x = put(
@@ -408,7 +396,7 @@ impl Screen for PkgScreen {
                 self.rows_height.set(rows.height);
                 self.list.render(rows, ctx.buf, ctx.design, true);
             }
-            PkgStage::Installing => {}
+            PkgStage::Installing(_) => {}
         }
     }
 
@@ -417,24 +405,23 @@ impl Screen for PkgScreen {
             return Outcome::Continue;
         }
 
-        if self.stage == PkgStage::Installing {
-            if let Some(tv) = &mut self.task_view {
-                match tv.key(key, design) {
-                    Outcome::Done(_) => {
-                        self.task_view = None;
-                        if !self.query.is_empty() {
-                            let q = self.query.clone();
-                            self.search(&q);
-                        } else {
-                            self.stage = PkgStage::Query;
-                        }
-                        return Outcome::Consumed;
+        if matches!(self.stage, PkgStage::Installing(_)) {
+            let outcome = match &mut self.stage {
+                PkgStage::Installing(tv) => tv.key(key, design),
+                _ => unreachable!("stage was just matched"),
+            };
+            return match outcome {
+                Outcome::Done(_) => {
+                    if !self.query.is_empty() {
+                        let q = self.query.clone();
+                        self.search(&q);
+                    } else {
+                        self.stage = PkgStage::Query;
                     }
-                    other => return other,
+                    Outcome::Consumed
                 }
-            }
-            self.stage = PkgStage::Query;
-            return Outcome::Consumed;
+                other => other,
+            };
         }
 
         if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -447,7 +434,9 @@ impl Screen for PkgScreen {
                     self.start_full_upgrade();
                     return Outcome::Consumed;
                 }
-                KeyCode::Char('x') | KeyCode::Char('X') if self.stage == PkgStage::Results => {
+                KeyCode::Char('x') | KeyCode::Char('X')
+                    if matches!(self.stage, PkgStage::Results) =>
+                {
                     if let Some(selected) = self.list.selected_index()
                         && let Some(pkg) = self.packages.get(selected).cloned()
                         && pkg.installed
@@ -460,65 +449,65 @@ impl Screen for PkgScreen {
             }
         }
 
-        match self.stage {
-            PkgStage::Query => {
-                if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-                    && !key.modifiers.contains(KeyModifiers::CONTROL)
-                {
-                    let _ = self.input.handle(key);
-                    return Outcome::Consumed;
-                }
-                match key.code {
-                    KeyCode::Enter => {
-                        let query = self.input.text().trim().to_string();
-                        if !query.is_empty() {
-                            self.search(&query);
-                            return Outcome::Consumed;
-                        }
-                        match self.quick_list.selected_index() {
-                            Some(0) => self.start_update_lists(),
-                            Some(1) => self.start_full_upgrade(),
-                            _ => {}
-                        }
+        if matches!(self.stage, PkgStage::Query) {
+            if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
+                && !key.modifiers.contains(KeyModifiers::CONTROL)
+            {
+                let _ = self.input.handle(key);
+                return Outcome::Consumed;
+            }
+            match key.code {
+                KeyCode::Enter => {
+                    let query = self.input.text().trim().to_string();
+                    if !query.is_empty() {
+                        self.search(&query);
                         return Outcome::Consumed;
                     }
-                    KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
-                    _ => {
-                        let _ = self.quick_list.handle(key, self.rows_height.get(), design);
+                    match self.quick_list.selected_index() {
+                        Some(0) => self.start_update_lists(),
+                        Some(1) => self.start_full_upgrade(),
+                        _ => {}
                     }
-                }
-                Outcome::Continue
-            }
-            PkgStage::Results => {
-                let rows_height = self.rows_height.get();
-                if key.code == KeyCode::Esc {
-                    if !self.list.filter().is_empty() {
-                        self.list.set_filter("");
-                        return Outcome::Consumed;
-                    }
-                    self.stage = PkgStage::Query;
-                    self.header = Header::new("LazyOS").subtitle("Packages").status(
-                        "Type a package name and press Enter \u{00b7} or pick an action below",
-                    );
                     return Outcome::Consumed;
                 }
-                if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-                    && !key.modifiers.contains(KeyModifiers::CONTROL)
-                {
-                    self.list.type_filter(key);
-                    return Outcome::Consumed;
-                }
-                match self.list.handle(key, rows_height, design) {
-                    ListAction::Activated(index) => {
-                        if let Some(pkg) = self.packages.get(index).cloned() {
-                            self.start_install(&pkg.name);
-                        }
-                        Outcome::Consumed
-                    }
-                    _ => Outcome::Continue,
+                KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+                _ => {
+                    let _ = self.quick_list.handle(key, self.rows_height.get(), design);
                 }
             }
-            PkgStage::Installing => Outcome::Continue,
+            return Outcome::Continue;
+        }
+
+        if matches!(self.stage, PkgStage::Results) {
+            let rows_height = self.rows_height.get();
+            if key.code == KeyCode::Esc {
+                if !self.list.filter().is_empty() {
+                    self.list.set_filter("");
+                    return Outcome::Consumed;
+                }
+                self.stage = PkgStage::Query;
+                self.header = Header::new("LazyOS")
+                    .subtitle("Packages")
+                    .status("Type a package name and press Enter \u{00b7} or pick an action below");
+                return Outcome::Consumed;
+            }
+            if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
+                && !key.modifiers.contains(KeyModifiers::CONTROL)
+            {
+                self.list.type_filter(key);
+                return Outcome::Consumed;
+            }
+            match self.list.handle(key, rows_height, design) {
+                ListAction::Activated(index) => {
+                    if let Some(pkg) = self.packages.get(index).cloned() {
+                        self.start_install(&pkg.name);
+                    }
+                    Outcome::Consumed
+                }
+                _ => Outcome::Continue,
+            }
+        } else {
+            Outcome::Continue
         }
     }
 
@@ -526,50 +515,46 @@ impl Screen for PkgScreen {
         let Some(row) = row else {
             return Outcome::Continue;
         };
-        match self.stage {
-            PkgStage::Query => {
-                self.quick_list.set_cursor(row);
-                match self.quick_list.selected_index() {
-                    Some(0) => self.start_update_lists(),
-                    Some(1) => self.start_full_upgrade(),
-                    _ => {}
-                }
-                Outcome::Consumed
+        if matches!(self.stage, PkgStage::Query) {
+            self.quick_list.set_cursor(row);
+            match self.quick_list.selected_index() {
+                Some(0) => self.start_update_lists(),
+                Some(1) => self.start_full_upgrade(),
+                _ => {}
             }
-            PkgStage::Results => {
-                self.list.set_cursor(row);
-                if let Some(index) = self.list.selected_index()
-                    && let Some(pkg) = self.packages.get(index).cloned()
-                {
-                    self.start_install(&pkg.name);
-                }
-                Outcome::Consumed
-            }
-            PkgStage::Installing => Outcome::Continue,
+            return Outcome::Consumed;
         }
+        if matches!(self.stage, PkgStage::Results) {
+            self.list.set_cursor(row);
+            if let Some(index) = self.list.selected_index()
+                && let Some(pkg) = self.packages.get(index).cloned()
+            {
+                self.start_install(&pkg.name);
+            }
+            return Outcome::Consumed;
+        }
+        Outcome::Continue
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
         let (_, rows) = Self::list_layout(area);
-        match self.stage {
+        match &self.stage {
             PkgStage::Query => self.quick_list.hit_row(rows, x, y, design),
             PkgStage::Results => self.list.hit_row(rows, x, y, design),
-            PkgStage::Installing => None,
+            PkgStage::Installing(_) => None,
         }
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {
-        match self.stage {
+        match &self.stage {
             PkgStage::Query => Some(&self.keybar),
             PkgStage::Results => Some(&self.results_keyhints),
-            PkgStage::Installing => self.task_view.as_ref().and_then(|tv| tv.keybar()),
+            PkgStage::Installing(tv) => tv.keybar(),
         }
     }
 
     fn header(&self) -> Option<&Header> {
-        if self.stage == PkgStage::Installing
-            && let Some(tv) = &self.task_view
-        {
+        if let PkgStage::Installing(tv) = &self.stage {
             return tv.header();
         }
         Some(&self.header)

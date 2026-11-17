@@ -46,8 +46,7 @@ const NEEDED: &[&str] = &[
 
 /// The capture screen.
 pub struct CaptureScreen {
-    recording: bool,
-    rec_file: String,
+    recorder: lazyos_ui::recording::Recorder,
     list: ListState,
     keys: Vec<String>,
     header: Header,
@@ -59,8 +58,7 @@ pub struct CaptureScreen {
 impl CaptureScreen {
     pub fn new() -> Self {
         let mut screen = Self {
-            recording: false,
-            rec_file: String::new(),
+            recorder: lazyos_ui::recording::Recorder::Idle,
             list: ListState::new().with_empty("no matching capture actions"),
             keys: Vec::new(),
             header: Header::new("LazyOS").subtitle("Capture"),
@@ -79,12 +77,8 @@ impl CaptureScreen {
 
     fn check_recording(&mut self) {
         let state = lazyos_ui::recording::state_dir();
-        if lazyos_ui::recording::is_recording_in(&state) {
-            self.recording = true;
-            self.rec_file = lazyos_ui::recording::file_in(&state)
-                .map(|file| file.display().to_string())
-                .unwrap_or_default();
-        } else {
+        self.recorder = lazyos_ui::recording::read_in(&state);
+        if !self.recorder.is_recording() {
             // A pid whose comm is not wf-recorder is a session that died or a
             // number that was reused: forget it rather than offer a Stop that
             // signals somebody else.
@@ -95,13 +89,13 @@ impl CaptureScreen {
     fn build_rows(&mut self) {
         let mut rows = Vec::new();
         let mut keys = Vec::new();
-        if self.recording {
+        if let lazyos_ui::recording::Recorder::Recording { file, .. } = &self.recorder {
             rows.push(
                 Row::new("Stop recording")
                     .glyph(Glyph::Stop)
                     .detail(
-                        Path::new(&self.rec_file)
-                            .file_name()
+                        file.as_deref()
+                            .and_then(|path| path.file_name())
                             .unwrap_or_default()
                             .to_string_lossy()
                             .to_string(),

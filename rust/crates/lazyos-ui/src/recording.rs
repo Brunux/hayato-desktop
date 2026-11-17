@@ -57,6 +57,64 @@ pub fn is_recorder(pid: u32) -> bool {
     matches_comm(read_proc_comm(pid).as_deref()) && !is_zombie(pid)
 }
 
+/// What the state directory says about the session's one recorder.
+///
+/// `Idle` and `Recording` are the only two answers, and `Recording` carries
+/// the pid and file together: a caller cannot hold a pid from one read and a
+/// file from another, or offer Stop after the recorder is gone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Recorder {
+    Idle,
+    Recording {
+        pid: u32,
+        /// The file the recorder is writing. `None` only when a recorder is
+        /// alive but its file was not saved, which the menu shows as an empty
+        /// detail rather than as a different state.
+        file: Option<PathBuf>,
+    },
+}
+
+impl Recorder {
+    pub fn is_recording(&self) -> bool {
+        matches!(self, Self::Recording { .. })
+    }
+
+    pub fn pid(&self) -> Option<u32> {
+        match self {
+            Self::Recording { pid, .. } => Some(*pid),
+            Self::Idle => None,
+        }
+    }
+
+    pub fn file(&self) -> Option<&Path> {
+        match self {
+            Self::Recording { file, .. } => file.as_deref(),
+            Self::Idle => None,
+        }
+    }
+}
+
+/// Read the recorder state from `state`, without clearing a stale pid: the
+/// caller decides whether to forget it. A pid that is not the recorder is
+/// `Idle`, because a reused number is not a capture.
+pub fn read_in(state: &Path) -> Recorder {
+    let Some(pid) = pid_in(state) else {
+        return Recorder::Idle;
+    };
+    if !is_recorder(pid) {
+        return Recorder::Idle;
+    }
+    Recorder::Recording {
+        pid,
+        file: file_in(state),
+    }
+}
+
+/// Read this session's recorder state.
+pub fn read() -> Recorder {
+    read_in(&state_dir())
+}
+
 /// Is a capture running in this state directory?
 pub fn is_recording_in(state: &Path) -> bool {
     pid_in(state).is_some_and(is_recorder)
@@ -136,7 +194,21 @@ mod tests {
         assert!(!is_recording_in(&state));
         assert!(pid_in(&state).is_none());
         assert!(file_in(&state).is_none());
+        assert_eq!(read_in(&state), Recorder::Idle);
         let _ = std::fs::remove_dir_all(&state);
+    }
+
+    #[test]
+    fn a_recorder_carries_its_pid_and_file_together() {
+        let recorder = Recorder::Recording {
+            pid: 7,
+            file: Some(PathBuf::from("/tmp/take.mp4")),
+        };
+        assert!(recorder.is_recording());
+        assert_eq!(recorder.pid(), Some(7));
+        assert_eq!(recorder.file(), Some(Path::new("/tmp/take.mp4")));
+        assert_eq!(Recorder::Idle.pid(), None);
+        assert_eq!(Recorder::Idle.file(), None);
     }
 
     #[test]

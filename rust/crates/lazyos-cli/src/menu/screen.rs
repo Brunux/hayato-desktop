@@ -658,48 +658,71 @@ impl Screen for MenuScreen {
 // The answer: a task while the agent works, a card when it has answered
 // ---------------------------------------------------------------------------
 
+/// What the answer window is showing: one running task, or the refusal that
+/// replaced it. The agent and the question live in the task variant, so a
+/// refusal cannot carry a task view or a question that belongs to one.
+enum AnswerBody {
+    Task {
+        view: Box<TaskView>,
+        agent: Agent,
+        question: String,
+    },
+    Refused(String),
+}
+
 pub struct Answer {
-    view: Option<TaskView>,
-    agent: Option<Agent>,
-    question: String,
+    body: AnswerBody,
     /// The answer wrapped to the width it was last drawn at, and that width:
     /// rebuilt only when either changes, never per frame.
     wrapped: Vec<String>,
     wrapped_for: (u16, usize),
     scroll: usize,
+    /// A transient line under the answer ("Copied to the clipboard"), not part
+    /// of the body: it can appear while the task view is still on screen.
     message: Option<String>,
-    refused: Option<String>,
 }
 
 impl Answer {
     fn new(task: Task, agent: Agent, question: String) -> Self {
         Self {
-            view: Some(TaskView::new(task)),
-            agent: Some(agent),
-            question,
+            body: AnswerBody::Task {
+                view: Box::new(TaskView::new(task)),
+                agent,
+                question,
+            },
             wrapped: Vec::new(),
             wrapped_for: (0, 0),
             scroll: 0,
             message: None,
-            refused: None,
         }
     }
 
     fn refused(reason: &str) -> Self {
         Self {
-            view: None,
-            agent: None,
-            question: String::new(),
+            body: AnswerBody::Refused(reason.to_string()),
             wrapped: Vec::new(),
             wrapped_for: (0, 0),
             scroll: 0,
             message: None,
-            refused: Some(reason.to_string()),
+        }
+    }
+
+    fn task(&self) -> Option<&TaskView> {
+        match &self.body {
+            AnswerBody::Task { view, .. } => Some(view.as_ref()),
+            AnswerBody::Refused(_) => None,
+        }
+    }
+
+    fn task_mut(&mut self) -> Option<&mut TaskView> {
+        match &mut self.body {
+            AnswerBody::Task { view, .. } => Some(view.as_mut()),
+            AnswerBody::Refused(_) => None,
         }
     }
 
     fn state(&self) -> Option<TaskState> {
-        self.view.as_ref().map(|v| v.task().state)
+        self.task().map(|view| view.task().state)
     }
 
     fn running(&self) -> bool {
@@ -709,15 +732,14 @@ impl Answer {
     /// The answer's text: the task's log, which is what `lazyos --ask-run`
     /// printed - the answer, one line per line.
     fn text(&self) -> String {
-        self.view
-            .as_ref()
-            .map(|v| v.task().log.lines().join("\n"))
+        self.task()
+            .map(|view| view.task().log.lines().join("\n"))
             .unwrap_or_default()
     }
 
     /// The agent's own error line, without the task protocol's `ERROR:` mark.
     fn error(&self) -> String {
-        let task = self.view.as_ref().map(|v| v.task());
+        let task = self.task().map(|view| view.task());
         task.and_then(|t| t.error_line.clone())
             .map(|line| line.trim_start_matches("ERROR:").trim().to_string())
             .or_else(|| task.and_then(|t| t.result.clone()))
@@ -725,15 +747,14 @@ impl Answer {
     }
 
     fn status(&self) -> String {
-        match (&self.refused, self.state()) {
-            (Some(_), _) => "refused".to_string(),
-            (_, Some(TaskState::Done)) => "answered".to_string(),
-            (_, Some(TaskState::Failed | TaskState::DidNotFinish)) => "failed".to_string(),
-            (_, Some(TaskState::Stopped)) => "stopped".to_string(),
-            _ => self
-                .agent
-                .map(|a| format!("{} is answering", a.name()))
-                .unwrap_or_default(),
+        match &self.body {
+            AnswerBody::Refused(_) => "refused".to_string(),
+            AnswerBody::Task { agent, .. } => match self.state() {
+                Some(TaskState::Done) => "answered".to_string(),
+                Some(TaskState::Failed | TaskState::DidNotFinish) => "failed".to_string(),
+                Some(TaskState::Stopped) => "stopped".to_string(),
+                _ => format!("{} is answering", agent.name()),
+            },
         }
     }
 
@@ -758,7 +779,7 @@ impl Answer {
     /// The viewer polls the runner's record: the task may still be `Queued`
     /// when the window draws first, which `TaskView` alone would never poll.
     fn tick(&mut self) -> Outcome {
-        if let Some(view) = self.view.as_mut() {
+        if let Some(view) = self.task_mut() {
             match view.task().state {
                 TaskState::Queued => {
                     let _ = view.task_mut().reload();
@@ -778,18 +799,18 @@ impl Answer {
                 // Closing the window while the agent works stops it: the runner
                 // forwards the stop, and `--ask-run` kills the agent's group.
                 KeyCode::Esc | KeyCode::Char('q') => {
-                    if let Some(view) = &self.view {
+                    if let Some(view) = self.task() {
                         view.task().request_stop();
                     }
                     Outcome::Done(ESCAPE)
                 }
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    if let Some(view) = &self.view {
+                    if let Some(view) = self.task() {
                         view.task().request_stop();
                     }
                     Outcome::Done(ESCAPE)
                 }
-                _ => match &mut self.view {
+                _ => match self.task_mut() {
                     Some(view) => view.key(key, design),
                     None => Outcome::Continue,
                 },
@@ -835,25 +856,31 @@ impl Answer {
     }
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        if let Some(reason) = &self.refused {
+        if let AnswerBody::Refused(reason) = &self.body {
             lazyos_ui::draw_failure(ctx.buf, ctx.area, ctx.design, "Nothing was asked", reason);
             return;
         }
         if self.running() {
-            if let Some(view) = self.view.as_mut() {
+            if let Some(view) = self.task_mut() {
                 view.draw(ctx);
             }
             return;
         }
         let failed = self.state() != Some(TaskState::Done);
-        let title = self.agent.map_or("Answer", Agent::name);
+        let (agent, question) = match &self.body {
+            AnswerBody::Task {
+                agent, question, ..
+            } => (agent, question),
+            AnswerBody::Refused(_) => return,
+        };
+        let title = agent.name();
         let inner = draw_card(ctx.buf, ctx.area, ctx.design, Some(title), true);
         let width = inner.width;
         if inner.height < 3 || width < 4 {
             return;
         }
         let mut y = inner.y;
-        let question = format!("\u{203a} {}", self.question);
+        let question = format!("\u{203a} {question}");
         put_trunc(
             ctx.buf,
             inner.x,
