@@ -1,4 +1,4 @@
-//! Process Manager & Killer (`rofi-kill`, `lazyos menu kill`).
+//! Process Manager & Killer (`lazyos-kill`, `lazyos menu kill`).
 //!
 //! Lists current user processes with PID, command name, and memory usage.
 //! Separates the `Refresh` action into an [`ActionStrip`] above the filter bar

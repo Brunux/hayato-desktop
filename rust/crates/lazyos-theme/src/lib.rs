@@ -6,7 +6,7 @@
 //! second theme is data rather than 200 edits.
 //!
 //! The values are solarized dark, which is what the session already uses
-//! (`~/.config/foot/foot.ini`, `rofi/solarized.rasi`, `mako/config`, the GTK
+//! (`~/.config/foot/foot.ini`, `mako/config`, the GTK
 //! overrides): the framework must look like the session it replaces.
 
 pub mod builtin;

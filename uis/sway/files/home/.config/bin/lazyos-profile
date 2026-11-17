@@ -8,14 +8,14 @@
 #   lazyos-profile list-archives
 #   lazyos-profile export --dry-run [--include-home]
 #
-# The menu (bin/rofi-dev, Alt+Ctrl+D) is the front end: it picks the disk and
+# The menu (bin/lazyos-dev, Alt+Ctrl+D) is the front end: it picks the disk and
 # the archive, and every row it offers ends in one of the verbs above.  The
 # verbs are usable from a terminal, which is the point - this image answers ssh,
 # and a machine whose session will not start still has a profile to save.  So
 # the interaction is chosen by where the script is running: a passphrase is read
-# with `read` on a terminal and with rofi's masked prompt (`bar-pick -password`)
+# with `read` on a terminal and with the menu's masked prompt
 # in the session, and the destructive confirmation is the typed word `restore`
-# on a terminal and two rows in rofi otherwise.
+# on a terminal and two rows in the menu otherwise.
 #
 # **The archive is a tar, and that is not a detail.**  The menu that makes sticks
 # (Format a disk) writes exFAT, which has no modes and no symlinks: a plain copy
@@ -27,7 +27,7 @@
 # ~/.ssh and ~/.gnupg and a lost stick must not be a lost identity.  `age -p` is
 # the smaller tool and was the first choice, but it reads its passphrase from
 # the terminal and has no way to accept one from a program, which is exactly
-# what a rofi prompt is; gpg's --passphrase-fd is.  The passphrase is typed,
+# what a menu prompt is; gpg's --passphrase-fd is.  The passphrase is typed,
 # written to a 0600 file inside the private staging directory and handed over as
 # file descriptor 3 - never on the command line, where /proc/PID/cmdline would
 # show it to every process of the session.  On export, `tar | zstd | gpg` streams
@@ -130,11 +130,11 @@ on_terminal() {
 	[ -n "$_tpg" ] && [ -n "$_pg" ] && [ "$_tpg" = "$_pg" ]
 }
 
-# in_session: 0 when rofi can be asked - the compositor's environment and the
-# shared picker are both there.  bar-pick's password mode sends stdin from
-# /dev/null itself, so the inherited VT on fd 0 cannot make rofi wait for EOF.
+# in_session: 0 when the native menu can be asked - the compositor's
+# environment is there. The prompt itself reads stdin from /dev/null, so the
+# inherited VT on fd 0 cannot make it wait for EOF.
 in_session() {
-	[ -n "${WAYLAND_DISPLAY:-}" ] && [ -x "$UI_BIN/bar-pick" ]
+	[ -n "${WAYLAND_DISPLAY:-}" ]
 }
 
 # say TITLE BODY [URGENCY] [ICON]: the card, and also the terminal's stderr when
@@ -758,7 +758,7 @@ cmd_import() {
 	_count=$(wc -l <"$_members_file" | tr -d ' ')
 
 	# What the person is agreeing to: the manifest beside the archive says where
-	# it came from and when, and rofi's message line carries that plus the count.
+	# it came from and when, and the menu's message line carries that plus the count.
 	_manifest=${_archive%.gpg}
 	_manifest=${_manifest%.tar.zst}.txt
 	_about=
@@ -954,7 +954,7 @@ cmd_report() {
 
 # list_archives: path, size and mtime of every exported profile on a mounted
 # filesystem a person can see, newest first.  The menu turns each line into a
-# row; import takes the path back.  The filter is the same one rofi-places uses
+# row; import takes the path back.  The filter is the same one lazyos-places uses
 # for its disk list (/ and /boot are not places to look for a profile).
 cmd_list_archives() {
 	{

@@ -734,7 +734,7 @@ fn rows_lists_the_table_without_a_window() {
     );
     assert!(
         text.lines()
-            .any(|l| l == "agent\tai\tAgent session\trofi-agents --default"),
+            .any(|l| l == "agent\tai\tAgent session\tlazyos-agents --default"),
         "{text}"
     );
 }

@@ -17,7 +17,7 @@
 # stdin) is deliberately not supported - nothing in this image uses it, and
 # guessing would be worse than saying so.
 #
-# rofi-files does not call this: it has its own copy of the same rules, so the
+# lazyos-files does not call this: it has its own copy of the same rules, so the
 # file browser works even if this script is removed.
 
 set -eu

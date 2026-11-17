@@ -93,11 +93,11 @@ printf '%s\n' '{"type":"root","nodes":[{"type":"output","name":"eDP-1","nodes":[
         script(&fake.join("notify-send"), &format!("{RECORD}echo 1\n"));
         let bin = root.join("home/.config/bin");
         for name in [
-            "rofi-install",
-            "rofi-format",
-            "rofi-swap",
+            "lazyos-installer",
+            "lazyos-format",
+            "lazyos-swap",
             "lazyos-view",
-            "rofi-files",
+            "lazyos-files",
         ] {
             script(&bin.join(name), RECORD);
         }
@@ -403,9 +403,9 @@ fn a_propose_tool_opens_the_gated_window_and_nothing_else() {
     let desk = Desk::new("propose");
     let mut s = desk.start();
     for (tool, window) in [
-        ("install_propose", "rofi-install"),
-        ("format_propose", "rofi-format"),
-        ("swap_propose", "rofi-swap"),
+        ("install_propose", "lazyos-installer"),
+        ("format_propose", "lazyos-format"),
+        ("swap_propose", "lazyos-swap"),
     ] {
         let result = s.ok(tool, json!({}));
         assert!(text(&result).starts_with("proposed:"), "{tool}: {result}");
@@ -465,7 +465,7 @@ fn act_tools_open_the_window_a_person_would() {
         wait_for(Duration::from_secs(3), || {
             let opened = desk.opened();
             opened.contains(&format!("lazyos-view [{canonical}]"))
-                && opened.contains(&format!("rofi-files [--] [{home}]"))
+                && opened.contains(&format!("lazyos-files [--] [{home}]"))
         }),
         "{:?}",
         desk.opened()

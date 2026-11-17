@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::vec_init_then_push)]
-/// About: fastfetch-style facts as cards, sixel mark, build revision (`rofi-about`).
+/// About: fastfetch-style facts as cards, sixel mark, build revision (`lazyos-about`).
 ///
-/// The old `rofi-about` was a rofi list with three action rows that opened logs in
+/// The old About menu was a list with three action rows that opened logs in
 /// terminals. This version renders the same facts as a bento grid (CPU, memory, disk,
 /// battery as cards with sparklines/gauges) plus the revision from
 /// `/etc/debian-aarch64-revision` and the sixel LazyOS mark.
@@ -970,7 +970,7 @@ mod glyph_ext {
 
 use glyph_ext::from_str;
 
-/// `lazyos menu about` (`rofi-about`): the about screen.
+/// `lazyos menu about` (`lazyos-about`): the about screen.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

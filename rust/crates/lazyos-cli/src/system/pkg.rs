@@ -1,4 +1,4 @@
-//! Package search, install, remove, and system upgrade (`rofi-pkg`, `lazyos menu pkg`).
+//! Package search, install, remove, and system upgrade (`lazyos-pkg`, `lazyos menu pkg`).
 //!
 //! Searches Debian repositories with `apt-cache search`, marks installed
 //! packages via `dpkg-query`, and runs `apt-get install`, `remove`, `update`,
@@ -597,7 +597,7 @@ impl PkgScreen {
     }
 }
 
-/// `lazyos menu pkg` (`rofi-pkg`): package search and install.
+/// `lazyos menu pkg` (`lazyos-pkg`): package search and install.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

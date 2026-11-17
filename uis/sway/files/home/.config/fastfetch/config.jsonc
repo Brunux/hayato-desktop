@@ -1,5 +1,5 @@
-// The About card's "full picture": the same facts `rofi-about` shows as a list,
-// next to the lazyOS mark instead of Debian's swirl.  `rofi-about` runs
+// The About card's "full picture": the same facts `lazyos-about` shows as a list,
+// next to the lazyOS mark instead of Debian's swirl.  `lazyos-about` runs
 // `fastfetch` in the popup foot window, and this file is what makes it LazyOS's.
 //
 // The logo is the z_ mark in block characters with the wordmark under it

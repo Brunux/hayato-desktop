@@ -1,4 +1,4 @@
-//! DNS: point the active connection at a resolver, or back at DHCP (`rofi-dns`).
+//! DNS: point the active connection at a resolver, or back at DHCP (`lazyos-dns`).
 //!
 //! NetworkManager keeps /etc/resolv.conf, so the switch is two nmcli
 //! properties on the connection that is up — `ipv4.dns` and
@@ -91,7 +91,7 @@ pub fn status() -> String {
     )
 }
 
-/// `lazyos menu dns` (`rofi-dns`): the DNS picker.
+/// `lazyos menu dns` (`lazyos-dns`): the DNS picker.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,

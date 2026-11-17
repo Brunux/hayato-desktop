@@ -1,10 +1,10 @@
 //! The three search questions (spec 009), and the one opener behind them.
 //!
 //! ```text
-//! lazyos menu files [DIR]     which file is it, in this folder   (rofi-files)
+//! lazyos menu files [DIR]     which file is it, in this folder   (lazyos-files)
 //! lazyos menu files --search  which file was it, newest first    (Alt+Search)
 //! lazyos menu find [DIR]      I will know it when I see it       (lazyos-find)
-//! lazyos menu grep [TEXT]     where did I write this             (rofi-grep)
+//! lazyos menu grep [TEXT]     where did I write this             (lazyos-grep)
 //! lazyos open PATH            open it the way the list would     (lazyos-view)
 //! ```
 //!
@@ -34,7 +34,7 @@ use preview::Previewer;
 pub enum Chosen {
     /// Open this path with its program.
     Open(PathBuf),
-    /// The actions menu for this path (`rofi-file-actions`).
+    /// The actions menu for this path (`lazyos-file-actions`).
     Actions(PathBuf),
 }
 
@@ -289,10 +289,10 @@ pub fn refuse(path: &Path, message: &str) {
 }
 
 /// The actions menu for a path, after the window is gone. It is still the
-/// rofi script: its long steps are `busy` cards with their own stop patterns,
+/// old script: its long steps are `busy` cards with their own stop patterns,
 /// and porting them is spec 010's dialog work, not a search's.
 pub fn actions(path: &Path, home: &str) -> i32 {
-    let script = Path::new(home).join(".config/bin/rofi-file-actions");
+    let script = Path::new(home).join(".config/bin/lazyos-file-actions");
     let argv = vec![script.display().to_string(), path.display().to_string()];
     match crate::menu::spawn_detached(&argv, home) {
         Ok(()) => 0,

@@ -4,7 +4,7 @@
 # has no xdg-desktop-portal to ask instead: favnyr's double click, `gio open`,
 # a "Open with" dialog in any application. The point of the file is that a
 # picture opens in imv (a GPU viewer, not a browser) and a text file opens paged
-# in bat - the same rules rofi-files follows, so the Files menu and a double
+# in bat - the same rules lazyos-files follows, so the Files menu and a double
 # click in favnyr do not disagree.
 #
 # A user's ~/.config/mimeapps.list is read first and overrides everything here,
@@ -13,7 +13,7 @@
 # inode/directory names `pcmanfm.desktop` and not a favnyr entry on purpose: the
 # name is what the launcher and GIO already know, and the file that carries it is
 # the user-level shadow (~/.local/share/applications/pcmanfm.desktop) whose Exec
-# is `favnyr`. rofi-files is the keyboard file list, not the directory handler.
+# is `favnyr`. lazyos-files is the keyboard file list, not the directory handler.
 # http/https stay with Firefox, which is the browser the shim already calls.
 
 [Default Applications]

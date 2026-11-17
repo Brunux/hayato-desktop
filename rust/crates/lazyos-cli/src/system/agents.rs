@@ -1,4 +1,4 @@
-//! AI Agent Selector (`rofi-agents`, `lazyos menu agents`).
+//! AI Agent Selector (`lazyos-agents`, `lazyos menu agents`).
 //!
 //! Launch a coding agent CLI, manage accounts per agent, and pick a default.
 //! Provides `--default`, `--env` and `--new` subcommands.

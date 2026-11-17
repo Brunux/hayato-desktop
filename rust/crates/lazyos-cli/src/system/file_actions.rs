@@ -1,4 +1,4 @@
-//! Contextual File Actions (`rofi-file-actions`, `lazyos menu file-actions`).
+//! Contextual File Actions (`lazyos-file-actions`, `lazyos menu file-actions`).
 //!
 //! Secondary actions for the file under the cursor: disk usage, compress,
 //! extract, mount disk image, convert media, copy path, terminal.

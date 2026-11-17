@@ -7,7 +7,7 @@
 
 //!
 //! One binary answers to every name the session calls it by (`lazyos menu`,
-//! `rofi-files`, …), decides where it should run, and owns the terminal and the
+//! `lazyos-files`, …), decides where it should run, and owns the terminal and the
 //! error story in one place. The commands themselves arrive in later specs; the
 //! shape they plug into is this file.
 //!
@@ -603,7 +603,7 @@ fn session_menu(
     } else {
         menu_options(resolved)?
     };
-    // `menu power` is `rofi-power`: the same screen, opened on the Power list
+    // `menu power` is `lazyos-power`: the same screen, opened on the Power list
     // rather than on the root rows. An explicit `--power ACTION` still wins,
     // so `menu power --power reboot` opens that confirm directly.
     if resolved.spec.path == "menu power" && power.is_none() {
@@ -855,7 +855,7 @@ pub(crate) fn run_screen(
         .map_err(|error| Failure::new("the terminal stopped answering", error.to_string()))
 }
 
-/// `lazyos menu files [--hidden] [--search] [DIR]` (`rofi-files`).
+/// `lazyos menu files [--hidden] [--search] [DIR]` (`lazyos-files`).
 fn files_menu(
     resolved: &Resolved,
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -944,7 +944,7 @@ fn find_menu(
     Ok(files::finish(chosen, code, &home.display().to_string()))
 }
 
-/// `lazyos menu grep [TEXT]` (`rofi-grep`, Alt+Ctrl+G).
+/// `lazyos menu grep [TEXT]` (`lazyos-grep`, Alt+Ctrl+G).
 fn grep_menu(
     resolved: &Resolved,
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,

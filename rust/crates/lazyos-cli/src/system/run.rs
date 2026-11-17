@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::vec_init_then_push)]
-/// Run prompt: `$PATH` completion, Shift+Enter → foot, confirmation for unknown commands (`rofi -show run`).
+/// Run prompt: `$PATH` completion, Shift+Enter → foot, confirmation for unknown commands (`the run menu`).
 ///
-/// The old `rofi -show run` was a simple dmenu over PATH. This version provides live
+/// The old `the run menu` was a simple dmenu over PATH. This version provides live
 /// completion, runs TUI apps in foot on Shift+Enter, and shows a confirmation for
 /// commands not found on PATH.
 use std::cell::Cell;
@@ -354,7 +354,7 @@ impl RunScreen {
     }
 }
 
-/// `lazyos menu run` (`rofi -show run`): the run prompt.
+/// `lazyos menu run` (`the run menu`): the run prompt.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

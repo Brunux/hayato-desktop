@@ -1,6 +1,6 @@
 ===== 80x24 =====
 ╭ Free space ──────────────────────────────────────────────────────────────────╮
-│ ▍   Files  rofi-files                                          Alt+Ctrl+F   │
+│ ▍   Files  lazyos-files                                        Alt+Ctrl+F   │
 │     Files (window)  pcmanfm                              Alt+Ctrl+Shift+F   │
 │     Capture  screenshot                                        Alt+Ctrl+C   │
 │     Translate  selection                                       Alt+Ctrl+T   │
@@ -11,7 +11,7 @@
 │     Clipboard  cliphist                                        Alt+Ctrl+V   │
 │     Emoji  1,296 rows                                          Alt+Ctrl+E   │
 │     Camera  uvcvideo                                                  row   │
-│   ⏻  Power  rofi-power                                          Alt+Escape   │
+│   ⏻  Power  lazyos-power                                        Alt+Escape   │
 │     Bluetooth  bluez                                           Alt+Ctrl+B   │
 │                                                                              │
 │                                                                              │
@@ -25,7 +25,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ===== 152x45 =====
 ╭ Free space ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ▍   Files  rofi-files                                                                                                                  Alt+Ctrl+F   │
+│ ▍   Files  lazyos-files                                                                                                                Alt+Ctrl+F   │
 │     Files (window)  pcmanfm                                                                                                      Alt+Ctrl+Shift+F   │
 │     Capture  screenshot                                                                                                                Alt+Ctrl+C   │
 │     Translate  selection                                                                                                               Alt+Ctrl+T   │
@@ -36,7 +36,7 @@
 │     Clipboard  cliphist                                                                                                                Alt+Ctrl+V   │
 │     Emoji  1,296 rows                                                                                                                  Alt+Ctrl+E   │
 │     Camera  uvcvideo                                                                                                                          row   │
-│   ⏻  Power  rofi-power                                                                                                                  Alt+Escape   │
+│   ⏻  Power  lazyos-power                                                                                                                Alt+Escape   │
 │     Bluetooth  bluez                                                                                                                   Alt+Ctrl+B   │
 │                                                                                                                                                      │
 │                                                                                                                                                      │

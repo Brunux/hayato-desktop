@@ -1,4 +1,4 @@
-//! Bookmarks & Disks Jump (`rofi-places`, `lazyos menu places`).
+//! Bookmarks & Disks Jump (`lazyos-places`, `lazyos menu places`).
 //!
 //! Lists user directories (`~/Downloads`, `~/Documents`, etc.), mounted
 //! and mountable block storage devices with filesystem usage and mountpoints.

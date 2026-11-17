@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::vec_init_then_push)]
-/// Window switcher: the wlroots foreign-toplevel list via sway IPC (`rofi -show window`).
+/// Window switcher: the wlroots foreign-toplevel list via sway IPC (`the window menu`).
 ///
-/// The old `rofi -show window` used the foreign-toplevel protocol directly through rofi's
+/// The old `the window menu` used the foreign-toplevel protocol directly through the old picker's
 /// built-in window switcher. This version uses `swaymsg -t get_tree` to get the window tree
 /// and extracts all mapped windows with their titles, app_ids, and workspace info. The
 /// parser is pure and tested against recorded JSON fixtures.
@@ -324,7 +324,7 @@ impl WindowScreen {
     }
 }
 
-/// `lazyos menu window` (`rofi -show window`): the window switcher.
+/// `lazyos menu window` (`the window menu`): the window switcher.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

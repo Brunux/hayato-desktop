@@ -28,7 +28,7 @@ The image is built from four package lists across the LazyOS submodules
 |---|---|
 | `core/packages/base.list` | what the system needs: systemd, NetworkManager, ssh, filesystems, audio plumbing, zram, the clock |
 | `desktop/packages/tools.list` | the terminal tools (below) |
-| `desktop/uis/sway/packages.list` | the session: sway, waybar, foot, rofi, mako, swayfx's dependencies, fonts |
+| `desktop/uis/sway/packages.list` | the session: sway, waybar, foot, mako, swayfx's dependencies, fonts |
 | `devices/devices/<codename>/packages.list` | target hardware: firmware (`firmware-mediatek`, plus `firmware-atheros` on `google-kukui`), bootloader tools (`cgpt`, `vboot`, `depthcharge-tools` on `google-asurada`/`google-kukui`), and `linux-image-arm64` on `debian-arm64` targets |
 
 Editing a list does not change the running machine; it changes the next image
@@ -190,7 +190,7 @@ instead of being inserted as an empty box. `~/.config/emojis.font` next to it
 pins the SHA256 and the family of the font the filter used, which is how
 `check-system.sh` notices a font upgrade; after one, re-running
 `desktop/scripts/make-emojis.sh` on a host with `fontconfig` and the font rebuilds the
-table. Nothing of this runs on the machine: the picker is one rofi window and the
+table. Nothing of this runs on the machine: the picker is one foot window and the
 table is a file.
 
 
@@ -262,7 +262,7 @@ panel. The chip drives one DisplayPort stream, so two monitors are one monitor
 followed by the other, not two at once.
 
 **Where it sits is Settings → Display arrangement** (`Alt+Ctrl+O`,
-`~/.config/bin/rofi-display`): monitor on the right, on the left, above, below,
+`~/.config/bin/lazyos-display`): monitor on the right, on the left, above, below,
 mirrored, plus the monitor's resolution and scale, and **Open wdisplays** for
 what those rows do not cover (a custom position, a rotation) - that window opens
 on a workspace of its own, because its two rectangles need the width. The
@@ -285,7 +285,7 @@ how to undo them. Delete the file to go back to sway's default (on the right).
 "Only the monitor" turns the internal panel off for the session, so if the cable
 then comes out - or the monitor loses its link - there is no picture at all.
 **`Alt+Ctrl+Shift+D`** turns the panel back on and needs no picture to do it: it
-runs `~/.config/bin/rofi-display --panel-on`, which is the reason the key exists,
+runs `~/.config/bin/lazyos-display --panel-on`, which is the reason the key exists,
 because a menu cannot be drawn when every output is off - and sway allows
 turning the last one off. When a screen *can* still draw (the monitor is present
 but disabled, or the panel is off and the monitor is on), `Alt+Ctrl+O` →
@@ -466,9 +466,9 @@ list below says why.
 
 ## Quick settings
 
-The **Settings** menu (Alt+Ctrl+O, and the root menu) is the radio switches for the session: Wi-Fi radio, Bluetooth radio, Night light, Do not disturb, Touchpad, Tablet mode (with Calibrate rotation when on), Display arrangement, Auto-mount USB drives, Keyboard layout, Translate, Audio output, Volume per application (pavucontrol), Media, and Battery/Power. Each row shows the real state from the same probe as today and delegates to the existing pickers/panels (bar-net, bar-bt, bar-audio, bar-power, rofi-display, rofi-vnc) instead of duplicating them.
+The **Settings** menu (Alt+Ctrl+O, and the root menu) is the radio switches for the session: Wi-Fi radio, Bluetooth radio, Night light, Do not disturb, Touchpad, Tablet mode (with Calibrate rotation when on), Display arrangement, Auto-mount USB drives, Keyboard layout, Translate, Audio output, Volume per application (pavucontrol), Media, and Battery/Power. Each row shows the real state from the same probe as today and delegates to the existing pickers/panels (bar-net, bar-bt, bar-audio, bar-power, lazyos-display, lazyos-vnc) instead of duplicating them.
 
-The VNC row shows the current sharing state. The display row shows the arrangement from `rofi-display --status`. The tablet mode row adds a "Calibrate rotation" sub-row when the mode is on.
+The VNC row shows the current sharing state. The display row shows the arrangement from `lazyos-display --status`. The tablet mode row adds a "Calibrate rotation" sub-row when the mode is on.
 
 The `--status` subcommand returns a one-line summary of all switches.
 
@@ -505,7 +505,7 @@ not nest themselves). It writes
 * **What is inside**: `~/.ssh`, `~/.gnupg`, the shell files (`.bashrc`,
   `.bash_aliases`, `.profile`, `.bash_logout`), `.gitconfig`, the configuration
   of the tools this image ships (`foot`, `kitty`, `nvim`, `vim`,
-  `starship.toml`, `glow`, `sway` drop-ins, `mako`, `rofi`, `gtk-3.0`,
+  `starship.toml`, `glow`, `sway` drop-ins, `mako`, `gtk-3.0`,
   `gtk-4.0`, `lazyos`, `favnyr`, `mpv`, `yt-dlp`, `go`, `pip`, `cargo`,
   `rustup`, `mimeapps.list`, `user-dirs.dirs`), `~/.local/bin`, the user's own
   applications, and the **agents**: the account directories of the Agents menu
@@ -594,11 +594,11 @@ it - see § *An external monitor*.
 The colours of this session come from **one file**, not from a dozen edited
 configs: `theme.toml` holds the 16 terminal colours and the roles a surface asks
 for (background, text, accent, danger…), and every other file is *generated*
-from it — foot, waybar (including the uniform 4 px bar end insets matching widget spacing), mako, rofi, btop, lazygit, nvim, fzf, the lock screen,
+from it — foot, waybar (including the uniform 4 px bar end insets matching widget spacing), mako, btop, lazygit, nvim, fzf, the lock screen,
 the prompt (starship), the greeter, the window frame sway uses, and the wallpaper.
 
 ```
-lazyos menu theme           # interactive visual theme selector (Alt+Shift+C / rofi-theme)
+lazyos menu theme           # interactive visual theme selector (Alt+Shift+C / lazyos-theme-picker)
 lazyos theme list           # every theme, the active one marked *
 lazyos theme set gruvbox    # regenerate everything and reload the session
 lazyos theme next           # the next one in the cycle      (Alt+Shift+T)
@@ -610,7 +610,7 @@ lazyos theme diff           # is every file still what the theme says?
 Solarized Dark is the default and the brand; the others are Catppuccin Mocha,
 Tokyo Night, Rose Pine, Nord, Gruvbox, Everforest Dark and Kanagawa.
 
-**The Visual Theme Selector (`lazyos menu theme` / `Alt+Shift+C` / `rofi-theme`).**
+**The Visual Theme Selector (`lazyos menu theme` / `Alt+Shift+C` / `lazyos-theme-picker`).**
 An interactive, dual-pane Ratatui surface for exploring themes with zero friction:
 * **Left pane:** lists all installed themes with search-as-you-type filtering, active session markers (`●`/`○`), and accent badges.
 * **Right pane:** real-time eye-candy preview canvas showing the 16 ANSI truecolor terminal swatches, semantic roles (surface, accent, ok, warn, danger), simulated LazyOS desktop mockups (mini Waybar status strip, floating notification card, Starship shell prompt), WCAG 2.1 contrast ratio verification, and wallpaper info.

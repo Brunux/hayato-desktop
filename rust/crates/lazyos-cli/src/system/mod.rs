@@ -2,14 +2,14 @@
 //! with one safety module behind the destructive ones.
 //!
 //! ```text
-//! lazyos menu settings   the switches            (rofi-quick)
-//! lazyos menu power      lock … shut down        (rofi-power, `menu --power`)
-//! lazyos menu display    the external monitor    (rofi-display)
-//! lazyos menu swap       auxiliary swap          (rofi-swap)
-//! lazyos menu format     format a disk           (rofi-format)
-//! lazyos menu tz         time zone               (rofi-tz)
-//! lazyos menu dns        resolvers               (rofi-dns)
-//! lazyos menu vnc        share this screen       (rofi-vnc)
+//! lazyos menu settings   the switches            (lazyos-settings)
+//! lazyos menu power      lock … shut down        (lazyos-power, `menu --power`)
+//! lazyos menu display    the external monitor    (lazyos-display)
+//! lazyos menu swap       auxiliary swap          (lazyos-swap)
+//! lazyos menu format     format a disk           (lazyos-format)
+//! lazyos menu tz         time zone               (lazyos-tz)
+//! lazyos menu dns        resolvers               (lazyos-dns)
+//! lazyos menu vnc        share this screen       (lazyos-vnc)
 //! lazyos menu ssh        remote login            (05-system.md)
 //! ```
 //!
@@ -33,15 +33,15 @@
 //! shell scripts, with one shared shape for the window.
 //!
 //! ```text
-//! lazyos menu media       what is playing           (rofi-media)
-//! lazyos menu notify      history and DND           (rofi-notify)
-//! lazyos menu clip        clipboard by kind         (rofi-clip)
-//! lazyos menu emoji       the emoji table           (rofi-emoji)
-//! lazyos menu capture     screenshot, OCR, record   (rofi-capture)
-//! lazyos menu qr          Wi-Fi QR or any text      (rofi-qr)
-//! lazyos menu remind      write now, be told later  (rofi-remind)
-//! lazyos menu calc        expression parser         (rofi-calc)
-//! lazyos menu colour      pixel and palette         (rofi-color)
+//! lazyos menu media       what is playing           (lazyos-media)
+//! lazyos menu notify      history and DND           (lazyos-notify-history)
+//! lazyos menu clip        clipboard by kind         (lazyos-clip)
+//! lazyos menu emoji       the emoji table           (lazyos-emoji)
+//! lazyos menu capture     screenshot, OCR, record   (lazyos-capture)
+//! lazyos menu qr          Wi-Fi QR or any text      (lazyos-qr)
+//! lazyos menu remind      write now, be told later  (lazyos-remind)
+//! lazyos menu calc        expression parser         (lazyos-calc)
+//! lazyos menu colour      pixel and palette         (lazyos-color)
 //! lazyos menu audio       sink list and mute        (bar-audio)
 //! lazyos menu bluetooth   scan, connect, disconnect (bar-bt)
 //! ```
@@ -58,19 +58,19 @@
 //!   glyph, and the confirm whose first answer is Cancel — the same layout
 //!   the system pickers (spec 010) use, so a new picker cannot drift.
 //!
-//! The launcher and reference surfaces (spec 012): nine rofi modes and
+//! The launcher and reference surfaces (spec 012): nine launcher modes and
 //! standalone scripts, now as `lazyos menu` subcommands.
 //!
 //! ```text
-//! lazyos menu apps        .desktop entries, icons   (rofi -show drun)
-//! lazyos menu window      window switcher           (rofi -show window)
-//! lazyos menu run         PATH commands, Shift+Enter→foot (rofi -show run)
-//! lazyos menu keys        parsed sway config        (rofi-keys)
-//! lazyos menu learn       manual + apropos          (rofi-learn)
-//! lazyos menu about       fastfetch facts + logs    (rofi-about)
-//! lazyos menu colour      pixel picker + palette    (rofi-color)
-//! lazyos menu pkg         apt search + install      (rofi-pkg)
-//! lazyos menu dev         profile export/restore    (rofi-dev)
+//! lazyos menu apps        .desktop entries, icons   (lazyos-apps)
+//! lazyos menu window      window switcher           (lazyos-window)
+//! lazyos menu run         PATH commands, Shift+Enter→foot (lazyos-run)
+//! lazyos menu keys        parsed sway config        (lazyos-keys)
+//! lazyos menu learn       manual + apropos          (lazyos-learn)
+//! lazyos menu about       fastfetch facts + logs    (lazyos-about)
+//! lazyos menu colour      pixel picker + palette    (lazyos-color)
+//! lazyos menu pkg         apt search + install      (lazyos-pkg)
+//! lazyos menu dev         profile export/restore    (lazyos-dev)
 //! ```
 //!
 //! The rules that keep the port honest:

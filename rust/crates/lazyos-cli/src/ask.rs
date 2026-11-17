@@ -65,7 +65,7 @@ impl Agent {
     }
 }
 
-/// The names `rofi-agents` records (its `AGENTS` table), for the sentence that
+/// The names `lazyos-agents` records (its `AGENTS` table), for the sentence that
 /// says why another agent answers.
 fn display_name(bin: &str) -> &str {
     match bin {
@@ -233,7 +233,7 @@ fn first_line(text: &str) -> Option<String> {
 
 /// Where the agent CLIs live: the image installs OpenCode in `~/.opencode/bin`
 /// and npm puts the others in `~/.local/bin`, and sway's own environment has
-/// neither (the reason `rofi-agents` extends `PATH` the same way).
+/// neither (the reason `lazyos-agents` extends `PATH` the same way).
 pub fn agent_path(vars: &BTreeMap<String, String>) -> String {
     let home = vars.get("HOME").map(String::as_str).unwrap_or("");
     let path = vars
@@ -265,7 +265,7 @@ pub fn default_agent(vars: &BTreeMap<String, String>) -> Option<String> {
     first_line(&text)
 }
 
-/// Claude Code's account, the way `rofi-agents` starts a session with it: the
+/// Claude Code's account, the way `lazyos-agents` starts a session with it: the
 /// account marked default for `claude` is a `CLAUDE_CONFIG_DIR`. Without one,
 /// Claude Code uses its own default directory and sign-in.
 pub fn claude_config_dir(vars: &BTreeMap<String, String>) -> Option<PathBuf> {

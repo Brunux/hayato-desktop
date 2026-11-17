@@ -254,7 +254,7 @@ pub fn spawn_detached(argv: &[String], home: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// What a session action runs, in order: the commands `rofi-power` runs, the
+/// What a session action runs, in order: the commands `lazyos-power` runs, the
 /// logind method first and `sudo -n` as the fallback for the ones that need it.
 pub fn session_attempts(action: SessionAction) -> Vec<Vec<&'static str>> {
     match action {
@@ -490,7 +490,7 @@ mod tests {
         };
         assert_eq!(
             argv(get("files"), &v, "/usr/bin/lazyos").unwrap(),
-            vec!["/home/b/.config/bin/rofi-files"]
+            vec!["/home/b/.config/bin/lazyos-files"]
         );
         assert_eq!(
             argv(get("files-window"), &v, "/usr/bin/lazyos").unwrap(),
@@ -498,7 +498,7 @@ mod tests {
         );
         assert_eq!(
             argv(get("agent"), &v, "/usr/bin/lazyos").unwrap(),
-            vec!["/home/b/.config/bin/rofi-agents", "--default"]
+            vec!["/home/b/.config/bin/lazyos-agents", "--default"]
         );
         assert_eq!(
             argv(get("theme-next"), &v, "/usr/bin/lazyos").unwrap(),
@@ -519,7 +519,7 @@ mod tests {
         let rows = entries(Surface::Palette, &Context::default());
         let runs_of = |key: &str| runs(rows.iter().find(|e| e.key == key).unwrap().action);
         assert_eq!(runs_of("dev"), "lazyos menu dev");
-        assert_eq!(runs_of("agent"), "rofi-agents --default");
+        assert_eq!(runs_of("agent"), "lazyos-agents --default");
         assert_eq!(runs_of("files-window"), "favnyr ~");
         assert_eq!(runs_of("ssh"), "lazyos menu ssh");
         assert_eq!(runs_of("theme-next"), "lazyos theme next");

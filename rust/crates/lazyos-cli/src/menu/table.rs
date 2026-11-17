@@ -52,7 +52,7 @@ pub enum Program {
     /// file `bar-menu` ran with `exec "$dir/…"`, so a script that is a symlink
     /// to `lazyos` today and a shell script tomorrow is the same row.
     Session(&'static str),
-    /// A program from `PATH` (`foot`, `rofi`, `favnyr`).
+    /// A program from `PATH` (`foot`, `lazyos`, `favnyr`).
     System(&'static str),
     /// This binary with these words (`lazyos theme next`), by the path the
     /// process was started from rather than by name.
@@ -64,7 +64,7 @@ pub enum Program {
 /// The last three end it, and they are only reachable through a
 /// [`lazyos_ui::Confirm`] whose first answer is Cancel (spec 007: a stray Enter
 /// runs nothing). [`Lock`](Self::Lock), [`Suspend`](Self::Suspend) and
-/// [`Hibernate`](Self::Hibernate) act on Enter, the way `rofi-power` ran them:
+/// [`Hibernate`](Self::Hibernate) act on Enter, the way `lazyos-power` ran them:
 /// the list is already the gate, and the lock is what makes a suspend safe.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SessionAction {
@@ -188,7 +188,7 @@ pub const ROOT: &[MenuItem] = &[
         "browse the filesystem",
         Glyph::Folder,
         Open,
-        session("rofi-files"),
+        session("lazyos-files"),
     ),
     item(
         "files-window",
@@ -207,7 +207,7 @@ pub const ROOT: &[MenuItem] = &[
         "the text in them, with ripgrep",
         Glyph::Search,
         Open,
-        session("rofi-grep"),
+        session("lazyos-grep"),
     ),
     item(
         "places",
@@ -215,7 +215,7 @@ pub const ROOT: &[MenuItem] = &[
         "home, disks, the configuration",
         Glyph::Disk,
         Open,
-        session("rofi-places"),
+        session("lazyos-places"),
     ),
     item(
         "camera",
@@ -231,7 +231,7 @@ pub const ROOT: &[MenuItem] = &[
         "a link, into ~/Downloads",
         Glyph::Download,
         Open,
-        session("rofi-download"),
+        session("lazyos-download"),
     ),
     item(
         "settings",
@@ -239,7 +239,7 @@ pub const ROOT: &[MenuItem] = &[
         "Wi-Fi, Bluetooth, night light, tablet mode, rotation",
         Glyph::Gear,
         Open,
-        session("rofi-quick"),
+        session("lazyos-settings"),
     ),
     item(
         "learn",
@@ -357,7 +357,7 @@ pub const ROOT: &[MenuItem] = &[
         Glyph::Terminal,
         Ai,
         Action::Run {
-            program: Program::Session("rofi-agents"),
+            program: Program::Session("lazyos-agents"),
             args: &[Arg::Lit("--default")],
         },
     ),
@@ -375,7 +375,7 @@ pub const ROOT: &[MenuItem] = &[
         "Claude Code, Codex and the others",
         Glyph::People,
         Ai,
-        session("rofi-agents"),
+        session("lazyos-agents"),
     ),
     item(
         "dictate",
@@ -464,7 +464,7 @@ pub const ROOT: &[MenuItem] = &[
         "read-only, over ssh",
         Glyph::Eye,
         System,
-        session("rofi-vnc"),
+        session("lazyos-vnc"),
     ),
     item(
         "tz",
@@ -472,7 +472,7 @@ pub const ROOT: &[MenuItem] = &[
         "and network time",
         Glyph::Clock,
         System,
-        session("rofi-tz"),
+        session("lazyos-tz"),
     ),
     item(
         "clean",
@@ -480,7 +480,7 @@ pub const ROOT: &[MenuItem] = &[
         "what is using it, and clean up",
         Glyph::Trash,
         System,
-        session("rofi-clean"),
+        session("lazyos-clean"),
     ),
     item(
         "swap",
@@ -488,7 +488,7 @@ pub const ROOT: &[MenuItem] = &[
         "a card as more memory, on every boot",
         Glyph::Chip,
         System,
-        session("rofi-swap"),
+        session("lazyos-swap"),
     ),
     item(
         "format",
@@ -496,7 +496,7 @@ pub const ROOT: &[MenuItem] = &[
         "erase a stick or a card",
         Glyph::Disk,
         System,
-        session("rofi-format"),
+        session("lazyos-format"),
     ),
     item(
         "display",
@@ -504,17 +504,17 @@ pub const ROOT: &[MenuItem] = &[
         "the external monitor",
         Glyph::Display,
         System,
-        session("rofi-display"),
+        session("lazyos-display"),
     ),
     // The one row here that rewrites a disk. Like Power it asks again where it
-    // lands: `rofi-install` confirms and then wants the disk's name typed.
+    // lands: `lazyos-installer` confirms and then wants the disk's name typed.
     item(
         "install",
         "Install LazyOS",
         "copy this system to the internal disk - asks twice",
         Glyph::Save,
         System,
-        session("rofi-install"),
+        session("lazyos-installer"),
     ),
     item(
         "kill",
@@ -522,7 +522,7 @@ pub const ROOT: &[MenuItem] = &[
         "the heaviest twenty",
         Glyph::Bug,
         System,
-        session("rofi-kill"),
+        session("lazyos-kill"),
     ),
     item(
         "pkg",
@@ -585,7 +585,7 @@ pub const ROOT: &[MenuItem] = &[
         "browse and preview color palettes and wallpapers",
         Glyph::Theme,
         System,
-        session("rofi-theme"),
+        session("lazyos-theme-picker"),
     ),
     item(
         "about",
@@ -643,7 +643,7 @@ pub const ROOT: &[MenuItem] = &[
     ),
     // Log out, reboot and shut down are one row that opens their own list,
     // each behind a confirm: a second, unconfirmed copy here is how a stray
-    // Enter reboots the machine (`bar-menu` said the same about rofi-power).
+    // Enter reboots the machine (`bar-menu` said the same about lazyos-power).
     item(
         "power",
         "Power",
@@ -654,7 +654,7 @@ pub const ROOT: &[MenuItem] = &[
     ),
 ];
 
-/// The Power row's list, in `rofi-power`'s order: the three that act at once,
+/// The Power row's list, in `lazyos-power`'s order: the three that act at once,
 /// then the three that ask. Choosing a session-ending row opens the confirm;
 /// the confirm's second answer is the only way to its [`Action::Session`].
 pub const POWER: &[MenuItem] = &[
@@ -719,7 +719,7 @@ pub const PALETTE_EXTRA: &[MenuItem] = &[
         "browse themes with live palette & wallpaper preview",
         Glyph::Theme,
         System,
-        session("rofi-theme"),
+        session("lazyos-theme-picker"),
     ),
     item(
         "theme-next",

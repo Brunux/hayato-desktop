@@ -24,7 +24,7 @@ bat
 fd-find
 # grep, as rg. Nothing aliases `grep`: rg is not a drop-in for every flag, and
 # a silently different grep in an interactive shell is a trap.  rg is also what
-# "Search the manual" in rofi-learn uses.
+# "Search the manual" in lazyos-learn uses.
 ripgrep
 # Fuzzy finder, for the Ctrl-R/Ctrl-T/Alt-C bindings (~/.bashrc sources
 # /usr/share/fzf/key-bindings.bash), the `ff` preview picker, and the terminal
@@ -104,7 +104,7 @@ vim
 # --- keys / encryption ------------------------------------------------------
 # gpg: the Developer menu (Alt+Ctrl+D) encrypts the profile archive with it -
 # symmetric AES256, with the passphrase fed through file descriptor 3 because
-# that is what a rofi prompt can hand over (age -p only reads a terminal). It is
+# that is what the menu's masked prompt can hand over (age -p only reads a terminal). It is
 # also the binary a developer with a keyring expects: `git commit -S` and
 # `gpg --export-secret-keys` are the same client, which is why this is gnupg
 # (gpg, gpg-agent, dirmngr, gpgsm, the localizations) and not the bare `gpg`
@@ -152,7 +152,7 @@ ffmpeg
 # MANPAGER below only exists to make it pretty.
 man-db
 # The manual pages themselves, rendered: glow (a markdown reader) is what
-# rofi-learn opens them with, and its own style is ~/.config/glow/solarized.json.
+# lazyos-learn opens them with, and its own style is ~/.config/glow/solarized.json.
 # It is a single binary with no runtime, and it only runs while a page is on
 # screen.
 glow

@@ -1,7 +1,7 @@
 //! Which disks a menu may write, and which it may never.
 //!
 //! This is the port of `ui_disk_system`/`ui_disks` from
-//! `~/.config/bin/lib-rofi.sh`, and the two functions exist because the shell
+//! the old shell library, and the two functions exist because the shell
 //! got this wrong on hardware: the first version offered the eMMC's hardware
 //! boot partitions and the SPI flash, and a later one offered the microSD that
 //! had installed the eMMC. So the rules are stated here once, over the text the

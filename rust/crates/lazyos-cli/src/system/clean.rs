@@ -1,4 +1,4 @@
-//! Disk Cleaner (`rofi-clean`, `lazyos menu clean`).
+//! Disk Cleaner (`lazyos-clean`, `lazyos menu clean`).
 //!
 //! Opens immediately and computes reclaimable cache sizes asynchronously via
 //! [`ActionRunner`]: apt package cache, systemd journal logs, thumbnail cache,

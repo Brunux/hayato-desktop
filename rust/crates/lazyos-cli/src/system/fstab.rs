@@ -2,7 +2,7 @@
 //! atomic write that changes it.
 //!
 //! The shell had this in three pieces (`fstab_configured`, `fstab_strip`,
-//! `fstab_write`) inside `rofi-swap`, and the block is the reason the swap is a
+//! `fstab_write`) inside `lazyos-swap`, and the block is the reason the swap is a
 //! feature and not a command a person runs once: `nofail` keeps a boot without
 //! the card from failing, the device timeout keeps it from waiting the default
 //! 90 s, and `pri=10` sits below zram's 100 in `scripts/rootfs-setup.sh` so the

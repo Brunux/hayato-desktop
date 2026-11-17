@@ -9,7 +9,7 @@
 //!
 //! - `lazyos menu files` - the words after the binary name, longest match first,
 //!   so `menu` does not swallow `menu files`.
-//! - a symlink called `rofi-files` (or `lazyos-menu`) - the file name, which is
+//! - a symlink called `lazyos-files` (or `lazyos-menu`) - the file name, which is
 //!   how the ~64 old paths keep working once each surface is ported.
 
 use std::path::Path;
@@ -97,7 +97,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &["lazyos-menu", "bar-menu"],
     },
     CommandSpec {
-        // `rofi-power`: lock, suspend, hibernate, log out, reboot, shut down.
+        // `lazyos-power`: lock, suspend, hibernate, log out, reboot, shut down.
         // The first three act at once and the last three ask with Cancel
         // first, which is the confirm `--power ACTION` also opens (spec 010).
         // It stays one implementation: `menu power`, `menu --power` and
@@ -106,90 +106,90 @@ pub const COMMANDS: &[CommandSpec] = &[
         path: "menu power",
         summary: "lock, sleep, hibernate, log out, reboot or shut down (spec 010)",
         shape: Shape::Pick,
-        symlinks: &["rofi-power"],
-        installed: &["rofi-power"],
+        symlinks: &["lazyos-power"],
+        installed: &["lazyos-power"],
     },
     CommandSpec {
-        // `rofi-format`: only disks with nothing mounted, never a built-in one
+        // `lazyos-format`: only disks with nothing mounted, never a built-in one
         // and never the disk this system runs from. The list is the safety;
         // the confirm with Cancel selected is the last gate (spec 010).
         path: "menu format",
         summary: "erase a stick or a card and make it one filesystem (spec 010)",
         shape: Shape::Pick,
-        symlinks: &["rofi-format"],
-        installed: &["rofi-format"],
+        symlinks: &["lazyos-format"],
+        installed: &["lazyos-format"],
     },
     CommandSpec {
-        // `rofi-swap`: the same candidate list as Format a disk, then the size
+        // `lazyos-swap`: the same candidate list as Format a disk, then the size
         // and a confirm. The fstab block is replaced, not appended, and
         // activation is verified by reading the kernel's swap list back.
         path: "menu swap",
         summary: "prepare a card as auxiliary swap, label lazyos_swap (spec 010)",
         shape: Shape::Pick,
-        symlinks: &["rofi-swap"],
-        installed: &["rofi-swap"],
+        symlinks: &["lazyos-swap"],
+        installed: &["lazyos-swap"],
     },
     CommandSpec {
-        // `rofi-display`: the external monitor arrangement (position, resolution,
+        // `lazyos-display`: the external monitor arrangement (position, resolution,
         // scale), saved to config.d/40-display.conf, with wdisplays as a row and
         // --panel-on as a blind key (spec 010).
         path: "menu display",
         summary: "arrange the external monitor: position, resolution, scale (spec 010)",
         shape: Shape::Pick,
-        symlinks: &["rofi-display"],
-        installed: &["rofi-display"],
+        symlinks: &["lazyos-display"],
+        installed: &["lazyos-display"],
     },
     CommandSpec {
-        // `rofi-tz`: timedatectl list-timezones (400-odd rows, filtered) plus the
+        // `lazyos-tz`: timedatectl list-timezones (400-odd rows, filtered) plus the
         // network-time switch. Restarts waybar so the bar clock updates.
         path: "menu tz",
         summary: "set the time zone and network time sync (spec 010)",
         shape: Shape::Pick,
-        symlinks: &["rofi-tz"],
-        installed: &["rofi-tz"],
+        symlinks: &["lazyos-tz"],
+        installed: &["lazyos-tz"],
     },
     CommandSpec {
-        // `rofi-dns`: point the active connection at a resolver (Cloudflare,
+        // `lazyos-dns`: point the active connection at a resolver (Cloudflare,
         // Google, Quad9, AdGuard) or back at DHCP. The change is applied by
         // modifying the connection and bringing it up again; the read-back
         // shows what NetworkManager is actually using.
         path: "menu dns",
         summary: "set DNS resolvers for the active connection (spec 010)",
         shape: Shape::Pick,
-        symlinks: &["rofi-dns"],
-        installed: &["rofi-dns"],
+        symlinks: &["lazyos-dns"],
+        installed: &["lazyos-dns"],
     },
     CommandSpec {
-        // `rofi-vnc`: wayvnc on loopback, read-only, nothing resident. The
+        // `lazyos-vnc`: wayvnc on loopback, read-only, nothing resident. The
         // tunnel command is copied for the other machine. The bar's eye is a
         // state file, not a process.
         path: "menu vnc",
         summary: "share this screen read-only over ssh (spec 010)",
         shape: Shape::Pick,
-        symlinks: &["rofi-vnc"],
-        installed: &["rofi-vnc"],
+        symlinks: &["lazyos-vnc"],
+        installed: &["lazyos-vnc"],
     },
     CommandSpec {
-        // `rofi-quick`: the radio switches (Wi-Fi, Bluetooth, night light,
+        // `lazyos-settings`: the radio switches (Wi-Fi, Bluetooth, night light,
         // DND, touchpad, tablet mode, rotation, automount, audio, media),
         // each showing real state from the same probes as today. Delegates to
         // the existing pickers/panels (bar-net, bar-bt, bar-audio, bar-power,
-        // rofi-display, rofi-vnc, etc.) instead of duplicating them.
+        // lazyos-display, lazyos-vnc, etc.) instead of duplicating them.
         path: "menu settings",
         summary: "quick settings: Wi-Fi, BT, night light, DND, touchpad, tablet mode, display, automount, keyboard, translate, audio, media, battery (spec 010)",
         shape: Shape::Pick,
-        symlinks: &["rofi-quick"],
-        installed: &["rofi-quick"],
+        symlinks: &["lazyos-settings"],
+        installed: &["lazyos-settings"],
     },
     CommandSpec {
-        // `rofi-ssh`: remote login status (ssh.service enabled/running).
+        // `lazyos-ssh`: remote login status (ssh.service enabled/running).
         // The image runs openssh-server with ssh.service enabled on every boot.
         // This menu shows the status and the commands to change it.
         path: "menu ssh",
         summary: "remote login status: ssh.service enabled/running (spec 010)",
         shape: Shape::Pick,
-        symlinks: &["rofi-ssh"],
-        installed: &["rofi-ssh"],
+        symlinks: &["lazyos-ssh"],
+        installed: &["lazyos-ssh"],
     },
     CommandSpec {
         // Every row the menu has, plus the commands that need no question and
@@ -231,14 +231,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &[],
     },
     CommandSpec {
-        // The file list (spec 009). `rofi-files` is a link to this binary in
+        // The file list (spec 009). `lazyos-files` is a link to this binary in
         // the UI tree, so Alt+Ctrl+F, Alt+Search (`--search`), the launcher
         // entry and the scripts that open a folder did not change.
         path: "menu files",
         summary: "browse a folder with a preview, or --search the newest files (spec 009)",
         shape: Shape::Pick,
-        symlinks: &["rofi-files"],
-        installed: &["rofi-files"],
+        symlinks: &["lazyos-files"],
+        installed: &["lazyos-files"],
     },
     CommandSpec {
         // The uncapped walk with a preview (Search+Shift), where fzf was.
@@ -253,8 +253,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         path: "menu grep",
         summary: "search inside the files; a match opens at its line (spec 009)",
         shape: Shape::Pick,
-        symlinks: &["rofi-grep"],
-        installed: &["rofi-grep"],
+        symlinks: &["lazyos-grep"],
+        installed: &["lazyos-grep"],
     },
     CommandSpec {
         // The opener table applied to one path: what a double click in favnyr
@@ -299,72 +299,72 @@ pub const COMMANDS: &[CommandSpec] = &[
         path: "menu media",
         summary: "what is playing, and the transport keys (spec 011)",
         shape: Shape::Pick,
-        symlinks: &["rofi-media"],
-        installed: &["rofi-media"],
+        symlinks: &["lazyos-media"],
+        installed: &["lazyos-media"],
     },
     CommandSpec {
         // Notify history: mako's history with dismiss/clear (spec 011).
         path: "menu notify",
         summary: "the notification history and do-not-disturb (spec 011)",
         shape: Shape::Pick,
-        symlinks: &["rofi-notify"],
-        installed: &["rofi-notify"],
+        symlinks: &["lazyos-notify-history"],
+        installed: &["lazyos-notify-history"],
     },
     CommandSpec {
         // Clipboard: cliphist rows, copy back, save image, clear (spec 011).
         path: "menu clip",
         summary: "clipboard history by kind, copy back, save image, clear (spec 011)",
         shape: Shape::Pick,
-        symlinks: &["rofi-clip"],
-        installed: &["rofi-clip"],
+        symlinks: &["lazyos-clip"],
+        installed: &["lazyos-clip"],
     },
     CommandSpec {
         // Emoji: the emojis.tsv table, insert through wtype (spec 011).
         path: "menu emoji",
         summary: "the emoji table, fuzzy filter, insert at cursor (spec 011)",
         shape: Shape::Pick,
-        symlinks: &["rofi-emoji"],
-        installed: &["rofi-emoji"],
+        symlinks: &["lazyos-emoji"],
+        installed: &["lazyos-emoji"],
     },
     CommandSpec {
         // Capture: screenshots, OCR, QR, recording (spec 011).
         path: "menu capture",
         summary: "screenshot, annotate, OCR, QR, record (spec 011)",
         shape: Shape::Pick,
-        symlinks: &["rofi-capture"],
-        installed: &["rofi-capture"],
+        symlinks: &["lazyos-capture"],
+        installed: &["lazyos-capture"],
     },
     CommandSpec {
         // QR: Wi-Fi payload or any text (spec 011).
         path: "menu qr",
         summary: "the Wi-Fi QR or any text, rendered in-window (spec 011)",
         shape: Shape::Pick,
-        symlinks: &["rofi-qr"],
-        installed: &["rofi-qr"],
+        symlinks: &["lazyos-qr"],
+        installed: &["lazyos-qr"],
     },
     CommandSpec {
         // Remind: title → note → when flow (spec 011).
         path: "menu remind",
         summary: "write it now, be told later, cancel from the list (spec 011)",
         shape: Shape::Pick,
-        symlinks: &["rofi-remind"],
-        installed: &["rofi-remind"],
+        symlinks: &["lazyos-remind"],
+        installed: &["lazyos-remind"],
     },
     CommandSpec {
         // Calc: expression parser, history, copy (spec 011).
         path: "menu calc",
-        summary: "an expression parser, not a rofi prompt (spec 011)",
+        summary: "an expression parser, not a dmenu prompt (spec 011)",
         shape: Shape::Pick,
-        symlinks: &["rofi-calc"],
-        installed: &["rofi-calc"],
+        symlinks: &["lazyos-calc"],
+        installed: &["lazyos-calc"],
     },
     CommandSpec {
         // Colour: the hex of a pixel and the palette (spec 011).
         path: "menu colour",
         summary: "pick a pixel and show the palette (spec 011)",
         shape: Shape::Pick,
-        symlinks: &["rofi-color"],
-        installed: &["rofi-color"],
+        symlinks: &["lazyos-color"],
+        installed: &["lazyos-color"],
     },
     CommandSpec {
         // Audio output picker (spec 011): the bar's sink list.
@@ -387,64 +387,64 @@ pub const COMMANDS: &[CommandSpec] = &[
         path: "menu apps",
         summary: "desktop entries with icons, frecency, Terminal=true → foot (spec 012)",
         shape: Shape::Pick,
-        symlinks: &["rofi-drun"],
-        installed: &["rofi-drun"],
+        symlinks: &["lazyos-apps"],
+        installed: &["lazyos-apps"],
     },
     CommandSpec {
         // Window switcher (spec 012): sway IPC tree, focus/close.
         path: "menu window",
         summary: "focus or close any window, from sway IPC (spec 012)",
         shape: Shape::Pick,
-        symlinks: &["rofi-window"],
-        installed: &["rofi-window"],
+        symlinks: &["lazyos-window"],
+        installed: &["lazyos-window"],
     },
     CommandSpec {
         // Run prompt (spec 012): PATH completion, Shift+Enter → foot.
         path: "menu run",
         summary: "PATH commands with completion, Shift+Enter in foot (spec 012)",
         shape: Shape::Pick,
-        symlinks: &["rofi-run"],
-        installed: &["rofi-run"],
+        symlinks: &["lazyos-run"],
+        installed: &["lazyos-run"],
     },
     CommandSpec {
         // Learn: manual pages + apropos (spec 012).
         path: "menu learn",
         summary: "the manual pages and apropos, rendered in the window (spec 012)",
         shape: Shape::Pick,
-        symlinks: &["rofi-learn"],
-        installed: &["rofi-learn"],
+        symlinks: &["lazyos-learn"],
+        installed: &["lazyos-learn"],
     },
     CommandSpec {
         // Keys: parsed sway config (spec 012).
         path: "menu keys",
         summary: "every binding from the sway config, comments as descriptions (spec 012)",
         shape: Shape::Pick,
-        symlinks: &["rofi-keys"],
-        installed: &["rofi-keys"],
+        symlinks: &["lazyos-keys"],
+        installed: &["lazyos-keys"],
     },
     CommandSpec {
         // Pkg: apt search + install (spec 012).
         path: "menu pkg",
         summary: "search packages and install with apt (spec 012)",
         shape: Shape::Pick,
-        symlinks: &["rofi-pkg"],
-        installed: &["rofi-pkg"],
+        symlinks: &["lazyos-pkg"],
+        installed: &["lazyos-pkg"],
     },
     CommandSpec {
         // Dev: profile export/restore/report (spec 012).
         path: "menu dev",
         summary: "profile export, restore and diagnostics bundle (spec 012)",
         shape: Shape::Pick,
-        symlinks: &["rofi-dev"],
-        installed: &["rofi-dev"],
+        symlinks: &["lazyos-dev"],
+        installed: &["lazyos-dev"],
     },
     CommandSpec {
         // About: fastfetch facts, revision, logs (spec 012).
         path: "menu about",
         summary: "system facts, revision, errors, boot time, devices (spec 012)",
         shape: Shape::Pick,
-        symlinks: &["rofi-about"],
-        installed: &["rofi-about"],
+        symlinks: &["lazyos-about"],
+        installed: &["lazyos-about"],
     },
     CommandSpec {
         // Wi-Fi network manager (spec 017): scan, signal, connect.
@@ -459,56 +459,56 @@ pub const COMMANDS: &[CommandSpec] = &[
         path: "menu agents",
         summary: "AI agent selector and accounts (spec 017)",
         shape: Shape::Pick,
-        symlinks: &["rofi-agents"],
-        installed: &["rofi-agents"],
+        symlinks: &["lazyos-agents"],
+        installed: &["lazyos-agents"],
     },
     CommandSpec {
         // Places & bookmarks (spec 017): folders, disks, mount.
         path: "menu places",
         summary: "user directories, mounted and mountable disks (spec 017)",
         shape: Shape::Pick,
-        symlinks: &["rofi-places"],
-        installed: &["rofi-places"],
+        symlinks: &["lazyos-places"],
+        installed: &["lazyos-places"],
     },
     CommandSpec {
         // Disk cleaner (spec 017): apt, journal, thumbnails, trash.
         path: "menu clean",
         summary: "reclaim disk space from caches, trash and journal (spec 017)",
         shape: Shape::Pick,
-        symlinks: &["rofi-clean"],
-        installed: &["rofi-clean"],
+        symlinks: &["lazyos-clean"],
+        installed: &["lazyos-clean"],
     },
     CommandSpec {
         // Process killer (spec 017): user processes, memory, SIGTERM.
         path: "menu kill",
         summary: "user processes with PID and memory, signal with SIGTERM (spec 017)",
         shape: Shape::Pick,
-        symlinks: &["rofi-kill"],
-        installed: &["rofi-kill"],
+        symlinks: &["lazyos-kill"],
+        installed: &["lazyos-kill"],
     },
     CommandSpec {
         // Media downloader (spec 017): yt-dlp into ~/Downloads.
         path: "menu download",
         summary: "download video or audio from link with yt-dlp (spec 017)",
         shape: Shape::Pick,
-        symlinks: &["rofi-download"],
-        installed: &["rofi-download"],
+        symlinks: &["lazyos-download"],
+        installed: &["lazyos-download"],
     },
     CommandSpec {
         // Keyboard layout (spec 017): switch layout via Sway IPC.
         path: "menu layout",
         summary: "switch keyboard layout via Sway IPC (spec 017)",
         shape: Shape::Pick,
-        symlinks: &["rofi-layout"],
-        installed: &["rofi-layout"],
+        symlinks: &["lazyos-layout"],
+        installed: &["lazyos-layout"],
     },
     CommandSpec {
         // Contextual file actions (spec 017): du, pack, unpack, convert.
         path: "menu file-actions",
         summary: "contextual file actions: du, compress, extract, convert (spec 017)",
         shape: Shape::Pick,
-        symlinks: &["rofi-file-actions"],
-        installed: &["rofi-file-actions"],
+        symlinks: &["lazyos-file-actions"],
+        installed: &["lazyos-file-actions"],
     },
     CommandSpec {
         // Translation (spec 017): translate selection or clipboard.
@@ -527,28 +527,27 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &["dictate"],
     },
     CommandSpec {
-        // Interactive theme and appearance selector (rofi-theme).
+        // Interactive theme and appearance selector (lazyos-theme-picker).
         path: "menu theme",
         summary: "interactive theme and appearance selector with live preview",
         shape: Shape::Task,
-        symlinks: &["rofi-theme", "lazyos-theme-picker"],
-        installed: &["rofi-theme"],
+        symlinks: &["lazyos-theme-picker"],
+        installed: &["lazyos-theme-picker"],
     },
     CommandSpec {
         // `lazyos installer`: the full TUI installer wizard (spec 018).
-        // Replaces `rofi-install`, `lazyos-install-run`, and `lazyos-install-log`.
+        // `lazyos-install-run` and `lazyos-install-log` stay as aliases for the
+        // headless halves; the old install menu is the installer itself now.
         path: "installer",
         summary: "install LazyOS to internal storage: pre-flight, user, timezone, safety (spec 018)",
         shape: Shape::Full,
         symlinks: &[
             "lazyos-installer",
-            "rofi-install",
             "lazyos-install-run",
             "lazyos-install-log",
         ],
         installed: &[
             "lazyos-installer",
-            "rofi-install",
             "lazyos-install-run",
             "lazyos-install-log",
         ],
@@ -665,7 +664,7 @@ mod tests {
     #[test]
     fn dispatch_resolves_symlink_names() {
         // The exact pair spec 001 names: the old script name and the new one.
-        let by_symlink = resolve("rofi-files", &[]).unwrap();
+        let by_symlink = resolve("lazyos-files", &[]).unwrap();
         let by_words = resolve("lazyos", &args(&["menu", "files"])).unwrap();
         assert_eq!(by_symlink.spec.path, by_words.spec.path);
         assert_eq!(by_symlink.spec.path, "menu files");
@@ -677,10 +676,13 @@ mod tests {
 
     #[test]
     fn the_power_list_is_one_command_reached_two_ways() {
-        // `rofi-power` and `lazyos menu power` are the same handler, and the
+        // `lazyos-power` and `lazyos menu power` are the same handler, and the
         // words win over the link so both keep working while the link is
         // being installed.
-        assert_eq!(resolve("rofi-power", &[]).unwrap().spec.path, "menu power");
+        assert_eq!(
+            resolve("lazyos-power", &[]).unwrap().spec.path,
+            "menu power"
+        );
         assert_eq!(
             resolve("lazyos", &args(&["menu", "power"]))
                 .unwrap()
@@ -693,7 +695,7 @@ mod tests {
         assert!(
             COMMANDS
                 .iter()
-                .any(|spec| spec.path == "menu power" && spec.symlinks.contains(&"rofi-power"))
+                .any(|spec| spec.path == "menu power" && spec.symlinks.contains(&"lazyos-power"))
         );
     }
 
@@ -769,7 +771,7 @@ mod tests {
 
     #[test]
     fn the_child_is_given_the_canonical_words_not_the_symlink() {
-        let r = resolve("rofi-files", &args(&["--search"])).unwrap();
+        let r = resolve("lazyos-files", &args(&["--search"])).unwrap();
         assert_eq!(r.words(), vec!["menu", "files"]);
         assert_eq!(r.args, args(&["--search"]));
     }

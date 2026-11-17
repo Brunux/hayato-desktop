@@ -1,6 +1,6 @@
 //! One window for a question with answers: the shape every system picker has.
 //!
-//! The nine dialogs were nine `rofi -dmenu` rounds with nine ways of saying
+//! The nine dialogs were nine `a dmenu` rounds with nine ways of saying
 //! "that did not work". They are one screen here: a card, a note line, the
 //! rows, and - when the next answer writes a disk - a [`Confirm`] whose first
 //! answer is Cancel. A picker is a short queue of questions, so the format

@@ -844,9 +844,9 @@ if grep -qs 'Super_L exec .*\$launcher' "$HOME/.config/sway/config"; then
 else
 	fail "the Search key does not run '\$launcher' in ~/.config/sway/config (it opens the file search, or nothing)"
 fi
-if grep -qs 'F20 exec .*rofi-files --search' "$HOME/.config/sway/config" &&
-	grep -qs 'Super_L+Mod1 exec .*rofi-files --search' "$HOME/.config/sway/config"; then
-	ok "Alt+Search opens the file search (rofi-files --search)"
+if grep -qs 'F20 exec .*lazyos-files --search' "$HOME/.config/sway/config" &&
+	grep -qs 'Super_L+Mod1 exec .*lazyos-files --search' "$HOME/.config/sway/config"; then
+	ok "Alt+Search opens the file search (lazyos-files --search)"
 else
 	fail "Alt+Search is missing its F20 press binding or its Super_L+Mod1 release fallback in ~/.config/sway/config"
 fi
@@ -872,7 +872,7 @@ grep -qs 'bindsym \$mod+d exec' /etc/sway/config.d/19-launcher.conf ||
 # `--help` lists the commands and `--symlinks` the links it installs.
 _fs_help=$(lazyos --help 2>/dev/null || :)
 _fs_links=$(lazyos --symlinks 2>/dev/null || :)
-for _fs in "rofi-files:menu files" "lazyos-find:menu find" "rofi-grep:menu grep" "lazyos-view:open"; do
+for _fs in "lazyos-files:menu files" "lazyos-find:menu find" "lazyos-grep:menu grep" "lazyos-view:open"; do
 	_fs_name=${_fs%%:*}
 	_fs_cmd=${_fs#*:}
 	if ! grep -q "^  $_fs_cmd  " <<<"$_fs_help"; then
@@ -925,10 +925,10 @@ fi
 # the list finds a file by its name, grep by what is written in it. Two things
 # take it away and neither says so - a missing binding (the key does nothing)
 # or a missing ripgrep (the window says so, and it reads as "no matches").
-if grep -rqs 'Ctrl+g exec .*rofi-grep' /etc/sway/config.d/; then
-	ok "Alt+Ctrl+G searches inside the files (rofi-grep)"
+if grep -rqs 'Ctrl+g exec .*lazyos-grep' /etc/sway/config.d/; then
+	ok "Alt+Ctrl+G searches inside the files (lazyos-grep)"
 else
-	fail "no 'Ctrl+g exec ...rofi-grep' binding in /etc/sway/config.d/: the key does nothing"
+	fail "no 'Ctrl+g exec ...lazyos-grep' binding in /etc/sway/config.d/: the key does nothing"
 fi
 have rg && ok "ripgrep present, which the search inside files runs" ||
 	fail "ripgrep is missing (package ripgrep): Alt+Ctrl+G finds nothing"
@@ -940,9 +940,9 @@ have rg && ok "ripgrep present, which the search inside files runs" ||
 # site problem instead of a missing package.
 _missing_dl=""
 for _c in yt-dlp ffmpeg node; do have "$_c" || _missing_dl="$_missing_dl $_c"; done
-[ -x "$HOME/.config/bin/rofi-download" ] || _missing_dl="$_missing_dl bin/rofi-download"
+[ -x "$HOME/.config/bin/lazyos-download" ] || _missing_dl="$_missing_dl bin/lazyos-download"
 if [ -z "$_missing_dl" ]; then
-	ok "download complete (yt-dlp, ffmpeg, node, rofi-download)"
+	ok "download complete (yt-dlp, ffmpeg, node, lazyos-download)"
 else
 	fail "download incomplete:$_missing_dl (the row opens a menu that cannot fetch)"
 fi
@@ -952,7 +952,7 @@ grep -qs 'js-runtimes node' /etc/yt-dlp.conf && ok "yt-dlp is told to use node (
 # The home folders the manual and the menus name (Documents, Downloads, Music,
 # Videos) are created by rootfs-setup.sh rather than shipped in the tree, because
 # git cannot carry an empty directory. A missing Downloads only moves the download
-# (rofi-download creates it), so this warns instead of failing.
+# (lazyos-download creates it), so this warns instead of failing.
 _missing_home=""
 for _d in Documents Downloads Music Videos; do
 	[ -d "$HOME/$_d" ] || _missing_home="$_missing_home $_d"
@@ -961,18 +961,18 @@ done
 	warn "home folders missing:$_missing_home (rootfs-setup.sh creates them; a download recreates Downloads)"
 
 # The file list's Tab (Alt+1 where it arrives) hands the row to
-# bin/rofi-file-actions, which is still a script: without it the key says the
+# bin/lazyos-file-actions, which is still a script: without it the key says the
 # actions menu did not start.
 _missing_actions=""
 for _c in tar unzip ffmpeg udisksctl; do have "$_c" || _missing_actions="$_missing_actions $_c"; done
-[ -x "$HOME/.config/bin/rofi-file-actions" ] || _missing_actions="$_missing_actions bin/rofi-file-actions"
+[ -x "$HOME/.config/bin/lazyos-file-actions" ] || _missing_actions="$_missing_actions bin/lazyos-file-actions"
 if [ -z "$_missing_actions" ]; then
 	ok "the file actions have their tools (tar, unzip, ffmpeg, udisksctl)"
 else
 	fail "file actions incomplete:$_missing_actions (Alt+1 offers rows that cannot run)"
 fi
 
-# The Developer menu (Alt+Ctrl+D, rofi-dev, the root menu's Developer row and
+# The Developer menu (Alt+Ctrl+D, lazyos-dev, the root menu's Developer row and
 # org.lazyos.dev.desktop) exports ~/.ssh, ~/.gnupg and the dotfiles into an
 # encrypted archive, restores one, and writes a diagnostics bundle. Every piece
 # is needed at a different moment: a missing gpg fails after the passphrase, a
@@ -980,11 +980,11 @@ fi
 # not mounted yet cannot be offered.
 _missing_dev=""
 for _c in tar zstd gpg udisksctl; do have "$_c" || _missing_dev="$_missing_dev $_c"; done
-for _s in rofi-dev lazyos-profile; do
+for _s in lazyos-dev lazyos-profile; do
 	[ -x "$HOME/.config/bin/$_s" ] || _missing_dev="$_missing_dev bin/$_s"
 done
 if [ -z "$_missing_dev" ]; then
-	ok "developer menu complete (tar, zstd, gpg, udisksctl, rofi-dev, lazyos-profile)"
+	ok "developer menu complete (tar, zstd, gpg, udisksctl, lazyos-dev, lazyos-profile)"
 else
 	fail "developer menu incomplete:$_missing_dev (Alt+Ctrl+D loses those actions)"
 fi
@@ -1086,11 +1086,11 @@ if [ -x "$HOME/.config/bin/lazyos-profile" ]; then
 	# A passphrase prompt that lands on the VT is worse than no prompt at all:
 	# the session shows a busy card and nothing ever asks. `[ -t 0 ]` alone was
 	# that bug - sway's exec inherits /dev/tty7 - so the foreground-group test
-	# and the rofi fallback are part of the feature, not an implementation
+	# and the session fallback are part of the feature, not an implementation
 	# detail.
 	if grep -qs 'tpgid' "$HOME/.config/bin/lazyos-profile" &&
 		grep -qs 'in_session' "$HOME/.config/bin/lazyos-profile"; then
-		ok "the passphrase prompt cannot land on an invisible terminal (tpgid test, rofi fallback)"
+		ok "the passphrase prompt cannot land on an invisible terminal (tpgid test, session fallback)"
 	else
 		fail "bin/lazyos-profile asks the passphrase with a bare [ -t 0 ]: from a key the prompt goes to the VT and the export hangs"
 	fi
@@ -1114,8 +1114,8 @@ fi
 # (`lazyos menu --rows`), the key (24-keys.conf) and the launcher entry (whose
 # Exec is a $HOME script, so its execute bit is also part of it).
 _dev_reach=ok
-menu_runs rofi-dev || _dev_reach=
-grep -rqs 'Ctrl+d exec .*rofi-dev' /etc/sway/config.d/ || _dev_reach=
+menu_runs lazyos-dev || menu_runs "lazyos menu dev" || _dev_reach=
+grep -rqs 'Ctrl+d exec .*lazyos-dev' /etc/sway/config.d/ || _dev_reach=
 [ -r /usr/share/applications/org.lazyos.dev.desktop ] || _dev_reach=
 if [ -n "$_dev_reach" ]; then
 	ok "the Developer menu is reachable three ways (root menu, Alt+Ctrl+D, launcher)"
@@ -1141,9 +1141,9 @@ grep -qs 'Your profile, on a stick' /usr/share/doc/lazyos/04-software.md &&
 # witnessed below: without it the internal eMMC is offered again.
 _missing_fmt=""
 for _c in parted mkfs.exfat mkfs.ext4; do have "$_c" || _missing_fmt="$_missing_fmt $_c"; done
-[ -x "$HOME/.config/bin/rofi-format" ] || _missing_fmt="$_missing_fmt bin/rofi-format"
+[ -x "$HOME/.config/bin/lazyos-format" ] || _missing_fmt="$_missing_fmt bin/lazyos-format"
 if [ -z "$_missing_fmt" ]; then
-	ok "format a disk complete (parted, mkfs.exfat, mkfs.ext4, rofi-format)"
+	ok "format a disk complete (parted, mkfs.exfat, mkfs.ext4, lazyos-format)"
 else
 	fail "format a disk incomplete:$_missing_fmt (the Places row does nothing)"
 fi
@@ -1189,7 +1189,7 @@ else
 	fail "lazyos disk menus failed to resolve sbin tools with stripped PATH"
 fi
 
-# Auxiliary swap (rofi-swap) writes a swap partition and the fstab block that
+# Auxiliary swap (lazyos-swap) writes a swap partition and the fstab block that
 # activates it at boot. parted, mkswap, swapon/swapoff and blkid are the commands
 # it runs; a missing one is a menu that fails halfway, and the two rows that reach
 # it (Places and the root menu) are plain text that would still be drawn.
@@ -1197,9 +1197,9 @@ _missing_aux=""
 for _c in parted mkswap swapon swapoff blkid; do
 	have "$_c" || _missing_aux="$_missing_aux $_c"
 done
-[ -x "$HOME/.config/bin/rofi-swap" ] || _missing_aux="$_missing_aux bin/rofi-swap"
+[ -x "$HOME/.config/bin/lazyos-swap" ] || _missing_aux="$_missing_aux bin/lazyos-swap"
 if [ -z "$_missing_aux" ]; then
-	ok "auxiliary swap complete (parted, mkswap, swapon, blkid, rofi-swap)"
+	ok "auxiliary swap complete (parted, mkswap, swapon, blkid, lazyos-swap)"
 else
 	fail "auxiliary swap incomplete:$_missing_aux (the menu cannot prepare or activate a card)"
 fi
@@ -1251,20 +1251,20 @@ fi
 
 # The two entry points are static rows, so they can outlive the script. Places is
 # the documented way in (the root menu's row is the second copy).
-if [ -r "$HOME/.config/bin/rofi-places" ]; then
-	if [ -L "$HOME/.config/bin/rofi-places" ] && [ "$(readlink -f "$HOME/.config/bin/rofi-places")" = "/usr/bin/lazyos" ]; then
+if [ -r "$HOME/.config/bin/lazyos-places" ]; then
+	if [ -L "$HOME/.config/bin/lazyos-places" ] && [ "$(readlink -f "$HOME/.config/bin/lazyos-places")" = "/usr/bin/lazyos" ]; then
 		lazyos menu places --rows 2>/dev/null | grep -q 'action:swap' &&
 			ok "Places lists the Auxiliary swap row (lazyos menu places)" ||
 			fail "lazyos menu places has no Auxiliary swap row: the disk menu is unreachable from Places"
 	else
-		grep -qs 'rofi-swap' "$HOME/.config/bin/rofi-places" &&
+		grep -qs 'lazyos-swap' "$HOME/.config/bin/lazyos-places" &&
 			ok "Places lists the Auxiliary swap row" ||
-			fail "bin/rofi-places has no Auxiliary swap row: the disk menu is unreachable from Places"
+			fail "bin/lazyos-places has no Auxiliary swap row: the disk menu is unreachable from Places"
 	fi
 fi
 
 # Install LazyOS (the full TUI installer wizard, spec 018: lazyos installer)
-# Replaces rofi-install, lazyos-install-run, and lazyos-install-log.
+# Replaces lazyos-installer, lazyos-install-run, and lazyos-install-log.
 # The TUI wizard provides pre-flight hardware inspection, timezone selection,
 # POSIX user account generation, partition diagrams, gated confirmation,
 # real-time progress gauge, and detached worker execution.
@@ -1275,10 +1275,10 @@ if have lazyos; then
 		fail "lazyos installer missing from lazyos --help"
 	fi
 
-	if lazyos --symlinks 2>&1 | grep -qs "rofi-install[[:space:]]*installer"; then
-		ok "rofi-install resolves to lazyos installer in symlinks table"
+	if lazyos --symlinks 2>&1 | grep -qs "lazyos-installer[[:space:]]*installer"; then
+		ok "lazyos-installer resolves to lazyos installer in symlinks table"
 	else
-		fail "rofi-install does not resolve to installer in lazyos --symlinks"
+		fail "lazyos-installer does not resolve to installer in lazyos --symlinks"
 	fi
 
 	_inst_check="$(lazyos installer --check 2>&1 || true)"
@@ -1312,7 +1312,7 @@ else
 	fail "installer utilities incomplete for $_inst_boot_type:$_install"
 fi
 
-menu_label 'Install LazyOS' && menu_runs rofi-install &&
+menu_label 'Install LazyOS' && menu_runs lazyos-installer &&
 	ok "root menu has the Install LazyOS row" ||
 	fail "the root menu has no Install LazyOS row"
 
@@ -1347,15 +1347,15 @@ fi
 # scripts (a missing one is invisible: the menu entry just does nothing); the
 # last two depend on hardware and packages, so they warn instead of failing.
 _learn_pages=$(ls /usr/share/doc/lazyos/*.md 2>/dev/null | wc -l)
-if [ "$_learn_pages" -ge 6 ] && [ -x "$HOME/.config/bin/rofi-learn" ]; then
-	ok "manual installed ($_learn_pages pages) and rofi-learn present"
+if [ "$_learn_pages" -ge 6 ] && [ -x "$HOME/.config/bin/lazyos-learn" ]; then
+	ok "manual installed ($_learn_pages pages) and lazyos-learn present"
 else
-	fail "manual incomplete: $_learn_pages page(s) in /usr/share/doc/lazyos, rofi-learn $( [ -x "$HOME/.config/bin/rofi-learn" ] && echo present || echo missing)"
+	fail "manual incomplete: $_learn_pages page(s) in /usr/share/doc/lazyos, lazyos-learn $( [ -x "$HOME/.config/bin/lazyos-learn" ] && echo present || echo missing)"
 fi
-[ -x "$HOME/.config/bin/rofi-keys" ] && ok "keybindings view (rofi-keys) is executable" ||
-	fail "bin/rofi-keys is missing: the key view has no script"
-[ -x "$HOME/.config/bin/rofi-files" ] && ok "file browser (rofi-files) is executable" ||
-	fail "bin/rofi-files is missing: Alt+Ctrl+F and the Files menu entry do nothing"
+[ -x "$HOME/.config/bin/lazyos-keys" ] && ok "keybindings view (lazyos-keys) is executable" ||
+	fail "bin/lazyos-keys is missing: the key view has no script"
+[ -x "$HOME/.config/bin/lazyos-files" ] && ok "file browser (lazyos-files) is executable" ||
+	fail "bin/lazyos-files is missing: Alt+Ctrl+F and the Files menu entry do nothing"
 # The translate key is taught in one place, the shortcuts page, and the Settings
 # row only says what it does - not that it exists.  A manual that lost the row
 # is a key nobody finds.
@@ -1367,9 +1367,9 @@ grep -qs 'Alt+Ctrl+T' /usr/share/doc/lazyos/03-shortcuts.md ||
 # quietest failure in the session: the row is still listed (the menu draws it
 # from a static table) and choosing it does nothing at all.
 _missing_menus=""
-for _s in rofi-quick rofi-notify rofi-clean rofi-kill rofi-tz rofi-places \
-	rofi-media rofi-calc rofi-layout rofi-power rofi-about rofi-dns \
-	rofi-pkg rofi-color rofi-remind rofi-theme; do
+for _s in lazyos-settings lazyos-notify-history lazyos-clean lazyos-kill lazyos-tz lazyos-places \
+	lazyos-media lazyos-calc lazyos-layout lazyos-power lazyos-about lazyos-dns \
+	lazyos-pkg lazyos-color lazyos-remind lazyos-theme-picker; do
 	[ -r "$HOME/.config/bin/$_s" ] || _missing_menus="$_missing_menus bin/$_s"
 done
 if [ -z "$_missing_menus" ]; then
@@ -1399,7 +1399,7 @@ fi
 # silently take half the menu away is a missing systemd-analyze (every custom
 # date is then refused while the five delays keep working) and a missing
 # notification icon (the card has no picture and nothing logs it).
-# Note: `rofi-remind` is now `lazyos menu remind` (unit-tested in
+# Note: `lazyos-remind` is now `lazyos menu remind` (unit-tested in
 # `system::remind::tests`).
 _reminder=""
 have systemd-analyze || _reminder="$_reminder systemd-analyze"
@@ -1407,7 +1407,7 @@ have notify-send || _reminder="$_reminder notify-send"
 have jq || _reminder="$_reminder jq"
 [ -r /usr/share/icons/LazyOS/48x48/apps/preferences-system-time.png ] ||
 	_reminder="$_reminder preferences-system-time.png"
-[ -x "$HOME/.config/bin/rofi-remind" ] || _reminder="$_reminder bin/rofi-remind"
+[ -x "$HOME/.config/bin/lazyos-remind" ] || _reminder="$_reminder bin/lazyos-remind"
 if [ -z "$_reminder" ]; then
 	ok "reminders complete (systemd-analyze, notify-send, jq, the clock icon)"
 else
@@ -1426,13 +1426,13 @@ if have systemd-analyze; then
 	fi
 fi
 
-# 02-rofi.md sends a reader to the root menu for DNS, Packages, Colour, About and
+# 02-menus.md sends a reader to the root menu for DNS, Packages, Colour, About and
 # Reminders. A row that goes missing is a documented keypress that answers
 # nothing - Colour was the one that had neither the row nor the `case` arm.
 if [ -n "$MENU_ROWS" ]; then
 	_root_missing=
-	for _m in rofi-dns rofi-pkg rofi-color rofi-about rofi-remind rofi-swap rofi-format rofi-display rofi-tz rofi-vnc rofi-quick rofi-ssh; do
-		menu_runs "$_m" || menu_runs "lazyos menu ${_m#rofi-}" || menu_runs "lazyos menu colour" || _root_missing="$_root_missing ${_m#rofi-}"
+	for _m in lazyos-dns lazyos-pkg lazyos-color lazyos-about lazyos-remind lazyos-swap lazyos-format lazyos-display lazyos-tz lazyos-vnc lazyos-settings lazyos-ssh; do
+		menu_runs "$_m" || menu_runs "lazyos menu ${_m#lazyos-}" || menu_runs "lazyos menu colour" || _root_missing="$_root_missing ${_m#lazyos-}"
 	done
 	[ -z "$_root_missing" ] &&
 		ok "root menu reaches DNS, Packages, Colour, About, Reminders, Auxiliary swap, Format, Display, Time zone, VNC, Settings and SSH" ||
@@ -1455,7 +1455,7 @@ if [ -n "$MENU_ROWS" ]; then
 		fail "root-menu rows whose program is missing (the row does nothing):$_dead_rows"
 fi
 
-# The key view (`rofi-keys` -> `lazyos menu keys`, spec 012) is now a TUI in
+# The key view (`lazyos-keys` -> `lazyos menu keys`, spec 012) is now a TUI in
 # `lazyos`: each row draws `Glyph::Key` (verified by `lazyos --glyphs` in the
 # framework section) and parses `/etc/sway/config` + `/etc/sway/config.d/*.conf`
 # (unit-tested in `system::keys::tests`). Verify that `--rows` returns bindings
@@ -1495,7 +1495,7 @@ _missing_capture=""
 for _c in grimshot grim slurp tesseract zbarimg qrencode swappy wf-recorder; do
 	have "$_c" || _missing_capture="$_missing_capture $_c"
 done
-for _s in rofi-capture rofi-qr screenshot; do
+for _s in lazyos-capture lazyos-qr screenshot; do
 	[ -x "$HOME/.config/bin/$_s" ] || _missing_capture="$_missing_capture bin/$_s"
 done
 if [ -z "$_missing_capture" ]; then
@@ -1666,11 +1666,11 @@ fi
 # tunnel command without opening a window.
 _missing_vnc=""
 have wayvnc || _missing_vnc="$_missing_vnc wayvnc"
-[ -x "$HOME/.config/bin/rofi-vnc" ] || _missing_vnc="$_missing_vnc bin/rofi-vnc"
+[ -x "$HOME/.config/bin/lazyos-vnc" ] || _missing_vnc="$_missing_vnc bin/lazyos-vnc"
 if [ -z "$_missing_vnc" ]; then
-	ok "screen sharing complete (wayvnc, bin/rofi-vnc)"
+	ok "screen sharing complete (wayvnc, bin/lazyos-vnc)"
 else
-	fail "screen sharing incomplete:$_missing_vnc (wayvnc is the server, bin/rofi-vnc is the menu)"
+	fail "screen sharing incomplete:$_missing_vnc (wayvnc is the server, bin/lazyos-vnc is the menu)"
 fi
 _vnc_cmd=$(lazyos menu vnc --command 2>/dev/null || :)
 if [ -n "$_vnc_cmd" ]; then
@@ -1694,10 +1694,10 @@ if [ -n "$_vnc_cmd" ]; then
 fi
 # A row and its arm, in both menus: a row whose key has no arm closes the list
 # and does nothing, which is the quietest failure a menu can have.
-settings_runs rofi-vnc &&
+settings_runs lazyos-vnc &&
 	ok "Settings carries the Share this screen row" ||
 	fail "Settings (lazyos menu settings) has no Share this screen row: the only way in would be the root menu"
-menu_runs rofi-vnc &&
+menu_runs lazyos-vnc &&
 	ok "the root menu reaches Share this screen" ||
 	fail "the root menu has no Share this screen row"
 # The bar's eye is a module over a state file, so the two halves that can be
@@ -1722,9 +1722,9 @@ fi
 # the menu reports instead of guessing.
 _vnc_pid=$(pgrep -x wayvnc 2>/dev/null || true)
 if [ -n "$_vnc_pid" ]; then
-	_vnc_state=$("$HOME/.config/bin/rofi-vnc" status 2>/dev/null | head -n 1 || true)
+	_vnc_state=$("$HOME/.config/bin/lazyos-vnc" status 2>/dev/null | head -n 1 || true)
 	if [ "$_vnc_state" = off ]; then
-		warn "wayvnc is running but rofi-vnc does not own it: the menu says off while the screen is being served (pid $_vnc_pid)"
+		warn "wayvnc is running but lazyos-vnc does not own it: the menu says off while the screen is being served (pid $_vnc_pid)"
 	else
 		info "the screen is being shared: $_vnc_state"
 	fi
@@ -1740,7 +1740,7 @@ for _c in cliphist wl-paste wl-copy wtype; do
 	have "$_c" || _missing_clip="$_missing_clip $_c"
 done
 [ -r "$HOME/.config/emojis.tsv" ] || _missing_clip="$_missing_clip .config/emojis.tsv"
-for _s in rofi-emoji rofi-clip; do
+for _s in lazyos-emoji lazyos-clip; do
 	[ -x "$HOME/.config/bin/$_s" ] || _missing_clip="$_missing_clip bin/$_s"
 done
 if [ -z "$_missing_clip" ]; then
@@ -2065,7 +2065,7 @@ if [ -n "$_welcome_tmp" ] && [ -x "$HOME/.config/bin/lazyos-welcome" ]; then
 fi
 
 # The manual is rendered with glow, and both the binary and the glamour style
-# are needed: without the style glow prints an error and exits, and rofi-learn
+# are needed: without the style glow prints an error and exits, and lazyos-learn
 # opens a foot window that closes immediately, which reads as "nothing happened".
 _glow=""
 have glow || _glow="$_glow glow"
@@ -2087,11 +2087,11 @@ if [ -r "$HOME/.config/glow/solarized.json" ] &&
 fi
 
 # The browser is the image's reader for what chafa cannot draw: a PDF, the HTML
-# file, a URL. rofi-files and /usr/local/bin/xdg-open are the two things that
+# file, a URL. lazyos-files and /usr/local/bin/xdg-open are the two things that
 # start it; without it they answer with a notification instead, which is easy to
 # miss.
 if have firefox-esr; then
-	ok "browser installed (firefox-esr), used by rofi-files and xdg-open"
+	ok "browser installed (firefox-esr), used by lazyos-files and xdg-open"
 else
 	fail "firefox-esr is missing: Files cannot open an image or a PDF and xdg-open fails"
 fi
@@ -2125,10 +2125,10 @@ if have firefox-esr; then
 else
 	skip "firefox-esr is not installed: browser policies skipped"
 fi
-# Thumbnails in the file browser: rofi draws a row's picture through
+# Thumbnails in the file browser: the file browser draws a row's picture through
 # lazyos-thumbnail, which is ffmpeg for images and video and pdftocairo for a
 # PDF's first page. A missing binary is silent - the row simply has no picture -
-# so the two tools are a FAIL; the cache directory (rofi's own, under
+# so the two tools are a FAIL; the cache directory (the browser's own, under
 # ~/.cache/thumbnails) only warns, because it is created on first use.
 if have ffmpeg && have pdftocairo; then
 	ok "thumbnails can be generated (ffmpeg for images/video, pdftocairo for PDF page 1)"
@@ -2161,7 +2161,7 @@ fi
 if [ -x /usr/local/bin/imv ]; then
 	ok "the imv short name resolves (/usr/local/bin/imv -> the package dispatcher)"
 else
-	fail "/usr/local/bin/imv is missing: rofi-files and lazyos-view cannot start the viewer"
+	fail "/usr/local/bin/imv is missing: lazyos-files and lazyos-view cannot start the viewer"
 fi
 # imv has no on-screen help: the first picture of a session says its keys in one
 # notification. A missing executable bit or a dropped call is silent - the picture
@@ -2187,7 +2187,7 @@ fi
 # row falls back to Firefox (an .mkv then asks to be downloaded), so this is a
 # FAIL - the row claims to play something.
 if have mpv; then
-	ok "media player installed (mpv), what rofi-files opens a video with"
+	ok "media player installed (mpv), what lazyos-files opens a video with"
 else
 	fail "mpv is missing: a video in Files falls back to Firefox (chafa cannot decode a container)"
 fi
@@ -2339,7 +2339,7 @@ if grep -rqs 'Ctrl+Shift+f exec .*favnyr' /etc/sway/config.d/; then
 else
 	fail "no 'Ctrl+Shift+f exec ...favnyr' binding in /etc/sway/config.d/: Alt+Ctrl+Shift+F does nothing"
 fi
-# Mounting removable media uses udisks2; both the file manager (favnyr) and rofi-places
+# Mounting removable media uses udisks2; both the file manager (favnyr) and lazyos-places
 # through /usr/bin/udisksctl to udisksd on the system bus. The check is the client
 # talking to the daemon (udisksctl status activates the D-Bus service), because
 # the package can be installed with the service missing from the bus.
@@ -2744,17 +2744,17 @@ fi
 
 # Agents: the menu is a script; whether a CLI is installed is informational,
 # because installing one is the menu's own job.
-[ -x "$HOME/.config/bin/rofi-agents" ] && ok "agents menu (rofi-agents) is executable" ||
-	fail "bin/rofi-agents is missing: Alt+Ctrl+Shift+A does nothing"
+[ -x "$HOME/.config/bin/lazyos-agents" ] && ok "agents menu (lazyos-agents) is executable" ||
+	fail "bin/lazyos-agents is missing: Alt+Ctrl+Shift+A does nothing"
 # The agents menu draws the session's glyph rows natively via `lazyos menu agents`.
-if [ -L "$HOME/.config/bin/rofi-agents" ] && [ "$(readlink -f "$HOME/.config/bin/rofi-agents")" = "/usr/bin/lazyos" ]; then
+if [ -L "$HOME/.config/bin/lazyos-agents" ] && [ "$(readlink -f "$HOME/.config/bin/lazyos-agents")" = "/usr/bin/lazyos" ]; then
 	ok "the agents menu draws the session's glyph rows (lazyos menu agents)"
 	ok "the agents menu asks the framework to render markup rows"
-elif [ -x "$HOME/.config/bin/rofi-agents" ]; then
+elif [ -x "$HOME/.config/bin/lazyos-agents" ]; then
 	ok "the agents menu draws the session's glyph rows"
 	ok "the agents menu asks the framework to render markup rows"
 else
-	fail "bin/rofi-agents is missing"
+	fail "bin/lazyos-agents is missing"
 fi
 _agent_bins=""
 for _a in claude codex opencode gemini copilot; do have "$_a" && _agent_bins="$_agent_bins $_a"; done
@@ -2783,28 +2783,28 @@ if [ -x "$_oc_bin" ]; then
 else
 	fail "OpenCode is missing from ~/.opencode/bin: the image ships it (tools/opencode/)"
 fi
-if [ -L "$HOME/.config/bin/rofi-agents" ] && [ "$(readlink -f "$HOME/.config/bin/rofi-agents")" = "/usr/bin/lazyos" ]; then
+if [ -L "$HOME/.config/bin/lazyos-agents" ] && [ "$(readlink -f "$HOME/.config/bin/lazyos-agents")" = "/usr/bin/lazyos" ]; then
 	ok "the Agents menu puts ~/.opencode/bin on PATH"
-	ok "the agents menu starts a session with the default agent (rofi-agents --default)"
+	ok "the agents menu starts a session with the default agent (lazyos-agents --default)"
 else
-	if grep -qs '\.opencode/bin' "$HOME/.config/bin/rofi-agents"; then
+	if grep -qs '\.opencode/bin' "$HOME/.config/bin/lazyos-agents"; then
 		ok "the Agents menu puts ~/.opencode/bin on PATH"
 	else
-		fail "bin/rofi-agents no longer adds ~/.opencode/bin: OpenCode's row becomes an install row"
+		fail "bin/lazyos-agents no longer adds ~/.opencode/bin: OpenCode's row becomes an install row"
 	fi
 	# The root menu's AI group opens with the action an agent is for - a session -
 	# so the section is an action and a list, not only a list. It calls
-	# `rofi-agents --default`, which starts the recorded default and falls back to
+	# `lazyos-agents --default`, which starts the recorded default and falls back to
 	# OpenCode; both halves are asked because either one missing makes the row a
 	# no-op: a flag the script does not have exits 2 into the journal, and a row
 	# nobody draws is simply not there.
-	if grep -qs -- '--default' "$HOME/.config/bin/rofi-agents"; then
-		ok "the agents menu starts a session with the default agent (rofi-agents --default)"
+	if grep -qs -- '--default' "$HOME/.config/bin/lazyos-agents"; then
+		ok "the agents menu starts a session with the default agent (lazyos-agents --default)"
 	else
-		fail "bin/rofi-agents lost --default: the AI group's Agent session row does nothing"
+		fail "bin/lazyos-agents lost --default: the AI group's Agent session row does nothing"
 	fi
 fi
-menu_runs 'rofi-agents --default' &&
+menu_runs 'lazyos-agents --default' &&
 	ok "the root menu's AI group starts a session with the default agent" ||
 	fail "the root menu lost the Agent session row: its AI group can only open the list"
 
@@ -2961,7 +2961,7 @@ fi
 section "The framework"
 # ---------------------------------------------------------------------------
 # The session's Rust framework (docs/plan-ui.md): one `lazyos` binary that the
-# rofi/bars menus become symlinks to. Spec 001 lands the binary, the dispatch,
+# bar helpers and legacy names become symlinks to. Spec 001 lands the binary, the dispatch,
 # the host and the terminal; every check below is what would otherwise fail
 # silently - a key that opens nothing because the binary is missing, a symlink
 # that points at a name the table does not carry, or a window that tiles because
@@ -3021,7 +3021,7 @@ if have lazyos; then
 
 	# Spec 007: the root menu is the binary's table now, and `bar-menu` (what
 	# Alt+Space and the bar's button run) is a link to it. Three things can go
-	# missing without an error: the command, a row the old rofi menu had (the
+	# missing without an error: the command, a row the old menu had (the
 	# list below is bar-menu's keys, in its order, from its last version), and
 	# the Ask row this spec adds. A lost row is a documented keypress that
 	# answers nothing, so each one is a FAIL, named.
@@ -3074,7 +3074,7 @@ if have lazyos; then
 	# And the reverse shadow: a *script* in ~/.config/bin whose name the table
 	# installs.  ~/.config/bin comes before /usr/bin in the session's PATH, so
 	# the port is present and unreachable - the old surface answers the key,
-	# which is exactly what `rofi-media` and ten others did while the table
+	# which is exactly what `lazyos-media` and ten others did while the table
 	# already called them installed.
 	_fw_scripted=
 	for _fw_file in "$HOME"/.config/bin/*; do
@@ -3171,10 +3171,10 @@ if have lazyos; then
 		fi
 	fi
 
-	# Spec 012 moved the three rofi modes onto the framework.  The bindings read
+	# Spec 012 moved the three launcher modes onto the framework.  The bindings read
 	# `$launcher`/`$runner`/`$switcher`, so the variable is what has to say the
-	# new command - a binding that still expands to `rofi -show drun` opens
-	# rofi's launcher while the ported one exists and is unreachable.
+	# new command - a binding that still expands to the old launcher opens it
+	# while the ported one exists and is unreachable.
 	_sway_cfg_sys=/etc/sway/config
 	[ -n "$DESKTOP_REPO" ] && [ -f "$DESKTOP_REPO/uis/sway/files/etc/sway/config" ] && _sway_cfg_sys="$DESKTOP_REPO/uis/sway/files/etc/sway/config"
 	_fw_launcher=$(sed -n 's/^set \$launcher //p' "$_sway_cfg_sys" 2>/dev/null | head -n 1)
@@ -3213,7 +3213,7 @@ done
 # frame's box-drawing and block characters are text (JetBrains Mono, first in
 # foot's chain), and a row's picture is a Nerd Font codepoint from the symbol
 # font (spec 003).  A codepoint no font carries is a hole in the window that logs
-# nothing, which is the failure the rofi alphabet already shipped once in another
+# nothing, which is the failure the old picker's alphabet already shipped once in another
 # surface.
 #
 # `lazyos --glyphs` prints both lists from the binary, one `U+XXXX<TAB>name` per
@@ -3507,7 +3507,7 @@ else
 	skip "no lazyos binary: the theme engine is not installed"
 fi
 
-# The two keys, parsed out of the configuration the way rofi-keys parses them.
+# The two keys, parsed out of the configuration the way lazyos-keys parses them.
 _theme_keys=$(grep -rhs '^bindsym .*exec lazyos theme ' /etc/sway/config.d/*.conf "$HOME/.config/sway/config.d/"*.conf 2>/dev/null || true)
 for _theme_key in "theme next" "theme wallpaper next"; do
 	if printf '%s' "$_theme_keys" | grep -qF "$_theme_key"; then
@@ -3788,9 +3788,9 @@ else
 	skip "fc-list is not installed"
 fi
 
-# lib-rofi.sh retirement witness (spec 014):
+# old picker library retirement witness (spec 014):
 if [ ! -e "$HOME/.config/bin/lib-rofi.sh" ]; then
-	ok "lib-rofi.sh is retired (native lazyos glyph system in effect)"
+	ok "the old picker library is retired (native lazyos glyph system in effect)"
 fi
 
 # The launcher shows application *images*, and Debian's Adwaita has none of this
@@ -3825,8 +3825,8 @@ elif [ -z "$_icons" ]; then
 else
 	fail "icon theme incomplete:$_icons (the launcher shows empty spaces)"
 fi
-# rofi's run mode (Alt+Shift+D) asks the icon theme for an icon *named after the
-# binary* it would run, not for a .desktop icon (source/modes/run.c), so the
+# The command palette (Alt+Shift+D) asks the icon theme for an icon *named after the
+# binary* it would run, not for a .desktop icon, so the
 # command palette only has icons because make-icons.sh renders them under those
 # names too.  Missing ones are a blank 26 px column, not an error.
 _runless=""
@@ -3850,10 +3850,10 @@ section "Desktop Display & Audio Stack"
 # not survive a logout, so the menu saves one; a file the session's config does
 # not include is the same as none, and a Settings row that is gone leaves the
 # menu with no way in.
-_disp="$HOME/.config/bin/rofi-display"
+_disp="$HOME/.config/bin/lazyos-display"
 if [ -x "$_disp" ]; then
-	ok "rofi-display is executable"
-	if settings_runs rofi-display; then
+	ok "lazyos-display is executable"
+	if settings_runs lazyos-display; then
 		ok "Settings has the display arrangement row"
 	else
 		fail "Settings (lazyos menu settings) has no display arrangement row: the menu is unreachable"
@@ -3908,15 +3908,15 @@ fi
 # lets the last output be turned off (measured) - so the recovery has to be a
 # command, and both halves matter: a binding whose mode is gone does nothing,
 # and a mode nobody binds is unreachable with a black screen.
-if grep -qs 'rofi-display --panel-on' /etc/sway/config.d/*.conf \
+if grep -qs 'lazyos-display --panel-on' /etc/sway/config.d/*.conf \
 	"$HOME/.config/sway/config.d"/*.conf 2>/dev/null; then
 	ok "a key turns the internal panel back on with no picture (blind recovery)"
 else
-	fail "no binding runs 'rofi-display --panel-on': a black screen has no way back"
+	fail "no binding runs 'lazyos-display --panel-on': a black screen has no way back"
 fi
 case "$("$_disp" --panel-on --command 2>/dev/null)" in
 "swaymsg output eDP-1 enable"|"swaymsg output DSI-1 enable")
-	ok "rofi-display --panel-on exists" ;;
+	ok "lazyos-display --panel-on exists" ;;
 *)
 	fail "$_disp has no --panel-on mode: the recovery key would run nothing" ;;
 esac

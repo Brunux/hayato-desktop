@@ -22,13 +22,13 @@ set $up k
 set $right l
 # Your preferred terminal emulator
 set $term foot
-# Your preferred application launcher. The three jobs rofi used to do with its
+# Your preferred application launcher. The three jobs the old launcher used to do with its
 # own modes are the framework's now (spec 012) - one binary, one palette:
 # the applications ($launcher, the .desktop entries including this port's own
 # session actions in usr/share/applications/org.lazyos.*), the command palette
 # ($runner, $PATH, where Shift+Enter runs the choice in foot) and the window
 # switcher ($switcher, which sway does not have). They draw a Nerd Font glyph
-# per row and filter as you type, which is what rofi's rows could not do in
+# per row and filter as you type, which is what the old rows could not do in
 # foot. See uis/sway/README.md, "The launcher".
 set $launcher lazyos menu apps
 set $runner lazyos menu run
@@ -65,7 +65,7 @@ input "1267:287:Elan_Touchpad" {
 ### Key bindings
 #
 # $mod is Alt on this machine. Every binding carries its description on the line
-# above (rofi-keys, Alt+Shift+K, shows those comments), and a description applies
+# above (lazyos-keys, Alt+Shift+K, shows those comments), and a description applies
 # to the bindings that follow it until a blank line or the next comment.
 
     # Start a terminal

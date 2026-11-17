@@ -1,6 +1,6 @@
 //! MD5, for one purpose: the thumbnail cache's file name.
 //!
-//! rofi, `lazyos-find` and this binary share `~/.cache/thumbnails/normal/`,
+//! `lazyos-find`, the file browser and this binary share `~/.cache/thumbnails/normal/`,
 //! and that cache names a picture by the MD5 of its path - so a thumbnail the
 //! old list made is the one the new list shows, and a picture is decoded once,
 //! ever. It is a name, not a security boundary; no crate in the build has it,

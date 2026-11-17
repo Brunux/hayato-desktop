@@ -1,4 +1,4 @@
-//! Clipboard: cliphist rows by kind (text/link/image), copy back, save image, clear (`rofi-clip`).
+//! Clipboard: cliphist rows by kind (text/link/image), copy back, save image, clear (`lazyos-clip`).
 //!
 //! The old script used `cliphist list` to get the history (tab-separated: id<TAB>preview),
 //! classified each entry by its preview (image, link, or text), and showed them with the
@@ -383,7 +383,7 @@ impl ClipScreen {
     }
 }
 
-/// `lazyos menu clip` (`rofi-clip`): the window.
+/// `lazyos menu clip` (`lazyos-clip`): the window.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

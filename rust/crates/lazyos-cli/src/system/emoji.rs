@@ -1,4 +1,4 @@
-//! Emoji: the committed emojis.tsv table, fuzzy filter, insert through wtype (`rofi-emoji`).
+//! Emoji: the committed emojis.tsv table, fuzzy filter, insert through wtype (`lazyos-emoji`).
 //!
 //! The table is generated on the build host by `scripts/make-emojis.sh` from Python's
 //! Unicode database (~1300 rows: name, glyph, block), filtered against what the emoji
@@ -273,7 +273,7 @@ impl EmojiScreen {
     }
 }
 
-/// `lazyos menu emoji` (`rofi-emoji`): the window.
+/// `lazyos menu emoji` (`lazyos-emoji`): the window.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

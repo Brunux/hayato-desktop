@@ -1,4 +1,4 @@
-//! Tests for the interactive theme picker (`lazyos menu theme`, `rofi-theme`).
+//! Tests for the interactive theme picker (`lazyos menu theme`, `lazyos-theme-picker`).
 
 use std::process::Command;
 
@@ -63,7 +63,7 @@ fn theme_picker_resolves_from_command_and_symlink() {
     assert_eq!(direct.spec.path, "menu theme");
     assert_eq!(direct.spec.shape, command::Shape::Task);
 
-    let via_symlink = command::resolve("rofi-theme", &[]).unwrap();
+    let via_symlink = command::resolve("lazyos-theme-picker", &[]).unwrap();
     assert_eq!(via_symlink.spec.path, "menu theme");
 }
 

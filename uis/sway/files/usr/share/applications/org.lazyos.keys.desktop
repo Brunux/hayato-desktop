@@ -2,7 +2,7 @@
 Type=Application
 Name=Keybindings
 Comment=Every key binding this session defines, searchable
-Exec=/home/brunux/.config/bin/rofi-keys
+Exec=/home/brunux/.config/bin/lazyos-keys
 Icon=preferences-desktop-keyboard
 Terminal=false
 Categories=System;

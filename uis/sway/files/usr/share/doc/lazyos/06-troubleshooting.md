@@ -218,7 +218,7 @@ monitor* in `04-software.md`). In order:
 * **Nothing on either screen**: the panel was turned off by "Only the monitor"
   and then the monitor stopped answering (the cable came out, or it lost the
   link to the crosspoint). **`Alt+Ctrl+Shift+D`** turns the panel back on - it
-  runs `~/.config/bin/rofi-display --panel-on`, a sway command with no menu
+  runs `~/.config/bin/lazyos-display --panel-on`, a sway command with no menu
   involved, which matters because a menu cannot be drawn with every output off.
   When a screen can still draw, `Alt+Ctrl+O` → **Display arrangement** has the
   same row, **Bring the internal panel back**, even with no monitor plugged in.
@@ -231,8 +231,8 @@ CRTC has no gamma table and the panel's own backlight is the monitor's.
 ## The launcher opens empty, or shows an error dialog
 
 * The launcher (`Alt+D` / Search key), window switcher (`Alt+Tab`), and command
-  runner (`Alt+Shift+D`) are `lazyos menu apps|window|run` (`rofi-drun`,
-  `rofi-window`, `rofi-run`), drawn in a floating `foot` window. An empty
+  runner (`Alt+Shift+D`) are `lazyos menu apps|window|run` (`lazyos-apps`,
+  `lazyos-window`, `lazyos-run`), drawn in a floating `foot` window. An empty
   applications list means `/usr/share/applications` has no visible entries.
 * Every row of the root menu is a native subcommand or symlink to
   `/usr/bin/lazyos`, and a missing entry is a row that silently does nothing.
@@ -627,7 +627,7 @@ against a stub to prove both directions pass one.
 
 The paths in order, because each one fails in its own way:
 
-1. **Is it on?** `rofi-vnc status` answers `off` or
+1. **Is it on?** `lazyos-vnc status` answers `off` or
    `localhost:5900 · read-only`. If it says off, Settings → **Share this
    screen**. If the row says *wayvnc is not installed*, that is the package:
    `sudo apt install wayvnc` (a rebuilt image has it).
@@ -655,7 +655,7 @@ The paths in order, because each one fails in its own way:
 6. **The bar's eye is missing while it is shared.** The module is `custom/vnc`
    in `~/.config/waybar/config.jsonc`; force the poll with
    `pkill -RTMIN+8 waybar`. The indicator is a state file being read, so it
-   follows `rofi-vnc status`, and a wayvnc started by hand (without the menu)
+   follows `lazyos-vnc status`, and a wayvnc started by hand (without the menu)
    has no state file — the failure `check-system.sh` warns about.
 
 There is no audio over VNC, and nothing to configure: the sound stays on this

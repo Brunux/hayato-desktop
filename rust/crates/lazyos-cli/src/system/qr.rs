@@ -1,4 +1,4 @@
-//! QR codes: the Wi-Fi network this machine is on, clipboard text, or any text (`rofi-qr`).
+//! QR codes: the Wi-Fi network this machine is on, clipboard text, or any text (`lazyos-qr`).
 //!
 //! The payload is the Wi-Fi QR format phones understand:
 //!
@@ -689,7 +689,7 @@ impl QrScreen {
     }
 }
 
-/// `lazyos menu qr` (`rofi-qr`): the window.
+/// `lazyos menu qr` (`lazyos-qr`): the window.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

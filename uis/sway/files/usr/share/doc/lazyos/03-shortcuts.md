@@ -3,7 +3,7 @@
 `$mod` is **Alt** on LazyOS. System panels use **Alt+Ctrl+<letter>**, while
 window and launcher actions use **Alt+<key>**.
 
-The live list is **Alt+Ctrl+K** (`lazyos menu keys`, also linked as `rofi-keys`): it is parsed from the
+The live list is **Alt+Ctrl+K** (`lazyos menu keys`, also linked as `lazyos-keys`): it is parsed from the
 configuration files, so it is never stale, it can be searched, and Enter copies
 the command. Every row carries a glyph as well, so the list is scanned by shape before it is
 read. This page is the tour.
@@ -44,7 +44,7 @@ row each, narrowed as you type. The Search key is the magnifier; Alt+D is the
 other way to the same menu, so a keyboard that is not this Chromebook's can still
 reach it.
 
-**Alt+Search is the file search.** It opens `rofi-files --search`: one `fd` run
+**Alt+Search is the file search.** It opens `lazyos-files --search`: one `fd` run
 over your home (queues, caches and build trees left out), capped at 500 rows,
 listed with the same icons the file browser draws, so typing `invoice` finds the
 file by its name wherever it is. Enter opens the choice with the program that
@@ -292,7 +292,7 @@ layer is the mobile-international one, so accented characters are one **Cmp**
 away: `Cmp` then `a` opens that key's variants (`á`, `à`, `â`, `ä`…) and the one
 you tap is what gets typed; `Cmp` then `?` is how `¿` is reached. It types into
 the focused window through the virtual-keyboard protocol, which is why it works
-in foot, Firefox and the rofi prompts alike.
+in foot, Firefox and the menu prompts alike.
 
 The keyboard is **opaque**: with transparency the window underneath showed
 through the keys, which is the opposite of what a keyboard is for. Folding it

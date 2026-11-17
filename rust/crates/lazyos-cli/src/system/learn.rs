@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::vec_init_then_push)]
-/// Learn: the seven manual pages rendered in the window, plus `apropos` over man pages (`rofi-learn`).
+/// Learn: the seven manual pages rendered in the window, plus `apropos` over man pages (`lazyos-learn`).
 ///
-/// The old `rofi-learn` opened `glow` in a terminal for each page. This version renders
+/// The old Learn menu opened `glow` in a terminal for each page. This version renders
 /// markdown directly in the TUI using a subset renderer (headings, lists, code fences,
 /// bold, tables) with the theme's code role. The `apropos` search opens man pages in
 /// the same renderer.
@@ -954,7 +954,7 @@ impl LearnScreen {
     }
 }
 
-/// `lazyos menu learn` (`rofi-learn`): the manual viewer.
+/// `lazyos menu learn` (`lazyos-learn`): the manual viewer.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

@@ -1,4 +1,4 @@
-//! Keyboard Layout Switcher (`rofi-layout`, `lazyos menu layout`).
+//! Keyboard Layout Switcher (`lazyos-layout`, `lazyos menu layout`).
 //!
 //! Lists supported keyboard layouts from xkb's `evdev.lst`, marks the active
 //! layout, and applies choice via Sway IPC (`swaymsg input type:keyboard xkb_layout <layout>`),
@@ -86,7 +86,7 @@ pub fn set_layout(code: &str) -> Result<(), String> {
     let _ = fs::create_dir_all(&config_dir);
     let drop_in = config_dir.join("90-keyboard-layout.conf");
     let content = format!(
-        "# Written by rofi-layout: the keyboard layout picked in the session.\n\
+        "# Written by lazyos-layout: the keyboard layout picked in the session.\n\
          # Delete this file to go back to whatever the system configuration sets.\n\
          input \"type:keyboard\" xkb_layout \"{code}\"\n"
     );

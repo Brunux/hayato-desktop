@@ -1,4 +1,4 @@
-//! SSH remote login status (`rofi-ssh` equivalent).
+//! SSH remote login status (`lazyos-ssh` equivalent).
 //!
 //! The image runs `openssh-server` with `ssh.service` enabled on every boot.
 //! This menu shows the status and the commands to change it.
