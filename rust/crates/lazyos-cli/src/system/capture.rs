@@ -1,7 +1,7 @@
 //! Capture: screenshots, annotate, OCR, QR, recording (`lazyos menu capture`,
-//! also reachable as `rofi-capture`).
+//! also reachable as `lazyos-capture`).
 //!
-//! The old script was a rofi list over tools the image already has. Every row is
+//! The old script was a old list over tools the image already has. Every row is
 //! one command that ends before the list closes: grimshot takes the picture
 //! (screen, area, window, saved under ~/Pictures/Screenshots/<date> and named
 //! in a notification), swappy annotates one, tesseract reads the text out of a
@@ -427,7 +427,7 @@ fi"#;
 }
 
 /// Re-run this binary detached. `current_exe` is the real file, so a
-/// multi-call symlink (`rofi-capture`, `lazyos`) still reaches the dispatcher.
+/// multi-call symlink (`lazyos-capture`, `lazyos`) still reaches the dispatcher.
 fn spawn_self(args: &[String]) {
     let Ok(exe) = std::env::current_exe() else {
         return;
@@ -710,7 +710,7 @@ pub fn status() -> String {
     }
 }
 
-/// `lazyos menu capture` (`rofi-capture`): the window.
+/// `lazyos menu capture` (`lazyos-capture`): the window.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

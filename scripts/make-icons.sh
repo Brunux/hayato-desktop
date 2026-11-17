@@ -3,7 +3,7 @@
 #
 # The bar and every menu this session draws put a Font Awesome codepoint in the
 # text, because Pango resolves it through fontconfig and it costs nothing.  The
-# launcher cannot: rofi's drun mode shows .desktop icons as *images* (glycin),
+# launcher cannot: the launcher shows .desktop icons as *images* (glycin),
 # never as text.  Debian's Adwaita 51 ships only monochrome symbolic icons and
 # not one of this session's names, so a drun row for "Files" had a hole where an
 # icon should be, and the only full-colour theme in the archive (Papirus) is
@@ -18,7 +18,7 @@
 # later) still shows that one in colour, and only the session's own entries fall
 # back to these.
 #
-# rofi's *run* mode (the command palette, Alt+Shift+D) needs the same thing for a
+# The command palette (Alt+Shift+D) needs the same thing for a
 # different lookup: it asks the theme for an icon named after the binary it would
 # run, so a second table renders those names (foot, btop, nvim, ...).
 #
@@ -37,7 +37,7 @@
 #   scripts/make-icons.sh          rewrite the 48x48 PNGs
 #
 # Font Awesome 4.7 is what fonts-font-awesome-legacy provides, and its codepoints
-# are the ones ~/.config/bin/lib-rofi.sh uses, so the launcher, the menus and the
+# are the ones the framework's glyph table uses, so the launcher, the menus and the
 # bar all draw the same alphabet.
 
 set -eu
@@ -46,7 +46,7 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 theme="$here/uis/sway/files/usr/share/icons/LazyOS"
 out="$theme/48x48/apps"
 alt="$theme/scalable/apps"
-# rofi asks for its own icon size and GTK only falls back to a *larger* fixed
+# The launcher asks for its own icon size and GTK only falls back to a *larger* fixed
 # directory, never to a smaller one (a theme with only 26x26 resolved nothing),
 # so the same 48x48 PNGs are also reachable through a Scalable entry.  The
 # launcher draws them at 22-24 px, where the downscale is invisible.
@@ -113,7 +113,7 @@ preferences-desktop-screensaver    f06e
 applets-screenshooter              f030
 # The webcam row (org.lazyos.camera.desktop) asks for camera-web, the GNOME name
 # for a camera application. It is the same Font Awesome camera as Capture's row
-# above, and it is a second *name* because rofi resolves a .desktop Icon= by
+# above, and it is a second *name* because the launcher resolves a .desktop Icon= by
 # name: the glyph existing under another one is a hole on the launcher row.
 camera-web                         f030
 media-record                       f03d
@@ -142,9 +142,8 @@ folder-download                    f019
 system-software-install            f132
 TABLE
 
-# 2. The command palette.  rofi's run mode resolves an icon by *asking the icon
-#    theme for the name of the binary it would run* (source/modes/run.c:
-#    rofi_icon_fetcher_query(str[0], height)), not from a .desktop entry, so a
+# 2. The command palette.  It resolves an icon by *asking the icon theme for the
+#    name of the binary it would run*, not from a .desktop entry, so a
 #    palette row has an icon only if the theme has an icon with that exact name.
 #    Adwaita has none of these.  The element is a fixed 26 px column
 #    (solarized.rasi), so the rows a person starts from a palette get a glyph and
@@ -166,7 +165,7 @@ tig                                f1d3
 nvim                               f121
 vim                                f121
 # The Developer menu's script, which the key view draws on the Alt+Ctrl+D row.
-rofi-dev                           f121
+lazyos-dev                           f121
 nano                               f044
 micro                              f044
 tmux                               f120
@@ -223,29 +222,28 @@ dmesg                              f15c
 check-system                       f05a
 dictate                            f131
 dictate-model                      f019
-rofi                               f002
-rofi-capture                       f030
-rofi-qr                            f029
-rofi-files                         f07b
-rofi-places                        f07b
-rofi-quick                         f013
-rofi-learn                         f02d
-rofi-tz                            f017
-rofi-calc                          f1ec
-rofi-keys                          f11c
-rofi-notify                        f0f3
-rofi-media                         f001
-rofi-kill                          f0e7
-rofi-clean                         f1f8
-rofi-agents                        f0c0
-rofi-power                         f011
-rofi-emoji                         f118
-rofi-clip                          f0ea
-rofi-about                         f05a
-rofi-dns                           f0c2
-rofi-pkg                           f187
-rofi-color                         f1fc
-rofi-remind                        f017
+lazyos-capture                       f030
+lazyos-qr                            f029
+lazyos-files                         f07b
+lazyos-places                        f07b
+lazyos-settings                         f013
+lazyos-learn                         f02d
+lazyos-tz                            f017
+lazyos-calc                          f1ec
+lazyos-keys                          f11c
+lazyos-notify-history                        f0f3
+lazyos-media                         f001
+lazyos-kill                          f0e7
+lazyos-clean                         f1f8
+lazyos-agents                        f0c0
+lazyos-power                         f011
+lazyos-emoji                         f118
+lazyos-clip                          f0ea
+lazyos-about                         f05a
+lazyos-dns                           f0c2
+lazyos-pkg                           f187
+lazyos-color                         f1fc
+lazyos-remind                        f017
 cliphist                           f0ea
 wl-copy                            f0ea
 wl-paste                           f0ea
@@ -254,7 +252,6 @@ bar-net                            f1eb
 bar-bt                             f293
 bar-audio                          f028
 bar-power                          f0e7
-bar-pick                           f0b0
 bar-key                            f11c
 bar-updates                        f019
 bar-busy                           f0f3
@@ -270,9 +267,9 @@ wifi.sh                            f1eb
 COMMANDS
 
 # 3. Names the session asks for, not files in a menu.  The file browser draws a
-#    row's icon from one of these (rofi -dmenu resolves `\0icon\x1f<name>` through
+#    row's icon from one of these (the old picker resolved `\0icon\x1f<name>` through
 #    the icon theme, exactly like a .desktop entry), and a notification carries
-#    one as its app icon.  The names are the freedesktop ones mako and rofi
+#    one as its app icon.  The names are the freedesktop ones mako and the session
 #    expect, so a program that *is* installed and ships its own icon still wins
 #    through the Adwaita/hicolor fallback.
 render <<'NAMES'

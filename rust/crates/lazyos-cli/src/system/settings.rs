@@ -1,4 +1,4 @@
-//! Quick settings: the switches and panels of the session in one list (`rofi-quick`).
+//! Quick settings: the switches and panels of the session in one list (`lazyos-settings`).
 //!
 //! Every row states what is on and what pressing it does. It re-draws itself
 //! after a switch, so the state in the list is never stale. It leaves for the
@@ -34,17 +34,17 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("bt-radio", "Bluetooth radio", "bluetoothctl power"),
         ("bt", "Bluetooth devices", "bar-bt"),
         ("night", "Night light", "night-light start"),
-        ("notify", "Notifications", "rofi-notify"),
+        ("notify", "Notifications", "lazyos-notify-history"),
         ("dnd", "Do not disturb", "makoctl mode -t do-not-disturb"),
-        ("vnc", "Share this screen", "rofi-vnc"),
+        ("vnc", "Share this screen", "lazyos-vnc"),
         (
             "touchpad",
             "Touchpad",
             "swaymsg input type:touchpad events toggle",
         ),
         ("rotation", "Rotation", "swaymsg output transform"),
-        ("display", "Display arrangement", "rofi-display"),
-        ("theme", "Appearance & Themes", "rofi-theme"),
+        ("display", "Display arrangement", "lazyos-display"),
+        ("theme", "Appearance & Themes", "lazyos-theme-picker"),
         ("greeter", "Login screen (Greeter)", "lazyos menu greeter"),
         ("automount", "Auto-mount USB drives", "automount.conf"),
         ("tablet", "Tablet mode", "tablet-mode toggle"),
@@ -53,11 +53,11 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
             "Calibrate rotation",
             "tablet-mode calibrate",
         ),
-        ("layout", "Keyboard layout", "rofi-layout"),
+        ("layout", "Keyboard layout", "lazyos-layout"),
         ("translate", "Translate", "translate config"),
         ("audio", "Audio output", "bar-audio"),
         ("mixer", "Volume per application", "pavucontrol"),
-        ("media", "Media", "rofi-media"),
+        ("media", "Media", "lazyos-media"),
         ("power", "Battery", "bar-power"),
     ]
 }
@@ -454,7 +454,7 @@ fn build_rows() -> (Vec<lazyos_ui::Row>, Vec<String>) {
     (rows, keys)
 }
 
-/// `lazyos menu settings` (`rofi-quick`): the settings picker.
+/// `lazyos menu settings` (`lazyos-settings`): the settings picker.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
@@ -690,12 +690,12 @@ mod tests {
         assert!(
             table
                 .iter()
-                .any(|(k, _, r)| *k == "display" && *r == "rofi-display")
+                .any(|(k, _, r)| *k == "display" && *r == "lazyos-display")
         );
         assert!(
             table
                 .iter()
-                .any(|(k, _, r)| *k == "vnc" && *r == "rofi-vnc")
+                .any(|(k, _, r)| *k == "vnc" && *r == "lazyos-vnc")
         );
         assert!(
             table
@@ -712,6 +712,5 @@ mod tests {
                 .iter()
                 .any(|(k, l, _)| *k == "automount" && *l == "Auto-mount USB drives")
         );
-        assert!(!table.iter().any(|(_, _, r)| r.starts_with("lazyos-")));
     }
 }

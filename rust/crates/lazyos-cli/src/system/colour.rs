@@ -1,4 +1,4 @@
-//! Colour: pick a pixel and show the palette (`rofi-color`).
+//! Colour: pick a pixel and show the palette (`lazyos-color`).
 //!
 //! The old script used `slurp -p` to pick a 1x1 region, `grim` to capture it,
 //! and `ffmpeg` to read the raw pixel value. It then showed the hex, RGB, and
@@ -500,7 +500,7 @@ impl ColourScreen {
     }
 }
 
-/// `lazyos menu colour` (`rofi-color`): the window.
+/// `lazyos menu colour` (`lazyos-color`): the window.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

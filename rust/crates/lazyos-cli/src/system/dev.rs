@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::vec_init_then_push)]
-/// Developer: profile export, restore, and diagnostics bundle (`rofi-dev`).
+/// Developer: profile export, restore, and diagnostics bundle (`lazyos-dev`).
 ///
-/// The old `rofi-dev` was a three-row front end over `lazyos-profile` helper.
+/// The old developer menu was a three-row front end over `lazyos-profile` helper.
 /// This version provides structured pickers for archive selection and target
 /// destinations, dispatching operations detached from the terminal so that
 /// no child output leaks onto the screen.
@@ -907,7 +907,7 @@ pub fn build_export_args(
     args
 }
 
-/// `lazyos menu dev` (`rofi-dev`): developer profile tools.
+/// `lazyos menu dev` (`lazyos-dev`): developer profile tools.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

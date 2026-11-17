@@ -1,4 +1,4 @@
-//! Theme & Appearance selector: interactive visual theme browser with live preview (`rofi-theme`).
+//! Theme & Appearance selector: interactive visual theme browser with live preview (`lazyos-theme-picker`).
 //!
 //! Provides a zero-friction, eye-candy dual-pane TUI for exploring, previewing and applying
 //! LazyOS color themes and wallpapers. Adheres strictly to the LazyOS framework:

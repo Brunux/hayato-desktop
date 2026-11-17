@@ -18,7 +18,7 @@
 # spans for exactly that reason.  A TOML basic string parses the escape into the
 # same character, and the file stays ASCII.
 #
-# Every glyph below is a UI_I_* codepoint from ~/.config/bin/lib-rofi.sh, so the
+# Every glyph below is a UI_I_* codepoint from the framework's glyph table, so the
 # menus, the bar's own modules and these pills draw from one alphabet.  That is
 # also what makes them checkable: check-system.sh fails when a codepoint here is
 # not one the alphabet carries, and the alphabet itself is what the report asks

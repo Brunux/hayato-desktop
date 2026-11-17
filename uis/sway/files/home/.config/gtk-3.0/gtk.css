@@ -1,6 +1,6 @@
 /* Solarized Dark, the GTK3 half of the palette.
  *
- * One palette, five surfaces: foot draws the terminal in it, waybar and rofi
+ * One palette, five surfaces: foot draws the terminal in it, waybar and the framework windows
  * paint their own layer-shell surfaces from their own files, and this file is
  * the GTK3 half. The GTK3 *window* the image ships is **guvcview** (the camera);
  * the file manager used to be one and is now favnyr, a Slint binary that links no
@@ -18,7 +18,7 @@
  * overriding the names changes nothing that was already drawn with them. A user
  * stylesheet is parsed *last*, so an equal-specificity rule here does win.
  *
- * Deliberately no alpha, unlike foot (0.87), rofi (0.82) and the bar (0.71).
+ * Deliberately no alpha, unlike foot (0.87), the bar (0.71).
  * Those are surfaces you look past; this one holds a directory listing, and
  * translucency behind a column of filenames is the one place the bar's
  * readability argument does not hold. base03 is the same colour the wallpaper

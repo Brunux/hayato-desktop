@@ -1,4 +1,4 @@
-//! Auxiliary swap: a removable card or stick used as more memory (`rofi-swap`).
+//! Auxiliary swap: a removable card or stick used as more memory (`lazyos-swap`).
 //!
 //! The candidate list is `disk::candidates` — the same safety as Format a disk —
 //! and the guard is asked again after the pick because setup rewrites the whole
@@ -365,7 +365,7 @@ fn questions(found: &[Disk]) -> Vec<Question> {
     ]
 }
 
-/// `lazyos menu swap` (`rofi-swap`): the window, then the steps or the undo inside a TaskView.
+/// `lazyos menu swap` (`lazyos-swap`): the window, then the steps or the undo inside a TaskView.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,

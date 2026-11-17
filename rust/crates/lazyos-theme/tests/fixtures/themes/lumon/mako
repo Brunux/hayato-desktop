@@ -19,7 +19,7 @@
 # A card with no picture is what a name mako cannot resolve looks like - there is
 # no log line and no error, only a notification that is text. So every
 # notify-send in this session passes a name from the sets scripts/make-icons.sh
-# renders, through lib-rofi.sh's ui_say or busy's own fourth argument.
+# renders, through busy's own fourth argument.
 font=JetBrains Mono 11
 background-color=#16242de0
 text-color=#d9eef7

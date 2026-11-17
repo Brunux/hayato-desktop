@@ -1,8 +1,8 @@
 // Launcher (Apps): `.desktop` entries with icons, frecency, and `Terminal=true` → foot.
 //
-// The old `rofi -show drun` was a black box: the icon decoding happened at open time
-// through gdk-pixbuf, the ranking was rofi's own, and a `Terminal=true` entry opened
-// in whatever terminal rofi's `terminal` setting named. This version parses the
+// The old `the apps menu` was a black box: the icon decoding happened at open time
+// through gdk-pixbuf, the ranking was the old picker's own, and a `Terminal=true` entry opened
+// in whatever terminal the old picker's `terminal` setting named. This version parses the
 // `.desktop` files itself, resolves icons through the LazyOS theme, shares frecency
 // with the palette, and spawns `Terminal=true` entries in foot.
 //
@@ -466,7 +466,7 @@ impl AppsScreen {
     }
 }
 
-/// `lazyos menu apps` (`rofi -show drun`): the launcher window.
+/// `lazyos menu apps` (`the apps menu`): the launcher window.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

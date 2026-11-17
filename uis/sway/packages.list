@@ -40,7 +40,7 @@ wvkbd
 
 # what /etc/sway/config and the drop-ins actually invoke
 waybar
-# The browser: what rofi-files sends a PDF and the HTML file to, because it is
+# The browser: what lazyos-files sends a PDF and the HTML file to, because it is
 # the reader with search, zoom and printing, and its own PDF renderer. It is also
 # what the minimal /usr/local/bin/xdg-open opens, so foot's ctrl+click and any CLI
 # that shells out to xdg-open (yt-dlp's --print-trailer, a script printing a URL)
@@ -50,8 +50,8 @@ firefox-esr
 # The file browser's thumbnails are made by ~/.config/bin/lazyos-thumbnail, and
 # for a PDF the first page comes from poppler: 1.1 MB for pdftocairo (plus
 # pdftotext and pdftoppm), and it is the only PDF renderer besides Firefox's. No
-# XDG thumbnailer package is in this list on purpose - rofi's -preview-cmd runs
-# that script instead, and rofi keeps the cache itself
+# XDG thumbnailer package is in this list on purpose - the file browser runs
+# that script instead and keeps the cache itself
 # (~/.cache/thumbnails/normal, 128 px, 3-8 kB a picture).
 poppler-utils
 # chafa draws a picture, a video frame or an SVG with sixels, which foot renders
@@ -60,7 +60,7 @@ poppler-utils
 # resident: the window is the viewer. It was the image viewer until imv arrived
 # and is now the *fallback*: imv needs a working EGL context, and a GPU where it
 # does not get one (Panfrost is the case this port has hit before) still shows
-# the picture in sixels instead of nothing. rofi-files and lazyos-view try imv
+# the picture in sixels instead of nothing. lazyos-files and lazyos-view try imv
 # first and fall back here.
 chafa
 # The image viewer: imv 5.0.1 draws the picture on the GPU (one texture, scaled
@@ -71,18 +71,18 @@ chafa
 # (librsvg2-2, libheif1, libjxl0.11). Debian installs no /usr/bin/imv - the
 # package ships imv-wayland and imv-x11 plus a /usr/libexec/imv/imv wrapper that
 # picks one - so scripts/rootfs-setup.sh adds the short name, the same way it
-# does for bat and fd. rofi-files, lazyos-view and xdg-open all call `imv`.
+# does for bat and fd. lazyos-files, lazyos-view and xdg-open all call `imv`.
 imv
 # The player: mpv 0.41 decodes anything ffmpeg does (ffmpeg is already in
 # packages/tools.list for yt-dlp), seeks, shows subtitles, takes the XF86Audio*
 # keys and draws through libplacebo360 (installed) on the Wayland context. 3.5 MB
 # plus libass, libsixel1, libbluray/libdvdnav/libcdio, libva and friends. Before
 # this, a video container fell through chafa's "unknown file format" to Firefox,
-# which cannot play it either; rofi-files and lazyos-view now hand it to mpv,
+# which cannot play it either; lazyos-files and lazyos-view now hand it to mpv,
 # detached with setsid so the menu exits instead of waiting for the film.
 mpv
 # 83 kB, and it installs /etc/mpv/scripts/mpris.so: without it mpv is invisible
-# to playerctl, so rofi-media says "nothing is playing" and the bar's player
+# to playerctl, so lazyos-media says "nothing is playing" and the bar's player
 # module stays empty. It is a plugin mpv loads from its script directory, and
 # lazyos-view starts mpv with --no-config (so a profile from another machine
 # cannot decide what the session does) which empties those directories - the
@@ -115,14 +115,14 @@ guvcview
 # libcryptsetup/libnvme, providing /usr/bin/udisksctl and the
 # org.freedesktop.UDisks2 service on the system bus. It is D-Bus activated -
 # nothing runs until something asks - and it is what the file manager's device
-# list and gvfs' volume monitor talk to; rofi-places calls udisksctl to mount and unmount.
+# list and gvfs' volume monitor talk to; lazyos-places calls udisksctl to mount and unmount.
 # udiskie is deliberately NOT installed: it is a resident Python daemon
 # (python3-gi + gir1.2-gtk-3.0 + python3-docopt/python3-yaml, none of them here)
 # whose remaining job would be a tray icon this bar does not have. On-demand
-# udisksctl in rofi-places is the same result with no daemon.
+# udisksctl in lazyos-places is the same result with no daemon.
 udisks2
 # favnyr's removal action does not run `eject`: it unmounts through
-# `udisksctl` (the same tool rofi-places uses) and, when udisks refuses because
+# `udisksctl` (the same tool lazyos-places uses) and, when udisks refuses because
 # something holds the mount, runs `fuser -m <mountpoint>` to name what does -
 # its own string table carries `unmount`, `udisksctl`, `power-off`,
 # `--no-user-interaction`, `fuser`, `-m`, and its locale says
@@ -149,7 +149,7 @@ exfatprogs
 # makes "Open terminal here" start a terminal, because its fallback list of
 # emulators has no foot in it. A double click resolves through
 # /etc/xdg/mimeapps.list -> ~/.config/bin/lazyos-view, so it opens what
-# rofi-files opens. Why not a GTK file manager: nautilus is a 504-package
+# lazyos-files opens. Why not a GTK file manager: nautilus is a 504-package
 # closure, 38 MB of ICU, 31 MB of samba-libs and a localsearch indexer that
 # crawls $HOME, and the GTK3 one this image used shipped its own 229 packages
 # for a 4.9 MB window (docs/omarchy-gap.md has both measurements).
@@ -170,8 +170,7 @@ libglib2.0-bin
 # popups run here as well (with --app-id=popup, see bar-panels.conf), and
 # ~/.config/foot/foot.ini carries the solarized palette.
 foot
-# (the bar's click-through menus are rofi's dmenu mode now - see `rofi` above and
-# ~/.config/bin/bar-pick - so fuzzel is not needed.)
+# (the bar's click-through menus are native now, so fuzzel is not needed.)
 # jq parses `swaymsg -t get_inputs` for the keyboard-layout indicator.
 jq
 grimshot
@@ -187,7 +186,7 @@ wf-recorder
 # wayvnc serves this session as VNC, so a screen that is misbehaving can be
 # looked at from a bigger machine - the other half of the ssh login, which gives
 # a shell but not the picture (06-troubleshooting.md, 05-system.md). 0.10.1 is
-# 312 kB plus libneatvnc (218 kB) and libaml (82 kB). rofi-vnc starts it on
+# 312 kB plus libneatvnc (218 kB) and libaml (82 kB). lazyos-vnc starts it on
 # 127.0.0.1:5900 with --disable-input (read-only) and stops it again; nothing
 # runs until the row in Settings is used. Both halves are decisions: a viewer
 # looks and cannot type, and the loopback address means the ssh tunnel is the
@@ -197,7 +196,7 @@ wayvnc
 # wdisplays is the manual display arrangement: a GTK3 window that draws the two
 # outputs as rectangles to drag, over wlr-output-management (swayfx advertises
 # it; verified here with wlr-randr).  188 kB, and every dependency is already in
-# this image.  It is the second half of ~/.config/bin/rofi-display (Settings ->
+# this image.  It is the second half of ~/.config/bin/lazyos-display (Settings ->
 # Display arrangement), which opens it on a workspace of its own - the
 # rectangles need the width - and does the one-line arrangements itself.
 # Nothing resident: a window while it is open.

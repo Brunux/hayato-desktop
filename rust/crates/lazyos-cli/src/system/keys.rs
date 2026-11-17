@@ -1,6 +1,6 @@
-// Keys viewer: parsed from sway configuration with comments as descriptions (`rofi-keys`).
+// Keys viewer: parsed from sway configuration with comments as descriptions (`lazyos-keys`).
 //
-// The old `rofi-keys` was an awk script that parsed `/etc/sway/config`,
+// The old keys viewer was an awk script that parsed `/etc/sway/config`,
 // `/etc/sway/config.d/*.conf`, and `~/.config/sway/config`. This version does the same
 // parsing in pure Rust with the same rules: comments above bindings become descriptions,
 // `set $var` expansion, `$mod` → `Alt`, mode blocks, and section icons from the theme.
@@ -116,36 +116,35 @@ impl KeysScreen {
             "bar-key",
             "bar-menu",
             "bar-net",
-            "bar-pick",
             "bar-power",
             "bar-updates",
             "busy",
             "dictate",
             "dictate-model",
             "lazyos-screensaver",
-            "rofi-about",
-            "rofi-agents",
-            "rofi-calc",
-            "rofi-capture",
-            "rofi-clean",
-            "rofi-clip",
-            "rofi-color",
-            "rofi-dev",
-            "rofi-dns",
-            "rofi-emoji",
-            "rofi-files",
-            "rofi-keys",
-            "rofi-kill",
-            "rofi-learn",
-            "rofi-media",
-            "rofi-notify",
-            "rofi-pkg",
-            "rofi-places",
-            "rofi-power",
-            "rofi-qr",
-            "rofi-quick",
-            "rofi-remind",
-            "rofi-tz",
+            "lazyos-about",
+            "lazyos-agents",
+            "lazyos-calc",
+            "lazyos-capture",
+            "lazyos-clean",
+            "lazyos-clip",
+            "lazyos-color",
+            "lazyos-dev",
+            "lazyos-dns",
+            "lazyos-emoji",
+            "lazyos-files",
+            "lazyos-keys",
+            "lazyos-kill",
+            "lazyos-learn",
+            "lazyos-media",
+            "lazyos-notify-history",
+            "lazyos-pkg",
+            "lazyos-places",
+            "lazyos-power",
+            "lazyos-qr",
+            "lazyos-settings",
+            "lazyos-remind",
+            "lazyos-tz",
             "sway-hibernate",
             "sway-lock",
             "sway-suspend",
@@ -360,7 +359,7 @@ impl KeysScreen {
 
         // Category icon
         match category {
-            "Launcher" => "rofi".to_string(),
+            "Launcher" => "lazyos".to_string(),
             "Menu, panels and session" => "preferences-system".to_string(),
             "Lock and system" => "system-lock-screen".to_string(),
             "Brightness" => "display-brightness".to_string(),
@@ -550,7 +549,7 @@ pub fn rows() -> Vec<KeyBinding> {
     KeysScreen::load_bindings()
 }
 
-/// `lazyos menu keys` (`rofi-keys`): the keys viewer.
+/// `lazyos menu keys` (`lazyos-keys`): the keys viewer.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,
@@ -609,9 +608,9 @@ mod tests {
     #[test]
     fn icon_for_tool() {
         let mut tools = HashMap::new();
-        tools.insert("rofi-files".to_string(), ());
-        let icon = KeysScreen::binding_icon("rofi-files --search", "Launcher", &tools);
-        assert_eq!(icon, "rofi-files");
+        tools.insert("lazyos-files".to_string(), ());
+        let icon = KeysScreen::binding_icon("lazyos-files --search", "Launcher", &tools);
+        assert_eq!(icon, "lazyos-files");
     }
 
     #[test]

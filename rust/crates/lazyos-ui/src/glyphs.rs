@@ -2,7 +2,7 @@
 //!
 //! A row's picture is a Nerd Font codepoint, not a Font Awesome one.  The
 //! alphabet belongs to the terminal (spec 003) and the launcher's images belong
-//! to rofi: a command names a [`Glyph`], never a codepoint, so the picture is
+//! to the old picker: a command names a [`Glyph`], never a codepoint, so the picture is
 //! one word in the source and one table in the build - `scripts/make-glyphs.sh`
 //! writes `glyphs/table.rs` from the Nerd Fonts names, filtered against the
 //! character map of the font that has to draw it (`fonts-nerd-symbols`).

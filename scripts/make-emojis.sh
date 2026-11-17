@@ -1,7 +1,7 @@
 #!/bin/sh
 # Regenerate the emoji table the emoji picker reads.
 #
-# The picker (`~/.config/bin/rofi-emoji`, Alt+Ctrl+E) is a rofi list over one
+# The picker (`~/.config/bin/lazyos-emoji`, Alt+Ctrl+E) is a menu list over one
 # data file: a name to type and the glyph to insert.  Deboma gets that table from
 # its Quickshell emoji panel; Debian ships no emoji list at all, and the two
 # packages that carry one (`fonts-noto-color-emoji` has the glyphs, not the
@@ -10,7 +10,7 @@
 # So the table is generated here, once, from Python's Unicode database - the same
 # source the fonts and the names come from - and committed.  The image needs no
 # Python and no package for it: `rootfs-setup.sh` copies it with the rest of the
-# home directory, and `rofi-emoji` reads it.
+# home directory, and `lazyos-emoji` reads it.
 #
 # The table is filtered against the font that actually draws the glyphs.  A
 # codepoint the Unicode database names but the font does not carry is a row that

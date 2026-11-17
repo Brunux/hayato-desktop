@@ -355,7 +355,7 @@ pub fn draw_card_with(
 
 /// One line of a list: an icon, a label, a dim detail and a value.
 ///
-/// The four fields are what the session's `ui_row` drew with rofi, and keeping
+/// The four fields are what the session's `ui_row` drew with the old picker, and keeping
 /// them means a ported menu looks like the menu it replaces.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Row {

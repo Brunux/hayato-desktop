@@ -1,4 +1,4 @@
-//! Media Downloader (`rofi-download`, `lazyos menu download`).
+//! Media Downloader (`lazyos-download`, `lazyos menu download`).
 //!
 //! Prompts for video/audio URL (auto-populating from clipboard if valid),
 //! asks for download profile (video vs audio-only), and runs `yt-dlp` inside

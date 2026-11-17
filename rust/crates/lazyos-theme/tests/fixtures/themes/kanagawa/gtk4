@@ -2,7 +2,7 @@
    Change the theme (`lazyos theme set NAME`) or the template, then set it again. */
 /* Solarized Dark, the GTK4/libadwaita half of the palette.
  *
- * One palette, five surfaces: foot draws the terminal in it, waybar and rofi
+ * One palette, five surfaces: foot draws the terminal in it, waybar and the framework windows
  * paint their own layer-shell surfaces from their own files, gtk-3.0/gtk.css is
  * the GTK3 half (guvcview, the camera window, plus waybar and anything installed
  * later - the file manager is favnyr and links no GTK), and this file paints the

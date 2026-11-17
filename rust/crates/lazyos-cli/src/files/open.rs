@@ -1,7 +1,7 @@
 //! The one opener table (spec 009): extension → family → the program that
 //! opens it, the glyph a row draws and whether a thumbnail can be made.
 //!
-//! It used to be three copies kept in step by hand - `rofi-files`' awk icon
+//! It used to be three copies kept in step by hand - `lazyos-files`' awk icon
 //! table, its `case` for opening, and `lazyos-view` for a double click - and a
 //! difference between them was a file that opened one way from the list and
 //! another from the window. Now every surface asks [`family`] and [`plan`], and
@@ -152,7 +152,7 @@ impl Family {
         }
     }
 
-    /// The LazyOS theme name the rofi list drew for this family - what a card
+    /// The LazyOS theme name the old list drew for this family - what a card
     /// about the file asks mako for, and what `check-system.sh` holds the theme
     /// to. A thumbnail family names its fallback picture.
     pub fn icon(self) -> &'static str {

@@ -87,7 +87,7 @@ fi
 DISK=$(lsblk -no PKNAME "$DEV" 2>/dev/null | head -1)
 [ -n "$DISK" ] || DISK=${DEV##*/}
 
-# Removable, asked the way ui_disk_system in lib-rofi.sh asks it: /sys/block/
+# Removable, asked the way the old disk helper asked it: /sys/block/
 # <disk>/removable is 0 on this eMMC *and* on the microSD slot, so the
 # device-level flag and the transport are what actually answer the question.
 REMOVABLE=no

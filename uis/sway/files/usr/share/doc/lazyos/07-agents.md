@@ -4,7 +4,7 @@ LazyOS includes a native **Agents** manager (`lazyos menu agents`) for launching
 AI coding assistants in `~/Work`, managing multiple provider accounts, and
 installing CLIs into `~/.local` without root privileges.
 
-**The menu**: `rofi-agents`, on **Alt+Ctrl+Shift+A**,
+**The menu**: `lazyos-agents`, on **Alt+Ctrl+Shift+A**,
 or "Agents" in the root menu / the launcher.
 
 **A session in one click.** The root menu's AI group (`Alt+Space`) opens with
@@ -12,7 +12,7 @@ or "Agents" in the root menu / the launcher.
 card, because the image ships it - in `~/Work`, without opening the list first.
 The list below it is where another agent is picked, installed or given a second
 account, and `Set the default agent…` is the row the menu's first row follows.
-From a shell the same thing is `rofi-agents --default`; when the recorded default
+From a shell the same thing is `lazyos-agents --default`; when the recorded default
 is not installed any more it starts OpenCode instead of failing, and with no
 agent CLI installed at all it raises a card ("the Agents menu installs one with
 npm") rather than opening a terminal that closes at once.
@@ -23,7 +23,7 @@ the same default agent - when it is Claude Code or OpenCode; any other default
 is answered by OpenCode, and the window says so - and shows the answer in the
 window it was asked in, with **c** to copy it. Only the question is sent: the
 agent runs in an empty private directory, Claude Code with no tools and no saved
-session, and nothing of it stays running afterwards. `02-rofi.md` § *The root
+session, and nothing of it stays running afterwards. `02-menus.md` § *The root
 menu, the palette and Ask* has the details.
 
 | Row | Does |
@@ -123,7 +123,7 @@ created there, so two subscriptions never share a session or a token.
 From the shell, the same thing without the menu:
 
 ```sh
-eval "$(rofi-agents --env 'Claude Code' work)"   # export CLAUDE_CONFIG_DIR=…
+eval "$(lazyos-agents --env 'Claude Code' work)"   # export CLAUDE_CONFIG_DIR=…
 claude
 ```
 
@@ -141,7 +141,7 @@ directory, so an account built on that variable alone would share the login.
 
 ## Cost
 
-The menu is a rofi window (about 16 MB while open) and a foot window for the
+The menu is a foot window (about 16 MB while open) and a foot window for the
 agent itself. The agents are Node programs: 150-400 MB resident while they run,
 which is a lot on 4 GB. Run one at a time, and close it when you are done - the
 bar's power panel shows memory and swap if you want to check. OpenCode is the

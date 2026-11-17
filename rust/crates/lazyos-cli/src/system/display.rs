@@ -1,4 +1,4 @@
-//! External display arrangement: position, resolution, scale (`rofi-display`).
+//! External display arrangement: position, resolution, scale (`lazyos-display`).
 //!
 //! The monitor is placed relative to the internal panel (never moved).
 //! A runtime arrangement is also written to `~/.config/sway/config.d/40-display.conf`
@@ -633,7 +633,7 @@ fn display_menu(
     }
 }
 
-/// `lazyos menu display` (`rofi-display`): the main menu plus sub-menus.
+/// `lazyos menu display` (`lazyos-display`): the main menu plus sub-menus.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,

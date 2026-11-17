@@ -356,7 +356,7 @@ read -r drawn fallback <"$tmp/stats"
 //!
 //! The filter is what keeps a row from being an empty box: a codepoint no
 //! installed font carries draws nothing at all and logs nothing, which is how
-//! the rofi alphabet's tofu shipped once already.
+//! the old alphabet's tofu shipped once already.
 
 use super::Glyph;
 

@@ -127,7 +127,7 @@ fn body_rows() -> ListState {
     list.set_rows(vec![
         Row::new("Files")
             .glyph(Glyph::Folder)
-            .detail("rofi-files")
+            .detail("lazyos-files")
             .value("Alt+Ctrl+F"),
         Row::new("Files (window)")
             .glyph(Glyph::Folder)
@@ -171,7 +171,7 @@ fn body_rows() -> ListState {
             .value("row"),
         Row::new("Power")
             .glyph(Glyph::Power)
-            .detail("rofi-power")
+            .detail("lazyos-power")
             .value("Alt+Escape"),
         // Bluetooth comes from Font Awesome 6 Brands (\u{f293}) while the
         // rest come from Symbols Nerd Font Mono; every label keeps its column.

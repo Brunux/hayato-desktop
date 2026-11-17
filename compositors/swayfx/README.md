@@ -63,7 +63,7 @@ behind (verified with screenshots); the session keeps it disabled, so the common
 The other knobs follow the measurement: `blur_passes 2` + `blur_radius 4` is a 32 px sample instead
 of the shipped 80 px, `blur_noise 0` with neutral brightness/contrast/saturation skips SceneFX's
 second full-screen pass, and the three surfaces that reveal the effect are translucent (foot 0.92,
-rofi 0.88, waybar 0.78/0.86) because blur is drawn *behind* a surface. `layer_effects` gives the bar
+the old picker 0.88, waybar 0.78/0.86) because blur is drawn *behind* a surface. `layer_effects` gives the bar
 the cached path (it only has the wallpaper behind it) and the launcher the live one (it floats over
 windows). `docs/optimization.md` has the numbers, the method and why Vulkan is not an option here
 (PanVK refuses the Mali-G57, and SceneFX creates its own GLES renderer regardless).

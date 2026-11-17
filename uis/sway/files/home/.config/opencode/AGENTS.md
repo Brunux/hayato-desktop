@@ -6,7 +6,7 @@ gives you the desktop's own tools. They are a contract with the person at this m
 **read** freely, you **act** where the person can see it and undo it, and for anything
 destructive you **propose** - you open the real window where they decide.
 
-lazyos-mcp manifest: m-8fb2464cc9b93288
+lazyos-mcp manifest: m-56dc68bf6b0df7c9
 
 `lazyos mcp --tools` prints the same table with this version in its first line. If it says
 another version, this file describes a different set of tools: trust `--tools`.

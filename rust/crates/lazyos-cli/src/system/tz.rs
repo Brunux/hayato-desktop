@@ -1,6 +1,6 @@
-//! Time zone: every zone tzdata knows, with the current one marked (`rofi-tz`).
+//! Time zone: every zone tzdata knows, with the current one marked (`lazyos-tz`).
 //!
-//! The list is `timedatectl list-timezones` — 400-odd rows that rofi filters
+//! The list is `timedatectl list-timezones` — 400-odd rows that the picker filters
 //! as fast as anything else — and the network-time switch is the row at the
 //! end, because a clock that is wrong and a clock that does not sync are the
 //! same problem (systemd-timesyncd is in packages/base.list for that).
@@ -26,7 +26,7 @@ pub fn status() -> String {
     format!("Current: {} · Network time: {}", current, ntp_str)
 }
 
-/// `lazyos menu tz` (`rofi-tz`): the time zone picker.
+/// `lazyos menu tz` (`lazyos-tz`): the time zone picker.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,

@@ -1,5 +1,5 @@
 //! Share this screen with another machine: wayvnc, read-only, on the loopback
-//! address (`rofi-vnc`).
+//! address (`lazyos-vnc`).
 //!
 //! Three decisions hold this together:
 //!
@@ -214,7 +214,7 @@ pub fn stop() -> Result<(), String> {
     Ok(())
 }
 
-/// `lazyos menu vnc` (`rofi-vnc`): the VNC picker.
+/// `lazyos menu vnc` (`lazyos-vnc`): the VNC picker.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,

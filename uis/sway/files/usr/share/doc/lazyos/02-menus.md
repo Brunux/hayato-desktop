@@ -2,33 +2,33 @@
 
 **The framework** (`lazyos`) draws every session list in a dedicated, floating
 terminal window: one row per item, a Nerd Font glyph, and case-folded filtering as you type.
-`rofi` and `lib-rofi.sh` have been retired (spec 014), and all interactive menus,
-pickers, and launcher surfaces run natively in Rust/Ratatui. Nothing stays resident
-after its window closes (there is no daemon). For backwards compatibility, legacy
-`rofi-*` and `bar-*` names in `~/.config/bin/` remain installed as symlinks to
-`/usr/bin/lazyos`, preserving all ~55 keyboard shortcuts and bar actions.
+The old `rofi` menus and their shell library have been retired (spec 014), and all
+interactive menus, pickers, and launcher surfaces run natively in Rust/Ratatui.
+Nothing stays resident after its window closes. The session names are
+`lazyos-*` (or `lazyos menu <name>`); the `bar-*` helpers the bar calls remain as
+symlinks to `/usr/bin/lazyos`.
 
 | You press | What opens | What it lists |
 |---|---|---|
-| **Alt+D** | `lazyos menu apps` (`rofi-drun`) | the applications: the `.desktop` entries, including this image's own (LazyOS Menu, Settings, Wi-Fi, Bluetooth, audio, media, notifications, power, Files, Camera, Learn, Keys, Dictate, Agents…) |
-| **Alt+Tab** | `lazyos menu window` (`rofi-window`) | the open windows (sway has no switcher of its own; this uses wlroots' foreign-toplevel protocol) |
-| **Alt+Shift+D** | `lazyos menu run` (`rofi-run`) | every executable in `$PATH`. **Enter** runs it, **Shift+Enter** runs it in foot |
+| **Alt+D** | `lazyos menu apps` (`lazyos-apps`) | the applications: the `.desktop` entries, including this image's own (LazyOS Menu, Settings, Wi-Fi, Bluetooth, audio, media, notifications, power, Files, Camera, Learn, Keys, Dictate, Agents…) |
+| **Alt+Tab** | `lazyos menu window` (`lazyos-window`) | the open windows (sway has no switcher of its own; this uses wlroots' foreign-toplevel protocol) |
+| **Alt+Shift+D** | `lazyos menu run` (`lazyos-run`) | every executable in `$PATH`. **Enter** runs it, **Shift+Enter** runs it in foot |
 | **Alt+Space** | `lazyos menu` (`bar-menu`) | the root menu: what opens something, the AI rows (Ask among them), the system panels, and the session actions - type to narrow it |
-| **Alt+Ctrl+K** | `lazyos menu keys` (`rofi-keys`) | every key binding this session defines, parsed from `/etc/sway` and `~/.config/sway`. Enter copies the command |
-| **Alt+Ctrl+F** | `lazyos menu files` (`rofi-files`) | the filesystem with a preview beside it: directories first, sizes and dates dimmed. Enter opens a directory or the file; the dotfiles are Ctrl+H away |
-| **Alt+Ctrl+G** | `lazyos menu grep` (`rofi-grep`) | **search inside the files**: ripgrep over your home, one row per match; Enter opens the file at that line, in the same window |
-| **Alt+Ctrl+D** | `lazyos menu dev` (`rofi-dev`) | **developer**: export your profile (keys, configs, package list) into an encrypted archive on a disk, restore one, or save a diagnostics bundle |
-| **Download** (root menu, launcher) | `lazyos menu download` (`rofi-download`) | a link - or the one in the clipboard - kept in `~/Downloads`, as a video or as audio |
-| **Alt+Ctrl+C** | `lazyos menu capture` (`rofi-capture`) | **capture**: a screenshot (screen, area or window), annotate it, read the text or a QR code out of a region, and start or stop a recording |
-| **Alt+Ctrl+O** | `lazyos menu settings` (`rofi-quick`) | **Settings**: the switches (Wi-Fi and Bluetooth radios, night light, do-not-disturb, touchpad, tablet mode, rotation, display arrangement, screen sharing, auto-mount of USB drives) and the panels, in one list |
-| **Alt+Ctrl+P** or **Alt+Escape** | `lazyos menu power` (`rofi-power`) | **power**: lock, suspend, hibernate, log out, reboot, shut down - the last three ask once more |
-| **Alt+Ctrl+N** | `lazyos menu notify` (`rofi-notify`) | the notification history, with do-not-disturb and "copy this notification" |
-| **Alt+C** or **Alt+Ctrl+Q** | `lazyos menu calc` (`rofi-calc`) | a calculator: type `(3*4)/2` or `2**8`, Enter copies the result |
-| **Alt+Ctrl+V** | `lazyos menu clip` (`rofi-clip`) | **clipboard history**: what was copied, Enter puts it back, Alt+1 deletes that entry |
-| **Alt+Ctrl+E** | `lazyos menu emoji` (`rofi-emoji`) | **emoji**: type a name, Enter inserts the glyph at the cursor, Alt+1 only copies it |
+| **Alt+Ctrl+K** | `lazyos menu keys` (`lazyos-keys`) | every key binding this session defines, parsed from `/etc/sway` and `~/.config/sway`. Enter copies the command |
+| **Alt+Ctrl+F** | `lazyos menu files` (`lazyos-files`) | the filesystem with a preview beside it: directories first, sizes and dates dimmed. Enter opens a directory or the file; the dotfiles are Ctrl+H away |
+| **Alt+Ctrl+G** | `lazyos menu grep` (`lazyos-grep`) | **search inside the files**: ripgrep over your home, one row per match; Enter opens the file at that line, in the same window |
+| **Alt+Ctrl+D** | `lazyos menu dev` (`lazyos-dev`) | **developer**: export your profile (keys, configs, package list) into an encrypted archive on a disk, restore one, or save a diagnostics bundle |
+| **Download** (root menu, launcher) | `lazyos menu download` (`lazyos-download`) | a link - or the one in the clipboard - kept in `~/Downloads`, as a video or as audio |
+| **Alt+Ctrl+C** | `lazyos menu capture` (`lazyos-capture`) | **capture**: a screenshot (screen, area or window), annotate it, read the text or a QR code out of a region, and start or stop a recording |
+| **Alt+Ctrl+O** | `lazyos menu settings` (`lazyos-settings`) | **Settings**: the switches (Wi-Fi and Bluetooth radios, night light, do-not-disturb, touchpad, tablet mode, rotation, display arrangement, screen sharing, auto-mount of USB drives) and the panels, in one list |
+| **Alt+Ctrl+P** or **Alt+Escape** | `lazyos menu power` (`lazyos-power`) | **power**: lock, suspend, hibernate, log out, reboot, shut down - the last three ask once more |
+| **Alt+Ctrl+N** | `lazyos menu notify` (`lazyos-notify-history`) | the notification history, with do-not-disturb and "copy this notification" |
+| **Alt+C** or **Alt+Ctrl+Q** | `lazyos menu calc` (`lazyos-calc`) | a calculator: type `(3*4)/2` or `2**8`, Enter copies the result |
+| **Alt+Ctrl+V** | `lazyos menu clip` (`lazyos-clip`) | **clipboard history**: what was copied, Enter puts it back, Alt+1 deletes that entry |
+| **Alt+Ctrl+E** | `lazyos menu emoji` (`lazyos-emoji`) | **emoji**: type a name, Enter inserts the glyph at the cursor, Alt+1 only copies it |
 | **Alt+Ctrl+T** | `lazyos menu translate` (`translate`) | **translate** the selected text (or the clipboard) into the language Settings sets, English until it is set; the answer is copied, and a long one opens in a read window |
-| **Alt+Shift+C** | `lazyos menu theme` (`rofi-theme`) | interactive dual-pane theme picker with live preview and wallpaper switching |
-| **Learn** (root menu) | `lazyos menu learn` (`rofi-learn`) | these pages, rendered with glow, plus a search across all of them |
+| **Alt+Shift+C** | `lazyos menu theme` (`lazyos-theme-picker`) | interactive dual-pane theme picker with live preview and wallpaper switching |
+| **Learn** (root menu) | `lazyos menu learn` (`lazyos-learn`) | these pages, rendered with glow, plus a search across all of them |
 
 The root menu is also a launcher entry: **LazyOS Menu** (`Alt+D`, type
 `lazy`). It runs the same `bar-menu` that **Alt+Space** opens, so the list is
@@ -38,7 +38,7 @@ window.
 
 ## The root menu, the palette and Ask
 
-**The root menu is a window of its own now, not a rofi list.** `bar-menu` is a
+**The root menu is a window of its own now, not a dmenu list.** `bar-menu` is a
 link to `lazyos`, so **Alt+Space**, the bar's button and the launcher entry open
 the framework's menu: the same rows in the same four groups (*open*, *ai*,
 *system*, *session*, the group's name dim on the right of each row), a glyph per
@@ -117,10 +117,10 @@ errors since this boot).
 
 ## The menus are becoming one program
 
-Everything in the table above is a shell script that starts rofi and exits. The
+Everything in the table above used to be a shell script that started a picker and exited. The
 next version of the session replaces that plumbing with **one binary**,
 `/usr/bin/lazyos`, and the old names become symlinks to it: the binding, the
-`.desktop` entry and the manual keep saying `rofi-files` while the program
+`.desktop` entry and the manual keep saying `lazyos-files` while the program
 behind the name is the framework. The point is not fewer files - it is that a
 menu becomes a *window that changes state* (a list, then a prompt, then a
 progress row, then the result) instead of a process that can only answer once.
@@ -134,8 +134,8 @@ lazyos --version     # the version this image was built from
 lazyos menu          # opens one floating window; Esc closes it
 ```
 
-From the session (a sway binding, a `.desktop` entry, `rofi` replaced by the
-frame) that last line asks `foot` for the window itself, with the app-id and the
+From the session (a sway binding, a `.desktop` entry, or the frame's host) that
+last line asks `foot` for the window itself, with the app-id and the
 size its command table declares, and returns immediately - so the key is never
 blocked by a window. From a terminal that already is one, it draws in place;
 `LAZYOS_UI=1` is how a process tells the framework "I am already the UI, do not
@@ -223,7 +223,7 @@ Use the first when you know where to look, the second for something you made
 or downloaded lately, the third when the name is half remembered or very old,
 and the last when you remember a word *inside* the file and not its name.
 
-**The list** (`lazyos menu files`, the old name `rofi-files` still works):
+**The list** (`lazyos menu files`, the old name `lazyos-files` still works):
 
 * **every row has a picture** from the session's alphabet - a folder, a page, a
   picture, a film, an archive, a program - so the names line up under one
@@ -264,7 +264,7 @@ that file or folder: measure a folder, pack it into `name.tar.xz`, unpack an
 archive, mount a disk image, convert a video or a song, copy the path, open a
 terminal there. Nothing is touched until you pick something, an existing name
 is refused rather than overwritten, and the long ones are `busy` cards with the
-bar's spinner. (In the rofi list this was **Alt+1**; inside the session sway
+bar's spinner. (In the old picker this was **Alt+1**; inside the session sway
 keeps Alt+1 for workspace 1, so the window never hears it - it still works in a
 terminal outside sway.)
 
@@ -284,7 +284,7 @@ files. **Ctrl+Y** copies the selected path, and **Escape stops the walk** and
 closes the window - nothing keeps walking after it.
 
 **Alt+Ctrl+G: the text inside the files.** `lazyos menu grep` (the old name
-`rofi-grep`) asks for a word or a pattern, runs `ripgrep` over your home and
+`lazyos-grep`) asks for a word or a pattern, runs `ripgrep` over your home and
 lists one row per match: the matching **text** on the row, which is what tells
 two matches apart, and `path:line` beside it. Enter opens the file **at that
 line, in the same window**, with the line marked and in view; PageUp/PageDown
@@ -318,7 +318,7 @@ Network places are off. `04-software.md` § *Files in a window* has the rest.
 
 ## Capture: the screen as a picture, as text, or as a video
 
-**Alt+Ctrl+C** (`rofi-capture`, and "Capture" in the root menu and the launcher)
+**Alt+Ctrl+C** (`lazyos-capture`, and "Capture" in the root menu and the launcher)
 is the list behind the screenshot keys. Everything on it is one command that
 ends before the list closes again:
 
@@ -366,7 +366,7 @@ screenshot).
 
 ## Download
 
-**Download** (`rofi-download`, in the root menu and the launcher) takes a link and
+**Download** (`lazyos-download`, in the root menu and the launcher) takes a link and
 leaves the file in `~/Downloads`: paste it, or pick **the link in the clipboard**
 when the clipboard holds one. Then choose **video** (the best picture and sound it
 can merge) or **audio only** (an `.m4a`, without the picture). It is `yt-dlp`,
@@ -386,7 +386,7 @@ offer the high-quality formats at all (`[debug] JS runtimes: node-24.21.0`).
 
 ## Clipboard history
 
-**Alt+Ctrl+V** (`rofi-clip`, and "Clipboard" in the root menu and the launcher)
+**Alt+Ctrl+V** (`lazyos-clip`, and "Clipboard" in the root menu and the launcher)
 lists what has been copied since the session started. Enter puts an entry back on
 the clipboard, ready to paste; Alt+1 deletes that one entry.
 
@@ -400,7 +400,7 @@ password manager included — and the last row of the menu clears it.
 
 Rows are classified by their content: text, a link (starts with `http`) or an
 image. An image is listed by what `cliphist` knows about it (`[[ binary data 64000
-png 640x480 ]]`) rather than by a thumbnail, because a rofi row is one line of
+png 640x480 ]]`) rather than by a thumbnail, because a menu row is one line of
 text. **Save the newest image** decodes it into `~/Pictures/clipboard/` with the
 extension its MIME type implies and hands it to `xdg-open`, which is the same
 `lazyos-view` a double click in favnyr uses — so a picture opens in **imv**, not
@@ -409,7 +409,7 @@ in the history until deleted or cleared.
 
 ## Emoji
 
-**Alt+Ctrl+E** (`rofi-emoji`, and "Emoji" in the root menu and the launcher) is
+**Alt+Ctrl+E** (`lazyos-emoji`, and "Emoji" in the root menu and the launcher) is
 the same list shape over `~/.config/emojis.tsv`: about 1300 rows of *name*,
 *glyph* and *block*. Typing filters by any word of the name, and since the block
 is in the row too, `faces`, `transport` or `dingbats` narrow it to a category.
@@ -454,21 +454,21 @@ is a secret in the clipboard history.
 
 Five more lists in the root menu, each one screen of answers about the machine:
 
-* **Colour** (`rofi-color`) reads a pixel with `slurp -p` and `grim`, turns the
+* **Colour** (`lazyos-color`) reads a pixel with `slurp -p` and `grim`, turns the
   1×1 PNG into three bytes with `ffmpeg` — no ImageMagick, no extra package — and
   copies `#rrggbb`. The rest of the list is the sixteen solarized colours this
   session is drawn with, each row a swatch in that colour; Enter copies its hex.
-* **DNS** (`rofi-dns`) points the connection that is up at Cloudflare, Google,
+* **DNS** (`lazyos-dns`) points the connection that is up at Cloudflare, Google,
   Quad9, AdGuard, a list you type, or back at what DHCP hands out. It sets
   `ipv4.dns`/`ipv4.ignore-auto-dns` on the NetworkManager connection and brings it
   up again, which is why it shows a busy card and then reads back the servers in
   use instead of repeating what was asked for. It does not touch IPv6 DNS.
-* **Packages** (`rofi-pkg`) searches the archive with `apt-cache search` and
+* **Packages** (`lazyos-pkg`) searches the archive with `apt-cache search` and
   installs what is chosen with `apt-get -y` (noninteractive, keeping existing
   configuration files), reporting through the busy card; installed packages are
   marked before they are picked. The last row updates the package lists, which is
   what to run when a search finds nothing.
-* **Reminders** (`rofi-remind`) writes nothing to disk: it starts a transient
+* **Reminders** (`lazyos-remind`) writes nothing to disk: it starts a transient
   `systemd-run --user --collect` timer that fires a `notify-send` and is
   collected, and the list is read back from systemd, so choosing a reminder
   cancels it and a reminder lives as long as the session's user manager does. It
@@ -481,7 +481,7 @@ Five more lists in the root menu, each one screen of answers about the machine:
   occurrence is shown for confirmation; the reminder then keeps the title and the
   note in the timer's own description, which is what the list shows on a second,
   dimmer line. "At 09:00" means the next nine in the morning, once.
-* **About** (`rofi-about`) is one screen of read-only facts — model, the revision
+* **About** (`lazyos-about`) is one screen of read-only facts — model, the revision
   this image was built from, kernel, uptime, memory and swap, disk, battery,
   network, compositor, process count — plus two rows: copy the summary as text,
   or open `fastfetch` in a terminal for the pretty version.
@@ -500,7 +500,7 @@ one-shot ones.
 
 ## The manual, rendered
 
-`rofi-learn` lists `usr/share/doc/lazyos/*.md` and opens the chosen page with
+`lazyos-learn` lists `usr/share/doc/lazyos/*.md` and opens the chosen page with
 **glow**, so it is a document (headings, tables, inline code, lists) instead of
 markdown source. The style is `~/.config/glow/solarized.json`, the same palette
 as everything else: headings carry a cyan/blue bar, inline code and fenced
@@ -547,28 +547,27 @@ application that brings its own icon still shows it in colour.
 * **A menu or tool**: implement a native subcommand in `lazyos` using `lazyos-ui` design
   system components (`List`, `Picker`, `Task`, `Card`).
 
-## The retirement of rofi and lib-rofi.sh (Spec 014)
+## The retirement of rofi (Spec 014)
 
-With all surfaces running natively in the multi-call binary `lazyos`, `rofi` and
-`lib-rofi.sh` have been completely removed from the shipping system:
-* The `rofi` package is removed from `packages.list`.
-* `~/.config/rofi/` and `~/.config/bin/lib-rofi.sh` are deleted.
+With all surfaces running natively in the multi-call binary `lazyos`, the
+`rofi` package and its shell library have been removed from the shipping system:
+* The `rofi` package is not installed and `~/.config/rofi/` is gone.
 * All launcher (`apps`), switcher (`window`), command palette (`run`), and bar panel
   interactions execute purely via `lazyos`.
-* Legacy paths in `~/.config/bin/` remain installed as symlinks to `/usr/bin/lazyos`
-  so that all custom keybindings and scripts remain 100% operational without alteration.
+* The old `rofi-*` command names are retired; the session uses `lazyos-*`
+  names (and `bar-*` for the bar helpers), all symlinks to `/usr/bin/lazyos`.
 
 ## The migrated interactive surfaces (Spec 017)
 
-The final 10 interactive surfaces have migrated from shell and `rofi -dmenu` scripts into native `lazyos menu <subcommand>` surfaces in the multi-call binary:
+The final 10 interactive surfaces have migrated from shell scripts into native `lazyos menu <subcommand>` surfaces in the multi-call binary:
 
 * **Wi-Fi and Network (`lazyos menu net`)**: replaces `bar-net`. Scans access points with `nmcli`, displays signal strength gauge, security status, and active connection indicator. Selecting an unconfigured secured network provides masked password input (`*`). Headless `lazyos menu net --status` outputs waybar-compatible JSON.
-* **AI Agents (`lazyos menu agents`)**: replaces `rofi-agents`. Lists configured agents (Claude Code, OpenCode, Codex, Gemini, Copilot), marks active default, manages account directories, and provides `--default` for direct session launches.
-* **Places and Disks (`lazyos menu places`)**: replaces `rofi-places`. Lists standard user directories (`~/Downloads`, `~/Documents`, etc.) and mounted filesystems; unmounted block devices are offered for one-click mounting via `udisksctl`. Headless `lazyos menu places --rows` outputs tabular place entries.
-* **Disk Cleaner (`lazyos menu clean`)**: replaces `rofi-clean`. Calculates reclaimable sizes for apt archives, systemd journal logs, thumbnail cache, and user trash, requiring explicit user confirmation before purging. Headless `lazyos menu clean --dry-run` prints cache estimations.
-* **Process Manager (`lazyos menu kill`)**: replaces `rofi-kill`. Lists user processes sorted by resident memory with PID and command name; typing filters the list, and selecting terminates with `SIGTERM` (with prompt to force `SIGKILL` if still alive).
-* **Media Downloader (`lazyos menu download`)**: replaces `rofi-download`. Prompts for URL (auto-filled from clipboard if available) and profile (video vs audio-only), spawning `yt-dlp` in `~/Downloads/`.
-* **Keyboard Layout (`lazyos menu layout`)**: replaces `rofi-layout`. Parses xkb `evdev.lst` and switches the active layout via Sway IPC (`swaymsg input type:keyboard xkb_layout`), persisting the choice to `~/.config/sway/config.d/90-keyboard-layout.conf`.
-* **Contextual File Actions (`lazyos menu file-actions <path>`)**: replaces `rofi-file-actions`. Offers contextual actions for browser selections: disk usage calculation (`du -sh`), archive packaging (`tar`), archive extraction, disk image loop mounting (`udisksctl loop-setup`), and ffmpeg media conversion.
+* **AI Agents (`lazyos menu agents`)**: replaces the old agents menu. Lists configured agents (Claude Code, OpenCode, Codex, Gemini, Copilot), marks active default, manages account directories, and provides `--default` for direct session launches.
+* **Places and Disks (`lazyos menu places`)**: replaces the old places menu. Lists standard user directories (`~/Downloads`, `~/Documents`, etc.) and mounted filesystems; unmounted block devices are offered for one-click mounting via `udisksctl`. Headless `lazyos menu places --rows` outputs tabular place entries.
+* **Disk Cleaner (`lazyos menu clean`)**: replaces the old clean menu. Calculates reclaimable sizes for apt archives, systemd journal logs, thumbnail cache, and user trash, requiring explicit user confirmation before purging. Headless `lazyos menu clean --dry-run` prints cache estimations.
+* **Process Manager (`lazyos menu kill`)**: replaces the old kill menu. Lists user processes sorted by resident memory with PID and command name; typing filters the list, and selecting terminates with `SIGTERM` (with prompt to force `SIGKILL` if still alive).
+* **Media Downloader (`lazyos menu download`)**: replaces the old download menu. Prompts for URL (auto-filled from clipboard if available) and profile (video vs audio-only), spawning `yt-dlp` in `~/Downloads/`.
+* **Keyboard Layout (`lazyos menu layout`)**: replaces the old layout menu. Parses xkb `evdev.lst` and switches the active layout via Sway IPC (`swaymsg input type:keyboard xkb_layout`), persisting the choice to `~/.config/sway/config.d/90-keyboard-layout.conf`.
+* **Contextual File Actions (`lazyos menu file-actions <path>`)**: replaces the old file-actions menu. Offers contextual actions for browser selections: disk usage calculation (`du -sh`), archive packaging (`tar`), archive extraction, disk image loop mounting (`udisksctl loop-setup`), and ffmpeg media conversion.
 * **Translate (`lazyos menu translate`)**: replaces `translate`. Translates primary mouse selection or clipboard into the configured target language using Google / MyMemory fallback. Headless `--languages` and `--target-name` queries output language facts.
 * **Dictate (`lazyos menu dictate`)**: replaces `dictate`. Instant speech-to-text dictation toggle using `parecord`, `ffmpeg`, `whisper-cli`, and `wtype`.

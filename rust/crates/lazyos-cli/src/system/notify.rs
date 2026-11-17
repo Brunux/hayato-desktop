@@ -1,4 +1,4 @@
-//! Notify history: structured JSONL history with dismiss/clear (`rofi-notify`).
+//! Notify history: structured JSONL history with dismiss/clear (`lazyos-notify-history`).
 //!
 //! Notifications are logged to `$XDG_STATE_HOME/lazyos/notify/history.jsonl`
 //! by `lazyos-notify`. Enter on a row copies the notification to the clipboard,
@@ -439,7 +439,7 @@ impl NotifyScreen {
     }
 }
 
-/// `lazyos menu notify` (`rofi-notify`): the window.
+/// `lazyos menu notify` (`lazyos-notify-history`): the window.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

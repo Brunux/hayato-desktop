@@ -1,4 +1,4 @@
-//! Media: player state and transport keys (`rofi-media`).
+//! Media: player state and transport keys (`lazyos-media`).
 //!
 //! The old script used `playerctl` to get the current track metadata and status,
 //! and offered play/pause/next/prev/stop. The track line at the top was also a
@@ -402,7 +402,7 @@ impl MediaScreen {
     }
 }
 
-/// `lazyos menu media` (`rofi-media`): the window.
+/// `lazyos menu media` (`lazyos-media`): the window.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

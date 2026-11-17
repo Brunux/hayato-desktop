@@ -1,4 +1,4 @@
-//! Format a disk: a USB stick or a card, wiped and made empty (`rofi-format`).
+//! Format a disk: a USB stick or a card, wiped and made empty (`lazyos-format`).
 //!
 //! The candidate list is [`disk::candidates`], and **the list is the safety**,
 //! not the confirmation: nothing mounted, no ChromeOS kernel partition, no
@@ -141,7 +141,7 @@ pub fn questions(found: &[Disk]) -> Vec<Question> {
     ]
 }
 
-/// `lazyos menu format` (`rofi-format`): the window, then the steps in a TaskView.
+/// `lazyos menu format` (`lazyos-format`): the window, then the steps in a TaskView.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,

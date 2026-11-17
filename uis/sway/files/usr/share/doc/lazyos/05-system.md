@@ -277,7 +277,7 @@ them:
   `$XDG_RUNTIME_DIR/lazyos-vnc`), so a logout cannot leave a stale "on".
 * **Port 5900 is the only port.** If something else already listens there, the
   menu says so — with wayvnc's own message — instead of starting half a server.
-* `~/.config/bin/rofi-vnc status` prints the state in one line, which is the
+* `~/.config/bin/lazyos-vnc status` prints the state in one line, which is the
   quickest answer to "is this machine being watched right now".
 
 ## Suspend and hibernate
@@ -362,7 +362,7 @@ sudo lazyos installer apply --clone --confirm           # headless live-clone in
 ```
 
 For Google Hayato emergency recovery or shell debugging, `/usr/libexec/lazyos/install-emmc.sh`
-remains preserved intact as a manual fallback. `rofi-install` resolves to `/usr/bin/lazyos`,
+remains preserved intact as a manual fallback. `lazyos-installer` resolves to `/usr/bin/lazyos`,
 keeping all key bindings, the root menu (*Install LazyOS*), and `org.lazyos.install.desktop`.
 
 ### The 6 Wizard Steps

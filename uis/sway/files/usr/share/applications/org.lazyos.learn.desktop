@@ -2,8 +2,8 @@
 Type=Application
 Name=Learn
 GenericName=Manual
-Comment=This image's documentation: the session, rofi, shortcuts, software, the system
-Exec=/home/brunux/.config/bin/rofi-learn
+Comment=This image's documentation: the session, menus, shortcuts, software, the system
+Exec=/home/brunux/.config/bin/lazyos-learn
 Icon=help-browser
 Terminal=false
 Categories=System;Documentation;

@@ -1,4 +1,4 @@
-//! Reminders: write it now, be told later (`rofi-remind`).
+//! Reminders: write it now, be told later (`lazyos-remind`).
 //!
 //! The old script was a multi-step flow: title → note → when (delays, date, repeats)
 //! → confirm. The reminders are transient systemd user timers (`systemd-run --user
@@ -653,7 +653,7 @@ impl RemindScreen {
     }
 }
 
-/// `lazyos menu remind` (`rofi-remind`): the window.
+/// `lazyos menu remind` (`lazyos-remind`): the window.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

@@ -119,7 +119,7 @@ pub fn plan(resolved: &Resolved, env: &Env) -> Launch {
 }
 
 /// The argv the window gets: the canonical words, never the symlink that
-/// started us (`rofi-files` becomes `menu files`).
+/// started us (`lazyos-files` becomes `menu files`).
 ///
 /// The size is foot's own `--window-size-pixels` rather than a `resize set`
 /// from sway: the compositor applies its rule at map time, and foot then commits

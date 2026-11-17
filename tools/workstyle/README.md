@@ -88,7 +88,7 @@ Awesome, same family) sits at 12-13 px in the other modules.
 
 `uis/sway/files/home/.config/workstyle/config.toml` is the table. Three rules:
 
-* **Every glyph is a `UI_I_*` codepoint** from `~/.config/bin/lib-rofi.sh`, so the
+* **Every glyph is a `UI_I_*` codepoint** from the framework's glyph table, so the
   bar, the menus and the pills draw from one alphabet, and `check-system.sh`'s
   font check (which asks fontconfig whether some installed font draws each
   codepoint) covers them too. A codepoint from anywhere else is a tofu box in a

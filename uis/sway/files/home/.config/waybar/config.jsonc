@@ -1,7 +1,7 @@
 // Solarized bar, ported from the maintainer's Deboma (Omarchy) session.
 //
 // Every pointer interaction that Deboma answers with a panel is answered here
-// with a short-lived rofi popup from ~/.config/bin/bar-*, and nothing stays
+// with a short-lived menu popup from ~/.config/bin/bar-*, and nothing stays
 // resident: the bar itself is the only process this file keeps alive.  Icons
 // are written as \uXXXX so the codepoints are readable and survive any editor;
 // they come from fonts-font-awesome-legacy (see uis/sway/README.md).
@@ -126,19 +126,19 @@
     // Screen sharing (Settings > Share this screen, and the root menu): an eye
     // while wayvnc serves this session read-only on the loopback address, and
     // nothing at all otherwise (style.css collapses .empty).  The module reads
-    // the state file rofi-vnc keeps - one `sh` every ten seconds, no daemon -
+    // the state file lazyos-vnc keeps - one `sh` every ten seconds, no daemon -
     // and a start or a stop signals the bar (RTMIN+8), so the eye appears and
     // disappears at the moment it happens instead of on the next poll.  A right
     // click stops it: the one thing someone wants from an indicator that says
     // "you are being watched" is to be able to end it from the same place.
     "custom/vnc": {
-        "exec": "~/.config/bin/rofi-vnc status --bar",
+        "exec": "~/.config/bin/lazyos-vnc status --bar",
         "return-type": "json",
         "interval": 10,
         "signal": 8,
         "tooltip": true,
-        "on-click": "~/.config/bin/rofi-vnc",
-        "on-click-right": "~/.config/bin/rofi-vnc stop"
+        "on-click": "~/.config/bin/lazyos-vnc",
+        "on-click-right": "~/.config/bin/lazyos-vnc stop"
     },
     "custom/keyboard-layout": {
         "exec": "~/.config/bin/bar-key",
@@ -147,7 +147,7 @@
         "signal": 8,
         "tooltip": true,
         "on-click": "~/.config/bin/bar-key next",
-        "on-click-right": "~/.config/bin/rofi-layout"
+        "on-click-right": "~/.config/bin/lazyos-layout"
     },
     "custom/bluetooth": {
         "exec": "~/.config/bin/bar-bt status",
@@ -190,7 +190,7 @@
         "format": "<span font_desc='JetBrains Mono 13'>\uf185</span>",
         "tooltip-format": "Brightness {percent}%",
         "interval": 5,
-        "on-click": "~/.config/bin/rofi-display",
+        "on-click": "~/.config/bin/lazyos-display",
         "on-scroll-up": "brightnessctl set 5%+",
         "on-scroll-down": "brightnessctl set 5%-"
     },
@@ -237,6 +237,6 @@
         "tooltip-format": "Battery {capacity}%\nClick for power menu",
         "interval": 30,
         "on-click": "~/.config/bin/bar-power",
-        "on-click-right": "~/.config/bin/rofi-power"
+        "on-click-right": "~/.config/bin/lazyos-power"
     }
 }

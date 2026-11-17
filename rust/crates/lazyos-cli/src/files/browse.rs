@@ -1,7 +1,7 @@
 //! Files (spec 009): one directory per screen, or the newest 500 files of
 //! the home directory (`--search`), with the preview beside the list.
 //!
-//! What the rofi list did, kept: directories first and case folded, the
+//! What the old list did, kept: directories first and case folded, the
 //! parent row on top and the dotfile switch at the bottom, a glyph on every
 //! row from the opener table, the size and the day dim beside the name, a
 //! typed path that opens when no row matches it, and the directory it was in
@@ -12,7 +12,7 @@
 //!
 //! The actions on a row are `Tab` - `Alt+1` too, where it reaches the window:
 //! sway binds it to workspace 1 and foot asks for no shortcut inhibitor, so
-//! inside the session it never arrives (rofi could only use it because it does
+//! inside the session it never arrives (the old picker could only use it because it does
 //! inhibit, `global-kb`).
 
 use std::cell::Cell;

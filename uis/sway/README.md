@@ -28,21 +28,19 @@ and on `Alt+D`, waybar, and the foot terminal.
 | `home/.config/waybar/{config.jsonc,style.css}` | Solarized waybar theme and the bar itself (see **The bar** below). |
 | `home/.config/bin/osd` | The volume and brightness overlay: the key's `pactl`/`brightnessctl` step plus one mako card with its progress bar and the matching icon (no process, no daemon). |
 | `home/.config/gtk-4.0/{settings.ini,gtk.css}` | The GTK4/libadwaita half of the palette (`papers` and anything else GTK4): the dark preference the missing Settings portal would otherwise answer, and the solarized named colours. The GTK3 pair next door does not reach it. |
-| `home/.config/bin/rofi-learn` | **Learn**: symlink to `lazyos menu learn` (the manual in a foot TUI). |
-| `home/.config/bin/rofi-keys` | **Keybindings**: symlink to `lazyos menu keys` (every binding parsed from configuration, searchable). |
+| `home/.config/bin/lazyos-learn` | **Learn**: symlink to `lazyos menu learn` (the manual in a foot TUI). |
+| `home/.config/bin/lazyos-keys` | **Keybindings**: symlink to `lazyos menu keys` (every binding parsed from configuration, searchable). |
 | `home/.config/bin/dictate`, `dictate-model` | Dictation with whisper.cpp; the model is fetched (pinned SHA256) on first use. |
 | `home/.config/bin/translate` | **Alt+Ctrl+T**: the text selected with the mouse (or the clipboard) into the language Settings sets - English until it is - with Google's JSON endpoint and MyMemory as the fallback; the answer goes to the clipboard and, when long, to a read window. |
 | `home/.config/bin/sway-hibernate` | Hibernate, gated on a disk swap and `resume=`. |
-| `home/.config/bin/rofi-agents` | **Agents**: launch a coding agent, install one, keep accounts per agent; `--default` is the root menu's one-click `Agent session` row. |
-| `home/.config/bin/rofi-capture`, `rofi-qr`, `screenshot` | **Capture**: symlinks to `lazyos menu capture` and `lazyos menu qr` (screenshot, annotate, OCR, QR), and `screenshot` script deciding output path (`~/Pictures/Screenshots/<today>/`). |
-| `home/.config/bin/rofi-dev`, `lazyos-profile` | **Developer** (`Alt+Ctrl+D`): symlink to `lazyos menu dev` (account backup to encrypted archive, dotfiles, package list). `lazyos-profile` is the CLI engine. |
+| `home/.config/bin/lazyos-agents` | **Agents**: launch a coding agent, install one, keep accounts per agent; `--default` is the root menu's one-click `Agent session` row. |
+| `home/.config/bin/lazyos-capture`, `lazyos-qr`, `screenshot` | **Capture**: symlinks to `lazyos menu capture` and `lazyos menu qr` (screenshot, annotate, OCR, QR), and `screenshot` script deciding output path (`~/Pictures/Screenshots/<today>/`). |
+| `home/.config/bin/lazyos-dev`, `lazyos-profile` | **Developer** (`Alt+Ctrl+D`): symlink to `lazyos menu dev` (account backup to encrypted archive, dotfiles, package list). `lazyos-profile` is the CLI engine. |
 | `usr/local/sbin/lazyos-automount`, `etc/udev/rules.d/90-lazyos-automount.rules`, `etc/systemd/system/lazyos-automount@.service`, `etc/polkit-1/rules.d/49-lazyos-automount.rules` | **A plugged USB drive mounts itself**: the udev rule wants one oneshot unit per partition, the helper mounts it through `udisksctl` as the session user (`setpriv`, because a root mount is `uid=0` on vfat) after refusing anything that is not a removable USB disk or that this system came from, and the polkit rule authorizes that session-less caller through `plugdev`. One process per plug, nothing resident. |
-| `home/.config/bin/rofi-files`, `lazyos-thumbnail`, `lazyos-view` | The file browser: `rofi-files` is a symlink to `lazyos menu files`, `lazyos-view` is a symlink to `lazyos open`, with thumbnails generated via `lazyos-thumbnail`. |
+| `home/.config/bin/lazyos-files`, `lazyos-thumbnail`, `lazyos-view` | The file browser: `lazyos-files` is a symlink to `lazyos menu files`, `lazyos-view` is a symlink to `lazyos open`, with thumbnails generated via `lazyos-thumbnail`. |
 | `home/.config/bin/lazyos-find` | **Search+Shift**: symlink to `lazyos menu find` (async file finder over home with preview pane). |
-| `home/.config/bin/rofi-power` | **Power** menu: symlink to `lazyos menu power` (lock, suspend, hibernate, log out, reboot, shut down with Cancel confirmation). |
+| `home/.config/bin/lazyos-power` | **Power** menu: symlink to `lazyos menu power` (lock, suspend, hibernate, log out, reboot, shut down with Cancel confirmation). |
 | `usr/share/doc/lazyos/*.md` | The seven manual pages the Learn menu opens. |
-| `home/.config/rofi/config.rasi` | Launcher settings: the three modes, `terminal = foot`, matching. |
-| `home/.config/rofi/solarized.rasi` | The solarized look, shared by the launcher, the window switcher and the bar's dmenu. |
 | `home/.config/foot/foot.ini` | Solarized palette, and the font chain that doubles as the icon policy: JetBrains Mono, then Symbols Nerd Font Mono, Font Awesome and Material Design Icons for the session terminal and the bar's popups. |
 | `home/.config/kitty/kitty.conf` | The same theme for **kitty**, if it is installed: nothing in the session starts kitty (foot is `$term`), so this file is only there to keep `apt install kitty` from adding a second, unthemed palette. |
 | `home/.bashrc` | The interactive shell: `ls` is eza, `cat` is bat, `cd` is zoxide, fzf key bindings and the starship prompt (see **The CLI tools**). |
@@ -54,7 +52,7 @@ and on `Alt+D`, waybar, and the foot terminal.
 | `home/.config/lazyos/screensaver.txt` | The LazyOS art the idle screen loops: the wordmark, the caption and the arcade line. |
 | `home/.config/bin/lazyos-screensaver` | Launches the idle screen and is also the program that runs inside it (see **The idle screen**). |
 | `home/.config/bin/sway-lock` | Locks the session and waits for swaylock's readiness line; stops the idle screen first (see **The idle screen**). |
-| `home/.config/bin/bar-*` | The menus the bar opens on click: `bar-menu` (a link to `/usr/bin/lazyos`: the root menu is the framework's since spec 007), `bar-net`, `bar-bt`, `bar-key`, `bar-audio`, `bar-updates`, `bar-power`, plus the shared `bar-pick`. |
+| `home/.config/bin/bar-*` | The menus the bar opens on click: `bar-menu` (a link to `/usr/bin/lazyos`: the root menu is the framework's since spec 007), `bar-net`, `bar-bt`, `bar-key`, `bar-audio`, `bar-updates`, `bar-power`. |
 | `home/.config/workstyle/config.toml` | Icon map for workstyle (see below). |
 | `home/Pictures/Wallpapers/lazyos.png` | The desktop wallpaper, rendered from `brand/wallpaper.svg` and referenced by `etc/sway/config`. |
 | `home/Pictures/Wallpapers/mountains.jpg` | The lock screen's photograph, referenced by `bin/sway-lock`. |
@@ -84,7 +82,7 @@ binary, `/etc/sway` and the greeter's `sway` command are the same either way, bu
 | `blur_passes 2` / `blur_radius 4` | | A 32 px sample instead of the shipped 80 px, and the distance a live blur grows its damage by. |
 | `blur_noise 0`, neutral brightness/contrast/saturation | | SceneFX skips its second full-screen pass when nothing is tinted; noise would also be visible grain. |
 | `animation_duration_ms 150` | on | The only animation knob swayfx 0.6 has (no per-event directives, one fixed ease-out-cubic): open/close, tiling moves and the workspace cross-fade, ~9 frames at 60 Hz. It sends each animating window down the live blur path for that duration. |
-| `layer_effects` | bar + launcher | The bar only has the wallpaper behind it and takes the cached path; rofi floats over windows and takes the live one. |
+| `layer_effects` | bar + launcher | The bar only has the wallpaper behind it and takes the cached path; the launcher floats over windows and takes the live one. |
 
 Blur is drawn *behind* a surface, so it only exists under one with alpha < 1: the terminal
 (`foot.ini`, `alpha=0.87`), the launcher (`solarized.rasi`, 0.82, and 0.88 on the selected row), the
@@ -98,19 +96,18 @@ The drop-in is swayfx-only, so `sway -C` failing means Debian's plain sway is in
 
 ## The launcher
 
-The launcher, window switcher, and command palette are `lazyos menu apps|window|run` (`rofi-drun`,
-`rofi-window`, `rofi-run`, spec 012) running in a floating `foot` window; **rofi** 2.0
-(`~/.config/rofi/config.rasi` and `~/.config/rofi/solarized.rasi`) stays for the remaining
-`bar-pick` helpers until spec 014 retires them.
+The launcher, window switcher, and command palette are `lazyos menu apps|window|run` (`lazyos-apps`,
+`lazyos-window`, `lazyos-run`, spec 012) running in a floating `foot` window. The old `rofi`
+launcher and its `bar-pick` helpers are retired; nothing stays resident after a window closes.
 
 | Binding | Command | What it lists |
 |---|---|---|
-| `$mod+d` | `lazyos menu apps` (`rofi-drun`) | the `.desktop` entries, including the port's own session actions in `usr/share/applications/org.lazyos.*` |
-| Search key | `lazyos menu apps` (`rofi-drun`) | the applications, the same menu as `$mod+d` |
-| `Alt+Search` | `rofi-files --search` | every file under `$HOME`, newest first, narrowed by typing (one bounded `fd` run; see "The file browser") |
-| `$mod+Tab` | `lazyos menu window` (`rofi-window`) | the open windows, from `swaymsg -t get_tree` |
-| `$mod+Shift+d` | `lazyos menu run` (`rofi-run`) | every executable in `$PATH`; **Enter** runs it, **Shift+Enter** runs it in foot, which is how the TUIs from `packages/tools.list` are started |
-| remaining bar helpers | `bar-pick` → `rofi -dmenu` | the fixed list the helper hands it |
+| `$mod+d` | `lazyos menu apps` (`lazyos-apps`) | the `.desktop` entries, including the port's own session actions in `usr/share/applications/org.lazyos.*` |
+| Search key | `lazyos menu apps` (`lazyos-apps`) | the applications, the same menu as `$mod+d` |
+| `Alt+Search` | `lazyos-files --search` | every file under `$HOME`, newest first, narrowed by typing (one bounded `fd` run; see "The file browser") |
+| `$mod+Tab` | `lazyos menu window` (`lazyos-window`) | the open windows, from `swaymsg -t get_tree` |
+| `$mod+Shift+d` | `lazyos menu run` (`lazyos-run`) | every executable in `$PATH`; **Enter** runs it, **Shift+Enter** runs it in foot, which is how the TUIs from `packages/tools.list` are started |
+| bar helpers | `bar-*` → `lazyos` | the fixed list the helper hands to its menu |
 
 The Search key opens the launcher, as it did before the file search borrowed it:
 the magnifier is the key people press for the applications, and `$mod+d` stays as
@@ -121,13 +118,12 @@ key away. The bindings live in `~/.config/sway/config` (not in
 `--release --no-repeat`, because the top row doubles as `F1`-`F10` while Search
 is held down (see *Virtual terminals*).
 
-It replaces **tofi** (launcher) and **fuzzel** (bar popups), so the session runs one picker
-instead of two. Measured on this machine, per process, in the same headless compositor the bar
-was measured in:
+It replaces **rofi** (launcher and window switcher), **tofi** (launcher) and **fuzzel** (bar popups), so the session runs one picker
+instead of three. The table keeps the old measurements for comparison:
 
 | Launcher | PSS while open | Notes |
 |---|---|---|
-| **rofi**, drun, this theme | **15.7-17.1 MB** | text only |
+| **rofi**, drun, this theme | **15.7-17.1 MB** | text only (historical) |
 | rofi, drun, **icons on**, ten rows | **13.2 MB** | measured again with the LazyOS icon theme: only the visible rows are decoded, and the 57 MB figure came from a run that decoded far more |
 | rofi, `-dmenu` (a bar click) | 14.2-15.6 MB | |
 | rofi, `-show window` | 16.7 MB | |
@@ -149,11 +145,11 @@ entries it has, up to ten, so a three-item bar menu and the eight-application li
 get a box that fits them. Matching is fzf-style fuzzy.
 
 **Icons: font glyphs in the lists, images everywhere a name is asked for.** Every list this port
-draws itself puts a Font Awesome codepoint in the row text (`~/.config/bin/lib-rofi.sh`), the same
+draws itself puts a Font Awesome codepoint in the row text (the framework's glyph table), the same
 alphabet the bar uses: it costs nothing, follows the palette and is filtered away by typing. The
-launcher and the window switcher show the application's real icon, which rofi decodes with
+launcher and the window switcher show the application's real icon, which the launcher decodes with
 gdk-pixbuf - about 13 MB while ten rows are on screen and nothing afterwards. The file browser is
-the one list with pictures instead of glyphs: `rofi-files` puts a 32 px thumbnail on every row
+the one list with pictures instead of glyphs: `lazyos-files` puts a 32 px thumbnail on every row
 that has one, and a theme icon on every row that has not (see "The file browser" below).
 Notifications are a fourth consumer of the same theme, through mako's `icon-path` (see
 "Notifications").
@@ -171,12 +167,11 @@ The theme holds **three tables**, because three different things ask it for a na
 | Table | Who asks | Example |
 |---|---|---|
 | `.desktop` names | launcher entries (`usr/share/applications`) | `org.lazyos.files` |
-| binary names | command palette / rofi helpers | `foot.png`, `htop.png` |
+| binary names | command palette / bar helpers | `foot.png`, `htop.png` |
 | freedesktop names | mako notifications and icon lookups | `folder`, `text-x-generic`, `application-pdf`, `dialog-error` |
 
-The command palette needed its own table for a reason that is not obvious: rofi's **run** mode
-asks the icon theme for an icon *named after the binary* it would run
-(`rofi_icon_fetcher_query(str[0], …)`), not for a `.desktop` icon, so without an icon called
+The command palette needed its own table for a reason that is not obvious: it
+asks the icon theme for an icon *named after the binary* it would run, not for a `.desktop` icon, so without an icon called
 `foot.png` a palette row has a blank 26 px column. The fixed column keeps the rows without one
 aligned, and `check-system.sh` warns (never fails) when they are missing. The third table is the
 one that grows with a feature: a new row icon or a new notification icon is a name added to
@@ -195,75 +190,73 @@ private-use character, which does not survive every editor or transport, and the
 `make-icons.sh` ran `printf` under dash, which has no `\u` escape - both produced a row of
 empty spans, which is what the check for an empty canvas in the script now prevents. The theme also
 has to offer the icons through a *scalable* directory: a theme that shipped only `26x26` resolved
-nothing in rofi, while `48x48` plus a scalable entry does.
+nothing in the old picker, while `48x48` plus a scalable entry does.
 
 ![The launcher: the session's entries with LazyOS icons, and foot's own hicolor icon](../../docs/screenshots/hayato-r1-launcher.png)
 
-Two behaviours were verified rather than assumed: `rofi -dmenu` exits 1 on Escape, which is
-what `bar-pick`'s callers' `|| exit 0` relies on, and drun honours `Terminal=true` through
-the `terminal` setting (`foot`) - run mode needs Shift+Enter for that, rofi's own "run in
-terminal" binding.
+Two behaviours were verified rather than assumed: the native picker exits 1 on Escape, which is
+what its callers' `|| exit 0` relies on, and the launcher honours `Terminal=true` through
+the `terminal` setting (`foot`) - run mode needs Shift+Enter for that.
 
-To check the theme after an edit, run `rofi -show drun` in the session: a parse error is a
-dialog naming the file, line and column. `rofi -dump-config` does **not** report theme parse
-errors.
+To check the theme after an edit, open `lazyos-apps` in the session: a parse error is a
+dialog naming the file, line and column.
 
 ## The menus
 
 All session menus, pickers, and panels run natively as subcommands in the
 `lazyos` multi-call binary (`lazyos menu <subcommand>`), drawing in floating `foot`
 windows with single-advance Nerd Font glyphs and case-folded filtering as you type.
-Legacy `rofi-*` and `bar-*` script paths in `~/.config/bin/` remain installed as
-symlinks to `/usr/bin/lazyos`, preserving all ~55 keyboard shortcuts and bar panel
-interactions. `rofi`, `bar-pick`, and `lib-rofi.sh` have been retired (spec 014):
+The old `rofi-*` names are retired; the session uses `lazyos-*` names, while the
+`bar-*` helpers remain as symlinks to `/usr/bin/lazyos`, preserving all ~55
+keyboard shortcuts and bar panel interactions. `rofi`, `bar-pick`, and its shell
+library are gone (spec 014):
 
 | Script | Key / entry | What it does |
 |---|---|---|
-| `rofi-quick` | `Alt+Ctrl+O`, Settings | the switches of the session in one list: Wi-Fi and Bluetooth radios (with the pickers one row below), night light, do-not-disturb, touchpad, tablet mode (the on-screen keyboard and the rotation, see the tablet section) and **Calibrate rotation** while the mode is on, rotation, keyboard layout, what **Alt+Ctrl+T** translates into, audio, media, battery. It redraws after every switch, so the state it shows is never stale, and its probes run in parallel (two `bluetoothctl` clients, `nmcli` and `swaymsg` in sequence made it feel broken) |
-| `rofi-power` | `Alt+Escape`, `Alt+Ctrl+P`, Power menu | lock, suspend, hibernate, log out, reboot, shut down; the last three ask once more through `bar-pick` |
-| `rofi-notify` | `Alt+Ctrl+N`, Notifications | mako's history (`makoctl history -j`), Enter copies one, plus restore, dismiss-all and do-not-disturb |
-| `rofi-clean` | Free space | `df` plus what grows (trash, thumbnails, apt cache, journal, `~/.cache`), one action per row, re-measured afterwards |
-| `rofi-kill` | End a process | the heaviest twenty by resident memory; SIGTERM, then an explicit offer of SIGKILL |
-| `rofi-tz` | Time zone | `timedatectl list-timezones` with the current one marked, and the network-clock switch. It restarts waybar afterwards: `timedatectl` only rewrites `/etc/localtime`, and a running process keeps the zone glibc cached the first time it called `localtime()` |
-| `rofi-places` | Places | home, documents, downloads, pictures, every mounted filesystem, and a **Mount** row for each unmounted one (an SD card in the internal slot, or a USB stick with auto-mount off) through `udisks2`; Enter browses there with `rofi-files`, Alt+1 unmounts the disk under the row |
-| `rofi-swap`, `rofi-format` | Places (swap is also in the root menu) | the two disk actions, both drawn from `ui_disks` in `lib-rofi.sh` (nothing mounted, no ChromeOS kernel partition, no SPI flash or eMMC boot partition): **swap** turns a card into a `lazyos_swap` partition and the fstab block that activates it on every boot (priority 10, below zram; `nofail` and a 15 s timeout), with **Turn it off** as the undo; **format** wipes a disk clean as FAT32 or ext4 |
-| `rofi-media` | Media | the current track and play/pause/next/previous through `playerctl` |
-| `rofi-calc` | `Alt+Ctrl+Q`, Calculator | awk, one prompt; Enter copies the result |
-| `rofi-layout` | Settings → Keyboard layout | every layout in `evdev.lst`, applied to all keyboards and kept in `~/.config/sway/config.d/90-keyboard-layout.conf` |
-| `rofi-emoji` | `Alt+Ctrl+E`, Emoji | the table `scripts/make-emojis.sh` generates (`~/.config/emojis.tsv`, ~2000 rows); Enter inserts at the cursor, Alt+1 copies only |
-| `rofi-clip` | `Alt+Ctrl+V`, Clipboard | the `cliphist` history: Enter copies an entry back, Alt+1 deletes it, plus "save the newest image" and "clear the history" |
-| `rofi-dns` | DNS | the resolver of the connection that is up: Cloudflare, Google, Quad9, AdGuard, typed servers, or back to DHCP |
-| `rofi-vnc` | Settings → Share this screen, root menu, and the bar's eye | `wayvnc` serves this session **read-only** (`--disable-input`) on **127.0.0.1:5900**, started and stopped from the list, with the `ssh -L` tunnel command on a row that copies it; the loopback bind is what makes the ssh login the authentication (wayvnc only authenticates through a certificate and a password file this image does not ship), and `custom/vnc` puts an eye on the bar while it runs - a state file being read, not a daemon |
-| `rofi-pkg` | Packages | `apt-cache search`, then `apt-get install -y` behind a busy card; installed packages are marked before they are picked |
-| `rofi-dev` | `Alt+Ctrl+D`, Developer | export the profile (with an optional `Include user home folder` check passing `--include-home`) to a disk (mounted, mountable through udisks, or `~/Downloads`) as `lazyos-profile-<host>-<date>.tar.zst.gpg` with a plaintext manifest beside it, passphrase entered via TUI `ExportSetupScreen`; restore an archive (profile-only or full-home) after backing up the current profile and any overlapping existing home files to `~/.cache/lazyos/backups`; write a diagnostics bundle (system report, this boot's journal, dmesg, hardware and packages). A tar because exFAT drops modes and symlinks, encrypted because it carries `~/.ssh` and `~/.gnupg` |
-| `rofi-color` | Colour | a pixel (`slurp -p` + `grim` + `ffmpeg`), and the sixteen solarized colours as swatch rows |
-| `rofi-remind` | Reminders | transient `systemd-run --user --collect` timers, listed back from systemd, cancelled by choosing one. A title, an **optional** note, then when: five delays or a repeat (a date and time, daily, weekdays, weekly, monthly on a day 1-28). Every custom expression is validated with `systemd-analyze calendar` and the card shows systemd's own next occurrence; title and note ride in the timer's `Description` |
-| `rofi-about` | About | model, revision, kernel, uptime, memory, disk, battery, network, compositor, processes |
-| `rofi-learn` | Learn | the manual, rendered with glow, with a search across every page |
-| `rofi-files`, `rofi-keys`, `rofi-agents` | see below | the file browser, the key view, the agents menu (`lazyos-thumbnail` is the helper the first one calls for its row pictures) |
+| `lazyos-settings` | `Alt+Ctrl+O`, Settings | the switches of the session in one list: Wi-Fi and Bluetooth radios (with the pickers one row below), night light, do-not-disturb, touchpad, tablet mode (the on-screen keyboard and the rotation, see the tablet section) and **Calibrate rotation** while the mode is on, rotation, keyboard layout, what **Alt+Ctrl+T** translates into, audio, media, battery. It redraws after every switch, so the state it shows is never stale, and its probes run in parallel (two `bluetoothctl` clients, `nmcli` and `swaymsg` in sequence made it feel broken) |
+| `lazyos-power` | `Alt+Escape`, `Alt+Ctrl+P`, Power menu | lock, suspend, hibernate, log out, reboot, shut down; the last three ask once more through the confirm card |
+| `lazyos-notify-history` | `Alt+Ctrl+N`, Notifications | mako's history (`makoctl history -j`), Enter copies one, plus restore, dismiss-all and do-not-disturb |
+| `lazyos-clean` | Free space | `df` plus what grows (trash, thumbnails, apt cache, journal, `~/.cache`), one action per row, re-measured afterwards |
+| `lazyos-kill` | End a process | the heaviest twenty by resident memory; SIGTERM, then an explicit offer of SIGKILL |
+| `lazyos-tz` | Time zone | `timedatectl list-timezones` with the current one marked, and the network-clock switch. It restarts waybar afterwards: `timedatectl` only rewrites `/etc/localtime`, and a running process keeps the zone glibc cached the first time it called `localtime()` |
+| `lazyos-places` | Places | home, documents, downloads, pictures, every mounted filesystem, and a **Mount** row for each unmounted one (an SD card in the internal slot, or a USB stick with auto-mount off) through `udisks2`; Enter browses there with `lazyos-files`, Alt+1 unmounts the disk under the row |
+| `lazyos-swap`, `lazyos-format` | Places (swap is also in the root menu) | the two disk actions, both drawn from `ui_disks` in the old disk helper (nothing mounted, no ChromeOS kernel partition, no SPI flash or eMMC boot partition): **swap** turns a card into a `lazyos_swap` partition and the fstab block that activates it on every boot (priority 10, below zram; `nofail` and a 15 s timeout), with **Turn it off** as the undo; **format** wipes a disk clean as FAT32 or ext4 |
+| `lazyos-media` | Media | the current track and play/pause/next/previous through `playerctl` |
+| `lazyos-calc` | `Alt+Ctrl+Q`, Calculator | awk, one prompt; Enter copies the result |
+| `lazyos-layout` | Settings → Keyboard layout | every layout in `evdev.lst`, applied to all keyboards and kept in `~/.config/sway/config.d/90-keyboard-layout.conf` |
+| `lazyos-emoji` | `Alt+Ctrl+E`, Emoji | the table `scripts/make-emojis.sh` generates (`~/.config/emojis.tsv`, ~2000 rows); Enter inserts at the cursor, Alt+1 copies only |
+| `lazyos-clip` | `Alt+Ctrl+V`, Clipboard | the `cliphist` history: Enter copies an entry back, Alt+1 deletes it, plus "save the newest image" and "clear the history" |
+| `lazyos-dns` | DNS | the resolver of the connection that is up: Cloudflare, Google, Quad9, AdGuard, typed servers, or back to DHCP |
+| `lazyos-vnc` | Settings → Share this screen, root menu, and the bar's eye | `wayvnc` serves this session **read-only** (`--disable-input`) on **127.0.0.1:5900**, started and stopped from the list, with the `ssh -L` tunnel command on a row that copies it; the loopback bind is what makes the ssh login the authentication (wayvnc only authenticates through a certificate and a password file this image does not ship), and `custom/vnc` puts an eye on the bar while it runs - a state file being read, not a daemon |
+| `lazyos-pkg` | Packages | `apt-cache search`, then `apt-get install -y` behind a busy card; installed packages are marked before they are picked |
+| `lazyos-dev` | `Alt+Ctrl+D`, Developer | export the profile (with an optional `Include user home folder` check passing `--include-home`) to a disk (mounted, mountable through udisks, or `~/Downloads`) as `lazyos-profile-<host>-<date>.tar.zst.gpg` with a plaintext manifest beside it, passphrase entered via TUI `ExportSetupScreen`; restore an archive (profile-only or full-home) after backing up the current profile and any overlapping existing home files to `~/.cache/lazyos/backups`; write a diagnostics bundle (system report, this boot's journal, dmesg, hardware and packages). A tar because exFAT drops modes and symlinks, encrypted because it carries `~/.ssh` and `~/.gnupg` |
+| `lazyos-color` | Colour | a pixel (`slurp -p` + `grim` + `ffmpeg`), and the sixteen solarized colours as swatch rows |
+| `lazyos-remind` | Reminders | transient `systemd-run --user --collect` timers, listed back from systemd, cancelled by choosing one. A title, an **optional** note, then when: five delays or a repeat (a date and time, daily, weekdays, weekly, monthly on a day 1-28). Every custom expression is validated with `systemd-analyze calendar` and the card shows systemd's own next occurrence; title and note ride in the timer's `Description` |
+| `lazyos-about` | About | model, revision, kernel, uptime, memory, disk, battery, network, compositor, processes |
+| `lazyos-learn` | Learn | the manual, rendered with glow, with a search across every page |
+| `lazyos-files`, `lazyos-keys`, `lazyos-agents` | see below | the file browser, the key view, the agents menu (`lazyos-thumbnail` is the helper the first one calls for its row pictures) |
 
 ![Settings: the session's switches in one list, each row with its state](../../docs/screenshots/hayato-r1-settings.png)
 
 Each one is a single process while its window is open and nothing afterwards. They all end in
-`ui_pick` (`ui_pick_alt` when a second action sits on Alt+1), which is `bar-pick` (rofi's dmenu)
-over a table: rofi hands back the *rendered* row, so the key of the chosen row travels in a second
-column that markup cannot be parsed out of.
+the shared picker (`ui_pick`, with `ui_pick_alt` when a second action sits on Alt+1), which draws
+a table and returns the chosen row's key rather than parsing it out of the rendered text.
 
 ## Clipboard history and emoji
 
 These two are the batch that took the session its first resident process and its first generated
 data file, and both are worth the exception:
 
-* **`rofi-clip`** (`Alt+Ctrl+V`) is a list over `cliphist`, which is fed by
+* **`lazyos-clip`** (`Alt+Ctrl+V`) is a list over `cliphist`, which is fed by
   `wl-paste --watch cliphist store` (one `exec` line in
   `etc/sway/config.d/27-clipboard.conf`). About 2 MB, and there is no history without it:
   `wl-clipboard` alone only knows the current selection. Rows are classified as text, link or
   image from what `cliphist` keeps; an image is listed by its size and dimensions, not by a
-  thumbnail, because a rofi row is one line. "Save the newest image" decodes it into
+  thumbnail, because a menu row is one line. "Save the newest image" decodes it into
   `~/Pictures/clipboard/` with the extension its MIME type implies and opens it. The database is
   `~/.cache/cliphist/db` and holds everything copied, secrets included; the menu's last row
   clears it.
-* **`rofi-emoji`** (`Alt+Ctrl+E`) reads `~/.config/emojis.tsv`, which `scripts/make-emojis.sh`
+* **`lazyos-emoji`** (`Alt+Ctrl+E`) reads `~/.config/emojis.tsv`, which `scripts/make-emojis.sh`
   generates on the build host from Python's Unicode database (name, glyph, block: 1988 rows, the
   emoji blocks of the standard plus Dingbats and Miscellaneous Symbols). The image needs neither
   Python nor a package for it — the file is committed and copied with the home directory. Insertion
@@ -272,7 +265,7 @@ data file, and both are worth the exception:
   need a keysym for the codepoint, which most emoji do not have. Alt+1 is the clipboard write
   alone. `fonts-noto-color-emoji` draws the glyph, and `check-system.sh` asks `fc-match emoji`.
 
-The other five lists (`rofi-dns`, `rofi-pkg`, `rofi-color`, `rofi-remind`, `rofi-about`) are plain
+The other five lists (`lazyos-dns`, `lazyos-pkg`, `lazyos-color`, `lazyos-remind`, `lazyos-about`) are plain
 scripts with no such trade-off: DNS is two `nmcli` properties plus a re-activation, packages are
 `apt-cache`/`apt-get` behind the busy card, colour is `slurp` + `grim` + `ffmpeg -f rawvideo`
 (no ImageMagick), reminders are transient timers that fire `notify-send` once, and about reads
@@ -325,30 +318,24 @@ busy stop wifi
 
 ## The file browser
 
-`rofi-files` (`Alt+Ctrl+F`, "Files" in the root menu and the launcher) is a shell script around
-`rofi -dmenu`. rofi 2.0 *does* have a `filebrowser` mode (with sorting, hidden files and a
-`recursivebrowser`), but with `-show-icons` it drew no thumbnails here at all - the XDG cache was
-never written and every row kept its mimetype icon - and it would replace the markup rows and the
-`bat`/popup behaviour below, so the dmenu path is what this port uses:
+`lazyos-files` (`Alt+Ctrl+F`, "Files" in the root menu and the launcher) is
+`lazyos menu files`, a native window: one directory per run, directories first,
+sizes and dates dimmed, and a preview pane beside the list. Enter opens a
+directory or the file; Ctrl+H reveals the dotfiles. The preview decodes a
+picture or a video frame through `lazyos-thumbnail`, shows text with the theme's
+code role, and falls back to the file's facts when nothing can be drawn.
 
-* the rows are Pango markup, directories first (cyan, trailing `/`), then files with the size
-  and the date dimmed; `find -L` decides the type, so a symlink to a directory navigates and a
-  broken link says so;
-* the name column is padded to the longest name in the listing, which works because the theme
-  is monospace, and dmenu matches the text **with the markup stripped** (verified: a filter on
-  a tag name finds no row), so typing a name is not disturbed by the styling;
-* **every row carries an icon** (32 px here only - the launcher and the bar popups keep the
-  theme's 26 px). A row is `text\0icon\x1fthumbnail://<path>` when a picture can be decoded, and
-  `text\0icon\x1f<theme name>` when it cannot: `folder`, `go-up`, `view-hidden`,
-  `dialog-warning`, `text-x-generic`, `text-html`, `application-pdf`, `image-x-generic`,
+* directories first (cyan, trailing `/`), then files with the size and the date dimmed;
+  `find -L` decides the type, so a symlink to a directory navigates and a broken link says so;
+* the name column is padded to the longest name in the listing, and the filter is
+  case-folded as you type;
+* **every row carries an icon**: a directory, the parent, a hidden file, a warning, or the
+  file's family (`text-x-generic`, `text-html`, `application-pdf`, `image-x-generic`,
   `video-x-generic`, `audio-x-generic`, `x-office-document`, `package-x-generic`,
-  `application-x-executable`. The name comes from the extension plus the executable bit, both
-  already in the `find` listing, so a directory of source files is a list with a column of icons
-  instead of bare text - the report's "no icons in Files". `-show-icons` with `-preview-cmd`
-  makes rofi call `~/.config/bin/lazyos-thumbnail` for the rows it is about to draw, all at once,
-  and only when that picture is not in `~/.cache/thumbnails` yet. The script is ffmpeg for an
-  image or a video frame, `pdftocairo` for a PDF's first page, and nothing at all for a format it
-  does not know (the row then keeps its theme icon);
+  `application-x-executable`). The name comes from the extension plus the executable bit,
+  so a directory of source files is a list with a column of icons instead of bare text.
+  The preview pane asks `lazyos-thumbnail` for a picture, which is ffmpeg for an image or a
+  video frame, `pdftocairo` for a PDF's first page, and nothing for a format it does not know;
 * Enter opens a directory and reads a text file with `bat --paging=always` (`BAT_THEME=ansi`)
   inside the floated `popup` foot window. Anything else goes where its kind belongs, which is
   the extension's decision: a **document** (PDF, DjVu, a comic) is opened by **papers**, a reader
@@ -367,7 +354,7 @@ never written and every row kept its mimetype icon - and it would replace the ma
   what makes Ctrl+Return useful;
 * the line under the prompt carries the path, the counts and the free space.
 
-**`rofi-files --search` is Alt+Search's mode**: one bounded `fd` run over `$HOME`
+**`lazyos-files --search` is Alt+Search's mode**: one bounded `fd` run over `$HOME`
 (`--type f --max-results 500`, with `.cache`, `.git`, `node_modules` and
 `.local/share/containers` excluded), one `stat` for the metadata of what it found, newest first,
 each row named by its `~/relative/path` and carrying the same icon the browser would draw.
@@ -377,13 +364,13 @@ by typing one more letter. Escape closes either mode with nothing, and a missing
 and opens the browser instead. Debian's binary is `fdfind`; `/usr/local/bin/fd` is the symlink
 the key's command uses.
 
-Thumbnails are generated **lazily and in parallel, which is rofi's doing**: it asks for the rows
+Thumbnails are generated **lazily and in parallel, which is the browser's doing**: it asks for the rows
 it is about to show and starts one process per row at the same time (8 started within 30 ms), so a
 screenful of ten 1280x800 PNGs takes 0.97 s through the gate against 2.0 s one after another, and
 scrolling asks for the next screenful only. Because a 24 MP PNG decodes into ~131 MB, the script
 gates itself to four decoders with `flock` slots and passes `-threads 1 -filter_threads 1`, which
 keeps the parallelism across files; `-lowres 2` decodes a JPEG at a quarter of its size in one step
-(53 ms and 50 MB against 179 ms and 83 MB for 24 MP). rofi owns the cache
+(53 ms and 50 MB against 179 ms and 83 MB for 24 MP). the browser owns the cache
 (`~/.cache/thumbnails/normal/<md5 of the path>.png`, 3-8 kB a picture) and skips
 the command when the file is there, so a picture is decoded once, ever. The cost is 23 MB of
 PSS for a window of fourteen thumbnail rows against 17 MB for the same window without them, and
@@ -406,13 +393,13 @@ which applies the same rules as the browser: text in `bat`, a document in `paper
 `imv` (chafa when imv gets no EGL context), a video in `mpv`, and an HTML page, an EPUB or a
 `.deb` in Firefox - so a double click on a video does not open it in the browser.
 
-![rofi-files over ~/Documents, with the sizes and dates dimmed](../../docs/screenshots/hayato-r1-files.png)
+![lazyos-files over ~/Documents, with the sizes and dates dimmed](../../docs/screenshots/hayato-r1-files.png)
 
 ## Files in a window (favnyr)
 
 The mouse half of the same story is **favnyr**: `uis/sway/files/usr/bin/favnyr`, one statically
 linked Slint binary (Brunux/Favnyr-aarm64 v0.3.6, 36 MB) committed in the tree. It is a second
-entry, not a replacement: `Alt+Search` and `Alt+Ctrl+F` keep opening `rofi-files` (one process, no
+entry, not a replacement: `Alt+Search` and `Alt+Ctrl+F` keep opening `lazyos-files` (one process, no
 window, a list a key opens and a key closes), and `Alt+Ctrl+Shift+F` opens the window for what a
 list cannot do - drag and drop, several files at once, rename in place, the trash. The launcher
 carries both rows (**Files**, **Files (window)**) and so does the root menu.
@@ -427,7 +414,7 @@ carries both rows (**Files**, **Files (window)**) and so does the root menu.
   are in `docs/omarchy-gap.md` §1.
 * **A double click opens what the Files list opens.** `/etc/xdg/mimeapps.list` sends the types to
   `org.lazyos.view.desktop`, whose `Exec` is `~/.config/bin/lazyos-view` - the same rule table as
-  `rofi-files` (which reads an HTML file as text): text in `bat`, a document in `papers`, a
+  `lazyos-files` (which reads an HTML file as text): text in `bat`, a document in `papers`, a
   picture in `imv` (or `chafa`'s sixels when imv gets no EGL context), a video in `mpv`, and an
   HTML page, an EPUB or a `.deb` in Firefox. `inode/directory` names `pcmanfm.desktop` on purpose:
   the *name* is what GIO and the launcher know, and the file that carries it is the user-level
@@ -477,7 +464,7 @@ carries both rows (**Files**, **Files (window)**) and so does the root menu.
 **Search+Shift** opens `lazyos-find`: `fd` streamed into **fzf** in a floated foot window, one row
 per file under `$HOME`, a preview pane on the right, and Enter handing the choice to `lazyos-view`
 - the same opener a double click in favnyr reaches. It is the third answer to "where is that
-file", and the three are one feature with three shapes: `rofi-files --search` is a *menu* (rows
+file", and the three are one feature with three shapes: `lazyos-files --search` is a *menu* (rows
 with icons and thumbnails, open before you type, one bounded `fd` run, a list you scroll),
 favnyr is the *window* (drag and drop, the trash), and this is the *filter* - uncapped, live
 while the walk is still running, with the file's contents beside it.
@@ -496,7 +483,7 @@ make a name with a space, a tab or a newline one row and one argument. Measured 
 |---|---|---|---|
 | **fzf 0.74.4** over `fd` | **24 ms** | **5-35 ms** | **35.6 MB** |
 | fzf's own `--walker`, same tree | 9-16 ms | 7-21 ms | the same process |
-| the menu, for comparison | rofi's own start | rofi filters a fixed list | 17-23 MB (`docs/optimization.md` §8) |
+| the menu, for comparison | the old picker's own start | the old picker filters a fixed list | 17-23 MB (`docs/optimization.md` §8) |
 
 * **`skim`** (Debian has it) is the same program in Rust with no advantage here: it would be a
   second fuzzy finder in a 4 GB image, against one that is already wired into the shell.
@@ -509,7 +496,7 @@ make a name with a space, a tab or a newline one row and one argument. Measured 
   faster to first paint, but it does **not** read `.gitignore` - on a home full of repos that is
   build output and vendor trees in the list. `fd` is already installed and already the tree walker
   of every other file feature, so the list is one tool's answer everywhere.
-* Memory is twice the menu's (17.1 MB of rofi against 35.6 MB of fzf), and that is the trade: 35.6
+* Memory is twice the menu's (17.1 MB of the old picker against 35.6 MB of fzf), and that is the trade: 35.6
   MB of fzf plus foot's ~25 MB while the window is open, nothing afterwards. The menu stays the
   cheap answer.
 
@@ -546,19 +533,19 @@ The session speaks Omarchy's keys with `Alt` in place of `Super`, so an action k
 same letter and the same Ctrl/Shift combination wherever a sway default does not already
 own it. The whole set is the *Shortcuts* page of the manual
 (`usr/share/doc/lazyos/03-shortcuts.md`) and, generated from the configuration,
-`rofi-keys`; this is the shape of it:
+`lazyos-keys`; this is the shape of it:
 
 | Group | Keys | Where it lives |
 |---|---|---|
 | launcher, switcher, commands | `Alt+D` and the Search key, `Alt+Tab`, `Alt+Shift+D` | `19-launcher.conf`, `home/.config/sway/config` |
-| file search | `Alt+Search` (`rofi-files --search`, a list), `Search+Shift` (`lazyos-find`, a terminal filter) | `home/.config/sway/config` |
+| file search | `Alt+Search` (`lazyos-files --search`, a list), `Search+Shift` (`lazyos-find`, a terminal filter) | `home/.config/sway/config` |
 | root menu | `Alt+Space` (Omarchy: `Super+Space`) | `24-keys.conf` |
 | panels | `Alt+Ctrl+A/B/W` → audio, Bluetooth, network (Omarchy: `Super+Ctrl+A/B/W`) | `24-keys.conf` |
-| system | `Alt+Escape` and `Alt+Ctrl+P` power menu (`rofi-power`), `Alt+Ctrl+L` lock, `Alt+Shift+Escape` lock+sleep, `Alt+Ctrl+Escape` sleep | `21-lock-screen.conf`, `22-sleep.conf`, `24-keys.conf` |
+| system | `Alt+Escape` and `Alt+Ctrl+P` power menu (`lazyos-power`), `Alt+Ctrl+L` lock, `Alt+Shift+Escape` lock+sleep, `Alt+Ctrl+Escape` sleep | `21-lock-screen.conf`, `22-sleep.conf`, `24-keys.conf` |
 | browser | `Alt+Shift+Return` opens `firefox-esr` | `19-launcher.conf` |
 | windows | `Alt+Q` close, `Alt+T` float, `Alt+F` fullscreen, `Alt+grave` scratchpad, `Alt+R` resize | `config`, `24-keys.conf` |
 | views | `Alt+Ctrl+K` every binding, `Alt+Ctrl+X` dictation, `Alt+Ctrl+Shift+A` agents | `24-keys.conf` |
-| files | `Alt+Ctrl+F` (`rofi-files`), `Alt+Ctrl+Shift+F` (favnyr, the window) | `24-keys.conf` |
+| files | `Alt+Ctrl+F` (`lazyos-files`), `Alt+Ctrl+Shift+F` (favnyr, the window) | `24-keys.conf` |
 
 The three places where the letter differs are deviations with a reason, and each is written
 next to the binding: close is `Alt+Q` because `Alt+W` is sway's tabbed layout, the key view is
@@ -566,14 +553,14 @@ next to the binding: close is `Alt+Q` because `Alt+W` is sway's tabbed layout, t
 sway's layouts are stacking/tabbed/split rather than Hyprland's dwindle/master/scrolling.
 The panel keys run the very scripts the bar's indicators run (`bar-audio`, `bar-bt`,
 `bar-net`), so a panel has one implementation and two ways to reach it. The power menu is the
-one exception: the key opens `rofi-power` (actions, and a yes/no on the three that cannot be
+one exception: the key opens `lazyos-power` (actions, and a yes/no on the three that cannot be
 undone) while the bar's battery indicator still opens `bar-power` (numbers), because those are
 two different questions and one script answering the wrong one is what made both keys look dead.
 
 ![The key view: categories, keys and the description from the comment above each binding](../../docs/screenshots/hayato-r1-keys.png)
 
 **Every binding carries its description on a comment line above**, and the description
-covers the bindings below it until a blank line or another comment, because `rofi-keys` reads
+covers the bindings below it until a blank line or another comment, because `lazyos-keys` reads
 those comments as the text it shows; a binding without one appears as its raw command in the
 key view. The `Alt+minus`/`Alt+Shift+minus` pair stays as the sway-default alias of the two
 scratchpad actions, and sway's `focus mode_toggle` was dropped from `Alt+Space` in favour of
@@ -581,7 +568,7 @@ the menu (floating itself is still `Alt+Shift+Space`).
 
 ## The manual, the key view, dictation and hibernate
 
-Four features that exist because rofi and the terminal can carry them without a resident process;
+Four features that exist because the old picker and the terminal can carry them without a resident process;
 `usr/share/doc/lazyos/` holds the manual they are documented in.
 
 **Learn** (`Alt+Space` root menu → Learn, or the launcher entry) lists the pages in
@@ -594,18 +581,18 @@ costs 25 MB while it is open.
 ![A manual page rendered by glow in foot](../../docs/screenshots/hayato-r1-manual.png)
 
 `glow` is `packages/tools.list` (a single binary, no runtime); its style is a glamour description,
-which is why it lives next to `glow.yml` and not in the rofi theme - the two formats are unrelated.
+which is why it lives next to `glow.yml` and not in the old theme - the two formats are unrelated.
 `glow.yml` has to name the style by **absolute path**: a bare name is looked up among glow's
 built-ins, and `-s solarized` fails with *specified style does not exist*. Every colour in that
 JSON carries its `#`, because glamour reads a bare `839496` as a 256-colour index, emits
 `38;5;839496`, and the terminal then falls back to its own colours with no error - the page losing
 its palette, inline code included, while still "rendering".
 
-**Keybindings** (`Alt+Ctrl+K`, matching Omarchy's `Super+K`) is generated, not written: `rofi-keys`
+**Keybindings** (`Alt+Ctrl+K`, matching Omarchy's `Super+K`) is generated, not written: `lazyos-keys`
 parses every `bindsym`/`bindcode`/`bindswitch`/`bindgesture` line from `/etc/sway/config`,
 `/etc/sway/config.d/*.conf` and `~/.config/sway/config`, expands the `set $var` definitions, and
 uses the comment above each binding as its description (the files are written that way). It is shown
-with `rofi -dmenu -markup-rows`, so keys are bold and descriptions are dim; Enter copies the command
+with a markup list, so keys are bold and descriptions are dim; Enter copies the command
 to the clipboard. A binding added anywhere shows up on the next run, which is the point: a separate
 list would drift the first time someone edits the configuration.
 
@@ -622,7 +609,7 @@ text it typed or the reason it failed, and the bar shows its spinner. Pressing t
 the root menu's Dictation row - stops it (SIGINT, which is what finalises the wav). Omarchy uses
 voxtype (a Rust daemon with a state file); this is the same interaction without the daemon.
 
-**Agents** (`Alt+Ctrl+Shift+A`, Omarchy's `Super+Shift+Ctrl+A`) is `rofi-agents`: it lists the
+**Agents** (`Alt+Ctrl+Shift+A`, Omarchy's `Super+Shift+Ctrl+A`) is `lazyos-agents`: it lists the
 coding-agent CLIs it knows (Claude Code, Codex, OpenCode, Gemini, Copilot), launches the installed
 one in foot from `~/Work`, offers `npm install -g --prefix ~/.local <package>` for the rest (so npm
 never wants root), and keeps **accounts** for the two that support an alternative config directory -
@@ -632,7 +619,7 @@ arm64 tarball; `scripts/rootfs-setup.sh` installs it into `~/.opencode/bin`), be
 this port is built with and a fresh card should not have to fetch it first: that layout is the one
 its own `opencode upgrade` recognises and rewrites without root, and the image ships it signed out.
 The root menu's AI group opens with **Agent session** rather than with the list: that row runs
-`rofi-agents --default`, which starts the agent marked `●` (OpenCode until *Set the default agent…*
+`lazyos-agents --default`, which starts the agent marked `●` (OpenCode until *Set the default agent…*
 names another) in `~/Work`, falls back to OpenCode when the recorded default is not installed, and
 raises a card instead of an empty terminal when no agent CLI is present - so the section is an
 action and a list, and the common case costs one click.
@@ -672,15 +659,15 @@ instead, and nothing survives the click:
 | brightness | – | – | backlight, 5% steps |
 | battery | power panel: charge, state, draw, time left, charger, uptime, memory, swap, kernel | root menu | – |
 
-`rofi` in dmenu mode draws the menus - the same binary that is the launcher - `foot
+The native menus draw the menus; `foot
 --app-id=popup` (floated by `etc/sway/config.d/25-bar-panels.conf`) runs what needs a real
 terminal, `nmtui` and `bluetoothctl`; `swaynag` shows the power panel.  All of those are already
-in the image for other reasons, so the bar needed no package of its own once rofi replaced the
+in the image for other reasons, so the bar needed no package of its own once the framework replaced the
 launcher.  The bar is resident; the only other thing that stays is `workstyle`, which renames the
 workspaces it displays (see below).
 
-The scripts are POSIX `sh`, they live in `home/.config/bin/`, and they share `bar-pick`, which holds
-the look of every popup through `~/.config/rofi/solarized.rasi`.  Each one
+The scripts are POSIX `sh`, they live in `home/.config/bin/`, and they share the native
+picker, which takes its look from the session theme.  Each one
 documents at the top of the file which Deboma widget it reproduces.  Icons are written in
 `config.jsonc` as `\uXXXX` escapes so the codepoint is readable and survives any editor; they are
 Font Awesome (see the font table below).
@@ -702,7 +689,7 @@ get a duplicate pill beside it (and in the `"*": [1, 2, 3, 4, 5]` shape it carri
 *Hyprland* module's format - it drew nothing at all).
 
 `home/.config/workstyle/config.toml` is the table: `"pattern" = "\uXXXX"` per application, the
-glyph being a `UI_I_*` codepoint from `lib-rofi.sh` so the pills use the same alphabet as the
+glyph being a `UI_I_*` codepoint from the framework's glyph table so the pills use the same alphabet as the
 menus. Patterns match a case-insensitive substring of the title, then the app_id, then the class,
 and the first match in the file wins - `firefox` sits above `foot` so a browser tab titled after a
 terminal is still a browser, and the foot windows with their own app_id (`popup`, `lazyos-find`,
@@ -740,8 +727,7 @@ bar.
   if they are wanted back.
 
 `nmcli`, `bluetoothctl`, `pactl` and `brightnessctl` come with packages that were already listed
-(`network-manager`, `bluez`, `pulseaudio-utils`); the additions are `rofi` (also the launcher and
-the window switcher) and `jq` (which parses `swaymsg -t get_inputs` for the layout indicator).  `scripts/check-system.sh` verifies all of
+(`network-manager`, `bluez`, `pulseaudio-utils`); the additions are `jq` (which parses `swaymsg -t get_inputs` for the layout indicator).  `scripts/check-system.sh` verifies all of
 it on the device: every bar script executable, those tools present, and the backlight device named
 in `config.jsonc` existing under `/sys/class/backlight` (a wrong name leaves waybar's module empty
 with no error anywhere).
@@ -1065,7 +1051,7 @@ uses (`-H`, `-L`, `-R`, `--fn`, the colours, `--alpha`); it has no `--dock` or
 layer-shell surface at the bottom edge, which is what `--dock` would do.
 
 Settings (`Alt+Ctrl+O`) carries **Tablet mode** next to **Rotation**: the second
-is the manual turn (`rofi-quick --rotation-menu`), the first is this script, and
+is the manual turn (`lazyos-settings --rotation-menu`), the first is this script, and
 **Calibrate rotation** (only while the mode is on) is the pose the person is
 holding. The
 on-screen keyboard's layout is the mobile-international one compiled into

@@ -297,7 +297,7 @@ pub const TOOLS: &[ToolSpec] = &[
         "Open the Install LazyOS window, which checks the machine and asks the person to type \
          the disk's name. Nothing is written unless they do; you will not see their answer.",
         NO_ARGS,
-        Maps::Session("rofi-install"),
+        Maps::Session("lazyos-installer"),
         Cooldown(30),
     ),
     tool(
@@ -307,7 +307,7 @@ pub const TOOLS: &[ToolSpec] = &[
         "Open the Format a disk menu: it lists only removable disks this system does not use, \
          and asks once more with Cancel first. The person picks the disk and confirms.",
         NO_ARGS,
-        Maps::Session("rofi-format"),
+        Maps::Session("lazyos-format"),
         Cooldown(30),
     ),
     tool(
@@ -317,7 +317,7 @@ pub const TOOLS: &[ToolSpec] = &[
         "Open the Auxiliary swap menu, which turns a card into extra memory after the person \
          picks the disk, the size, and confirms with Cancel first.",
         NO_ARGS,
-        Maps::Session("rofi-swap"),
+        Maps::Session("lazyos-swap"),
         Cooldown(30),
     ),
     tool(

@@ -9,7 +9,7 @@
 //! - **The thumbnail is the XDG cache.** `~/.cache/thumbnails/large/<md5 of
 //!   the path>.png` (256 px), made by `lazyos-thumbnail` - the four-slot `flock`
 //!   gate, the `.part` rename - so a picture is decoded once, ever, and the UI
-//!   never decodes a 24 MP photo. The rofi list's 128 px `normal` size was a
+//!   never decodes a 24 MP photo. The old list's 128 px `normal` size was a
 //!   32 px icon's source; a pane is ~600 px wide, so it asks for the large one
 //!   and draws it at most twice its size (a 128 px picture stretched across the
 //!   pane was a blur, and `Resize::Fit` alone drew it as a stamp in a corner).
@@ -94,7 +94,7 @@ pub fn kind_for(path: &Path) -> Kind {
     Kind::Facts
 }
 
-/// The thumbnail cache file for a path, as rofi and `lazyos-find` name it.
+/// The thumbnail cache file for a path, as the file browser and `lazyos-find` name it.
 pub fn thumbnail_path(cache: &Path, path: &Path) -> PathBuf {
     let real = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     use std::os::unix::ffi::OsStrExt;

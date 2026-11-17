@@ -1,7 +1,7 @@
-//! Calculator: an expression parser, not a rofi prompt (`rofi-calc`).
+//! Calculator: an expression parser, not a dmenu prompt (`lazyos-calc`).
 //!
 //! The old script was one prompt: type it, Enter evaluates, the result goes to
-//! the clipboard and a notification. rofi 2.0 cannot do a live preview (a script
+//! the clipboard and a notification. a dmenu cannot do a live preview (a script
 //! mode is called once at startup and once on selection, never while the query
 //! changes), so this is the honest version: a parser that evaluates on Enter,
 //! with history and a copy action.
@@ -638,7 +638,7 @@ impl Operator {
     }
 }
 
-/// `lazyos menu calc` (`rofi-calc`): the window.
+/// `lazyos menu calc` (`lazyos-calc`): the window.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,

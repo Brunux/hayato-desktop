@@ -8,7 +8,7 @@ for) followed by the terminal cursor - and the tagline is the one the system has
 **lazy by design**.
 
 Everything here is drawn in the session's own Solarized palette, so the brand never repaints the
-desktop: it is the same cyan the bar, rofi and foot already use, plus one orange for the cursor.
+desktop: it is the same cyan the bar and foot already use, plus one orange for the cursor.
 
 ## Files
 

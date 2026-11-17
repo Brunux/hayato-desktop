@@ -11,8 +11,8 @@
 //! - **act** tools run this binary's subcommands (`theme set`, `notify send`,
 //!   `task stop`) or open a window detached from the server (`lazyos menu`,
 //!   `lazyos task attach`, `lazyos-view`);
-//! - **propose** tools open the gated window the menu opens (`rofi-install`,
-//!   `rofi-format`, `rofi-swap`, `lazyos menu --power ACTION`) and return; what
+//! - **propose** tools open the gated window the menu opens (`lazyos-installer`,
+//!   `lazyos-format`, `lazyos-swap`, `lazyos menu --power ACTION`) and return; what
 //!   the person answers there is never seen here.
 //!
 //! Nothing runs through a shell: every program is a fixed name with its words.
@@ -677,7 +677,7 @@ impl Desk {
         if meta.is_dir() {
             self.open_window(
                 &[
-                    self.session_bin("rofi-files").display().to_string(),
+                    self.session_bin("lazyos-files").display().to_string(),
                     "--".into(),
                     shown.clone(),
                 ],
@@ -773,17 +773,17 @@ impl Handler for Desk {
             "notify_send" => self.notify(args),
             "view_open" => self.view_open(args),
             "install_propose" => self.propose(
-                "rofi-install",
+                "lazyos-installer",
                 "the Install LazyOS window",
                 "It checks the machine and asks the person to type the disk's name.",
             ),
             "format_propose" => self.propose(
-                "rofi-format",
+                "lazyos-format",
                 "the Format a disk menu",
                 "It lists only removable disks this system does not use, and asks once more with Cancel first.",
             ),
             "swap_propose" => self.propose(
-                "rofi-swap",
+                "lazyos-swap",
                 "the Auxiliary swap menu",
                 "The person picks the disk and the size, and confirms with Cancel first.",
             ),
@@ -915,7 +915,7 @@ impl Captured {
 /// was healthy - the message names the dead socket, which is how it was found.
 /// The socket is therefore resolved per call: the inherited one while it is
 /// still a socket, otherwise the newest `sway-ipc.<uid>.<pid>.sock` whose pid
-/// is a live `sway` (the `/proc/<pid>/comm` test `rofi-vnc` makes of its own).
+/// is a live `sway` (the `/proc/<pid>/comm` test `lazyos-vnc` makes of its own).
 fn sway_socket(vars: &BTreeMap<String, String>) -> Option<String> {
     sway_socket_where(vars, |pid| {
         read_trim(&format!("/proc/{pid}/comm")) == "sway"

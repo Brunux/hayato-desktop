@@ -22,7 +22,7 @@ supplies everything above the kernel.
   **Alt+D**. Type part of a name, Enter.
 * See every key binding: **Alt+Ctrl+K**.
 * This manual: the **Learn** entry in the bar menu (**Alt+Space**), or
-  `rofi-learn` in a terminal.
+  `lazyos-learn` in a terminal.
 
 ## What is on the screen
 
@@ -119,7 +119,7 @@ the thing to press is on the screen.
 | `/etc/sway/` | the system half of the session: `config` plus `config.d/*.conf` drop-ins |
 | `~/.config/sway/` | your half: it includes the system one and adds your own settings |
 | `~/.config/bin/` | the commands the bar and the keys call (symlinks to `/usr/bin/lazyos` for ported surfaces, plus shell helpers) |
-| `~/.config/{waybar,foot,rofi,mako}/` | the look of each piece |
+| `~/.config/{waybar,foot,mako}/` | the look of each piece |
 | `/usr/share/doc/lazyos/` | these pages |
 | `/etc/lazyos/` | device metadata (`deviceinfo`, `kernel-cmdline*.conf`, `installation`) read directly by the installer and boot helpers |
 | `/usr/libexec/lazyos/` | installed runtime helpers (`install-boot.sh`, `backup-system.sh`, `restore-system.sh`, `install-kpart.sh`, fallback `install-emmc.sh`, and modular `check/*.sh`) |
