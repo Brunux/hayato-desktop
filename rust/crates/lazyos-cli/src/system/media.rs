@@ -25,6 +25,30 @@ use crate::system::{missing, out};
 
 const NEEDED: &[&str] = &["playerctl"];
 
+/// What `playerctl status` said, as a value rather than a string to compare.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PlaybackState {
+    Playing,
+    Paused,
+    Stopped,
+    Unknown,
+}
+
+impl PlaybackState {
+    fn parse(text: &str) -> Self {
+        match text.trim() {
+            "Playing" => Self::Playing,
+            "Paused" => Self::Paused,
+            "Stopped" => Self::Stopped,
+            _ => Self::Unknown,
+        }
+    }
+
+    fn is_playing(self) -> bool {
+        matches!(self, Self::Playing)
+    }
+}
+
 /// The media screen.
 pub struct MediaScreen {
     players: Vec<Player>,
@@ -42,7 +66,7 @@ struct Player {
     title: String,
     artist: String,
     album: String,
-    status: String,
+    status: PlaybackState,
 }
 
 impl MediaScreen {
@@ -86,7 +110,7 @@ impl MediaScreen {
                 title: title.trim().to_string(),
                 artist: artist.trim().to_string(),
                 album: album.trim().to_string(),
-                status: status.trim().to_string(),
+                status: PlaybackState::parse(&status),
             });
         }
         out_players
@@ -118,7 +142,7 @@ impl MediaScreen {
                 } else {
                     format!("{} · {}", p.name, p.album)
                 };
-                let badge = if p.status == "Playing" {
+                let badge = if p.status.is_playing() {
                     "▶ playing"
                 } else {
                     "⏸ paused"
@@ -131,7 +155,7 @@ impl MediaScreen {
                 );
                 actions.push(format!("player:{}", p.name));
             }
-            if self.players.iter().any(|p| p.status == "Playing") {
+            if self.players.iter().any(|p| p.status.is_playing()) {
                 rows.push(
                     Row::new("Pause")
                         .glyph(Glyph::Pause)
@@ -181,10 +205,10 @@ impl Screen for MediaScreen {
             if let Some(active) = self
                 .players
                 .iter()
-                .find(|p| p.status == "Playing")
+                .find(|p| p.status.is_playing())
                 .or_else(|| self.players.first())
             {
-                let (badge, role) = if active.status == "Playing" {
+                let (badge, role) = if active.status.is_playing() {
                     ("▶ PLAYING", ColorRole::Success)
                 } else {
                     ("⏸ PAUSED", ColorRole::Warn)
@@ -321,9 +345,9 @@ impl MediaScreen {
                 .players
                 .iter()
                 .find(|p| p.name == name)
-                .map(|p| p.status.clone())
-                .unwrap_or_default();
-            let subcmd = if status == "Playing" { "pause" } else { "play" };
+                .map(|p| p.status)
+                .unwrap_or(PlaybackState::Unknown);
+            let subcmd = if status.is_playing() { "pause" } else { "play" };
             let _ = std::process::Command::new("playerctl")
                 .args([subcmd, "-p", name])
                 .stdin(std::process::Stdio::null())
@@ -421,7 +445,11 @@ mod tests {
 
     #[test]
     fn player_parsing() {
-        // Test that the player parsing logic works with mocked output
-        // This is a compile-time check mostly
+        assert_eq!(PlaybackState::parse("Playing\n"), PlaybackState::Playing);
+        assert_eq!(PlaybackState::parse("Paused"), PlaybackState::Paused);
+        assert_eq!(PlaybackState::parse("Stopped"), PlaybackState::Stopped);
+        assert_eq!(PlaybackState::parse(""), PlaybackState::Unknown);
+        assert!(PlaybackState::Playing.is_playing());
+        assert!(!PlaybackState::Paused.is_playing());
     }
 }
