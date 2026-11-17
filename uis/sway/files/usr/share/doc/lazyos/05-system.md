@@ -5,7 +5,7 @@
 LazyOS uses pluggable boot backends selected by `/etc/lazyos/deviceinfo`
 (`deviceinfo_boot_type`), rather than assuming ChromeOS partitions on every board:
 
-* **`depthcharge` (Google Hayato / `google-asurada`)** — three partitions matching ChromeOS firmware:
+* **`depthcharge` (Google Hayato / `google-asurada` & Google Kukui / `google-kukui`)** — three partitions matching ChromeOS firmware:
 
 | Partition | Size | What |
 |---|---|---|
@@ -45,7 +45,8 @@ Generic targets (`arm64-uefi`, `arm64-extlinux`) use Debian `forky`'s packaged
 assemble `devices/kernels/arm64-mainline/` from `base.config` plus SoC
 fragments.
 
-On **Google Hayato** (`google-asurada`), LazyOS keeps Linux **7.2.7-mt81**,
+On **Google Hayato** (`google-asurada`) and **Google Kukui** (`google-kukui`, MediaTek MT8183),
+LazyOS keeps Linux **7.2.7-mt81**,
 built from `devices/kernels/mediatek-mt81/` with clang and lld. It is not a
 Debian kernel: the MediaTek display, MMC, panfrost (the GPU) and ext4 are built
 in, and the configuration carries this machine's tuning:
@@ -395,8 +396,9 @@ keeping all key bindings, the root menu (*Install LazyOS*), and `org.lazyos.inst
 
 ## Kernel Updates & Boot Targets
 
-* **`google-asurada` (`depthcharge`)**: uses the custom `mediatek-mt81` (`7.2.7`) kernel with
-  Hayato optimizations (`HZ=1000`, MGLRU, `schedutil`). Rewrite the active ChromeOS kernel partition
+* **`google-asurada` & `google-kukui` (`depthcharge`)**: use the shared `mediatek-mt81` (`7.2.7`) kernel with
+  LazyOS tuning (`HZ=1000`, MGLRU, `schedutil`), QCA6174/MT7921s/SCP firmware (`google-kukui`), and
+  board ALSA UCM2/keyd overlays. Rewrite the active ChromeOS kernel partition
   after a kernel update with `CONFIRM=yes sudo /usr/libexec/lazyos/install-boot.sh`.
 * **`arm64-uefi` & `arm64-extlinux` (`debian-arm64`)**: use Debian `forky`'s packaged
   `linux-image-arm64` kernel plus broad multi-vendor firmware. Whenever `apt upgrade` updates the

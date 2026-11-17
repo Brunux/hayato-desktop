@@ -462,6 +462,30 @@ fn detect_installed_marker(root: &Path) -> Option<String> {
     Some(format!("Existing installation record for {target}"))
 }
 
+fn format_dt_compatible(comp: &[u8]) -> Option<String> {
+    let strings: Vec<&str> = comp
+        .split(|&b| b == 0)
+        .filter_map(|s| std::str::from_utf8(s).ok())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let first = strings.first()?;
+    if strings
+        .iter()
+        .any(|s| s.contains("asurada") || s.contains("hayato") || *s == "mediatek,mt8192")
+    {
+        Some("Google Hayato (MediaTek MT8192)".to_string())
+    } else if strings.iter().any(|s| {
+        s.contains("kukui")
+            || s.contains("krane")
+            || s.contains("jacuzzi")
+            || *s == "mediatek,mt8183"
+    }) {
+        Some("Google Kukui (MediaTek MT8183)".to_string())
+    } else {
+        Some((*first).to_string())
+    }
+}
+
 fn detect_soc_model(info: &DeviceInfo) -> String {
     if let Ok(model) = fs::read_to_string("/proc/device-tree/model") {
         let trimmed = model.trim_matches('\0').trim();
@@ -470,18 +494,10 @@ fn detect_soc_model(info: &DeviceInfo) -> String {
         }
     }
 
-    if let Ok(comp) = fs::read("/proc/device-tree/compatible") {
-        let strings: Vec<&str> = comp
-            .split(|&b| b == 0)
-            .filter_map(|s| std::str::from_utf8(s).ok())
-            .filter(|s| !s.is_empty())
-            .collect();
-        if let Some(first) = strings.first() {
-            if first.contains("asurada") || first.contains("hayato") {
-                return "Google Hayato (MediaTek MT8192)".to_string();
-            }
-            return (*first).to_string();
-        }
+    if let Ok(comp) = fs::read("/proc/device-tree/compatible")
+        && let Some(resolved) = format_dt_compatible(&comp)
+    {
+        return resolved;
     }
 
     // DMI SMBIOS fallback for ARM64/x86_64 ACPI UEFI laptops and VMs.
@@ -705,5 +721,22 @@ zram0 disk 1.9G   0
         assert!(ok);
         assert!(summary.contains("ok: boot=uefi"));
         assert!(summary.contains("/dev/nvme0n1"));
+    }
+
+    #[test]
+    fn formats_dt_compatibles_for_hayato_and_kukui() {
+        assert_eq!(
+            format_dt_compatible(b"google,hayato-r1\0mediatek,mt8192\0").as_deref(),
+            Some("Google Hayato (MediaTek MT8192)")
+        );
+        assert_eq!(
+            format_dt_compatible(b"google,krane-sku176\0google,krane\0mediatek,mt8183\0")
+                .as_deref(),
+            Some("Google Kukui (MediaTek MT8183)")
+        );
+        assert_eq!(
+            format_dt_compatible(b"google,juniper-sku16\0mediatek,mt8183\0").as_deref(),
+            Some("Google Kukui (MediaTek MT8183)")
+        );
     }
 }

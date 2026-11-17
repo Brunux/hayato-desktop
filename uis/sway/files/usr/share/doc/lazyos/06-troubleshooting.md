@@ -222,7 +222,7 @@ monitor* in `04-software.md`). In order:
   involved, which matters because a menu cannot be drawn with every output off.
   When a screen can still draw, `Alt+Ctrl+O` → **Display arrangement** has the
   same row, **Bring the internal panel back**, even with no monitor plugged in.
-  Blind, over ssh, the command is `swaymsg output eDP-1 enable`. A reboot clears
+  Blind, over ssh, the command is `swaymsg output eDP-1 enable` (or `DSI-1` on MT8183 tablets). A reboot clears
   it too, because the choice is never written to the saved arrangement.
 
 Neither the night light nor the screen's brightness reaches it: the external

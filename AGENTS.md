@@ -61,7 +61,8 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
   last. `core/scripts/install-emmc.sh` stays intact only as a Hayato manual/debug fallback.
 - When desktop binaries invoke `lazyos-core` system scripts (`install-boot.sh`, `backup-system.sh`),
   resolve `/usr/libexec/lazyos/<script>` first, then `$LAZYOS_CORE_DIR/scripts/`, then umbrella/sibling fallbacks.
-- Guard optional hardware resume hooks in Sway configs (e.g., `[ -x /usr/local/bin/lazyos-dp-resume ]`).
+- Guard optional hardware resume hooks in Sway configs (e.g., `[ -x /usr/local/bin/lazyos-dp-resume ]`),
+  and detect both `eDP-*` and `DSI-*` internal panel outputs dynamically in `system::display`.
 
 ## Feature Witnesses
 Every user-facing change ships with:

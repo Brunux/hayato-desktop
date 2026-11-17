@@ -29,7 +29,7 @@ The image is built from four package lists across the LazyOS submodules
 | `core/packages/base.list` | what the system needs: systemd, NetworkManager, ssh, filesystems, audio plumbing, zram, the clock |
 | `desktop/packages/tools.list` | the terminal tools (below) |
 | `desktop/uis/sway/packages.list` | the session: sway, waybar, foot, rofi, mako, swayfx's dependencies, fonts |
-| `devices/devices/<codename>/packages.list` | target hardware: firmware, bootloader tools (`cgpt`, `vboot`, `depthcharge-tools` on `google-asurada`), and `linux-image-arm64` on `debian-arm64` targets |
+| `devices/devices/<codename>/packages.list` | target hardware: firmware (`firmware-mediatek`, plus `firmware-atheros` on `google-kukui`), bootloader tools (`cgpt`, `vboot`, `depthcharge-tools` on `google-asurada`/`google-kukui`), and `linux-image-arm64` on `debian-arm64` targets |
 
 Editing a list does not change the running machine; it changes the next image
 that is built. For the machine in front of you, `apt install` is the answer.
@@ -290,7 +290,7 @@ turning the last one off. When a screen *can* still draw (the monitor is present
 but disabled, or the panel is off and the monitor is on), `Alt+Ctrl+O` →
 **Display arrangement** carries the same row, **Bring the internal panel back**,
 and the menu offers it even with no monitor plugged in. Over ssh,
-`swaymsg output eDP-1 enable` is the same command, and a reboot clears it too,
+`swaymsg output eDP-1 enable` (or `DSI-1` on MT8183 tablets) is the same command, and a reboot clears it too,
 because the choice is never written to the saved arrangement.
 
 **The night light does not reach it.** `wlsunset` asks the compositor for a

@@ -123,18 +123,20 @@ if have sway; then
 		*Panfrost*) ok "GPU renderer is $_gpu_renderer" ;;
 		"") warn "eglinfo reported no renderer: cannot confirm the GPU driver" ;;
 		*llvmpipe*|*swrast*|*softpipe*)
-			if [ "$_dev_codename" = "google-asurada" ]; then
-				fail "GPU renderer is '$_gpu_renderer', not Panfrost: the session is drawing on software (check LIBGL_ALWAYS_SOFTWARE and the GPU firmware)"
-			else
-				warn "GPU renderer is software '$_gpu_renderer' (normal under VM/simpledrm without 3D accel)"
-			fi
+			case "$_dev_codename" in
+			google-asurada|google-kukui)
+				fail "GPU renderer is '$_gpu_renderer', not Panfrost: the session is drawing on software (check LIBGL_ALWAYS_SOFTWARE and the GPU firmware)" ;;
+			*)
+				warn "GPU renderer is software '$_gpu_renderer' (normal under VM/simpledrm without 3D accel)" ;;
+			esac
 			;;
 		*)
-			if [ "$_dev_codename" = "google-asurada" ]; then
-				fail "GPU renderer is '$_gpu_renderer', not Panfrost: the session is drawing on software (check LIBGL_ALWAYS_SOFTWARE and the GPU firmware)"
-			else
-				ok "GPU renderer is $_gpu_renderer"
-			fi
+			case "$_dev_codename" in
+			google-asurada|google-kukui)
+				fail "GPU renderer is '$_gpu_renderer', not Panfrost: the session is drawing on software (check LIBGL_ALWAYS_SOFTWARE and the GPU firmware)" ;;
+			*)
+				ok "GPU renderer is $_gpu_renderer" ;;
+			esac
 			;;
 		esac
 	else
@@ -1145,8 +1147,10 @@ fi
 _inst_tgt="$(sed -n 's/^deviceinfo_install_target="\([^"]*\)"$/\1/p' /etc/lazyos/deviceinfo 2>/dev/null | head -n1)"
 if [ -n "$_inst_tgt" ] && printf '%s\n' "$_cands" | grep -qxF "$_inst_tgt"; then
 	_fmt_guard=
-elif [ -z "$_inst_tgt" ] && [ "$(tr -d ' \t\r\n' </etc/lazyos/device 2>/dev/null || echo google-asurada)" = "google-asurada" ] && printf '%s\n' "$_cands" | grep -qE '^/dev/mmcblk0$'; then
-	_fmt_guard=
+elif [ -z "$_inst_tgt" ] && printf '%s\n' "$_cands" | grep -qE '^/dev/mmcblk0$'; then
+	case "$(tr -d ' \t\r\n' </etc/lazyos/device 2>/dev/null || echo google-asurada)" in
+	google-asurada|google-kukui) _fmt_guard= ;;
+	esac
 fi
 if [ -n "$_fmt_guard" ]; then
 	ok "format a disk refuses fixed storage and the disk this system runs from (system::disk)"
@@ -3757,11 +3761,12 @@ if grep -qs 'rofi-display --panel-on' /etc/sway/config.d/*.conf \
 else
 	fail "no binding runs 'rofi-display --panel-on': a black screen has no way back"
 fi
-if [ "$("$_disp" --panel-on --command 2>/dev/null)" = "swaymsg output eDP-1 enable" ]; then
-	ok "rofi-display --panel-on exists"
-else
-	fail "$_disp has no --panel-on mode: the recovery key would run nothing"
-fi
+case "$("$_disp" --panel-on --command 2>/dev/null)" in
+"swaymsg output eDP-1 enable"|"swaymsg output DSI-1 enable")
+	ok "rofi-display --panel-on exists" ;;
+*)
+	fail "$_disp has no --panel-on mode: the recovery key would run nothing" ;;
+esac
 
 
 [ -x "$HOME/.config/bin/sway-suspend" ] && ok "sway-suspend helper is executable" ||

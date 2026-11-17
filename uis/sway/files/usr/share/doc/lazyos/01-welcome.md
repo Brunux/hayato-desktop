@@ -2,12 +2,14 @@
 
 LazyOS is Debian (**forky**, arm64) with a keyboard-first `swayfx` desktop built
 first for the **Google Hayato** Chromebook (ASUS Chromebook Detachable CM3,
-MediaTek **MT8192** "Asurada" SoC, 4 GB RAM, 58 GB eMMC) and extended to generic
+MediaTek **MT8192** "Asurada" SoC, 4 GB RAM, 58 GB eMMC) and extended to the
+**Google Kukui** Chromebook family (`google-kukui`, MediaTek **MT8183**: Lenovo
+IdeaPad Duet `krane`, `kodama`, `kakadu`, `katsu`, and `jacuzzi`) alongside generic
 **ARM64 UEFI** (`arm64-uefi`) and **ARM64 U-Boot/SBC** (`arm64-extlinux`)
-targets. On the Hayato, hardware support comes from our tuned `mediatek-mt81`
-kernel (`7.2.7`, started from postmarketOS/Nura); on generic ARM64 targets,
-Debian's packaged `linux-image-arm64` drives the hardware and Debian supplies
-everything above the kernel.
+targets. On **Hayato** and **Kukui**, hardware support comes from our tuned
+`mediatek-mt81` kernel (`7.2.7`, started from postmarketOS/Nura); on generic
+ARM64 targets, Debian's packaged `linux-image-arm64` drives the hardware and Debian
+supplies everything above the kernel.
 
 ## The first five minutes
 

@@ -37,12 +37,22 @@ fn config_path() -> PathBuf {
     config_home.join("sway/config.d/40-display.conf")
 }
 
-/// The internal panel name (eDP-1 on this hardware).
-const PANEL: &str = "eDP-1";
+/// Default internal panel name when no output is reported by sway.
+const DEFAULT_PANEL: &str = "eDP-1";
+
+fn internal_panel_name(outputs: &[Output]) -> String {
+    find_monitor_and_panel(outputs)
+        .1
+        .map(|p| p.name)
+        .unwrap_or_else(|| DEFAULT_PANEL.to_string())
+}
 
 /// The command `--panel-on` runs to recover from a black screen.
-pub fn panel_on_command() -> &'static str {
-    "swaymsg output eDP-1 enable"
+pub fn panel_on_command() -> String {
+    format!(
+        "swaymsg output {} enable",
+        internal_panel_name(&read_outputs())
+    )
 }
 
 /// An output's live state from `swaymsg -t get_outputs`.
@@ -119,14 +129,14 @@ fn read_outputs() -> Vec<Output> {
     parse_outputs(&output)
 }
 
-/// Find the external monitor (DP-*) and the internal panel (eDP-*).
+/// Find the external monitor (DP-*) and the internal panel (eDP-* or DSI-*).
 fn find_monitor_and_panel(outputs: &[Output]) -> (Option<Output>, Option<Output>) {
     let mut mon = None;
-    let mut panel = None;
+    let mut panel: Option<Output> = None;
     for o in outputs {
         if o.name.starts_with("DP-") {
             mon = Some(o.clone());
-        } else if o.name.starts_with("eDP-") {
+        } else if o.name.starts_with("eDP-") || (o.name.starts_with("DSI-") && panel.is_none()) {
             panel = Some(o.clone());
         }
     }
@@ -259,16 +269,21 @@ fn status_for(outputs: &[Output]) -> String {
 
 /// The `--panel-on` blind key handler.
 pub fn panel_on() -> Result<(), String> {
-    if let Err(e) = checked(&["swaymsg", "output", PANEL, "enable"]) {
+    let panel = internal_panel_name(&read_outputs());
+    if let Err(e) = checked(&["swaymsg", "output", &panel, "enable"]) {
         return Err(format!("Could not enable panel: {e}"));
     }
-    print(&format!("{} is back on", PANEL));
+    print(&format!("{panel} is back on"));
     Ok(())
 }
 
 /// Build the `(key, label, detail)` rows for the current outputs.
 fn rows_for(outputs: &[Output]) -> Vec<(String, String, String)> {
     let (mon, panel) = find_monitor_and_panel(outputs);
+    let panel_name = panel
+        .as_ref()
+        .map(|p| p.name.clone())
+        .unwrap_or_else(|| DEFAULT_PANEL.to_string());
     let mut list = Vec::new();
 
     let Some(mon) = mon else {
@@ -277,7 +292,7 @@ fn rows_for(outputs: &[Output]) -> Vec<(String, String, String)> {
             list.push((
                 "enable:panel".to_string(),
                 "Bring the internal panel back".to_string(),
-                format!("{} enable", PANEL),
+                format!("{panel_name} enable"),
             ));
         }
         list.push((
@@ -316,7 +331,7 @@ fn rows_for(outputs: &[Output]) -> Vec<(String, String, String)> {
         list.push((
             "enable:panel".to_string(),
             "Bring the internal panel back".to_string(),
-            format!("{} enable", PANEL),
+            format!("{panel_name} enable"),
         ));
     }
     if mon.active {
@@ -468,7 +483,11 @@ fn display_menu(
 
     loop {
         let outputs = read_outputs();
-        let (mon, _panel) = find_monitor_and_panel(&outputs);
+        let (mon, panel) = find_monitor_and_panel(&outputs);
+        let panel_name = panel
+            .as_ref()
+            .map(|p| p.name.as_str())
+            .unwrap_or(DEFAULT_PANEL);
         let entries = rows_for(&outputs);
         let rows: Vec<lazyos_ui::Row> = entries
             .iter()
@@ -581,8 +600,8 @@ fn display_menu(
                 crate::system::spawn_detached("exec wdisplays");
                 return Ok(0);
             }
-            "enable:panel" => match checked(&["swaymsg", "output", PANEL, "enable"]) {
-                Ok(_) => banner = Some(format!("Enabled {PANEL}")),
+            "enable:panel" => match checked(&["swaymsg", "output", panel_name, "enable"]) {
+                Ok(_) => banner = Some(format!("Enabled {panel_name}")),
                 Err(e) => banner = Some(format!("Could not enable panel: {e}")),
             },
             "enable:monitor" => {
@@ -593,7 +612,7 @@ fn display_menu(
                     }
                 }
             }
-            "mono:monitor" => match checked(&["swaymsg", "output", PANEL, "disable"]) {
+            "mono:monitor" => match checked(&["swaymsg", "output", panel_name, "disable"]) {
                 Ok(_) => {
                     banner = Some(format!(
                         "Internal panel disabled \u{00b7} select 'Bring the internal panel back' to restore"
@@ -718,6 +737,16 @@ mod tests {
         assert!(
             rows.iter()
                 .any(|(k, l, _)| k == "enable:panel" && l == "Bring the internal panel back")
+        );
+
+        let dsi_json = r#"[{"name":"DSI-1","active":false,"scale":1.0,"rect":{"x":0,"y":0,"width":0,"height":0},"current_mode":null,"modes":[]}]"#;
+        let dsi_outputs = parse_outputs(dsi_json);
+        assert_eq!(status_for(&dsi_outputs), "internal panel off");
+        let dsi_rows = rows_for(&dsi_outputs);
+        assert!(
+            dsi_rows
+                .iter()
+                .any(|(k, _, d)| k == "enable:panel" && d == "DSI-1 enable")
         );
     }
 
