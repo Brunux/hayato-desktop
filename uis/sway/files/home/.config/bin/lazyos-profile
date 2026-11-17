@@ -256,6 +256,30 @@ target_self_exclude() {
 	esac
 }
 
+# home_excludes: what the full-home export never reads. Container storage is
+# the one that bites: rootless podman/buildah layers are owned by the user's
+# subuids, so the user cannot open them and tar aborts the whole archive with
+# "Cannot open: Permission denied" after copying everything else. The rest are
+# generated state (caches, trash, sockets) that does not belong in a profile.
+home_excludes() {
+	cat <<'EOF'
+.cache
+.local/share/Trash
+.local/share/containers
+.local/share/docker
+.local/share/buildah
+.dbus
+.gvfs
+.lazyos-profile-*.partial.*
+.ssh/control*
+.gnupg/S.*
+.gnupg/*.lock
+.gnupg/random_seed*
+*.sock
+*.socket
+EOF
+}
+
 entries_size_kb() {
 	_esk_target=${1:-}
 	if [ "${_include_home:-no}" = yes ]; then
@@ -271,14 +295,15 @@ entries_size_kb() {
 		case $CACHE in "$HOME"/*) _esk_cache_rel=${CACHE#"$HOME"/} ;; esac
 		_esk_self_excl=$(target_self_exclude "$_esk_target")
 		if [ -s "$_esk_nul" ]; then
+			set -- --files0-from="$_esk_nul"
+			for _esk_ex in $(home_excludes); do
+				set -- "$@" --exclude="$_esk_ex"
+			done
+			[ -n "$_esk_cache_rel" ] && set -- "$@" --exclude="$_esk_cache_rel"
+			[ -n "$_esk_self_excl" ] && set -- "$@" --exclude="$_esk_self_excl"
 			_esk=$(
 				cd "$HOME" || exit 1
-				du -skc --files0-from="$_esk_nul" \
-					--exclude='.cache' --exclude='.local/share/Trash' \
-					--exclude='.lazyos-profile-*.partial.*' \
-					${_esk_cache_rel:+--exclude="$_esk_cache_rel"} \
-					${_esk_self_excl:+--exclude="$_esk_self_excl"} \
-					2>/dev/null | awk 'END { print $1 + 0 }'
+				du -skc "$@" 2>/dev/null | awk 'END { print $1 + 0 }'
 			) || _esk=0
 		else
 			_esk=0
@@ -419,19 +444,10 @@ build_tar() {
 		_bt_self_excl=$(target_self_exclude "$_bt_arg")
 	fi
 
-	set -- \
-		--numeric-owner -p --one-file-system --warning=no-file-changed \
-		--exclude='.cache' \
-		--exclude='.local/share/Trash' \
-		--exclude='.dbus' \
-		--exclude='.gvfs' \
-		--exclude='.lazyos-profile-*.partial.*' \
-		--exclude='.ssh/control*' \
-		--exclude='.gnupg/S.*' \
-		--exclude='.gnupg/*.lock' \
-		--exclude='.gnupg/random_seed*' \
-		--exclude='*.sock' \
-		--exclude='*.socket'
+	set -- --numeric-owner -p --one-file-system --warning=no-file-changed
+	for _bt_ex in $(home_excludes); do
+		set -- "$@" --exclude="$_bt_ex"
+	done
 	[ -n "$_bt_cache_rel" ] && set -- "$@" --exclude="$_bt_cache_rel"
 	[ -n "$_bt_self_excl" ] && set -- "$@" --exclude="$_bt_self_excl"
 

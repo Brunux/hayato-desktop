@@ -1108,6 +1108,34 @@ if [ -x "$HOME/.config/bin/lazyos-profile" ]; then
 	else
 		fail "bin/lazyos-profile failed target-direct --include-home verification"
 	fi
+	# Rootless container layers are owned by subuids, so the user cannot read
+	# them and tar aborts the whole archive ("Cannot open: Permission denied")
+	# after copying everything else. A 000 directory reproduces the same
+	# failure without needing a real podman store; the export must skip it and
+	# still carry Documents.
+	_dev_tmp=$(mktemp -d /tmp/lazyos-check-home.XXXXXX)
+	mkdir -p "$_dev_tmp/home/Documents" \
+		"$_dev_tmp/home/.local/share/containers/storage/overlay/layer" \
+		"$_dev_tmp/target"
+	printf 'keep\n' >"$_dev_tmp/home/Documents/user.txt"
+	printf 'layer\n' >"$_dev_tmp/home/.local/share/containers/storage/overlay/layer/file"
+	chmod 000 "$_dev_tmp/home/.local/share/containers/storage/overlay/layer"
+	_dev_profile="$HOME/.config/bin/lazyos-profile"
+	if HOME="$_dev_tmp/home" XDG_CACHE_HOME="$_dev_tmp/home/.cache" \
+		"$_dev_profile" export "$_dev_tmp/target" --include-home --no-encrypt >/dev/null 2>&1; then
+		_dev_arch=$(find "$_dev_tmp/target" -maxdepth 1 -name 'lazyos-profile-*.tar.zst' | head -n 1)
+		if [ -n "$_dev_arch" ] &&
+			tar --zstd -tf "$_dev_arch" 2>/dev/null | grep -qx 'Documents/user.txt' &&
+			! tar --zstd -tf "$_dev_arch" 2>/dev/null | grep -q 'containers'; then
+			ok "home export skips rootless container storage and keeps Documents"
+		else
+			fail "home export did not skip container storage or lost Documents"
+		fi
+	else
+		fail "home export failed on an unreadable container-storage layer"
+	fi
+	chmod 700 "$_dev_tmp/home/.local/share/containers/storage/overlay/layer" 2>/dev/null || true
+	rm -rf "$_dev_tmp"
 fi
 
 # Three places reach the menu and one is enough to lose: the root menu's row

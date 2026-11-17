@@ -28,10 +28,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install script test dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd
       - name: Syntax check desktop scripts
         run: |
           for f in scripts/*.sh; do
             bash -n "$f"
           done
-      - name: Wallpaper generator tests
+      - name: Wallpaper and profile-export tests
         run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v

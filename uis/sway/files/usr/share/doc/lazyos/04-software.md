@@ -486,9 +486,12 @@ in), then opens **Passphrase & options** with masked passphrase confirmation
 and an optional **`[ ] Include user home folder`** check (`Space`/`Enter`/click).
 When unchecked (the default), it writes only the curated keys, dotfiles, configs,
 agents, and Firefox profile; when checked (`--include-home`), it exports all files
-and directories inside `$HOME` (skipping only `~/.cache`, Trash, runtime sockets,
-and older profile archives under the target folder so exports to `~/Downloads` do
-not nest themselves). It writes
+and directories inside `$HOME` (skipping `~/.cache`, Trash, runtime sockets,
+rootless container storage under `~/.local/share/containers`,
+`~/.local/share/docker` and `~/.local/share/buildah`, and older profile archives
+under the target folder so exports to `~/Downloads` do not nest themselves). The
+container layers are owned by subuids and cannot be read by the user, so
+including them would abort the archive with `Permission denied`. It writes
 `lazyos-profile-<host>-<date>.tar.zst.gpg` and a `.txt` manifest beside it
 (`scope: profile` or `scope: home`).
 
