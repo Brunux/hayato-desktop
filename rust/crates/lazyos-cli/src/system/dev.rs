@@ -368,6 +368,71 @@ struct ExportHits {
     export_btn: Option<Rect>,
 }
 
+/// Where the keyboard is on the export setup screen.
+///
+/// The screen used to keep this as a `usize` in `0..=4`, with the same
+/// numbers repeated in the draw code, the key handling, the hit ids and the
+/// click handler. One enum names each stop, so a new field cannot silently
+/// shift the meaning of `3`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExportFocus {
+    Passphrase,
+    Confirm,
+    IncludeHome,
+    Back,
+    Export,
+}
+
+impl ExportFocus {
+    fn index(self) -> usize {
+        match self {
+            Self::Passphrase => 0,
+            Self::Confirm => 1,
+            Self::IncludeHome => 2,
+            Self::Back => 3,
+            Self::Export => 4,
+        }
+    }
+
+    fn from_index(index: usize) -> Option<Self> {
+        match index {
+            0 => Some(Self::Passphrase),
+            1 => Some(Self::Confirm),
+            2 => Some(Self::IncludeHome),
+            3 => Some(Self::Back),
+            4 => Some(Self::Export),
+            _ => None,
+        }
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::Passphrase => Self::Confirm,
+            Self::Confirm => Self::IncludeHome,
+            Self::IncludeHome => Self::Back,
+            Self::Back => Self::Export,
+            Self::Export => Self::Passphrase,
+        }
+    }
+
+    fn prev(self) -> Self {
+        match self {
+            Self::Passphrase => Self::Export,
+            Self::Confirm => Self::Passphrase,
+            Self::IncludeHome => Self::Confirm,
+            Self::Back => Self::IncludeHome,
+            Self::Export => Self::Back,
+        }
+    }
+}
+
+/// Whether the passphrases have been accepted and the window is closing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExportStage {
+    Editing,
+    Submitted,
+}
+
 /// Interactive passphrase and scope screen for profile export.
 ///
 /// Lets the user set and confirm the GPG passphrase and optionally check
@@ -378,8 +443,8 @@ pub struct ExportSetupScreen {
     pass_input: Input,
     confirm_input: Input,
     pub include_home: bool,
-    focus: usize,
-    submitted: bool,
+    focus: ExportFocus,
+    stage: ExportStage,
     error: Option<&'static str>,
     cursor_blink_on: bool,
     last_blink: Instant,
@@ -401,8 +466,8 @@ impl ExportSetupScreen {
             pass_input: Input::new().with_masked(true),
             confirm_input: Input::new().with_masked(true),
             include_home: false,
-            focus: 0,
-            submitted: false,
+            focus: ExportFocus::Passphrase,
+            stage: ExportStage::Editing,
             error: None,
             cursor_blink_on: true,
             last_blink: Instant::now(),
@@ -433,7 +498,7 @@ impl ExportSetupScreen {
     }
 
     pub fn submitted(&self) -> bool {
-        self.submitted
+        self.stage == ExportStage::Submitted
     }
 
     fn reset_blink(&mut self) {
@@ -441,9 +506,9 @@ impl ExportSetupScreen {
         self.last_blink = Instant::now();
     }
 
-    fn set_focus(&mut self, idx: usize) {
-        self.focus = idx;
-        if idx <= 1 {
+    fn set_focus(&mut self, focus: ExportFocus) {
+        self.focus = focus;
+        if matches!(focus, ExportFocus::Passphrase | ExportFocus::Confirm) {
             self.reset_blink();
         }
     }
@@ -451,21 +516,21 @@ impl ExportSetupScreen {
     fn try_submit(&mut self) -> Outcome {
         if self.pass_input.text().is_empty() {
             self.error = Some("A passphrase is required: it makes the archive safe to lose");
-            self.set_focus(0);
+            self.set_focus(ExportFocus::Passphrase);
             return Outcome::Consumed;
         }
         if self.pass_input.text() != self.confirm_input.text() {
             self.error = Some("The two passphrases differ; please try again");
-            self.set_focus(1);
+            self.set_focus(ExportFocus::Confirm);
             return Outcome::Consumed;
         }
         self.error = None;
-        self.submitted = true;
+        self.stage = ExportStage::Submitted;
         Outcome::Done(0)
     }
 
-    fn label_style(&self, idx: usize, design: &Design) -> Style {
-        if self.focus == idx {
+    fn label_style(&self, focus: ExportFocus, design: &Design) -> Style {
+        if self.focus == focus {
             Style::default()
                 .fg(design.color(ColorRole::Accent))
                 .add_modifier(Modifier::BOLD)
@@ -516,30 +581,35 @@ impl Screen for ExportSetupScreen {
         let pw_match = !self.pass_input.text().is_empty()
             && self.pass_input.text() == self.confirm_input.text();
 
-        let inputs: [(&str, &str, usize, &Input); 2] = [
-            ("Passphrase:", "enter passphrase", 0, &self.pass_input),
+        let inputs: [(&str, &str, ExportFocus, &Input); 2] = [
+            (
+                "Passphrase:",
+                "enter passphrase",
+                ExportFocus::Passphrase,
+                &self.pass_input,
+            ),
             (
                 "Confirm passphrase:",
                 "re-type passphrase",
-                1,
+                ExportFocus::Confirm,
                 &self.confirm_input,
             ),
         ];
 
-        for (label, ph, idx, input) in inputs {
-            let lstyle = self.label_style(idx, ctx.design);
+        for (label, ph, focus, input) in inputs {
+            let lstyle = self.label_style(focus, ctx.design);
             let rect = if compact {
                 let cap_w = 20u16.min(lw / 2);
                 put_trunc(ctx.buf, lx, y, label, cap_w, lstyle);
                 let ix = lx + cap_w + 1;
                 let iw = lw.saturating_sub(cap_w + 1);
                 let r = Rect::new(ix, y, iw, 1);
-                hits_set_input(&mut hits, idx, Rect::new(lx, y, lw, 1));
+                hits_set_input(&mut hits, focus, Rect::new(lx, y, lw, 1));
                 y += 1;
                 r
             } else {
                 put_trunc(ctx.buf, lx, y, label, lw, lstyle);
-                if idx == 1 && pw_typed {
+                if focus == ExportFocus::Confirm && pw_typed {
                     let (badge, role) = if pw_match {
                         ("\u{2713} Passphrases match", ColorRole::Ok)
                     } else {
@@ -562,7 +632,7 @@ impl Screen for ExportSetupScreen {
                 let label_y = y;
                 y += 1;
                 let r = Rect::new(lx, y, lw, 1);
-                hits_set_input(&mut hits, idx, Rect::new(lx, label_y, lw, 2));
+                hits_set_input(&mut hits, focus, Rect::new(lx, label_y, lw, 2));
                 y += 2;
                 r
             };
@@ -571,7 +641,7 @@ impl Screen for ExportSetupScreen {
                 ctx.buf,
                 ctx.design,
                 ph,
-                self.focus == idx,
+                self.focus == focus,
                 blink,
                 ColorRole::Bg,
                 TextStyle::Body,
@@ -598,7 +668,7 @@ impl Screen for ExportSetupScreen {
         }
 
         let check_mark = if self.include_home { "[X]" } else { "[ ]" };
-        let check_style = if self.focus == 2 {
+        let check_style = if self.focus == ExportFocus::IncludeHome {
             ctx.design
                 .style(TextStyle::Key)
                 .add_modifier(Modifier::BOLD)
@@ -647,14 +717,14 @@ impl Screen for ExportSetupScreen {
 
         let btn_y = card.bottom().saturating_sub(1);
         if btn_y > check_y {
-            let back_style = if self.focus == 3 {
+            let back_style = if self.focus == ExportFocus::Back {
                 ctx.design
                     .style(TextStyle::Key)
                     .add_modifier(Modifier::BOLD)
             } else {
                 ctx.design.style(TextStyle::Body)
             };
-            let export_style = if self.focus == 4 {
+            let export_style = if self.focus == ExportFocus::Export {
                 ctx.design
                     .style(TextStyle::Key)
                     .add_modifier(Modifier::BOLD)
@@ -684,27 +754,25 @@ impl Screen for ExportSetupScreen {
         match key.code {
             KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
             KeyCode::BackTab => {
-                let prev = if self.focus == 0 { 4 } else { self.focus - 1 };
-                self.set_focus(prev);
+                self.set_focus(self.focus.prev());
                 return Outcome::Consumed;
             }
             KeyCode::Tab => {
                 let shift = key.modifiers.contains(KeyModifiers::SHIFT);
-                let next = if shift {
-                    if self.focus == 0 { 4 } else { self.focus - 1 }
+                self.set_focus(if shift {
+                    self.focus.prev()
                 } else {
-                    (self.focus + 1) % 5
-                };
-                self.set_focus(next);
+                    self.focus.next()
+                });
                 return Outcome::Consumed;
             }
             _ => {}
         }
 
         match self.focus {
-            0 => match key.code {
+            ExportFocus::Passphrase => match key.code {
                 KeyCode::Down | KeyCode::Enter => {
-                    self.set_focus(1);
+                    self.set_focus(ExportFocus::Confirm);
                     Outcome::Consumed
                 }
                 _ => {
@@ -714,13 +782,13 @@ impl Screen for ExportSetupScreen {
                     Outcome::Consumed
                 }
             },
-            1 => match key.code {
+            ExportFocus::Confirm => match key.code {
                 KeyCode::Up => {
-                    self.set_focus(0);
+                    self.set_focus(ExportFocus::Passphrase);
                     Outcome::Consumed
                 }
                 KeyCode::Down | KeyCode::Enter => {
-                    self.set_focus(2);
+                    self.set_focus(ExportFocus::IncludeHome);
                     Outcome::Consumed
                 }
                 _ => {
@@ -730,17 +798,17 @@ impl Screen for ExportSetupScreen {
                     Outcome::Consumed
                 }
             },
-            2 => match key.code {
+            ExportFocus::IncludeHome => match key.code {
                 KeyCode::Up => {
-                    self.set_focus(1);
+                    self.set_focus(ExportFocus::Confirm);
                     Outcome::Consumed
                 }
                 KeyCode::Down | KeyCode::Right => {
-                    self.set_focus(4);
+                    self.set_focus(ExportFocus::Export);
                     Outcome::Consumed
                 }
                 KeyCode::Left => {
-                    self.set_focus(3);
+                    self.set_focus(ExportFocus::Back);
                     Outcome::Consumed
                 }
                 KeyCode::Char(' ') | KeyCode::Enter => {
@@ -749,31 +817,30 @@ impl Screen for ExportSetupScreen {
                 }
                 _ => Outcome::Continue,
             },
-            3 => match key.code {
+            ExportFocus::Back => match key.code {
                 KeyCode::Up => {
-                    self.set_focus(2);
+                    self.set_focus(ExportFocus::IncludeHome);
                     Outcome::Consumed
                 }
                 KeyCode::Right => {
-                    self.set_focus(4);
+                    self.set_focus(ExportFocus::Export);
                     Outcome::Consumed
                 }
                 KeyCode::Enter => Outcome::Done(lazyos_ui::app::exit::ESCAPE),
                 _ => Outcome::Continue,
             },
-            4 => match key.code {
+            ExportFocus::Export => match key.code {
                 KeyCode::Up => {
-                    self.set_focus(2);
+                    self.set_focus(ExportFocus::IncludeHome);
                     Outcome::Consumed
                 }
                 KeyCode::Left => {
-                    self.set_focus(3);
+                    self.set_focus(ExportFocus::Back);
                     Outcome::Consumed
                 }
                 KeyCode::Enter => self.try_submit(),
                 _ => Outcome::Continue,
             },
-            _ => Outcome::Continue,
         }
     }
 
@@ -785,43 +852,43 @@ impl Screen for ExportSetupScreen {
             })
         };
         if contains(hits.passphrase) {
-            Some(0)
+            Some(ExportFocus::Passphrase.index())
         } else if contains(hits.confirm) {
-            Some(1)
+            Some(ExportFocus::Confirm.index())
         } else if contains(hits.include_home) {
-            Some(2)
+            Some(ExportFocus::IncludeHome.index())
         } else if contains(hits.back_btn) {
-            Some(3)
+            Some(ExportFocus::Back.index())
         } else if contains(hits.export_btn) {
-            Some(4)
+            Some(ExportFocus::Export.index())
         } else {
             None
         }
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
-        match row {
-            Some(0) => {
-                self.set_focus(0);
+        let Some(focus) = row.and_then(ExportFocus::from_index) else {
+            return Outcome::Continue;
+        };
+        match focus {
+            ExportFocus::Passphrase | ExportFocus::Confirm => {
+                self.set_focus(focus);
                 Outcome::Consumed
             }
-            Some(1) => {
-                self.set_focus(1);
-                Outcome::Consumed
-            }
-            Some(2) => {
-                self.set_focus(2);
+            ExportFocus::IncludeHome => {
+                self.set_focus(focus);
                 self.include_home = !self.include_home;
                 Outcome::Consumed
             }
-            Some(3) => Outcome::Done(lazyos_ui::app::exit::ESCAPE),
-            Some(4) => self.try_submit(),
-            _ => Outcome::Continue,
+            ExportFocus::Back => Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+            ExportFocus::Export => self.try_submit(),
         }
     }
 
     fn needs_tick(&self) -> Option<Duration> {
-        if self.focus <= 1 && !self.reduced_motion {
+        if matches!(self.focus, ExportFocus::Passphrase | ExportFocus::Confirm)
+            && !self.reduced_motion
+        {
             Some(Duration::from_millis(500))
         } else {
             None
@@ -829,7 +896,7 @@ impl Screen for ExportSetupScreen {
     }
 
     fn tick(&mut self) -> Outcome {
-        if self.focus <= 1
+        if matches!(self.focus, ExportFocus::Passphrase | ExportFocus::Confirm)
             && !self.reduced_motion
             && self.last_blink.elapsed() >= Duration::from_millis(500)
         {
@@ -841,9 +908,9 @@ impl Screen for ExportSetupScreen {
 
     fn keybar(&self) -> Option<&[KeyHint]> {
         match self.focus {
-            0 | 1 => Some(&self.keybar_text),
-            2 => Some(&self.keybar_toggle),
-            _ => Some(&self.keybar_btn),
+            ExportFocus::Passphrase | ExportFocus::Confirm => Some(&self.keybar_text),
+            ExportFocus::IncludeHome => Some(&self.keybar_toggle),
+            ExportFocus::Back | ExportFocus::Export => Some(&self.keybar_btn),
         }
     }
 
@@ -852,11 +919,11 @@ impl Screen for ExportSetupScreen {
     }
 }
 
-fn hits_set_input(hits: &mut ExportHits, idx: usize, r: Rect) {
-    if idx == 0 {
-        hits.passphrase = Some(r);
-    } else {
-        hits.confirm = Some(r);
+fn hits_set_input(hits: &mut ExportHits, focus: ExportFocus, r: Rect) {
+    match focus {
+        ExportFocus::Passphrase => hits.passphrase = Some(r),
+        ExportFocus::Confirm => hits.confirm = Some(r),
+        ExportFocus::IncludeHome | ExportFocus::Back | ExportFocus::Export => {}
     }
 }
 

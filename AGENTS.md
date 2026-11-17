@@ -68,7 +68,9 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    whether it is `Some`. Derived questions are methods (`is_recording`, `can_cancel`), transitions
    go through one `load` / `set_phase`, and IO stays at the edge. Current examples:
    `system/pick.rs` (`Current`), `menu/screen.rs` (`AnswerBody`), `system/pkg.rs`
-   (`PkgStage::Installing(TaskView)`), and `lazyos-ui/src/recording.rs` (`Recorder`).
+   (`PkgStage::Installing(TaskView)`), `lazyos-ui/src/recording.rs` (`Recorder`),
+   `system/theme_picker.rs` (`PreviewPhase`), `system/dev.rs` (`ExportFocus`), and
+   `files/find.rs` (`Stage`).
 
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single

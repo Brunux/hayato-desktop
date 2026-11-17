@@ -181,6 +181,31 @@ pub struct ThemeEntry {
     pub contrast_ok: f32,
 }
 
+/// What the picker is doing with the live desktop.
+///
+/// `Idle` is the normal preview: the terminal follows the highlighted theme,
+/// and leaving restores the original palette. `Peeking` applies the selected
+/// theme to the desktop and remembers whether a commit already happened, so
+/// Escape still rolls back to the theme that was active when the window
+/// opened. `Committed` means Enter applied a theme and there is nothing to
+/// restore.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreviewPhase {
+    Idle,
+    Peeking { committed: bool },
+    Committed,
+}
+
+impl PreviewPhase {
+    fn is_peeking(self) -> bool {
+        matches!(self, Self::Peeking { .. })
+    }
+
+    fn committed(self) -> bool {
+        matches!(self, Self::Committed | Self::Peeking { committed: true })
+    }
+}
+
 /// The interactive theme picker screen.
 pub struct ThemePickerScreen {
     pub entries: Vec<ThemeEntry>,
@@ -189,8 +214,7 @@ pub struct ThemePickerScreen {
     pub original_slug: String,
     pub original_theme: Theme,
     pub live_design: Design,
-    pub committed: bool,
-    pub peeking: bool,
+    phase: PreviewPhase,
     pub header: Header,
     pub keybar: Vec<KeyHint>,
     pub rows_height: Cell<u16>,
@@ -283,8 +307,7 @@ impl ThemePickerScreen {
             original_slug,
             original_theme,
             live_design,
-            committed: false,
-            peeking: false,
+            phase: PreviewPhase::Idle,
             header: Header::new("LazyOS").subtitle("Theme & Appearance"),
             keybar: vec![
                 KeyHint::new("Enter", "apply"),
@@ -467,7 +490,7 @@ impl Screen for ThemePickerScreen {
         // Status Badge
         let status_badge = if selected.slug == self.active_slug {
             "[ ACTIVE SESSION THEME ]"
-        } else if self.peeking && selected.slug == self.original_slug {
+        } else if self.phase.is_peeking() && selected.slug == self.original_slug {
             "[ ORIGINAL THEME ]"
         } else {
             "[ AVAILABLE ]"
@@ -768,7 +791,7 @@ impl Screen for ThemePickerScreen {
                 // Restore original terminal palette
                 self.restore_original_terminal();
                 // If we were peeking, restore the original theme before exiting!
-                if self.peeking {
+                if self.phase.is_peeking() {
                     let _ = apply_theme(&p, &self.original_slug, true, false);
                 }
                 Outcome::Done(lazyos_ui::app::exit::ESCAPE)
@@ -781,8 +804,7 @@ impl Screen for ThemePickerScreen {
                     match apply_theme(&p, &slug, true, false) {
                         Ok(_) => {
                             self.active_slug = slug.clone();
-                            self.committed = true;
-                            self.peeking = false;
+                            self.phase = PreviewPhase::Committed;
                             // Clear dynamic OSC overrides so terminal follows new foot.ini
                             use std::io::Write;
                             let mut out = std::io::stdout();
@@ -834,12 +856,17 @@ impl Screen for ThemePickerScreen {
                     return Outcome::Continue;
                 };
 
-                if self.peeking && target_slug == self.original_slug {
+                let committed = self.phase.committed();
+                if self.phase.is_peeking() && target_slug == self.original_slug {
                     // Already back to original
-                    self.peeking = false;
+                    self.phase = if committed {
+                        PreviewPhase::Committed
+                    } else {
+                        PreviewPhase::Idle
+                    };
                     self.status_msg =
                         Some("Desktop peeking stopped. Active theme intact.".to_string());
-                } else if self.peeking {
+                } else if self.phase.is_peeking() {
                     // Switch peek to this new theme
                     let _ = apply_theme(&p, &target_slug, true, false);
                     self.status_msg = Some(format!(
@@ -848,7 +875,7 @@ impl Screen for ThemePickerScreen {
                 } else {
                     // Start peeking
                     let _ = apply_theme(&p, &target_slug, true, false);
-                    self.peeking = true;
+                    self.phase = PreviewPhase::Peeking { committed };
                     self.status_msg = Some(format!(
                         "Peeking desktop '{theme_name}'! Press Enter to keep, Esc to revert."
                     ));
@@ -869,7 +896,7 @@ impl Screen for ThemePickerScreen {
                 let action = self.list.handle(key, self.rows_height.get(), design);
                 if action == ListAction::Moved || self.list.selected_index() != old_idx {
                     self.sync_live_preview();
-                    if self.peeking {
+                    if self.phase.is_peeking() {
                         // Update live desktop peek to the newly highlighted theme!
                         if let Some((target_slug, theme_name)) = self
                             .selected_entry()
@@ -907,7 +934,7 @@ impl Drop for ThemePickerScreen {
     fn drop(&mut self) {
         use std::io::Write;
         let mut out = std::io::stdout();
-        if !self.committed {
+        if !self.phase.committed() {
             let _ = out.write_all(self.original_theme.osc_sequences().as_bytes());
         }
         let _ = out.write_all(b"\x1b]110\x1b\\\x1b]111\x1b\\\x1b]112\x1b\\\x1b]104\x1b\\");
@@ -979,12 +1006,29 @@ pub fn menu(
 
 #[cfg(test)]
 mod tests {
-    use super::interpolate_rgb;
+    use super::{PreviewPhase, interpolate_rgb};
     use lazyos_theme::Rgb;
 
     const BLACK: Rgb = Rgb::new(0, 0, 0);
     const MID: Rgb = Rgb::new(100, 100, 100);
     const WHITE: Rgb = Rgb::new(200, 200, 200);
+
+    #[test]
+    fn preview_phase_tells_peeking_from_committed() {
+        assert!(!PreviewPhase::Idle.is_peeking());
+        assert!(!PreviewPhase::Idle.committed());
+
+        let peeking = PreviewPhase::Peeking { committed: false };
+        assert!(peeking.is_peeking());
+        assert!(!peeking.committed());
+
+        let peeking_after_commit = PreviewPhase::Peeking { committed: true };
+        assert!(peeking_after_commit.is_peeking());
+        assert!(peeking_after_commit.committed());
+
+        assert!(!PreviewPhase::Committed.is_peeking());
+        assert!(PreviewPhase::Committed.committed());
+    }
 
     #[test]
     fn interpolation_hits_each_stop() {
