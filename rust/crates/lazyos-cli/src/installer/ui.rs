@@ -2224,9 +2224,10 @@ impl InstallerScreen {
         );
         y += 1;
 
+        let kpart_mib = info.cgpt_kpart_size / 2048;
         let bullets: Vec<String> = match info.boot_type {
             BootType::Depthcharge => vec![
-                "• p1: pmOS_kernel  (128 MiB)   ChromeOS signed FIT kernel".into(),
+                format!("• p1: pmOS_kernel  ({kpart_mib} MiB)   ChromeOS signed FIT kernel"),
                 format!(
                     "• p2: pmOS_boot    ({} MiB)   Boot filesystem ({}, /boot)",
                     info.boot_size_mib, info.boot_filesystem
@@ -2264,25 +2265,38 @@ impl InstallerScreen {
             return y;
         }
 
-        let box_rows: [&str; 4] = match info.boot_type {
+        let kpart_cell = format!("{kpart_mib} MiB");
+        let boot_cell = format!("{} MiB", info.boot_size_mib);
+        let box_rows: [String; 4] = match info.boot_type {
             BootType::Depthcharge => [
-                "┌─────────────────┬───────────────────┬──────────────────────────────────────┐",
-                "│ p1: pmOS_kernel │   p2: pmOS_boot   │             p3: pmOS_root            │",
-                "│     128 MiB     │      512 MiB      │          remaining storage           │",
-                "└─────────────────┴───────────────────┴──────────────────────────────────────┘",
+                "┌─────────────────┬───────────────────┬──────────────────────────────────────┐"
+                    .into(),
+                "│ p1: pmOS_kernel │   p2: pmOS_boot   │             p3: pmOS_root            │"
+                    .into(),
+                format!(
+                    "│ {kpart_cell:^15} │ {boot_cell:^17} │          remaining storage           │"
+                ),
+                "└─────────────────┴───────────────────┴──────────────────────────────────────┘"
+                    .into(),
             ],
-            BootType::Uefi => [
-                "┌───────────────────────────┬────────────────────────────────────────────────┐",
-                "│      p1: lazyos_efi       │                p2: lazyos_root                 │",
-                "│      256 MiB (FAT32)      │               remaining (ext4)                 │",
-                "└───────────────────────────┴────────────────────────────────────────────────┘",
-            ],
-            BootType::Extlinux => [
-                "┌───────────────────────────┬────────────────────────────────────────────────┐",
-                "│     p1: lazyos_boot       │                p2: lazyos_root                 │",
-                "│      512 MiB (ext2)       │               remaining (ext4)                 │",
-                "└───────────────────────────┴────────────────────────────────────────────────┘",
-            ],
+            BootType::Uefi => {
+                let uefi_cell = format!("{boot_cell} (FAT32)");
+                [
+                    "┌───────────────────────────┬────────────────────────────────────────────────┐".into(),
+                    "│      p1: lazyos_efi       │                p2: lazyos_root                 │".into(),
+                    format!("│ {uefi_cell:^25} │               remaining (ext4)                 │"),
+                    "└───────────────────────────┴────────────────────────────────────────────────┘".into(),
+                ]
+            }
+            BootType::Extlinux => {
+                let ext_cell = format!("{boot_cell} ({})", info.boot_filesystem);
+                [
+                    "┌───────────────────────────┬────────────────────────────────────────────────┐".into(),
+                    "│     p1: lazyos_boot       │                p2: lazyos_root                 │".into(),
+                    format!("│ {ext_cell:^25} │               remaining (ext4)                 │"),
+                    "└───────────────────────────┴────────────────────────────────────────────────┘".into(),
+                ]
+            }
         };
 
         for (idx, row) in box_rows.iter().enumerate() {
@@ -2532,9 +2546,9 @@ impl InstallerScreen {
 
         let steps = match self.preflight.device_info.boot_type {
             BootType::Depthcharge => [
-                "1. Reboot your Chromebook.",
-                "2. At the developer mode boot menu, choose \"internal disk\".",
-                "3. With the microSD/USB removed, the internal eMMC boots automatically.",
+                "1. Reboot your Chromebook and remove the microSD/USB installation media.",
+                "2. On the developer mode boot menu, pick \"internal disk\" or Ctrl+D.",
+                "3. With external media removed, internal eMMC boots automatically.",
             ],
             BootType::Uefi => [
                 "1. Shut down or reboot your system.",

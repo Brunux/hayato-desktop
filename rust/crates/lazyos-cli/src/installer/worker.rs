@@ -16,7 +16,7 @@ use super::config::{InstallConfig, InstallMode, target_short_name};
 use super::deviceinfo::{BootType, DeviceInfo};
 use super::disk;
 use super::identity;
-use super::preflight::check_safety;
+use super::preflight::{check_machine_safety, check_safety};
 
 /// The six sequential phases of installation (invariants tested in `all_phases_are_declared`).
 pub const PHASES: &[&str] = &[
@@ -301,7 +301,10 @@ fn run_real_install(
         );
     }
 
-    // Revalidate live root safety invariant immediately before touching anything.
+    // Revalidate live root, /boot, /boot/efi, and kern_guid safety invariants before touching anything.
+    if let Err(reason) = check_machine_safety(&config.target_disk) {
+        return fail_state(state_path, &mut state, &mut log_file, &reason);
+    }
     if let Ok(out) = std::process::Command::new("findmnt")
         .args(["-n", "-o", "SOURCE", "/"])
         .output()

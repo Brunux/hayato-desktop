@@ -550,8 +550,27 @@ fn detect_memory() -> String {
     "4.0 GiB".to_string()
 }
 
+/// Enforce the safety invariant across `/`, `/boot`, `/boot/efi`, and `kern_guid`.
+pub fn check_machine_safety(target_disk: &str) -> Result<(), String> {
+    let root_source = detect_root_source();
+    check_safety(&root_source, target_disk)?;
+    if let Some(ref bsrc) = detect_mount_source("/boot") {
+        check_safety(bsrc, target_disk)?;
+    }
+    if let Some(ref esrc) = detect_mount_source("/boot/efi") {
+        check_safety(esrc, target_disk)?;
+    }
+    if let Some(kern_disk) = running_kern_guid_disk() {
+        check_safety(&format!("/dev/{kern_disk}"), target_disk)?;
+    }
+    Ok(())
+}
+
 fn detect_power() -> String {
-    let power_path = Path::new("/sys/class/power_supply");
+    detect_power_from(Path::new("/sys/class/power_supply"))
+}
+
+fn detect_power_from(power_path: &Path) -> String {
     if power_path.is_dir() {
         let mut ac_online = false;
         let mut bat_capacity = None;
@@ -560,17 +579,35 @@ fn detect_power() -> String {
             for entry in entries.flatten() {
                 let path = entry.path();
                 let name = path.file_name().unwrap_or_default().to_string_lossy();
-                if name.starts_with("AC") || name.starts_with("ADP") || name.contains("mains") {
-                    if let Ok(online) = fs::read_to_string(path.join("online")) {
-                        if online.trim() == "1" {
-                            ac_online = true;
-                        }
+                let supply_type = fs::read_to_string(path.join("type"))
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_default();
+                let is_mains = matches!(supply_type.as_str(), "Mains" | "USB")
+                    || (supply_type.is_empty()
+                        && (name.starts_with("AC")
+                            || name.starts_with("ADP")
+                            || name.contains("mains")));
+                let is_battery =
+                    supply_type == "Battery" || (supply_type.is_empty() && name.starts_with("BAT"));
+
+                if is_mains {
+                    if let Ok(online) = fs::read_to_string(path.join("online"))
+                        && online.trim() == "1"
+                    {
+                        ac_online = true;
                     }
-                } else if name.starts_with("BAT") {
-                    if let Ok(cap) = fs::read_to_string(path.join("capacity")) {
-                        if let Ok(percent) = cap.trim().parse::<u8>() {
-                            bat_capacity = Some(percent);
-                        }
+                } else if is_battery {
+                    let is_peripheral = fs::read_to_string(path.join("scope"))
+                        .ok()
+                        .is_some_and(|s| s.trim().eq_ignore_ascii_case("device"));
+                    if is_peripheral {
+                        continue;
+                    }
+                    if let Ok(cap) = fs::read_to_string(path.join("capacity"))
+                        && let Ok(percent) = cap.trim().parse::<u8>()
+                    {
+                        bat_capacity = Some(percent);
                     }
                 }
             }
@@ -738,5 +775,29 @@ zram0 disk 1.9G   0
             format_dt_compatible(b"google,juniper-sku16\0mediatek,mt8183\0").as_deref(),
             Some("Google Kukui (MediaTek MT8183)")
         );
+    }
+
+    #[test]
+    fn detects_chromeos_usbpd_charger_and_sbs_battery_ignoring_hid_stylus() {
+        let dir = std::env::temp_dir().join(format!("lazyos-power-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("CROS_USBPD_CHARGER0")).unwrap();
+        fs::create_dir_all(dir.join("sbs-8-000b")).unwrap();
+        fs::create_dir_all(dir.join("hid-stylus-battery")).unwrap();
+
+        fs::write(dir.join("CROS_USBPD_CHARGER0/type"), "USB\n").unwrap();
+        fs::write(dir.join("CROS_USBPD_CHARGER0/online"), "1\n").unwrap();
+        fs::write(dir.join("sbs-8-000b/type"), "Battery\n").unwrap();
+        fs::write(dir.join("sbs-8-000b/capacity"), "94\n").unwrap();
+        fs::write(dir.join("hid-stylus-battery/type"), "Battery\n").unwrap();
+        fs::write(dir.join("hid-stylus-battery/scope"), "Device\n").unwrap();
+        fs::write(dir.join("hid-stylus-battery/capacity"), "0\n").unwrap();
+
+        assert_eq!(detect_power_from(&dir), "AC connected · Battery 94%");
+
+        fs::write(dir.join("CROS_USBPD_CHARGER0/online"), "0\n").unwrap();
+        assert_eq!(detect_power_from(&dir), "Battery 94% (unplugged)");
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

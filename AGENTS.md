@@ -56,7 +56,9 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
 - Never put device-specific keymaps, udev rules, IRQ tuning, or board hacks into `uis/sway/files/`.
 - Pure-Rust installer (`lazyos installer` / `lazyos installer apply` under `src/installer/`) reads
   `/etc/lazyos/deviceinfo` & `/etc/lazyos/kernel-cmdline*.conf` directly (`BootType::{Depthcharge, Uefi, Extlinux}`),
-  spawns detached root work via `sudo -n setsid systemd-inhibit ... apply --stdin --state-dir /run/lazyos-install`
+  evaluates power via sysfs `type`/`scope` (recognizing ChromeOS `USB` / `Mains` PD chargers and
+  ignoring `Device`-scoped stylus batteries), enforces `check_machine_safety` before writes in both TUI
+  pre-flight and headless `apply`, spawns detached root work via `sudo -n setsid systemd-inhibit ... apply --stdin --state-dir /run/lazyos-install`
   with secrets passed solely over stdin, enforces the `first_write` cancel gate, and writes `/etc/lazyos/installation`
   last. `core/scripts/install-emmc.sh` stays intact only as a Hayato manual/debug fallback.
 - When desktop binaries invoke `lazyos-core` system scripts (`install-boot.sh`, `backup-system.sh`),

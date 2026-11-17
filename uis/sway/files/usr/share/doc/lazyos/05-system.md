@@ -344,15 +344,15 @@ partition's size and not how much of it is in use.
 The internal eMMC and the microSD are written with matching layouts
 (`core/scripts/write-sd.sh`, `lazyos installer`, or fallback `/usr/libexec/lazyos/install-emmc.sh`), so a card is a full rescue
 system: the same three partitions, the same signed kpart, the same session. The
-stock firmware's developer-mode menu picks **internal disk** (the eMMC) or
-**external disk** (the card), so a broken install on the eMMC is recoverable by
+stock firmware's developer-mode menu picks **internal disk** / **Ctrl+D** (the eMMC) or
+**external disk** / **Ctrl+U** (the card/USB), so a broken install on the eMMC is recoverable by
 booting the card and running the installer again.
 
 ## Install LazyOS (The Pure-Rust TUI & Headless Installer)
 
 Installing LazyOS onto internal storage (`/dev/mmcblk0`, `/dev/nvme0n1`, etc.) is driven
 natively in pure Rust by `lazyos installer` across **all supported boot architectures**
-(`depthcharge` on Hayato Chromebooks, `uefi` with `systemd-boot`, and `extlinux` on U-Boot SBCs):
+(`depthcharge` on `google-asurada` / `google-kukui` Chromebooks, `uefi` with `systemd-boot`, and `extlinux` on U-Boot SBCs):
 
 ```sh
 lazyos installer                                        # interactive full-screen wizard in foot
