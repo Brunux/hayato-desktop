@@ -360,29 +360,35 @@ fn query(resolved: &Resolved) -> Option<i32> {
             println!("{}", system::settings::status());
             Some(EXIT_OK)
         }
-        // The recorder's state and the exact shell lines the menu runs, so a
-        // check can prove Stop signals wf-recorder itself and that no card is
-        // drawn into the file. Read-only: nothing here starts or stops a
-        // capture.
+        // The recorder's state and the exact argv the menu runs, so a check
+        // can prove Stop signals wf-recorder itself and that no card is drawn
+        // into the file. `--start` and `--stop-wait` are the detached halves
+        // the window re-executes; the rest is read-only.
         ("menu capture", ["--status"] | ["status"]) => {
             println!("{}", system::capture::status());
             Some(EXIT_OK)
         }
-        ("menu capture", ["--script", "start", rest @ ..]) => {
+        ("menu capture", ["--start", rest @ ..]) => {
             let area = rest.first().is_some_and(|arg| *arg == "area");
-            println!("{}", system::capture::start_script(area));
-            Some(EXIT_OK)
+            Some(system::capture::start_headless(area))
         }
-        ("menu capture", ["--script", "stop", pid, file]) => match pid.parse::<u32>() {
-            Ok(pid) => {
-                println!("{}", system::capture::stop_script(pid, file));
-                Some(EXIT_OK)
-            }
+        ("menu capture", ["--stop-wait", pid, file]) => match pid.parse::<u32>() {
+            Ok(pid) => Some(system::capture::stop_wait(pid, file)),
             Err(_) => {
                 eprintln!("not a pid: {pid}");
                 Some(EXIT_FAILED)
             }
         },
+        ("menu capture", ["--argv", file, rest @ ..]) => {
+            let geometry = rest
+                .first()
+                .copied()
+                .filter(|geometry| !geometry.is_empty());
+            for arg in system::capture::recorder_argv(std::path::Path::new(file), geometry) {
+                println!("{arg}");
+            }
+            Some(EXIT_OK)
+        }
         ("menu keys", ["--rows"]) => {
             let mut out = io::stdout();
             for b in system::keys::rows() {

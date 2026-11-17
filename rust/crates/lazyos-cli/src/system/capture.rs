@@ -1,4 +1,5 @@
-//! Capture: screenshots, annotate, OCR, QR, recording (`rofi-capture`).
+//! Capture: screenshots, annotate, OCR, QR, recording (`lazyos menu capture`,
+//! also reachable as `rofi-capture`).
 //!
 //! The old script was a rofi list over tools the image already has. Every row is
 //! one command that ends before the list closes: grimshot takes the picture
@@ -18,7 +19,11 @@
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::vec_init_then_push)]
 use std::cell::Cell;
-use std::path::Path;
+use std::fs::File;
+use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use lazyos_ui::{
     BodyCtx, Card, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row, Screen,
@@ -381,7 +386,18 @@ fi"#;
     }
 
     fn start_recording(area: bool) {
-        crate::system::spawn_detached(&start_script(area));
+        // The menu closes first; a detached copy of this binary does the work,
+        // so the recorder never inherits the window's terminal or process
+        // group and its own pid is the one saved.
+        let mut args = vec![
+            "menu".to_string(),
+            "capture".to_string(),
+            "--start".to_string(),
+        ];
+        if area {
+            args.push("area".to_string());
+        }
+        spawn_self(&args);
     }
 
     fn stop_recording() {
@@ -400,103 +416,283 @@ fi"#;
             .unwrap_or_default();
         // The waiter outlives this window: it finalises the file, clears the
         // bar and only then says the recording is saved.
-        crate::system::spawn_detached(&stop_script(pid, &file));
+        spawn_self(&[
+            "menu".to_string(),
+            "capture".to_string(),
+            "--stop-wait".to_string(),
+            pid.to_string(),
+            file,
+        ]);
     }
 }
 
-/// The shell line that starts a recorder.
+/// Re-run this binary detached. `current_exe` is the real file, so a
+/// multi-call symlink (`rofi-capture`, `lazyos`) still reaches the dispatcher.
+fn spawn_self(args: &[String]) {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    crate::system::spawn_detached_argv(exe, &args);
+}
+
+/// The recorder's argv: one program and its arguments, never a shell line.
 ///
-/// There is deliberately no `eval`: `$!` has to be `wf-recorder` itself,
-/// because that is the pid the state file saves and Stop signals. The old
-/// `eval "wf-recorder …" &` saved the shell that wrapped the recorder, so Stop
-/// sent SIGINT to the wrapper and the capture kept running. The
-/// `/proc/<pid>/comm` check is what makes the saved pid trustworthy; state is
-/// written only after it passes.
-pub fn start_script(area: bool) -> String {
-    let mut script = String::from("sleep 0.2\n");
-    if area {
-        script.push_str("_geom=$(slurp -d) || exit 0\n[ -n \"$_geom\" ] || exit 0\n");
-    } else {
-        script.push_str("_geom=\n");
+/// `-g` sits before `-f` exactly as `wf-recorder` expects it. The caller owns
+/// every word, so a path with a space stays one argument.
+pub fn recorder_argv(file: &Path, geometry: Option<&str>) -> Vec<String> {
+    let mut argv = vec![
+        "wf-recorder".to_string(),
+        "-c".to_string(),
+        "libx264".to_string(),
+        "-p".to_string(),
+        "preset=veryfast".to_string(),
+        "-p".to_string(),
+        "crf=28".to_string(),
+        "-r".to_string(),
+        "30".to_string(),
+    ];
+    if let Some(geometry) = geometry {
+        argv.push("-g".to_string());
+        argv.push(geometry.to_string());
     }
-    script.push_str(
-        r#"state="${XDG_RUNTIME_DIR:-/tmp}/lazyos-capture"
-mkdir -p "$state" "$HOME/Videos" 2>/dev/null || true
-_file="$HOME/Videos/lazyos-$(date +%Y%m%d-%H%M%S).mp4"
-set -- -c libx264 -p preset=veryfast -p crf=28 -r 30
-[ -z "$_geom" ] || set -- "$@" -g "$_geom"
-wf-recorder "$@" -f "$_file" >"$state/recorder.log" 2>&1 &
-_pid=$!
-sleep 0.3
-if [ "$(cat "/proc/$_pid/comm" 2>/dev/null)" = wf-recorder ] && kill -0 "$_pid" 2>/dev/null; then
-    printf '%s\n' "$_pid" >"$state/recording.pid"
-    printf '%s\n' "$_file" >"$state/recording.file"
-    if [ -x "$HOME/.config/bin/busy" ]; then
-        "$HOME/.config/bin/busy" start record Recording "Capturing to $(basename "$_file") · Alt+Ctrl+C stops it" media-record
-    else
-        notify-send -a LazyOS -i media-record "Recording" "Capturing to $(basename "$_file") · Alt+Ctrl+C stops it"
-    fi
-else
-    rm -f "$state/recording.pid" "$state/recording.file"
-    _why=$(tail -n 1 "$state/recorder.log" 2>/dev/null)
-    notify-send -a LazyOS -u critical -i dialog-error "Capture" "Recording did not start${_why:+ · $_why}"
-fi"#,
-    );
-    script
+    argv.push("-f".to_string());
+    argv.push(file.to_string_lossy().to_string());
+    argv
 }
 
-/// The shell line that stops the recorder whose pid and file were saved.
+/// `$HOME/Videos/lazyos-<date>-<time>.mp4`, the file the recorder writes.
+pub fn videos_file() -> PathBuf {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/"));
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    home.join("Videos").join(format!("lazyos-{stamp}.mp4"))
+}
+
+fn slurp_geometry() -> Option<String> {
+    let output = Command::new("slurp")
+        .arg("-d")
+        .stdin(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let geometry = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!geometry.is_empty()).then_some(geometry)
+}
+
+/// Write the recorder's pid and file. Called only after `/proc/<pid>/comm`
+/// proved the pid is `wf-recorder`, so Stop can trust what it reads.
+fn write_state(state: &Path, pid: u32, file: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(state)?;
+    std::fs::write(state.join("recording.pid"), format!("{pid}\n"))?;
+    std::fs::write(
+        state.join("recording.file"),
+        format!("{}\n", file.display()),
+    )?;
+    Ok(())
+}
+
+fn basename(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default()
+}
+
+fn last_line(path: &Path) -> String {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| {
+            text.lines()
+                .rev()
+                .find(|line| !line.trim().is_empty())
+                .map(|line| line.trim().to_string())
+        })
+        .unwrap_or_default()
+}
+
+fn announce_recording(file: &Path) {
+    let body = format!("Capturing to {} · Alt+Ctrl+C stops it", basename(file));
+    if crate::system::have_busy() {
+        crate::system::busy("record", "Recording", &body, "media-record");
+    } else {
+        crate::system::say("Recording", body, Urgency::Normal, Glyph::Video);
+    }
+}
+
+fn announce_start_failure(why: &str) {
+    let body = if why.is_empty() {
+        "Recording did not start".to_string()
+    } else {
+        format!("Recording did not start · {why}")
+    };
+    if crate::system::have_busy() {
+        crate::system::busy_fail("record", "Capture", &body, "dialog-error");
+    } else {
+        crate::system::say("Capture", body, Urgency::Critical, Glyph::Warning);
+    }
+}
+
+fn announce_stopped(file: &Path, forced: bool) {
+    let base = basename(file);
+    let nonempty = file.metadata().map(|meta| meta.len() > 0).unwrap_or(false);
+    let (body, critical) = if forced {
+        (
+            format!("Recording was killed · {base} may be incomplete"),
+            true,
+        )
+    } else if nonempty {
+        (format!("Recording saved · {base}"), false)
+    } else {
+        (format!("Recording failed · {base} is empty"), true)
+    };
+    if crate::system::have_busy() {
+        if critical {
+            crate::system::busy_fail("record", "Capture", &body, "dialog-error");
+        } else {
+            crate::system::busy_end("record", "Recording", &body);
+        }
+    } else {
+        let glyph = if critical {
+            Glyph::Warning
+        } else {
+            Glyph::Video
+        };
+        let urgency = if critical {
+            Urgency::Critical
+        } else {
+            Urgency::Normal
+        };
+        crate::system::say("Recording", body, urgency, glyph);
+    }
+}
+
+fn signal(pid: u32, signal: libc::c_int) {
+    // SAFETY: `kill(2)` takes a pid and a signal number; the pid came from the
+    // state file and was verified to be `wf-recorder` before this process ran.
+    unsafe {
+        libc::kill(pid as libc::pid_t, signal);
+    }
+}
+
+/// Wait up to `tenths` × 100 ms for the recorder to stop being the recorder.
+fn wait_gone(pid: u32, tenths: u32) -> bool {
+    for _ in 0..tenths {
+        if !lazyos_ui::recording::is_recorder(pid) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    !lazyos_ui::recording::is_recorder(pid)
+}
+
+/// `lazyos menu capture --start [area]`: run detached by the menu.
+///
+/// The recorder is spawned as its own argv, so the pid saved here is the
+/// recorder's and not a wrapper shell's. Nothing reaches the state directory
+/// until `/proc/<pid>/comm` says `wf-recorder`, which is what makes Stop's
+/// signal trustworthy.
+pub fn start_headless(area: bool) -> i32 {
+    // Let the menu close before the screen is captured.
+    std::thread::sleep(Duration::from_millis(200));
+    let geometry = if area {
+        match slurp_geometry() {
+            Some(geometry) => Some(geometry),
+            None => return 0,
+        }
+    } else {
+        None
+    };
+    let state = lazyos_ui::recording::state_dir();
+    let file = videos_file();
+    if let Some(parent) = file.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::create_dir_all(&state);
+    let log = state.join("recorder.log");
+    let Ok(log_out) = File::create(&log) else {
+        announce_start_failure("the recorder log could not be opened");
+        return 1;
+    };
+    let Ok(log_err) = log_out.try_clone() else {
+        announce_start_failure("the recorder log could not be opened");
+        return 1;
+    };
+    let argv = recorder_argv(&file, geometry.as_deref());
+    let mut command = Command::new(&argv[0]);
+    command
+        .args(&argv[1..])
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(log_out))
+        .stderr(Stdio::from(log_err));
+    // The recorder gets its own session: the window may close, and so may the
+    // process that started it, without the capture taking the hangup.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            lazyos_ui::recording::clear_in(&state);
+            announce_start_failure(&error.to_string());
+            return 1;
+        }
+    };
+    let pid = child.id();
+    std::thread::sleep(Duration::from_millis(300));
+    if lazyos_ui::recording::is_recorder(pid) {
+        match write_state(&state, pid, &file) {
+            Ok(()) => {
+                announce_recording(&file);
+                0
+            }
+            Err(error) => {
+                // A recorder with no saved pid cannot be stopped from the menu,
+                // so end it now instead of leaving it running invisibly.
+                signal(pid, libc::SIGINT);
+                lazyos_ui::recording::clear_in(&state);
+                announce_start_failure(&format!("the recording state could not be saved: {error}"));
+                1
+            }
+        }
+    } else {
+        lazyos_ui::recording::clear_in(&state);
+        announce_start_failure(&last_line(&log));
+        1
+    }
+}
+
+/// `lazyos menu capture --stop-wait PID FILE`: run detached by Stop.
 ///
 /// SIGINT is what finalises an `.mp4`; a recorder that ignores it gets SIGTERM,
-/// and one that ignores both is killed and reported as incomplete instead of
-/// leaving the session believing a capture is still running.
-pub fn stop_script(pid: u32, file: &str) -> String {
-    format!(
-        r#"state="${{XDG_RUNTIME_DIR:-/tmp}}/lazyos-capture"
-_pid={pid}
-_file={file}
-kill -INT "$_pid" 2>/dev/null || true
-_n=0
-while [ "$_n" -lt 50 ] && kill -0 "$_pid" 2>/dev/null; do
-    sleep 0.1
-    _n=$((_n + 1))
-done
-_forced=0
-if kill -0 "$_pid" 2>/dev/null; then
-    kill -TERM "$_pid" 2>/dev/null || true
-    _n=0
-    while [ "$_n" -lt 20 ] && kill -0 "$_pid" 2>/dev/null; do
-        sleep 0.1
-        _n=$((_n + 1))
-    done
-fi
-if kill -0 "$_pid" 2>/dev/null; then
-    _forced=1
-    kill -KILL "$_pid" 2>/dev/null || true
-fi
-rm -f "$state/recording.pid" "$state/recording.file"
-_base=$(basename "$_file")
-if [ "$_forced" -eq 1 ]; then
-    if [ -x "$HOME/.config/bin/busy" ]; then
-        "$HOME/.config/bin/busy" fail record "Recording was killed · $_base may be incomplete" dialog-error
-    else
-        notify-send -a LazyOS -u critical -i dialog-error "Capture" "Recording was killed · $_base may be incomplete"
-    fi
-elif [ -s "$_file" ]; then
-    if [ -x "$HOME/.config/bin/busy" ]; then
-        "$HOME/.config/bin/busy" end record "Recording saved · $_base"
-    else
-        notify-send -a LazyOS -i media-record "Recording saved · $_base"
-    fi
-else
-    if [ -x "$HOME/.config/bin/busy" ]; then
-        "$HOME/.config/bin/busy" fail record "Recording failed · $_base is empty" dialog-error
-    else
-        notify-send -a LazyOS -u critical -i dialog-error "Capture" "Recording failed · $_base is empty"
-    fi
-fi"#,
-        file = shell_quote(file),
-    )
+/// and one that ignores both is killed and reported as incomplete rather than
+/// leaving the session believing a capture is still running. The state is
+/// cleared only after the recorder is gone, so the card that says the file was
+/// saved is never itself recorded.
+pub fn stop_wait(pid: u32, file: &str) -> i32 {
+    let path = PathBuf::from(file);
+    signal(pid, libc::SIGINT);
+    let mut gone = wait_gone(pid, 50);
+    if !gone {
+        signal(pid, libc::SIGTERM);
+        gone = wait_gone(pid, 20);
+    }
+    let forced = if gone {
+        false
+    } else {
+        signal(pid, libc::SIGKILL);
+        true
+    };
+    lazyos_ui::recording::clear();
+    announce_stopped(&path, forced);
+    0
 }
 
 /// `lazyos menu capture --status`: `idle`, or `recording<TAB><file>`.
@@ -512,19 +708,6 @@ pub fn status() -> String {
         Some(file) => format!("recording\t{}", file.display()),
         None => "recording".to_string(),
     }
-}
-
-/// One shell word. A path from the session may contain spaces or quotes, and
-/// the stop script assigns it before using it as an argument.
-pub fn shell_quote(text: &str) -> String {
-    let plain = !text.is_empty()
-        && text.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'_' | b'-' | b'+' | b':')
-        });
-    if plain {
-        return text.to_string();
-    }
-    format!("'{}'", text.replace('\'', "'\\''"))
 }
 
 /// `lazyos menu capture` (`rofi-capture`): the window.
@@ -567,56 +750,50 @@ mod tests {
 
     #[test]
     fn the_recorder_is_started_as_its_own_argv() {
-        let script = start_script(false);
+        let argv = recorder_argv(Path::new("/home/brunux/Videos/a.mp4"), None);
+        assert_eq!(argv[0], "wf-recorder");
         assert!(
-            !script.contains("eval "),
-            "eval makes $! the wrapper shell, not wf-recorder"
+            !argv.iter().any(|arg| arg == "sh" || arg == "eval"),
+            "the recorder is never wrapped in a shell"
         );
-        assert!(script.contains("wf-recorder \"$@\" -f \"$_file\""));
-        assert!(script.contains("/proc/$_pid/comm"));
-        assert!(script.contains("= wf-recorder"));
-        // State is written only after the comm check, so Stop can trust it.
-        let check = script.find("/proc/$_pid/comm").unwrap();
-        let pid_file = script.find(">\"$state/recording.pid\"").unwrap();
-        assert!(check < pid_file, "the pid is saved before it is verified");
+        assert!(argv.windows(2).any(|pair| pair == ["-c", "libx264"]));
+        assert!(
+            argv.windows(2)
+                .any(|pair| pair == ["-f", "/home/brunux/Videos/a.mp4"]),
+            "the output file is its own argv word"
+        );
+        assert!(!argv.iter().any(|arg| arg == "-g"));
     }
 
     #[test]
     fn an_area_recording_passes_the_slurp_geometry_directly() {
-        let script = start_script(true);
-        assert!(script.contains("slurp -d"));
-        assert!(script.contains("set -- \"$@\" -g \"$_geom\""));
-        assert!(!script.contains("_extra"));
-        assert!(!script.contains("eval "));
-    }
-
-    #[test]
-    fn stop_signals_the_recorder_and_waits_before_clearing_the_bar() {
-        let script = stop_script(4242, "/home/brunux/Videos/lazyos-test.mp4");
-        assert!(script.contains("_pid=4242"));
-        assert!(script.contains("kill -INT \"$_pid\""));
-        assert!(script.contains("kill -TERM \"$_pid\""));
-        assert!(script.contains("kill -KILL \"$_pid\""));
-        let wait = script.find("kill -0 \"$_pid\"").unwrap();
-        let clear = script.find("rm -f \"$state/recording.pid\"").unwrap();
+        let argv = recorder_argv(Path::new("/tmp/a.mp4"), Some("10,20 300x200"));
+        let geometry = argv.iter().position(|arg| arg == "-g").unwrap();
+        assert_eq!(argv[geometry + 1], "10,20 300x200");
+        let file = argv.iter().position(|arg| arg == "-f").unwrap();
         assert!(
-            wait < clear,
-            "the state is cleared before the recorder is gone"
+            geometry < file,
+            "-g is a recorder option, so it comes before the output file"
         );
-        assert!(script.contains("busy\" end record"));
     }
 
     #[test]
-    fn a_path_with_a_space_or_quote_stays_one_shell_word() {
+    fn a_path_with_a_space_or_quote_stays_one_argument() {
+        let path = Path::new("/home/brunux/My Videos/it's.mp4");
+        let argv = recorder_argv(path, None);
+        assert!(argv.iter().any(|arg| arg == &path.to_string_lossy()));
+        assert_eq!(argv.iter().filter(|arg| *arg == "-f").count(), 1);
+    }
+
+    #[test]
+    fn a_videos_file_is_a_timestamped_mp4_under_home() {
+        let file = videos_file();
         assert_eq!(
-            shell_quote("/home/brunux/Videos/a.mp4"),
-            "/home/brunux/Videos/a.mp4"
+            file.parent().and_then(Path::file_name),
+            Some(std::ffi::OsStr::new("Videos"))
         );
-        assert_eq!(
-            shell_quote("/home/brunux/My Videos/a.mp4"),
-            "'/home/brunux/My Videos/a.mp4'"
-        );
-        assert_eq!(shell_quote("it's.mp4"), "'it'\\''s.mp4'");
-        assert_eq!(shell_quote(""), "''");
+        let name = file.file_name().unwrap().to_string_lossy();
+        assert!(name.starts_with("lazyos-"));
+        assert!(name.ends_with(".mp4"));
     }
 }
