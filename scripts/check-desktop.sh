@@ -1077,6 +1077,18 @@ if [ -x "$HOME/.config/bin/lazyos-profile" ]; then
 	else
 		fail "bin/lazyos-profile asks the passphrase with a bare [ -t 0 ]: from a key the prompt goes to the VT and the export hangs"
 	fi
+	_dev_tmp=$(mktemp -d /tmp/lazyos-check-dev.XXXXXX)
+	mkdir -p "$_dev_tmp/.cache" "$_dev_tmp/.ssh" "$_dev_tmp/Documents"
+	touch "$_dev_tmp/.cache/skip" "$_dev_tmp/.ssh/id_test" "$_dev_tmp/Documents/user.txt"
+	_dev_out=$(HOME=$_dev_tmp "$HOME/.config/bin/lazyos-profile" export --dry-run --include-home 2>/dev/null || true)
+	rm -rf "$_dev_tmp"
+	if printf '%s\n' "$_dev_out" | grep -qs '^scope: home$' &&
+		printf '%s\n' "$_dev_out" | grep -qs '^  Documents$' &&
+		! printf '%s\n' "$_dev_out" | grep -qs '^  \.cache$'; then
+		ok "bin/lazyos-profile supports optional full-home export (--include-home)"
+	else
+		fail "bin/lazyos-profile --include-home --dry-run did not report scope: home and user folders without .cache"
+	fi
 fi
 
 # Three places reach the menu and one is enough to lose: the root menu's row

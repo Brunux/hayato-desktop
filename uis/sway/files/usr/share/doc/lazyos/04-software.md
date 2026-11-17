@@ -481,10 +481,15 @@ in one archive you can carry to another computer.
 
 **Export my profile** asks for a disk (a mounted one, a partition it can mount
 with udisks - the same mechanism as Places - or `~/Downloads` when no stick is
-in), then for a passphrase, twice. The prompt is a masked **rofi** window when
-the menu is opened from the session, and the terminal's own when the command is
-run from a shell or over ssh. It writes
-`lazyos-profile-<host>-<date>.tar.zst.gpg` and a `.txt` manifest beside it.
+in), then opens **Passphrase & options** with masked passphrase confirmation
+and an optional **`[ ] Include user home folder`** check (`Space`/`Enter`/click).
+When unchecked (the default), it writes only the curated keys, dotfiles, configs,
+agents, and Firefox profile; when checked (`--include-home`), it exports all files
+and directories inside `$HOME` (skipping only `~/.cache`, Trash, runtime sockets,
+and older profile archives under the target folder so exports to `~/Downloads` do
+not nest themselves). It writes
+`lazyos-profile-<host>-<date>.tar.zst.gpg` and a `.txt` manifest beside it
+(`scope: profile` or `scope: home`).
 
 * **It is encrypted, and it has to be**: the archive carries `~/.ssh` (private
   keys), `~/.gnupg` (secret keys) and the Firefox password store
@@ -532,16 +537,20 @@ run from a shell or over ssh. It writes
   stick can be read without the passphrase.
 * From a terminal - including over ssh, which this machine answers - the same
   work is one command:
-  `~/.config/bin/lazyos-profile export /run/media/$USER/STICK`. It asks for the
+  `~/.config/bin/lazyos-profile export /run/media/$USER/STICK` (add
+  `--include-home` to carry the full home folder). It asks for the
   passphrase on the terminal, and `--passphrase-file FILE` makes it scriptable.
 
 **Restore a profile** lists every archive it can see (mounted disks and
-`~/Downloads`), asks for the passphrase, and says how many files it is about to
-overwrite - **Cancel is the first row**. Before extracting anything it writes
-the current profile to
+`~/Downloads`, showing `full home` when the manifest carries `scope: home`),
+asks for the passphrase, and says how many files it is about to
+overwrite - **Cancel is the first row**. Before extracting anything it backs up
+the current profile paths and any existing files in `$HOME` that the archive
+would overwrite into
 `~/.cache/lazyos/backups/profile-before-restore-<date>.tar.zst`, so a restore
 that turns out to be the wrong archive is itself undoable. It then extracts into
-your home with the modes from the archive and says to log out and back in: the
+your home with the modes from the archive (restoring both profile config paths
+and any exported user home files) and says to log out and back in: the
 shell, the session and the agents read their configuration at login. It cannot
 be stopped once it starts - a killed extraction is a half-restored home.
 By hand the archive is ordinary gpg and tar:

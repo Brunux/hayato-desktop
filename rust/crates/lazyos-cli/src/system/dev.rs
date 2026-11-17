@@ -7,15 +7,18 @@
 /// This version provides structured pickers for archive selection and target
 /// destinations, dispatching operations detached from the terminal so that
 /// no child output leaks onto the screen.
-use std::cell::Cell;
-use std::path::Path;
+use std::cell::{Cell, RefCell};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
+use lazyos_ui::widgets::{put, put_trunc};
 use lazyos_ui::{
-    BodyCtx, Design, Glyph, Header, KeyHint, ListState, Outcome, Row, Screen, Task, TaskView,
-    TextStyle, draw_card,
+    BodyCtx, ColorRole, Design, Glyph, Header, Input, KeyHint, ListState, Outcome, Row, Screen,
+    Task, TaskView, TextStyle, draw_card,
 };
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
 
 use crate::system::pick::{Picker, Question};
 use crate::system::{have, missing};
@@ -44,6 +47,7 @@ pub struct ArchiveEntry {
     pub name: String,
     pub size: String,
     pub date: String,
+    pub scope: Option<String>,
 }
 
 /// The dev screen state.
@@ -61,7 +65,7 @@ impl DevScreen {
             DevEntry {
                 icon: "box".to_string(),
                 label: "Export my profile".to_string(),
-                detail: "keys, configs and packages, encrypted · to a disk".to_string(),
+                detail: "keys, configs and optional home folder, encrypted · to a disk".to_string(),
                 action: DevAction::Export,
             },
             DevEntry {
@@ -173,6 +177,7 @@ impl DevScreen {
                             name,
                             size: Self::human_size(size),
                             date: when,
+                            scope: parse_archive_scope(path),
                         });
                     }
                 }
@@ -354,6 +359,554 @@ fn collect_targets() -> (Vec<Row>, Vec<String>) {
     (rows, keys)
 }
 
+#[derive(Default, Clone, Copy)]
+struct ExportHits {
+    passphrase: Option<Rect>,
+    confirm: Option<Rect>,
+    include_home: Option<Rect>,
+    back_btn: Option<Rect>,
+    export_btn: Option<Rect>,
+}
+
+/// Interactive passphrase and scope screen for profile export.
+///
+/// Lets the user set and confirm the GPG passphrase and optionally check
+/// `Include user home folder` before starting the archive task.
+pub struct ExportSetupScreen {
+    target_dir: String,
+    home_label: String,
+    pass_input: Input,
+    confirm_input: Input,
+    pub include_home: bool,
+    focus: usize,
+    submitted: bool,
+    error: Option<&'static str>,
+    cursor_blink_on: bool,
+    last_blink: Instant,
+    reduced_motion: bool,
+    header: Header,
+    keybar_text: Vec<KeyHint>,
+    keybar_toggle: Vec<KeyHint>,
+    keybar_btn: Vec<KeyHint>,
+    hits: RefCell<ExportHits>,
+}
+
+impl ExportSetupScreen {
+    pub fn new(target_dir: impl Into<String>) -> Self {
+        let target_dir = target_dir.into();
+        let home_label = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
+        Self {
+            target_dir,
+            home_label,
+            pass_input: Input::new().with_masked(true),
+            confirm_input: Input::new().with_masked(true),
+            include_home: false,
+            focus: 0,
+            submitted: false,
+            error: None,
+            cursor_blink_on: true,
+            last_blink: Instant::now(),
+            reduced_motion: false,
+            header: Header::new("LazyOS").subtitle("Export my profile"),
+            keybar_text: vec![
+                KeyHint::new("Enter", "next"),
+                KeyHint::new("\u{2191}\u{2193}", "move"),
+                KeyHint::new("Tab", "cycle"),
+                KeyHint::new("Esc", "back"),
+            ],
+            keybar_toggle: vec![
+                KeyHint::new("Space/Enter", "toggle"),
+                KeyHint::new("\u{2193}", "export"),
+                KeyHint::new("Esc", "back"),
+            ],
+            keybar_btn: vec![
+                KeyHint::new("\u{2190}\u{2192}", "choose"),
+                KeyHint::new("Enter", "confirm"),
+                KeyHint::new("Esc", "back"),
+            ],
+            hits: RefCell::new(ExportHits::default()),
+        }
+    }
+
+    pub fn passphrase(&self) -> &str {
+        self.pass_input.text()
+    }
+
+    pub fn submitted(&self) -> bool {
+        self.submitted
+    }
+
+    fn reset_blink(&mut self) {
+        self.cursor_blink_on = true;
+        self.last_blink = Instant::now();
+    }
+
+    fn set_focus(&mut self, idx: usize) {
+        self.focus = idx;
+        if idx <= 1 {
+            self.reset_blink();
+        }
+    }
+
+    fn try_submit(&mut self) -> Outcome {
+        if self.pass_input.text().is_empty() {
+            self.error = Some("A passphrase is required: it makes the archive safe to lose");
+            self.set_focus(0);
+            return Outcome::Consumed;
+        }
+        if self.pass_input.text() != self.confirm_input.text() {
+            self.error = Some("The two passphrases differ; please try again");
+            self.set_focus(1);
+            return Outcome::Consumed;
+        }
+        self.error = None;
+        self.submitted = true;
+        Outcome::Done(0)
+    }
+
+    fn label_style(&self, idx: usize, design: &Design) -> Style {
+        if self.focus == idx {
+            Style::default()
+                .fg(design.color(ColorRole::Accent))
+                .add_modifier(Modifier::BOLD)
+        } else {
+            design.style(TextStyle::Dim)
+        }
+    }
+}
+
+impl Screen for ExportSetupScreen {
+    fn draw(&mut self, ctx: &mut BodyCtx) {
+        self.reduced_motion = ctx.design.reduced_motion();
+        draw_card(
+            ctx.buf,
+            ctx.area,
+            ctx.design,
+            Some("Passphrase & options"),
+            true,
+        );
+        let card = Rect {
+            x: ctx.area.x + 2,
+            y: ctx.area.y + 1,
+            width: ctx.area.width.saturating_sub(4),
+            height: ctx.area.height.saturating_sub(2),
+        };
+        if card.width < 12 || card.height < 8 {
+            return;
+        }
+
+        let compact = ctx.area.height < 18;
+        let lx = if compact { card.x } else { card.x + 2 };
+        let lw = card.width.saturating_sub(if compact { 0 } else { 4 });
+        let mut y = card.y;
+        let blink = self.cursor_blink_on || self.reduced_motion;
+        let mut hits = ExportHits::default();
+
+        put_trunc(
+            ctx.buf,
+            lx,
+            y,
+            &format!("Destination: {} \u{00b7} Escape goes back", self.target_dir),
+            lw,
+            ctx.design.style(TextStyle::Dim),
+        );
+        y += if compact { 1 } else { 2 };
+
+        let pw_typed = !self.pass_input.text().is_empty() || !self.confirm_input.text().is_empty();
+        let pw_match = !self.pass_input.text().is_empty()
+            && self.pass_input.text() == self.confirm_input.text();
+
+        let inputs: [(&str, &str, usize, &Input); 2] = [
+            ("Passphrase:", "enter passphrase", 0, &self.pass_input),
+            (
+                "Confirm passphrase:",
+                "re-type passphrase",
+                1,
+                &self.confirm_input,
+            ),
+        ];
+
+        for (label, ph, idx, input) in inputs {
+            let lstyle = self.label_style(idx, ctx.design);
+            let rect = if compact {
+                let cap_w = 20u16.min(lw / 2);
+                put_trunc(ctx.buf, lx, y, label, cap_w, lstyle);
+                let ix = lx + cap_w + 1;
+                let iw = lw.saturating_sub(cap_w + 1);
+                let r = Rect::new(ix, y, iw, 1);
+                hits_set_input(&mut hits, idx, Rect::new(lx, y, lw, 1));
+                y += 1;
+                r
+            } else {
+                put_trunc(ctx.buf, lx, y, label, lw, lstyle);
+                if idx == 1 && pw_typed {
+                    let (badge, role) = if pw_match {
+                        ("\u{2713} Passphrases match", ColorRole::Ok)
+                    } else {
+                        ("\u{2717} Passphrases do not match", ColorRole::Danger)
+                    };
+                    let bw = badge.chars().count() as u16;
+                    if (label.chars().count() as u16) + 2 + bw <= lw {
+                        put(
+                            ctx.buf,
+                            lx + lw - bw,
+                            y,
+                            badge,
+                            bw,
+                            Style::default()
+                                .fg(ctx.design.color(role))
+                                .add_modifier(Modifier::BOLD),
+                        );
+                    }
+                }
+                let label_y = y;
+                y += 1;
+                let r = Rect::new(lx, y, lw, 1);
+                hits_set_input(&mut hits, idx, Rect::new(lx, label_y, lw, 2));
+                y += 2;
+                r
+            };
+            input.render_field(
+                rect,
+                ctx.buf,
+                ctx.design,
+                ph,
+                self.focus == idx,
+                blink,
+                ColorRole::Bg,
+                TextStyle::Body,
+            );
+        }
+
+        if compact && pw_typed && y + 3 < card.bottom() {
+            let (badge, role) = if pw_match {
+                ("\u{2713} Passphrases match", ColorRole::Ok)
+            } else {
+                ("\u{2717} Passphrases do not match", ColorRole::Danger)
+            };
+            put_trunc(
+                ctx.buf,
+                lx,
+                y,
+                badge,
+                lw,
+                Style::default()
+                    .fg(ctx.design.color(role))
+                    .add_modifier(Modifier::BOLD),
+            );
+            y += 1;
+        }
+
+        let check_mark = if self.include_home { "[X]" } else { "[ ]" };
+        let check_style = if self.focus == 2 {
+            ctx.design
+                .style(TextStyle::Key)
+                .add_modifier(Modifier::BOLD)
+        } else if self.include_home {
+            Style::default()
+                .fg(ctx.design.color(ColorRole::Accent))
+                .add_modifier(Modifier::BOLD)
+        } else {
+            ctx.design.style(TextStyle::Body)
+        };
+        let check_label = format!(
+            "{check_mark} Include user home folder ({})",
+            self.home_label
+        );
+        put_trunc(ctx.buf, lx, y, &check_label, lw, check_style);
+        let check_y = y;
+        y += 1;
+        let check_h = if !compact && y + 2 < card.bottom() {
+            let hint = if self.include_home {
+                "    Exports all user files & folders under ~ (skips ~/.cache, Trash & sockets)"
+            } else {
+                "    Unchecked: exports keys, dotfiles, configs, agents & Firefox profile only"
+            };
+            put_trunc(ctx.buf, lx, y, hint, lw, ctx.design.style(TextStyle::Dim));
+            y += if self.error.is_some() { 1 } else { 2 };
+            2
+        } else {
+            1
+        };
+        hits.include_home = Some(Rect::new(lx, check_y, lw, check_h));
+
+        if let Some(err) = self.error {
+            if y < card.bottom().saturating_sub(1) {
+                put_trunc(
+                    ctx.buf,
+                    lx,
+                    y,
+                    &format!("\u{26a0} {err}"),
+                    lw,
+                    Style::default()
+                        .fg(ctx.design.color(ColorRole::Danger))
+                        .add_modifier(Modifier::BOLD),
+                );
+            }
+        }
+
+        let btn_y = card.bottom().saturating_sub(1);
+        if btn_y > check_y {
+            let back_style = if self.focus == 3 {
+                ctx.design
+                    .style(TextStyle::Key)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                ctx.design.style(TextStyle::Body)
+            };
+            let export_style = if self.focus == 4 {
+                ctx.design
+                    .style(TextStyle::Key)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                ctx.design.style(TextStyle::Body)
+            };
+
+            let back_lbl = "[ < Back ]";
+            let back_w = back_lbl.chars().count() as u16;
+            put(ctx.buf, lx, btn_y, back_lbl, back_w, back_style);
+            hits.back_btn = Some(Rect::new(lx, btn_y, back_w, 1));
+
+            let export_lbl = "[ Export Profile > ]";
+            let export_w = export_lbl.chars().count() as u16;
+            let export_x = (lx + back_w + 4).min(lx + lw.saturating_sub(export_w));
+            put(ctx.buf, export_x, btn_y, export_lbl, export_w, export_style);
+            hits.export_btn = Some(Rect::new(export_x, btn_y, export_w, 1));
+        }
+
+        *self.hits.borrow_mut() = hits;
+    }
+
+    fn key(&mut self, key: KeyEvent, _design: &Design) -> Outcome {
+        if key.kind != KeyEventKind::Press {
+            return Outcome::Continue;
+        }
+        match key.code {
+            KeyCode::Esc => return Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+            KeyCode::BackTab => {
+                let prev = if self.focus == 0 { 4 } else { self.focus - 1 };
+                self.set_focus(prev);
+                return Outcome::Consumed;
+            }
+            KeyCode::Tab => {
+                let shift = key.modifiers.contains(KeyModifiers::SHIFT);
+                let next = if shift {
+                    if self.focus == 0 { 4 } else { self.focus - 1 }
+                } else {
+                    (self.focus + 1) % 5
+                };
+                self.set_focus(next);
+                return Outcome::Consumed;
+            }
+            _ => {}
+        }
+
+        match self.focus {
+            0 => match key.code {
+                KeyCode::Down | KeyCode::Enter => {
+                    self.set_focus(1);
+                    Outcome::Consumed
+                }
+                _ => {
+                    self.pass_input.handle(key);
+                    self.error = None;
+                    self.reset_blink();
+                    Outcome::Consumed
+                }
+            },
+            1 => match key.code {
+                KeyCode::Up => {
+                    self.set_focus(0);
+                    Outcome::Consumed
+                }
+                KeyCode::Down | KeyCode::Enter => {
+                    self.set_focus(2);
+                    Outcome::Consumed
+                }
+                _ => {
+                    self.confirm_input.handle(key);
+                    self.error = None;
+                    self.reset_blink();
+                    Outcome::Consumed
+                }
+            },
+            2 => match key.code {
+                KeyCode::Up => {
+                    self.set_focus(1);
+                    Outcome::Consumed
+                }
+                KeyCode::Down | KeyCode::Right => {
+                    self.set_focus(4);
+                    Outcome::Consumed
+                }
+                KeyCode::Left => {
+                    self.set_focus(3);
+                    Outcome::Consumed
+                }
+                KeyCode::Char(' ') | KeyCode::Enter => {
+                    self.include_home = !self.include_home;
+                    Outcome::Consumed
+                }
+                _ => Outcome::Continue,
+            },
+            3 => match key.code {
+                KeyCode::Up => {
+                    self.set_focus(2);
+                    Outcome::Consumed
+                }
+                KeyCode::Right => {
+                    self.set_focus(4);
+                    Outcome::Consumed
+                }
+                KeyCode::Enter => Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+                _ => Outcome::Continue,
+            },
+            4 => match key.code {
+                KeyCode::Up => {
+                    self.set_focus(2);
+                    Outcome::Consumed
+                }
+                KeyCode::Left => {
+                    self.set_focus(3);
+                    Outcome::Consumed
+                }
+                KeyCode::Enter => self.try_submit(),
+                _ => Outcome::Continue,
+            },
+            _ => Outcome::Continue,
+        }
+    }
+
+    fn hit(&self, _area: Rect, x: u16, y: u16, _design: &Design) -> Option<usize> {
+        let hits = self.hits.borrow();
+        let contains = |r: Option<Rect>| -> bool {
+            r.is_some_and(|rect| {
+                x >= rect.x && x < rect.right() && y >= rect.y && y < rect.bottom()
+            })
+        };
+        if contains(hits.passphrase) {
+            Some(0)
+        } else if contains(hits.confirm) {
+            Some(1)
+        } else if contains(hits.include_home) {
+            Some(2)
+        } else if contains(hits.back_btn) {
+            Some(3)
+        } else if contains(hits.export_btn) {
+            Some(4)
+        } else {
+            None
+        }
+    }
+
+    fn click(&mut self, row: Option<usize>) -> Outcome {
+        match row {
+            Some(0) => {
+                self.set_focus(0);
+                Outcome::Consumed
+            }
+            Some(1) => {
+                self.set_focus(1);
+                Outcome::Consumed
+            }
+            Some(2) => {
+                self.set_focus(2);
+                self.include_home = !self.include_home;
+                Outcome::Consumed
+            }
+            Some(3) => Outcome::Done(lazyos_ui::app::exit::ESCAPE),
+            Some(4) => self.try_submit(),
+            _ => Outcome::Continue,
+        }
+    }
+
+    fn needs_tick(&self) -> Option<Duration> {
+        if self.focus <= 1 && !self.reduced_motion {
+            Some(Duration::from_millis(500))
+        } else {
+            None
+        }
+    }
+
+    fn tick(&mut self) -> Outcome {
+        if self.focus <= 1
+            && !self.reduced_motion
+            && self.last_blink.elapsed() >= Duration::from_millis(500)
+        {
+            self.cursor_blink_on = !self.cursor_blink_on;
+            self.last_blink = Instant::now();
+        }
+        Outcome::Continue
+    }
+
+    fn keybar(&self) -> Option<&[KeyHint]> {
+        match self.focus {
+            0 | 1 => Some(&self.keybar_text),
+            2 => Some(&self.keybar_toggle),
+            _ => Some(&self.keybar_btn),
+        }
+    }
+
+    fn header(&self) -> Option<&Header> {
+        Some(&self.header)
+    }
+}
+
+fn hits_set_input(hits: &mut ExportHits, idx: usize, r: Rect) {
+    if idx == 0 {
+        hits.passphrase = Some(r);
+    } else {
+        hits.confirm = Some(r);
+    }
+}
+
+/// Companion manifest `.txt` path beside an exported profile archive.
+pub fn manifest_path_for(archive_path: &str) -> PathBuf {
+    let base = archive_path.strip_suffix(".gpg").unwrap_or(archive_path);
+    let stem = base.strip_suffix(".tar.zst").unwrap_or(base);
+    PathBuf::from(format!("{stem}.txt"))
+}
+
+/// Read `scope:` from the sibling manifest (`full home` or `profile`).
+pub fn parse_archive_scope(archive_path: &str) -> Option<String> {
+    let raw = std::fs::read_to_string(manifest_path_for(archive_path)).ok()?;
+    parse_scope_from_manifest(&raw)
+}
+
+pub fn parse_scope_from_manifest(manifest_text: &str) -> Option<String> {
+    for line in manifest_text.lines() {
+        if let Some(val) = line.strip_prefix("scope:") {
+            return match val.trim() {
+                "home" => Some("full home".to_string()),
+                "profile" => Some("profile".to_string()),
+                _ => None,
+            };
+        }
+    }
+    None
+}
+
+/// Build CLI argv for `lazyos-profile export`.
+pub fn build_export_args(
+    profile_bin: &Path,
+    target_dir: &str,
+    include_home: bool,
+    pass_file: Option<&str>,
+) -> Vec<String> {
+    let mut args = vec![
+        profile_bin.to_string_lossy().to_string(),
+        "export".to_string(),
+        target_dir.to_string(),
+    ];
+    if include_home {
+        args.push("--include-home".to_string());
+    }
+    if let Some(pf) = pass_file {
+        args.extend(["--passphrase-file".to_string(), pf.to_string()]);
+    }
+    args
+}
+
 /// `lazyos menu dev` (`rofi-dev`): developer profile tools.
 pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
@@ -385,9 +938,9 @@ pub fn menu(
                 "Developer",
                 note,
                 vec![
-                    Row::new("Export my profile")
-                        .glyph(Glyph::Box)
-                        .detail("keys, configs and packages, encrypted \u{00b7} to a disk"),
+                    Row::new("Export my profile").glyph(Glyph::Box).detail(
+                        "keys, configs and optional home folder, encrypted \u{00b7} to a disk",
+                    ),
                     Row::new("Restore a profile").glyph(Glyph::Undo).detail(
                         "from an exported archive \u{00b7} the current files are backed up first",
                     ),
@@ -426,9 +979,13 @@ pub fn menu(
                 let rows: Vec<Row> = archives
                     .iter()
                     .map(|a| {
-                        Row::new(&a.name)
-                            .glyph(Glyph::Key)
-                            .detail(format!("{} \u{00b7} {}", a.date, a.size))
+                        let detail = match a.scope.as_deref() {
+                            Some(scope) => {
+                                format!("{} \u{00b7} {} \u{00b7} {}", a.date, a.size, scope)
+                            }
+                            None => format!("{} \u{00b7} {}", a.date, a.size),
+                        };
+                        Row::new(&a.name).glyph(Glyph::Key).detail(detail)
                     })
                     .collect();
                 let keys: Vec<String> = archives.iter().map(|a| a.path.clone()).collect();
@@ -443,7 +1000,7 @@ pub fn menu(
                         ),
                         Question::ask(
                             "Restore this profile?",
-                            "Current configs are backed up to ~/.cache/lazyos/backups first",
+                            "Matching current files & configs are backed up to ~/.cache/lazyos/backups first",
                             "Restore {0} into your home directory?",
                             "Restore",
                             "go",
@@ -530,7 +1087,7 @@ pub fn menu(
                     return crate::run_screen(terminal, design, "Restore a profile", &mut view);
                 }
             }
-            "export" => {
+            "export" => 'export_pick: loop {
                 let (target_rows, target_keys) = collect_targets();
                 let mut target_picker = Picker::new(
                     "Export the profile to",
@@ -549,90 +1106,69 @@ pub fn menu(
                     &mut target_picker,
                 )?;
                 if t_code == 1 {
-                    continue;
+                    break 'export_pick;
                 }
                 if t_code != 0 {
                     return Ok(t_code);
                 }
 
-                if let Some(target_dir) = target_picker.answers().first() {
-                    let mut pw_picker = Picker::new(
-                        "Passphrase for the profile",
-                        vec![
-                            Question::input(
-                                "Passphrase for the profile",
-                                "A passphrase is required: it is what makes the archive safe to lose \u{00b7} Escape cancels",
-                                "Passphrase",
-                                true,
-                            ),
-                            Question::input(
-                                "Confirm passphrase",
-                                "The same passphrase again \u{00b7} Escape cancels",
-                                "Again",
-                                true,
-                            ),
-                        ],
-                    );
-                    let p_code = crate::run_screen(
-                        terminal,
-                        design,
-                        "Passphrase for the profile",
-                        &mut pw_picker,
-                    )?;
-                    if p_code != 0 {
-                        continue;
-                    }
-                    let answers = pw_picker.answers();
-                    let p1 = answers.first().map(|s| s.as_str()).unwrap_or("");
-                    let p2 = answers.get(1).map(|s| s.as_str()).unwrap_or("");
-                    if p1.is_empty() {
-                        banner = Some(
-                            "A passphrase is required: it makes the archive safe to lose"
-                                .to_string(),
-                        );
-                        continue;
-                    }
-                    if p1 != p2 {
-                        banner = Some("The two passphrases differ; please try again".to_string());
-                        continue;
-                    }
+                let Some(target_dir) = target_picker.answers().first().cloned() else {
+                    break 'export_pick;
+                };
 
-                    let runtime =
-                        std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
-                    let pass_file =
-                        format!("{}/lazyos-profile-pass-{}", runtime, std::process::id());
-                    use std::os::unix::fs::OpenOptionsExt;
-                    let mut args = vec![
-                        profile_bin.to_string_lossy().to_string(),
-                        "export".to_string(),
-                        target_dir.to_string(),
-                    ];
-                    if let Ok(mut f) = std::fs::OpenOptions::new()
-                        .write(true)
-                        .create(true)
-                        .truncate(true)
-                        .mode(0o600)
-                        .open(&pass_file)
-                    {
-                        use std::io::Write;
-                        let _ = writeln!(f, "{p1}");
-                        args.extend(["--passphrase-file".to_string(), pass_file]);
-                    }
-
-                    let tag = format!("dev-export-{}", std::process::id());
-                    let step_label = format!("Archive & GPG-encrypt profile into {target_dir}");
-                    let task = Task::start_steps(
-                        &tag,
-                        format!("Export profile to {target_dir}"),
-                        vec![step_label],
-                        false,
-                        vec![args],
-                    )
-                    .map_err(|e| crate::Failure::new("Developer", e.to_string()))?;
-                    let mut view = TaskView::new(task);
-                    return crate::run_screen(terminal, design, "Export my profile", &mut view);
+                let mut setup = ExportSetupScreen::new(&target_dir);
+                let s_code = crate::run_screen(terminal, design, "Export my profile", &mut setup)?;
+                if s_code == 1 {
+                    continue 'export_pick;
                 }
-            }
+                if s_code != 0 {
+                    return Ok(s_code);
+                }
+                if !setup.submitted() {
+                    break 'export_pick;
+                }
+
+                let p1 = setup.passphrase().to_string();
+                let include_home = setup.include_home;
+                let runtime =
+                    std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
+                let pass_file = format!("{}/lazyos-profile-pass-{}", runtime, std::process::id());
+                use std::os::unix::fs::OpenOptionsExt;
+                let pass_opt = if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .mode(0o600)
+                    .open(&pass_file)
+                {
+                    use std::io::Write;
+                    let _ = writeln!(f, "{p1}");
+                    Some(pass_file)
+                } else {
+                    None
+                };
+                let args =
+                    build_export_args(&profile_bin, &target_dir, include_home, pass_opt.as_deref());
+
+                let tag = format!("dev-export-{}", std::process::id());
+                let (title, step_label) = if include_home {
+                    (
+                        format!("Export profile & home folder to {target_dir}"),
+                        format!(
+                            "Archive profile + user home files & GPG-encrypt into {target_dir}"
+                        ),
+                    )
+                } else {
+                    (
+                        format!("Export profile to {target_dir}"),
+                        format!("Archive & GPG-encrypt profile into {target_dir}"),
+                    )
+                };
+                let task = Task::start_steps(&tag, title, vec![step_label], false, vec![args])
+                    .map_err(|e| crate::Failure::new("Developer", e.to_string()))?;
+                let mut view = TaskView::new(task);
+                return crate::run_screen(terminal, design, "Export my profile", &mut view);
+            },
             "report" => {
                 let (target_rows, target_keys) = collect_targets();
                 let mut target_picker = Picker::new(
@@ -691,9 +1227,22 @@ pub fn menu(
 
 #[cfg(test)]
 mod tests {
-    use crate::system::dev::DevAction;
-    use crate::system::dev::DevEntry;
-    use crate::system::dev::DevScreen;
+    use super::*;
+    use lazyos_ui::{App, Design, Header};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn type_text(app: &mut App<'_>, terminal: &mut Terminal<TestBackend>, text: &str) {
+        for ch in text.chars() {
+            terminal.draw(|frame| app.render(frame)).unwrap();
+            let _ = app.handle(Event::Key(key(KeyCode::Char(ch))));
+        }
+    }
 
     #[test]
     fn human_size() {
@@ -723,5 +1272,124 @@ mod tests {
         let row = DevScreen::entry_row(&entry);
         // Unknown icons default to Info
         assert!(row.glyph.is_some());
+    }
+
+    #[test]
+    fn build_export_args_includes_home_flag_only_when_checked() {
+        let bin = Path::new("/home/u/.config/bin/lazyos-profile");
+        let plain = build_export_args(bin, "/media/usb", false, Some("/run/user/1000/pass"));
+        assert!(!plain.iter().any(|a| a == "--include-home"));
+        assert_eq!(
+            plain,
+            vec![
+                "/home/u/.config/bin/lazyos-profile",
+                "export",
+                "/media/usb",
+                "--passphrase-file",
+                "/run/user/1000/pass",
+            ]
+        );
+
+        let full = build_export_args(bin, "/media/usb", true, Some("/run/user/1000/pass"));
+        assert!(full.iter().any(|a| a == "--include-home"));
+        assert_eq!(
+            full,
+            vec![
+                "/home/u/.config/bin/lazyos-profile",
+                "export",
+                "/media/usb",
+                "--include-home",
+                "--passphrase-file",
+                "/run/user/1000/pass",
+            ]
+        );
+    }
+
+    #[test]
+    fn manifest_scope_detection_distinguishes_home_and_profile() {
+        assert_eq!(
+            manifest_path_for("/media/usb/lazyos-profile-host-20261116.tar.zst.gpg"),
+            PathBuf::from("/media/usb/lazyos-profile-host-20261116.txt")
+        );
+        assert_eq!(
+            parse_scope_from_manifest("LazyOS profile\nscope: home\nentries:\n"),
+            Some("full home".to_string())
+        );
+        assert_eq!(
+            parse_scope_from_manifest("LazyOS profile\nscope: profile\nentries:\n"),
+            Some("profile".to_string())
+        );
+        assert_eq!(
+            parse_scope_from_manifest("LazyOS profile\nentries:\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn export_setup_toggles_include_home_and_validates_passphrase() {
+        let mut screen = ExportSetupScreen::new("/media/usb");
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let mut app = App::new(Header::new("LazyOS"))
+            .design(Design::solarized().with_reduced_motion(true))
+            .screen(&mut screen);
+
+        type_text(&mut app, &mut terminal, "secret1");
+        let _ = app.handle(Event::Key(key(KeyCode::Enter))); // focus -> confirm
+        type_text(&mut app, &mut terminal, "mismatch");
+        let _ = app.handle(Event::Key(key(KeyCode::Enter))); // focus -> include_home
+        let _ = app.handle(Event::Key(key(KeyCode::Char(' ')))); // toggle checked
+        let _ = app.handle(Event::Key(key(KeyCode::Down))); // focus -> Export button
+        let out = app.handle(Event::Key(key(KeyCode::Enter)));
+        assert_eq!(out, Outcome::Continue);
+        drop(app);
+        assert!(screen.include_home);
+        assert!(!screen.submitted());
+        assert_eq!(
+            screen.error,
+            Some("The two passphrases differ; please try again")
+        );
+
+        let mut app = App::new(Header::new("LazyOS"))
+            .design(Design::solarized().with_reduced_motion(true))
+            .screen(&mut screen);
+        // Backspace off "mismatch", type matching passphrase.
+        for _ in 0..8 {
+            let _ = app.handle(Event::Key(key(KeyCode::Backspace)));
+        }
+        type_text(&mut app, &mut terminal, "secret1");
+        let _ = app.handle(Event::Key(key(KeyCode::Down))); // include_home (stays checked)
+        let _ = app.handle(Event::Key(key(KeyCode::Down))); // Export button
+        let out = app.handle(Event::Key(key(KeyCode::Enter)));
+        assert_eq!(out, Outcome::Done(0));
+        drop(app);
+        assert!(screen.include_home);
+        assert!(screen.submitted());
+        assert_eq!(screen.passphrase(), "secret1");
+    }
+
+    #[test]
+    fn export_setup_supports_mouse_click_toggle_and_compact_layout() {
+        let mut screen = ExportSetupScreen::new("/home/u/Downloads");
+        let mut terminal = Terminal::new(TestBackend::new(64, 14)).unwrap();
+        let design = Design::solarized().with_reduced_motion(true);
+        let mut app = App::new(Header::new("LazyOS"))
+            .design(design.clone())
+            .screen(&mut screen);
+        terminal.draw(|frame| app.render(frame)).unwrap();
+        drop(app);
+
+        let rect = screen
+            .hits
+            .borrow()
+            .include_home
+            .expect("checkbox hit rect");
+        assert_eq!(
+            screen.hit(Rect::new(0, 0, 64, 14), rect.x, rect.y, &design),
+            Some(2)
+        );
+        assert_eq!(screen.click(Some(2)), Outcome::Consumed);
+        assert!(screen.include_home);
+        assert_eq!(screen.click(Some(2)), Outcome::Consumed);
+        assert!(!screen.include_home);
     }
 }

@@ -47,7 +47,7 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
 8. **Version invariant**: `VERSION` at the repo root is compiled into `lazyos --version` via
    `include_str!`. Keep it valid semver `x.y.z` matching releases.
 9. **Multi-input cursor & contrast contract**: Screens with multiple text inputs (`InstallerScreen`,
-   `GreeterScreen`, `GreeterSettingsScreen`) must render via `Input::render_field(..., focused, blink_on, bg_role, ...)`
+   `GreeterScreen`, `GreeterSettingsScreen`, `ExportSetupScreen`) must render via `Input::render_field(..., focused, blink_on, bg_role, ...)`
    so only the active input shows the accent bar and blinking 500 ms cursor (solid when
    `reduced_motion`), and inputs inside `ColorRole::Surface` cards use `ColorRole::Bg` to preserve
    palette contrast across Solarized Dark (`Surface == Selection`) and light themes.

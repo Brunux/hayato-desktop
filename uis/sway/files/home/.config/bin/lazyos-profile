@@ -2,11 +2,11 @@
 # The developer profile: one encrypted archive of the things that make this
 # account yours, and the way back from it.
 #
-#   lazyos-profile export [DIR] [--no-encrypt] [--passphrase-file FILE]
+#   lazyos-profile export [DIR] [--include-home] [--no-encrypt] [--passphrase-file FILE]
 #   lazyos-profile import ARCHIVE
 #   lazyos-profile report [DIR]
 #   lazyos-profile list-archives
-#   lazyos-profile export --dry-run
+#   lazyos-profile export --dry-run [--include-home]
 #
 # The menu (bin/rofi-dev, Alt+Ctrl+D) is the front end: it picks the disk and
 # the archive, and every row it offers ends in one of the verbs above.  The
@@ -192,7 +192,76 @@ present_entries() {
 	done
 }
 
+# home_entries: top-level entries inside $HOME (newlines/spaces safe via NUL helper),
+# skipping cache/runtime sockets so exporting full home never self-recurses.
+home_entries() {
+	_he_cache_rel=
+	case $CACHE in "$HOME"/*) _he_cache_rel=${CACHE#"$HOME"/} ;; esac
+	(
+		cd "$HOME" || exit 1
+		find . -mindepth 1 -maxdepth 1 \
+			! -name '.cache' \
+			! -name '.dbus' \
+			! -name '.gvfs' \
+			! -name 'lost+found' \
+			${_he_cache_rel:+! -path "./${_he_cache_rel%%/*}"} \
+			-printf '%P\n' | LC_ALL=C sort
+	)
+}
+
+write_entries_nul() {
+	_wen_out=$1
+	_wen_mode=${2:-profile}
+	: >"$_wen_out"
+	if [ "$_wen_mode" = home ]; then
+		_wen_cache_rel=
+		case $CACHE in "$HOME"/*) _wen_cache_rel=${CACHE#"$HOME"/} ;; esac
+		(
+			cd "$HOME" || exit 1
+			find . -mindepth 1 -maxdepth 1 \
+				! -name '.cache' \
+				! -name '.dbus' \
+				! -name '.gvfs' \
+				! -name 'lost+found' \
+				${_wen_cache_rel:+! -path "./${_wen_cache_rel%%/*}"} \
+				-printf '%P\0'
+		) >"$_wen_out"
+	else
+		for _e in $ENTRIES; do
+			if [ -e "$HOME/$_e" ]; then
+				printf '%s\0' "$_e" >>"$_wen_out"
+			fi
+		done
+	fi
+}
+
 entries_size_kb() {
+	if [ "${_include_home:-no}" = yes ]; then
+		_esk_tmp=
+		if [ -n "${WORK:-}" ]; then
+			_esk_nul=$WORK/size-entries.nul
+		else
+			_esk_tmp=$(mktemp /tmp/lazyos-profile-size.XXXXXX)
+			_esk_nul=$_esk_tmp
+		fi
+		write_entries_nul "$_esk_nul" home
+		_esk_cache_rel=
+		case $CACHE in "$HOME"/*) _esk_cache_rel=${CACHE#"$HOME"/} ;; esac
+		if [ -s "$_esk_nul" ]; then
+			_esk=$(
+				cd "$HOME" || exit 1
+				du -skc --files0-from="$_esk_nul" \
+					--exclude='.cache' --exclude='.local/share/Trash' \
+					${_esk_cache_rel:+--exclude="$_esk_cache_rel"} \
+					2>/dev/null | awk 'END { print $1 + 0 }'
+			) || _esk=0
+		else
+			_esk=0
+		fi
+		[ -n "$_esk_tmp" ] && rm -f "$_esk_tmp"
+		printf '%s\n' "${_esk:-0}"
+		return 0
+	fi
 	_esk=0
 	for _e in $(present_entries); do
 		_ek=$(du -sk "$HOME/$_e" 2>/dev/null | awk '{ print $1 }') || _ek=
@@ -266,18 +335,25 @@ passphrase_file() {
 # it contains no key material and no secret value).
 manifest() {
 	_out=$1
+	_m_scope=profile
+	[ "${_include_home:-no}" = yes ] && _m_scope=home
 	{
 		printf 'LazyOS profile\n'
 		printf 'created: %s\n' "$(date -Ins)"
 		printf 'host: %s\n' "$(hostname 2>/dev/null || :)"
 		printf 'user: %s\n' "${USER:-$(id -un)}"
+		printf 'scope: %s\n' "$_m_scope"
 		printf 'system: %s\n' "$(uname -a)"
 		if [ -r /etc/debian-aarch64-revision ]; then
 			printf 'revision:\n'
 			sed -e 's/^/  /' /etc/debian-aarch64-revision
 		fi
 		printf 'entries:\n'
-		present_entries | sed -e 's/^/  /'
+		if [ "$_m_scope" = home ]; then
+			home_entries | sed -e 's/^/  /'
+		else
+			present_entries | sed -e 's/^/  /'
+		fi
 		printf 'packages (apt-mark showmanual):\n'
 		_pkgs=$(apt-mark showmanual 2>/dev/null) || _pkgs='(apt-mark unavailable)'
 		printf '%s\n' "$_pkgs" | sed -e 's/^/  /'
@@ -294,31 +370,58 @@ manifest() {
 	} >"$_out"
 }
 
-# build_tar OUT: the archive, compressed, before it is encrypted.  The
-# tar is built from $HOME with relative names, so extraction puts everything
-# back where it came from; --numeric-owner keeps the ids stable and
-# --one-file-system refuses to walk into anything mounted under a config
-# directory.  Sockets and the keyring's lock files are skipped because they are
-# session state, not configuration.
+# build_tar OUT [MODE] [ARG]: stream compressed archive directly via tar | zstd so
+# large home backups never double disk usage in $WORK. MODE is `profile` (default
+# curated ENTRIES), `home` (all top-level $HOME entries, ARG = optional target
+# dir to avoid bundling prior profile exports under ~/Downloads), or `filelist`
+# (ARG = NUL-delimited path list under $HOME, used for pre-restore backups).
 build_tar() {
 	_bt_out=$1
-	set --
-	for _e in $(present_entries); do
-		set -- "$@" "$_e"
-	done
-	[ $# -gt 0 ] || die "nothing to export: none of the profile paths exist in $HOME"
-	_bt_tar=$WORK/archive.tar
-	(
-		cd "$HOME" || exit 1
-		exec tar --numeric-owner -p --one-file-system \
-			--exclude='.cache' \
+	_bt_mode=${2:-profile}
+	_bt_arg=${3:-}
+	if [ "$_bt_mode" = filelist ]; then
+		_bt_list=$_bt_arg
+	else
+		_bt_list=$WORK/tar-entries.nul
+		write_entries_nul "$_bt_list" "$_bt_mode"
+	fi
+	[ -s "$_bt_list" ] || die "nothing to export: no matching profile paths exist in $HOME"
+
+	_bt_cache_rel=
+	case $CACHE in "$HOME"/*) _bt_cache_rel=${CACHE#"$HOME"/} ;; esac
+
+	_bt_self_excl=
+	if [ "$_bt_mode" = home ] && [ -n "$_bt_arg" ]; then
+		_bt_home_real=$(readlink -f "$HOME" 2>/dev/null || printf '%s' "$HOME")
+		_bt_tgt_real=$(readlink -f "$_bt_arg" 2>/dev/null || printf '%s' "$_bt_arg")
+		case $_bt_tgt_real in
+		"$_bt_home_real")
+			_bt_self_excl='lazyos-profile-*.tar.zst*'
+			;;
+		"$_bt_home_real"/*)
+			_bt_self_excl=${_bt_tgt_real#"$_bt_home_real"/}/lazyos-profile-*.tar.zst*
+			;;
+		esac
+	fi
+
+	set -- \
+		--numeric-owner -p --one-file-system --warning=no-file-changed \
+		--exclude='.cache' \
+		--exclude='.local/share/Trash' \
+		--exclude='.dbus' \
+		--exclude='.gvfs' \
+		--exclude='.ssh/control*' \
+		--exclude='.gnupg/S.*' \
+		--exclude='.gnupg/*.lock' \
+		--exclude='.gnupg/random_seed*' \
+		--exclude='*.sock' \
+		--exclude='*.socket'
+	[ -n "$_bt_cache_rel" ] && set -- "$@" --exclude="$_bt_cache_rel"
+	[ -n "$_bt_self_excl" ] && set -- "$@" --exclude="$_bt_self_excl"
+
+	if [ "$_bt_mode" != home ]; then
+		set -- "$@" \
 			--exclude='node_modules' \
-			--exclude='.ssh/control*' \
-			--exclude='.gnupg/S.*' \
-			--exclude='.gnupg/*.lock' \
-			--exclude='.gnupg/random_seed*' \
-			--exclude='*.sock' \
-			--exclude='*.socket' \
 			--exclude='.claude/projects' \
 			--exclude='.claude/todos' \
 			--exclude='.claude/shell-snapshots' \
@@ -338,7 +441,6 @@ build_tar() {
 			--exclude='.gemini/tmp' \
 			--exclude='.gemini/logs' \
 			--exclude='.gemini/antigravity-cli' \
-			--warning=no-file-changed \
 			--exclude='.copilot/session-state' \
 			--exclude='.copilot/logs' \
 			--exclude='.copilot/history' \
@@ -361,11 +463,19 @@ build_tar() {
 			--exclude='*mozilla/firefox/*/*.sqlite-journal' \
 			--exclude='*mozilla/firefox/*/lock' \
 			--exclude='*mozilla/firefox/*/.parentlock' \
-			--exclude='*mozilla/firefox/Crash Reports' \
-			-cf "$_bt_tar" -- "$@"
-	) || return 1
-	zstd -q -3 -T0 -o "$_bt_out" "$_bt_tar" || return 1
-	rm -f "$_bt_tar"
+			--exclude='*mozilla/firefox/Crash Reports'
+	fi
+
+	rm -f "$WORK/tar.rc"
+	if ! {
+		(
+			cd "$HOME" || exit 1
+			exec tar "$@" --null -T "$_bt_list" -cf -
+		) || printf '%s\n' "$?" >"$WORK/tar.rc"
+	} | zstd -q -3 -T0 -o "$_bt_out"; then
+		return 1
+	fi
+	[ ! -s "$WORK/tar.rc" ] || return 1
 }
 
 # gpg_encrypt IN OUT PASSFILE / gpg_decrypt IN OUT PASSFILE
@@ -404,8 +514,10 @@ cmd_export() {
 	_encrypt=yes
 	_pass_file=
 	_dry=no
+	_include_home=no
 	while [ $# -gt 0 ]; do
 		case $1 in
+		--include-home) _include_home=yes ;;
 		--no-encrypt) _encrypt=no ;;
 		--passphrase-file)
 			shift
@@ -419,8 +531,16 @@ cmd_export() {
 		shift
 	done
 
-	_entries=$(present_entries)
-	[ -n "$_entries" ] || die "nothing to export: none of the profile paths exist in $HOME"
+	_mode=profile
+	[ "$_include_home" = yes ] && _mode=home
+
+	if [ "$_mode" = home ]; then
+		_entries=$(home_entries)
+		[ -n "$_entries" ] || die "nothing to export: no user files exist in $HOME"
+	else
+		_entries=$(present_entries)
+		[ -n "$_entries" ] || die "nothing to export: none of the profile paths exist in $HOME"
+	fi
 
 	_suffix=.tar.zst
 	if [ "$_encrypt" = yes ]; then
@@ -429,13 +549,14 @@ cmd_export() {
 
 	if [ "$_dry" = yes ]; then
 		printf 'profile: %s\n' "lazyos-profile-$(hostname_short)-$(stamp)$_suffix"
+		printf 'scope: %s\n' "$_mode"
 		printf 'entries:\n'
 		printf '%s\n' "$_entries" | sed -e 's/^/  /'
 		printf 'estimate: %s MB\n' "$((($(entries_size_kb) + 1023) / 1024))"
 		return 0
 	fi
 
-	[ -n "$_target" ] || die "usage: lazyos-profile export DIR"
+	[ -n "$_target" ] || die "usage: lazyos-profile export DIR [--include-home]"
 	[ -d "$_target" ] || die "not a directory: $_target"
 	[ -w "$_target" ] || die "not writable: $_target"
 
@@ -446,10 +567,15 @@ cmd_export() {
 	# Room for the archive plus the encrypted copy, with slack.  The staging tar
 	# is written to ~/.cache, so what the target needs is the compressed size,
 	# but an estimate that is too kind is a half-written stick: ask for both.
-	_need=$((( $(entries_size_kb) / 2 ) + 4096))
+	_esk=$(entries_size_kb)
+	_need=$(((_esk / 2) + 4096))
 	_free=$(available_kb "$_target" || :)
 	if [ -n "${_free:-}" ] && [ "$_free" -lt "$_need" ]; then
 		die "not enough free space on $_target: $((_need / 1024)) MB needed, $((_free / 1024)) MB free"
+	fi
+	_cache_free=$(available_kb "$CACHE" || :)
+	if [ -n "${_cache_free:-}" ] && [ "$_cache_free" -lt "$_need" ]; then
+		die "not enough staging space in $CACHE: $((_need / 1024)) MB needed, $((_cache_free / 1024)) MB free"
 	fi
 
 	_archive=$(archive_path "$_target" "$_suffix")
@@ -457,12 +583,14 @@ cmd_export() {
 		die "$_archive already exists: wait a minute and try again"
 	fi
 
+	_busy_msg='Packing the profile…'
+	[ "$_mode" = home ] && _busy_msg='Packing the profile and home folder…'
 	_busy_started=
-	if BUSY_STOP='pkill -f "[l]azyos-profile\..*/archive\.tar"' \
-		"$UI_BIN/busy" start dev 'Developer' 'Packing the profile…' package-x-generic 2>/dev/null; then
+	if BUSY_STOP='pkill -f "[l]azyos-profile\."' \
+		"$UI_BIN/busy" start dev 'Developer' "$_busy_msg" package-x-generic 2>/dev/null; then
 		_busy_started=yes
 	fi
-	build_tar "$_stage" || {
+	build_tar "$_stage" "$_mode" "$_target" || {
 		"$UI_BIN/busy" fail dev 'Developer' 'Packing the profile failed' dialog-error 2>/dev/null || :
 		die "tar/zstd failed to build the archive"
 	}
@@ -504,6 +632,40 @@ cmd_export() {
 	"$UI_BIN/busy" end dev "Profile saved ($_size): $(basename "$_archive")" 2>/dev/null || :
 	say 'Profile saved' "$_archive ($_size)"
 	printf '%s\n' "$_archive"
+}
+
+write_import_backup_nul() {
+	_wb_members=$1
+	_wb_out=$2
+	write_entries_nul "$_wb_out" profile
+	_wb_excl=$WORK/entries-prefix.txt
+	printf '%s\n' "$ENTRIES" | sed -e '/^$/d' >"$_wb_excl"
+	_wb_cands=$WORK/backup-cands.txt
+	awk -v excl="$_wb_excl" '
+		BEGIN {
+			while ((getline line < excl) > 0) {
+				if (line != "") pfx[line] = 1
+			}
+			close(excl)
+		}
+		/\/$/ { next }
+		{
+			p = $0
+			sub(/^\.\//, "", p)
+			if (p == "" || p == "." || p ~ /^\.cache(\/|$)/) next
+			covered = 0
+			for (e in pfx) {
+				if (p == e || index(p, e "/") == 1) { covered = 1; break }
+			}
+			if (!covered && !seen[p]++) print p
+		}
+	' "$_wb_members" >"$_wb_cands"
+	while IFS= read -r _wb_p; do
+		[ -n "$_wb_p" ] || continue
+		if { [ -e "$HOME/$_wb_p" ] || [ -L "$HOME/$_wb_p" ]; } && [ ! -d "$HOME/$_wb_p" ]; then
+			printf '%s\0' "$_wb_p" >>"$_wb_out"
+		fi
+	done <"$_wb_cands"
 }
 
 cmd_import() {
@@ -561,11 +723,12 @@ cmd_import() {
 	# A tar made by this script only ever carries relative names.  Anything else
 	# (an absolute path, a `..`) is refused before a single file is written:
 	# extraction happens in $HOME, and one bad member would land outside it.
-	_members=$(tar --zstd -tf "$_unpacked" 2>/dev/null) ||
+	_members_file=$WORK/members.txt
+	tar --zstd -tf "$_unpacked" >"$_members_file" 2>/dev/null ||
 		die 'that is not a LazyOS profile archive (tar could not read it)'
-	_bad=$(printf '%s\n' "$_members" | awk '/^\// || /(^|\/)\.\.(\/|$)/ { print; exit }')
+	_bad=$(awk '/^\// || /(^|\/)\.\.(\/|$)/ { print; exit }' "$_members_file")
 	[ -z "$_bad" ] || die "refusing an archive with a path that leaves \$HOME: $_bad"
-	_count=$(printf '%s\n' "$_members" | grep -c . || true)
+	_count=$(wc -l <"$_members_file" | tr -d ' ')
 
 	# What the person is agreeing to: the manifest beside the archive says where
 	# it came from and when, and rofi's message line carries that plus the count.
@@ -581,7 +744,7 @@ cmd_import() {
 	fi
 	if on_terminal; then
 		printf 'About to restore %s into %s, overwriting the files it carries:\n' "$_archive" "$HOME" >&2
-		printf '%s\n' "$_members" | sed -n '1,20p' | sed -e 's/^/  /' >&2
+		sed -n '1,20p' "$_members_file" | sed -e 's/^/  /' >&2
 		if [ "$_count" -gt 20 ]; then
 			printf '  … and %s more\n' "$((_count - 20))" >&2
 		fi
@@ -605,15 +768,16 @@ cmd_import() {
 		return 0
 	fi
 
-	# The copy that makes a wrong restore recoverable is taken first, in the
-	# cache, unencrypted and 0600: it is the same account's own data on the same
-	# machine, and it must be readable without a passphrase nobody wrote down.
-	if [ -n "$(present_entries)" ]; then
+	# Back up ENTRIES plus any existing $HOME files overwritten by full-home archives,
+	# unencrypted and 0600, so an unintended restore remains recoverable.
+	_backup_nul=$WORK/backup.nul
+	write_import_backup_nul "$_members_file" "$_backup_nul"
+	if [ -s "$_backup_nul" ]; then
 		mkdir -p "$BACKUPS"
 		chmod 700 "$BACKUPS"
 		_before=$BACKUPS/profile-before-restore-$(stamp).tar.zst
-		"$UI_BIN/busy" update dev 'Backing up the current profile…' 2>/dev/null || :
-		if build_tar "$_before"; then
+		"$UI_BIN/busy" update dev 'Backing up existing files…' 2>/dev/null || :
+		if build_tar "$_before" filelist "$_backup_nul"; then
 			chmod 600 "$_before"
 		else
 			die 'could not back up the current profile; nothing was restored'
@@ -785,8 +949,8 @@ cmd_list_archives() {
 
 usage() {
 	cat <<'EOF'
-usage: lazyos-profile export [DIR] [--no-encrypt] [--passphrase-file FILE]
-       lazyos-profile export --dry-run
+usage: lazyos-profile export [DIR] [--include-home] [--no-encrypt] [--passphrase-file FILE]
+       lazyos-profile export --dry-run [--include-home]
        lazyos-profile import ARCHIVE
        lazyos-profile report [DIR]
        lazyos-profile list-archives
