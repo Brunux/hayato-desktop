@@ -165,6 +165,45 @@ impl Question {
     }
 }
 
+/// The one question the window is on, with the widget that answers it.
+///
+/// The current question used to be spread across `at`, `list`, `confirm` and
+/// `input`: two widgets could exist at once, and either could belong to a
+/// different question than `at` named. A picker now holds one variant, so
+/// "which question" and "what answers it" cannot disagree.
+enum Current {
+    Choose {
+        at: usize,
+        list: ListState,
+    },
+    Rows {
+        at: usize,
+        list: ListState,
+    },
+    Ask {
+        at: usize,
+        confirm: Confirm,
+    },
+    Input {
+        at: usize,
+        input: Input,
+    },
+    /// No question is loaded: an empty picker, or the last answer was given.
+    Empty,
+}
+
+impl Current {
+    fn at(&self) -> Option<usize> {
+        match self {
+            Self::Choose { at, .. }
+            | Self::Rows { at, .. }
+            | Self::Ask { at, .. }
+            | Self::Input { at, .. } => Some(*at),
+            Self::Empty => None,
+        }
+    }
+}
+
 /// A queue of questions in one window. The window ends with
 /// [`Outcome::Done(0)`](Outcome) and [`Picker::answers`] when every question
 /// answered, or `Done(1)` and nothing when the person backed out of the first
@@ -172,10 +211,7 @@ impl Question {
 pub struct Picker {
     name: String,
     questions: Vec<Question>,
-    at: usize,
-    list: ListState,
-    confirm: Option<Confirm>,
-    input: Option<Input>,
+    current: Current,
     answers: Vec<String>,
     header: Header,
     /// The current question's title and note with the answers already given
@@ -194,10 +230,7 @@ impl Picker {
         let mut picker = Self {
             name: title.to_string(),
             questions,
-            at: 0,
-            list: ListState::new(),
-            confirm: None,
-            input: None,
+            current: Current::Empty,
             answers: Vec::new(),
             header: Header::new(title.to_string()),
             subtitle: String::new(),
@@ -205,7 +238,7 @@ impl Picker {
             keybar: Vec::new(),
             rows_height: Cell::new(20),
         };
-        picker.load();
+        picker.load(0);
         picker
     }
 
@@ -221,81 +254,87 @@ impl Picker {
         self.answers = answers;
     }
 
-    fn load(&mut self) {
-        self.list = ListState::new();
-        self.confirm = None;
-        self.input = None;
+    fn load(&mut self, at: usize) {
         let answers = self.answers.clone();
-        let (subtitle, status, keys): (String, String, Vec<(&str, &str)>) =
-            match self.questions.get(self.at) {
-                Some(Question::Choose { title, rows, .. }) => {
-                    self.list.set_rows(rows.clone());
-                    // The list itself is the safety, so the status says so
-                    // once instead of repeating the keybar's two words: after
-                    // this row the picker asks again, and only the last
-                    // question writes anything.
-                    let status = if matches!(
-                        self.questions.last(),
-                        Some(Question::Ask { .. }) | Some(Question::Rows { .. })
-                    ) {
-                        "nothing is written until the last question".to_string()
-                    } else {
-                        "Enter picks · Escape goes back".to_string()
-                    };
-                    (
-                        fill(title, &answers),
-                        status,
-                        vec![("Enter", "pick"), ("Esc", "back")],
-                    )
-                }
-                Some(Question::Rows { title, build, .. }) => {
-                    let (rows, _keys) = build(&answers);
-                    self.list.set_rows(rows);
-                    let status = if matches!(self.questions.last(), Some(Question::Ask { .. })) {
-                        "nothing is written until the last question".to_string()
-                    } else {
-                        "Enter picks · Escape goes back".to_string()
-                    };
-                    (
-                        fill(title, &answers),
-                        status,
-                        vec![("Enter", "pick"), ("Esc", "back")],
-                    )
-                }
-                Some(Question::Ask {
-                    title,
-                    message,
-                    verb,
-                    ..
-                }) => {
-                    self.confirm = Some(
-                        Confirm::new(fill(title, &answers), fill(message, &answers))
-                            .with_options(&["Cancel", fill(verb, &answers).as_str()]),
-                    );
-                    (
-                        fill(title, &answers),
-                        "Cancel is selected".to_string(),
-                        vec![
-                            ("\u{2190}\u{2192}", "choose"),
-                            ("Enter", "answer"),
-                            ("Esc", "cancel"),
-                        ],
-                    )
-                }
-                Some(Question::Input { title, masked, .. }) => {
-                    self.input = Some(Input::new().with_masked(*masked));
-                    (
-                        fill(title, &answers),
-                        "Type and press Enter · Escape goes back".to_string(),
-                        vec![("Enter", "confirm"), ("Esc", "back")],
-                    )
-                }
-                None => ("".to_string(), String::new(), Vec::new()),
-            };
+        let (current, subtitle, status, keys): (
+            Current,
+            String,
+            String,
+            Vec<(&'static str, &'static str)>,
+        ) = match self.questions.get(at) {
+            Some(Question::Choose { title, rows, .. }) => {
+                let mut list = ListState::new();
+                list.set_rows(rows.clone());
+                // The list itself is the safety, so the status says so
+                // once instead of repeating the keybar's two words: after
+                // this row the picker asks again, and only the last
+                // question writes anything.
+                let status = if matches!(
+                    self.questions.last(),
+                    Some(Question::Ask { .. }) | Some(Question::Rows { .. })
+                ) {
+                    "nothing is written until the last question".to_string()
+                } else {
+                    "Enter picks · Escape goes back".to_string()
+                };
+                (
+                    Current::Choose { at, list },
+                    fill(title, &answers),
+                    status,
+                    vec![("Enter", "pick"), ("Esc", "back")],
+                )
+            }
+            Some(Question::Rows { title, build, .. }) => {
+                let (rows, _keys) = build(&answers);
+                let mut list = ListState::new();
+                list.set_rows(rows);
+                let status = if matches!(self.questions.last(), Some(Question::Ask { .. })) {
+                    "nothing is written until the last question".to_string()
+                } else {
+                    "Enter picks · Escape goes back".to_string()
+                };
+                (
+                    Current::Rows { at, list },
+                    fill(title, &answers),
+                    status,
+                    vec![("Enter", "pick"), ("Esc", "back")],
+                )
+            }
+            Some(Question::Ask {
+                title,
+                message,
+                verb,
+                ..
+            }) => {
+                let confirm = Confirm::new(fill(title, &answers), fill(message, &answers))
+                    .with_options(&["Cancel", fill(verb, &answers).as_str()]);
+                (
+                    Current::Ask { at, confirm },
+                    fill(title, &answers),
+                    "Cancel is selected".to_string(),
+                    vec![
+                        ("\u{2190}\u{2192}", "choose"),
+                        ("Enter", "answer"),
+                        ("Esc", "cancel"),
+                    ],
+                )
+            }
+            Some(Question::Input { title, masked, .. }) => {
+                let input = Input::new().with_masked(*masked);
+                (
+                    Current::Input { at, input },
+                    fill(title, &answers),
+                    "Type and press Enter · Escape goes back".to_string(),
+                    vec![("Enter", "confirm"), ("Esc", "back")],
+                )
+            }
+            None => (Current::Empty, String::new(), String::new(), Vec::new()),
+        };
+        self.current = current;
         self.subtitle = subtitle;
         self.note = self
             .questions
-            .get(self.at)
+            .get(at)
             .map(|q| fill(q.note(), &answers))
             .unwrap_or_default();
         self.header = Header::new(self.name.clone())
@@ -309,38 +348,58 @@ impl Picker {
 
     /// Record the answer to the current question and move on, or finish.
     fn advance(&mut self, answer: String) -> Outcome {
-        self.answers.truncate(self.at);
+        let Some(at) = self.current.at() else {
+            return Outcome::Continue;
+        };
+        self.answers.truncate(at);
         self.answers.push(answer);
-        self.at += 1;
-        if self.at >= self.questions.len() {
+        let next = at + 1;
+        if next >= self.questions.len() {
+            self.current = Current::Empty;
             return Outcome::Done(0);
         }
-        self.load();
+        self.load(next);
         Outcome::Consumed
     }
 
     /// One question back; at the first one it is the end, with nothing done.
     fn back(&mut self) -> Outcome {
-        if self.at == 0 {
+        let Some(at) = self.current.at() else {
+            return Outcome::Done(1);
+        };
+        if at == 0 {
             return Outcome::Done(1);
         }
-        self.at -= 1;
-        self.answers.truncate(self.at);
-        self.load();
+        self.answers.truncate(at - 1);
+        self.load(at - 1);
         Outcome::Consumed
+    }
+
+    fn list(&self) -> Option<&ListState> {
+        match &self.current {
+            Current::Choose { list, .. } | Current::Rows { list, .. } => Some(list),
+            _ => None,
+        }
+    }
+
+    fn list_mut(&mut self) -> Option<&mut ListState> {
+        match &mut self.current {
+            Current::Choose { list, .. } | Current::Rows { list, .. } => Some(list),
+            _ => None,
+        }
     }
 }
 
 impl Screen for Picker {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        let Some(question) = self.questions.get(self.at) else {
+        if matches!(self.current, Current::Empty) {
             return;
-        };
+        }
         draw_card(ctx.buf, ctx.area, ctx.design, Some(&self.name), true);
         let (filter, rows) = list_layout(ctx.area);
-        match question {
-            Question::Choose { .. } | Question::Rows { .. } => {
-                if self.list.filter().is_empty() {
+        match &mut self.current {
+            Current::Choose { list, .. } | Current::Rows { list, .. } => {
+                if list.filter().is_empty() {
                     put_trunc(
                         ctx.buf,
                         filter.x,
@@ -354,16 +413,16 @@ impl Screen for Picker {
                         ctx.buf,
                         filter,
                         ctx.design,
-                        self.list.filter(),
+                        list.filter(),
                         &self.note,
-                        self.list.visible_len(),
-                        self.list.len(),
+                        list.visible_len(),
+                        list.len(),
                     );
                 }
                 self.rows_height.set(rows.height);
-                self.list.render(rows, ctx.buf, ctx.design, true);
+                list.render(rows, ctx.buf, ctx.design, true);
             }
-            Question::Ask { .. } => {
+            Current::Ask { confirm, .. } => {
                 put_trunc(
                     ctx.buf,
                     filter.x,
@@ -372,11 +431,9 @@ impl Screen for Picker {
                     filter.width,
                     ctx.design.style(TextStyle::Dim),
                 );
-                if let Some(confirm) = &self.confirm {
-                    confirm.render(ctx.area, ctx.buf, ctx.design);
-                }
+                confirm.render(ctx.area, ctx.buf, ctx.design);
             }
-            Question::Input { placeholder, .. } => {
+            Current::Input { at, input } => {
                 put_trunc(
                     ctx.buf,
                     filter.x,
@@ -385,16 +442,19 @@ impl Screen for Picker {
                     filter.width,
                     ctx.design.style(TextStyle::Dim),
                 );
-                if let Some(input) = &self.input {
-                    let input_rect = Rect {
-                        x: filter.x,
-                        y: filter.y + 2,
-                        width: filter.width,
-                        height: 1,
-                    };
-                    input.render(input_rect, ctx.buf, ctx.design, placeholder);
-                }
+                let placeholder = match self.questions.get(*at) {
+                    Some(Question::Input { placeholder, .. }) => placeholder.as_str(),
+                    _ => "",
+                };
+                let input_rect = Rect {
+                    x: filter.x,
+                    y: filter.y + 2,
+                    width: filter.width,
+                    height: 1,
+                };
+                input.render(input_rect, ctx.buf, ctx.design, placeholder);
             }
+            Current::Empty => {}
         }
     }
 
@@ -402,52 +462,62 @@ impl Screen for Picker {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
         }
-        let Some(question) = self.questions.get(self.at) else {
+        if matches!(self.current, Current::Empty) {
             return Outcome::Done(1);
-        };
-        match question {
-            Question::Choose { .. } | Question::Rows { .. } => match key.code {
-                KeyCode::Esc => {
-                    if !self.list.filter().is_empty() {
-                        self.list.set_filter("");
-                        return Outcome::Consumed;
+        }
+
+        if matches!(self.current, Current::Choose { .. } | Current::Rows { .. }) {
+            if key.code == KeyCode::Esc {
+                let filtered = self.list().is_some_and(|list| !list.filter().is_empty());
+                if filtered {
+                    if let Some(list) = self.list_mut() {
+                        list.set_filter("");
                     }
-                    self.back()
+                    return Outcome::Consumed;
                 }
-                _ => {
-                    let typed = matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-                        && !key
-                            .modifiers
-                            .contains(ratatui::crossterm::event::KeyModifiers::CONTROL);
-                    if typed {
-                        self.list.type_filter(key);
-                        return Outcome::Continue;
-                    }
-                    match self.list.handle(key, self.rows_height.get(), design) {
-                        ListAction::Activated(index) => match self.answers_for(index) {
-                            Some(answer) => self.advance(answer),
-                            None => Outcome::Continue,
-                        },
-                        _ => Outcome::Continue,
-                    }
+                return self.back();
+            }
+            let typed = matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
+                && !key
+                    .modifiers
+                    .contains(ratatui::crossterm::event::KeyModifiers::CONTROL);
+            if typed {
+                if let Some(list) = self.list_mut() {
+                    list.type_filter(key);
                 }
-            },
-            Question::Ask { answer, .. } => {
-                let answer = answer.clone();
-                let Some(confirm) = self.confirm.as_mut() else {
-                    return Outcome::Continue;
+                return Outcome::Continue;
+            }
+            let rows_height = self.rows_height.get();
+            let activated =
+                self.list_mut()
+                    .and_then(|list| match list.handle(key, rows_height, design) {
+                        ListAction::Activated(index) => Some(index),
+                        _ => None,
+                    });
+            if let Some(index) = activated
+                && let Some(answer) = self.answers_for(index)
+            {
+                return self.advance(answer);
+            }
+            return Outcome::Continue;
+        }
+
+        match &mut self.current {
+            Current::Ask { at, confirm } => {
+                let answer = match self.questions.get(*at) {
+                    Some(Question::Ask { answer, .. }) => answer.clone(),
+                    _ => return Outcome::Continue,
                 };
-                match confirm.handle(key) {
+                let action = confirm.handle(key);
+                match action {
                     ConfirmAction::Chosen(1) => self.advance(answer),
                     ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => self.back(),
                     ConfirmAction::None => Outcome::Continue,
                 }
             }
-            Question::Input { .. } => {
-                let Some(input) = self.input.as_mut() else {
-                    return Outcome::Continue;
-                };
-                match input.handle(key) {
+            Current::Input { input, .. } => {
+                let action = input.handle(key);
+                match action {
                     InputAction::Submitted => {
                         let text = input.text().to_string();
                         self.advance(text)
@@ -456,6 +526,7 @@ impl Screen for Picker {
                     _ => Outcome::Continue,
                 }
             }
+            _ => Outcome::Continue,
         }
     }
 
@@ -463,22 +534,23 @@ impl Screen for Picker {
         let Some(row) = row else {
             return Outcome::Continue;
         };
-        self.list.set_cursor(row);
-        match self
-            .list
-            .selected_index()
-            .and_then(|index| self.answers_for(index))
-        {
+        let Some(list) = self.list_mut() else {
+            return Outcome::Continue;
+        };
+        list.set_cursor(row);
+        let index = list.selected_index();
+        match index.and_then(|index| self.answers_for(index)) {
             Some(answer) => self.advance(answer),
             None => Outcome::Continue,
         }
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        if !matches!(self.questions.get(self.at), Some(Question::Choose { .. })) {
+        if !matches!(self.current, Current::Choose { .. }) {
             return None;
         }
-        self.list.hit_row(list_layout(area).1, x, y, design)
+        self.list()
+            .and_then(|list| list.hit_row(list_layout(area).1, x, y, design))
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {
@@ -494,7 +566,8 @@ impl Picker {
     /// The answer the row at `index` (an index into the unfiltered rows, which
     /// is what [`ListAction::Activated`] carries) gives.
     fn answers_for(&self, index: usize) -> Option<String> {
-        let Question::Choose { keys, .. } = self.questions.get(self.at)? else {
+        let at = self.current.at()?;
+        let Question::Choose { keys, .. } = self.questions.get(at)? else {
             return None;
         };
         keys.get(index).cloned()
@@ -651,6 +724,14 @@ mod tests {
             Outcome::Done(1)
         );
         assert!(picker.answers().is_empty());
+    }
+
+    #[test]
+    fn the_picker_holds_one_widget_for_the_current_question() {
+        let mut picker = two();
+        assert!(matches!(picker.current, Current::Choose { at: 0, .. }));
+        let _ = drive(&mut picker, &[press(KeyCode::Enter)]);
+        assert!(matches!(picker.current, Current::Ask { at: 1, .. }));
     }
 
     #[test]

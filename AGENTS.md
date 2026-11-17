@@ -62,6 +62,13 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    screen first clears the card area. At 80×24 a 56-wide card cuts list rows in half
    (`Hiber╭`, `Log o│t`); `tests/menu.rs` asserts the Power confirm contains no list text and
    the snapshots are regenerated at 80×24 and 152×45.
+12. **One phase enum per surface**: a screen whose parts are mutually exclusive keeps one enum
+   (`Mode` / `Stage` / `Phase`) that owns the data for that state. Do not encode "which mode" as a
+   bool, a sentinel index, or a status string, and do not keep an `Option` beside a flag that says
+   whether it is `Some`. Derived questions are methods (`is_recording`, `can_cancel`), transitions
+   go through one `load` / `set_phase`, and IO stays at the edge. Current examples:
+   `system/pick.rs` (`Current`), `menu/screen.rs` (`AnswerBody`), `system/pkg.rs`
+   (`PkgStage::Installing(TaskView)`), and `lazyos-ui/src/recording.rs` (`Recorder`).
 
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single
