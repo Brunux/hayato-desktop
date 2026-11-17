@@ -33,3 +33,5 @@ jobs:
           for f in scripts/*.sh; do
             bash -n "$f"
           done
+      - name: Wallpaper generator tests
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v

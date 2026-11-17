@@ -219,3 +219,30 @@ pub fn spawn_runner(id: &str, exe: &str, env: &[(&str, &str)]) -> io::Result<()>
     let _ = child.try_wait();
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::valid_id;
+
+    #[test]
+    fn a_task_id_is_one_plain_path_component() {
+        for id in ["abc", "task-1", "a_b.c", "0", "A9", "a1-b2_c3.d4"] {
+            assert!(valid_id(id), "{id:?} should be a valid task id");
+        }
+    }
+
+    #[test]
+    fn a_task_id_never_escapes_its_directory() {
+        for id in [
+            "", "..", ".", ".hidden", "-flag", "a/b", "../x", "a b", "a\tb", "a\nb", "é",
+        ] {
+            assert!(!valid_id(id), "{id:?} must not be a valid task id");
+        }
+    }
+
+    #[test]
+    fn a_task_id_is_bounded() {
+        assert!(valid_id(&"a".repeat(96)));
+        assert!(!valid_id(&"a".repeat(97)));
+    }
+}

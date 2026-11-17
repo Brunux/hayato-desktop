@@ -976,3 +976,38 @@ pub fn menu(
     app.run(terminal)
         .map_err(|e| Failure::new("theme picker encountered an error", e.to_string()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::interpolate_rgb;
+    use lazyos_theme::Rgb;
+
+    const BLACK: Rgb = Rgb::new(0, 0, 0);
+    const MID: Rgb = Rgb::new(100, 100, 100);
+    const WHITE: Rgb = Rgb::new(200, 200, 200);
+
+    #[test]
+    fn interpolation_hits_each_stop() {
+        assert_eq!(interpolate_rgb(BLACK, MID, WHITE, 0.0), BLACK);
+        assert_eq!(interpolate_rgb(BLACK, MID, WHITE, 0.5), MID);
+        assert_eq!(interpolate_rgb(BLACK, MID, WHITE, 1.0), WHITE);
+    }
+
+    #[test]
+    fn interpolation_blends_each_half_linearly() {
+        assert_eq!(
+            interpolate_rgb(BLACK, MID, WHITE, 0.25),
+            Rgb::new(50, 50, 50)
+        );
+        assert_eq!(
+            interpolate_rgb(BLACK, MID, WHITE, 0.75),
+            Rgb::new(150, 150, 150)
+        );
+    }
+
+    #[test]
+    fn interpolation_is_clamped_outside_the_unit_range() {
+        assert_eq!(interpolate_rgb(BLACK, MID, WHITE, -1.0), BLACK);
+        assert_eq!(interpolate_rgb(BLACK, MID, WHITE, 2.0), WHITE);
+    }
+}
