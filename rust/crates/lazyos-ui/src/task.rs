@@ -336,6 +336,42 @@ impl Spinner {
 // Task
 // ---------------------------------------------------------------------------
 
+/// The stop contract's sub-state, separate from the task's public state.
+///
+/// `requested_stop` used to be a bool beside `stop_sent` and `term_sent`, so
+/// "stopping" could exist with no SIGINT timestamp and "Stopped" could exist
+/// with no stop request at all. The variants say which is true, and the loaded
+/// case is named so a viewer does not pretend it owns a child.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StopPhase {
+    None,
+    /// This process owns the child: SIGINT went out at `int_sent`, SIGTERM at
+    /// `term_sent` if the child is still alive.
+    Requested {
+        int_sent: Instant,
+        term_sent: Option<Instant>,
+    },
+    /// A viewer loaded a record that was already `Stopped`: output is dropped
+    /// and the result is `Stopped`, but there is no child to signal.
+    Stopped,
+}
+
+impl StopPhase {
+    fn is_stopping(self) -> bool {
+        !matches!(self, Self::None)
+    }
+
+    fn active(self) -> Option<(Instant, Option<Instant>)> {
+        match self {
+            Self::Requested {
+                int_sent,
+                term_sent,
+            } => Some((int_sent, term_sent)),
+            Self::None | Self::Stopped => None,
+        }
+    }
+}
+
 /// The model and controller for one long-running action.
 pub struct Task {
     pub id: String,
@@ -363,9 +399,7 @@ pub struct Task {
     step_queue: std::collections::VecDeque<Vec<String>>,
     current_step_idx: usize,
     total_queued_steps: usize,
-    requested_stop: bool,
-    stop_sent: Option<Instant>,
-    term_sent: Option<Instant>,
+    stop: StopPhase,
     last_state_write: Option<Instant>,
     state_dirty: bool,
     spinner: Spinner,
@@ -402,9 +436,7 @@ impl Task {
             step_queue: std::collections::VecDeque::new(),
             current_step_idx: 0,
             total_queued_steps: 0,
-            requested_stop: false,
-            stop_sent: None,
-            term_sent: None,
+            stop: StopPhase::None,
             last_state_write: None,
             state_dirty: true,
             spinner: Spinner::default(),
@@ -580,13 +612,15 @@ impl Task {
         if self.state != TaskState::Running {
             return;
         }
-        self.requested_stop = true;
+        self.stop = StopPhase::Requested {
+            int_sent: Instant::now(),
+            term_sent: None,
+        };
         self.state = TaskState::Stopped;
         self.result = Some("Stopped".to_string());
         if let Some(child) = &self.child {
             send_signal(child.pid, libc::SIGINT);
         }
-        self.stop_sent = Some(Instant::now());
         self.state_dirty = true;
         let _ = self.write_state();
     }
@@ -623,7 +657,7 @@ impl Task {
                 self.finalize(status)?;
             }
         }
-        if self.requested_stop {
+        if self.stop.active().is_some() {
             self.enforce_stop_timeout();
         }
         self.spinner.advance();
@@ -635,7 +669,7 @@ impl Task {
     fn push_line(&mut self, line: &str) {
         // Output that arrives after the person asked to stop is dropped: the
         // result is the interruption, not a half line from a dying child.
-        if self.requested_stop {
+        if self.stop.is_stopping() {
             return;
         }
         self.log.push(line.to_string());
@@ -647,7 +681,7 @@ impl Task {
     fn finalize(&mut self, status: io::Result<std::process::ExitStatus>) -> io::Result<()> {
         self.child = None;
 
-        if self.requested_stop {
+        if self.stop.is_stopping() {
             self.step_queue.clear();
             self.finished_at = Some(SystemTime::now());
             self.clear_busy();
@@ -735,15 +769,27 @@ impl Task {
     }
 
     fn enforce_stop_timeout(&mut self) {
-        if let Some(sent) = self.stop_sent
-            && self.term_sent.is_none()
-            && sent.elapsed() >= Duration::from_secs(2)
+        let StopPhase::Requested {
+            int_sent,
+            term_sent,
+        } = self.stop
+        else {
+            return;
+        };
+        if term_sent.is_none()
+            && int_sent.elapsed() >= Duration::from_secs(2)
             && let Some(child) = &self.child
         {
             send_signal(child.pid, libc::SIGTERM);
-            self.term_sent = Some(Instant::now());
+            self.stop = StopPhase::Requested {
+                int_sent,
+                term_sent: Some(Instant::now()),
+            };
         }
-        if let Some(sent) = self.term_sent
+        if let StopPhase::Requested {
+            term_sent: Some(sent),
+            ..
+        } = self.stop
             && sent.elapsed() >= Duration::from_secs(2)
             && let Some(child) = &self.child
         {
@@ -848,9 +894,11 @@ impl Task {
             step_queue: std::collections::VecDeque::new(),
             current_step_idx: 0,
             total_queued_steps: 0,
-            requested_stop: state == TaskState::Stopped,
-            stop_sent: None,
-            term_sent: None,
+            stop: if state == TaskState::Stopped {
+                StopPhase::Stopped
+            } else {
+                StopPhase::None
+            },
             last_state_write: None,
             state_dirty: false,
             spinner: Spinner::default(),
@@ -1380,6 +1428,22 @@ mod tests {
         std::fs::create_dir_all(&state).unwrap();
         std::fs::create_dir_all(&runtime).unwrap();
         (state, runtime)
+    }
+
+    #[test]
+    fn stop_phase_separates_a_loaded_stop_from_an_active_request() {
+        assert!(!StopPhase::None.is_stopping());
+        assert_eq!(StopPhase::None.active(), None);
+
+        assert!(StopPhase::Stopped.is_stopping());
+        assert_eq!(StopPhase::Stopped.active(), None);
+
+        let requested = StopPhase::Requested {
+            int_sent: Instant::now(),
+            term_sent: None,
+        };
+        assert!(requested.is_stopping());
+        assert!(requested.active().is_some());
     }
 
     fn wait_for<F>(timeout: Duration, mut predicate: F) -> bool
