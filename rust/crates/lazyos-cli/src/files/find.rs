@@ -112,11 +112,22 @@ impl Drop for Walk {
     }
 }
 
+/// Whether the walk is still feeding the list.
+///
+/// The walk used to be `Option<Walk>`, so "no walk" was also the answer for
+/// "fd is missing", "fd did not start" and "the walk finished". One enum says
+/// which of those the screen is in, and `Walking` owns the child that must be
+/// reaped.
+enum Stage {
+    Walking(Walk),
+    Done,
+}
+
 pub struct FindScreen {
     root: PathBuf,
     paths: Vec<PathBuf>,
     list: ListState,
-    walk: Option<Walk>,
+    stage: Stage,
     previewer: Option<Previewer>,
     header: Header,
     keybar: Vec<KeyHint>,
@@ -137,20 +148,20 @@ impl FindScreen {
         previewer: Option<Previewer>,
     ) -> Self {
         let mut list = ListState::new().with_empty("nothing matches yet").ranked();
-        let (walk, status) = match fd {
+        let (stage, status) = match fd {
             None => {
                 list = ListState::new()
                     .with_empty("fd is missing (package fd-find): there is nothing to walk with")
                     .ranked();
-                (None, "fd is missing".to_string())
+                (Stage::Done, "fd is missing".to_string())
             }
             Some(fd) => match Walk::start(fd, &root) {
-                Ok(walk) => (Some(walk), "walking…".to_string()),
+                Ok(walk) => (Stage::Walking(walk), "walking…".to_string()),
                 Err(error) => {
                     list = ListState::new()
                         .with_empty(format!("fd did not start: {error}"))
                         .ranked();
-                    (None, "fd did not start".to_string())
+                    (Stage::Done, "fd did not start".to_string())
                 }
             },
         };
@@ -161,7 +172,7 @@ impl FindScreen {
             root,
             paths: Vec::new(),
             list,
-            walk,
+            stage,
             previewer,
             header,
             keybar: vec![
@@ -177,7 +188,7 @@ impl FindScreen {
     }
 
     pub fn walking(&self) -> bool {
-        self.walk.is_some()
+        matches!(self.stage, Stage::Walking(_))
     }
 
     pub fn found(&self) -> usize {
@@ -186,25 +197,28 @@ impl FindScreen {
 
     /// Take what the walk has sent since the last tick.
     pub fn drain(&mut self) -> bool {
-        let Some(walk) = self.walk.as_ref() else {
-            return false;
-        };
-        let mut ended = None;
-        let mut batch = Vec::new();
-        while batch.len() < PER_TICK {
-            match walk.rx.try_recv() {
-                Ok(Walked::Path(path)) => batch.push(path),
-                Ok(Walked::Done(error)) => {
-                    ended = Some(error);
-                    break;
-                }
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    ended = Some(None);
-                    break;
+        let (ended, batch) = {
+            let Stage::Walking(walk) = &self.stage else {
+                return false;
+            };
+            let mut ended = None;
+            let mut batch = Vec::new();
+            while batch.len() < PER_TICK {
+                match walk.rx.try_recv() {
+                    Ok(Walked::Path(path)) => batch.push(path),
+                    Ok(Walked::Done(error)) => {
+                        ended = Some(error);
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        ended = Some(None);
+                        break;
+                    }
                 }
             }
-        }
+            (ended, batch)
+        };
         let mut changed = !batch.is_empty();
         if changed {
             let rows: Vec<Row> = batch.iter().map(|p| row(p)).collect();
@@ -221,7 +235,7 @@ impl FindScreen {
             Some(Some(error)) => format!("{count} files - fd: {error}"),
         };
         if ended.is_some() {
-            self.walk = None;
+            self.stage = Stage::Done;
             if count == 0 {
                 self.list = ListState::new().with_empty("no files here").ranked();
             }
@@ -320,7 +334,7 @@ impl Screen for FindScreen {
     }
 
     fn needs_tick(&self) -> Option<Duration> {
-        let walk = self.walk.is_some().then_some(Duration::from_millis(30));
+        let walk = self.walking().then_some(Duration::from_millis(30));
         let preview = self.previewer.as_ref().and_then(Previewer::needs_tick);
         match (walk, preview) {
             (Some(a), Some(b)) => Some(a.min(b)),
