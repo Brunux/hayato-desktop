@@ -356,6 +356,13 @@ fn query(resolved: &Resolved) -> Option<i32> {
             }
             Some(EXIT_OK)
         }
+        ("menu settings", ["--sections"]) => {
+            let mut out = io::stdout();
+            for (key, label, detail) in system::settings::sections() {
+                let _ = writeln!(out, "{key}\t{label}\t{detail}");
+            }
+            Some(EXIT_OK)
+        }
         ("menu settings", ["--status"] | ["status"]) => {
             println!("{}", system::settings::status());
             Some(EXIT_OK)

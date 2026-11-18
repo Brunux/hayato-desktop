@@ -466,7 +466,18 @@ list below says why.
 
 ## Quick settings
 
-The **Settings** menu (Alt+Ctrl+O, and the root menu) is the radio switches for the session: Wi-Fi radio, Bluetooth radio, DNS, Night light, Do not disturb, Touchpad, Tablet mode (with Calibrate rotation when on), Display arrangement, Auto-mount USB drives, System updates, Free space, Keyboard layout, Translate, Audio output, Volume per application (pavucontrol), Media, and Battery/Power. It also carries **Date & time** (time zone and network time) and **Remote login (SSH)**. Each row shows the real state from the same probe as today and delegates to the existing pickers/panels (bar-net, bar-bt, bar-audio, bar-power, lazyos-display, lazyos-vnc, lazyos-dns, lazyos-ssh, lazyos-tz, lazyos-pkg, lazyos-clean) instead of duplicating them.
+The **Settings** menu (Alt+Ctrl+O, and the root menu) is grouped into six sections:
+
+- **Network** - Wi-Fi radio and networks, Bluetooth radio and devices, DNS, Remote login (SSH), Share this screen.
+- **Display & Sound** - Night light, Appearance & Themes, Display arrangement, Rotation, Audio output, Volume per application (pavucontrol), Media.
+- **Input** - Touchpad, Keyboard layout, Tablet mode (with Calibrate rotation when on).
+- **Power & Idle** - Battery, the power menu, and **Idle & lock** (screen-off, lock and panel-off timeouts, with a "Never" choice).
+- **System** - Date & time (time zone and network time), Notifications, Do not disturb, System updates, Free space, Auto-mount USB drives, Login screen (Greeter), Translate.
+- **Accessibility** - Reduced motion, saved to `~/.config/lazyos/reduced-motion` and honored by new windows (the same file the design reads alongside `LAZYOS_REDUCED_MOTION=1`).
+
+Each row shows the real state from the same probe as today and delegates to the existing pickers/panels (bar-net, bar-bt, bar-audio, bar-power, lazyos-display, lazyos-vnc, lazyos-dns, lazyos-ssh, lazyos-tz, lazyos-pkg, lazyos-clean) instead of duplicating them. Escape inside a section returns to the section list; Escape there closes Settings.
+
+**Input → Touchpad** writes `~/.config/sway/config.d/36-touchpad.conf` and applies the same values with `swaymsg input type:touchpad` immediately. It covers tap-to-click, natural scrolling, disable-while-typing and pointer speed; the file is the user override read after `/etc/sway/config`, so it wins over the system tap/natural-scroll defaults at the next login.
 
 The VNC row shows the current sharing state. The display row shows the arrangement from `lazyos-display --status`. The tablet mode row adds a "Calibrate rotation" sub-row when the mode is on.
 
@@ -571,14 +582,14 @@ asks for after a fresh card.
 
 ## The night light
 
-The session starts `wlsunset` at login: from sunset it warms the screen to
-4000 K, and by day it leaves it alone. **Settings → Night light** (`Alt+Ctrl+O`)
-turns it off and on by hand; turning it on forces the warm end immediately
-instead of waiting for sunset, because a switch that does nothing at 17:00 reads
-as a broken switch. The command line and the remembered mode live in
-`~/.config/bin/night-light` (`login`, `start`, `stop`, `resume`, `status`), and
-the mode is one line in `$XDG_RUNTIME_DIR/lazyos-night-light`, so it dies with
-the session.
+The session starts `wlsunset` at login: in **Sunset** mode it warms the screen
+after dark and leaves it alone by day. **Settings → Display & Sound → Night
+light** offers **Off**, **Sunset** and **Warm now**, plus 3500/4000/4500 K
+warmth. The choice is written to `~/.config/lazyos/night-light.conf`;
+`~/.config/bin/night-light` (`apply`, `login`, `start`, `stop`, `resume`,
+`status`, `config`) reads it, so the login line and the Settings row cannot
+disagree. The remembered mode is one line in
+`$XDG_RUNTIME_DIR/lazyos-night-light`, so it dies with the session.
 
 Suspend and resume are the part that used to lose it: the panel comes back with
 its own gamma table, so a running `wlsunset` no longer has any effect and the

@@ -89,6 +89,11 @@ left something on:
 | 5 minutes | the session locks (`sway-lock`, the same lock every other path uses) |
 | 6 minutes | the panel goes dark (`swaymsg "output * power off"`, i.e. DPMS) |
 
+Those are the defaults. **Settings → Power & Idle → Idle & lock** writes
+`~/.config/lazyos/idle.conf`; `~/.config/bin/lazyos-idle` reads it at login
+(`~/.config/sway/config.d/36-idle.conf`) and replaces the system chain with the
+same three steps at your times. `0` means never and omits that step.
+
 Any input ends the idle screen and brings the panel back: a key, a moving mouse
 or trackpad, a tap on the touchscreen. swayidle's `resume` command turns the
 panel on again, and `after-resume` does the same after a suspend, which is a

@@ -20,7 +20,7 @@ symlinks to `/usr/bin/lazyos`.
 | **Alt+Ctrl+D** | `lazyos menu dev` (`lazyos-dev`) | **developer**: export your profile (keys, configs, package list) into an encrypted archive on a disk, restore one, or save a diagnostics bundle |
 | **Download** (root menu, launcher) | `lazyos menu download` (`lazyos-download`) | a link - or the one in the clipboard - kept in `~/Downloads`, as a video or as audio |
 | **Alt+Ctrl+C** | `lazyos menu capture` (`lazyos-capture`) | **capture**: a screenshot (screen, area or window), annotate it, read the text or a QR code out of a region, and start or stop a recording |
-| **Alt+Ctrl+O** | `lazyos menu settings` (`lazyos-settings`) | **Settings**: the switches (Wi-Fi and Bluetooth radios, night light, do-not-disturb, touchpad, tablet mode, rotation, display arrangement, screen sharing, auto-mount of USB drives) and the panels (DNS, date & time, remote login, updates, free space), in one list |
+| **Alt+Ctrl+O** | `lazyos menu settings` (`lazyos-settings`) | **Settings**: six sections - Network, Display & Sound, Input, Power & Idle, System, Accessibility - each holding the switches and panels for that subject |
 | **Alt+Ctrl+P** or **Alt+Escape** | `lazyos menu power` (`lazyos-power`) | **power**: lock, suspend, hibernate, log out, reboot, shut down - the last three ask once more |
 | **Alt+Ctrl+N** | `lazyos menu notify` (`lazyos-notify-history`) | the notification history, with do-not-disturb and "copy this notification" |
 | **Alt+C** or **Alt+Ctrl+Q** | `lazyos menu calc` (`lazyos-calc`) | a calculator: type `(3*4)/2` or `2**8`, Enter copies the result |

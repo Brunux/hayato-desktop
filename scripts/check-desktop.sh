@@ -686,7 +686,7 @@ grep -qs '^exec .*/night-light login' /etc/sway/config ||
 	_night_light="$_night_light config(night-light-login)"
 grep -qs 'after-resume .*night-light resume' "$_nl_cfg" ||
 	_night_light="$_night_light config.d/23-lazyos-screensaver.conf(resume)"
-settings_runs 'night-light start' ||
+settings_runs 'night-light apply' ||
 	_night_light="$_night_light settings(start)"
 if [ -x "$HOME/.config/bin/night-light" ]; then
 	case $("$HOME/.config/bin/night-light" status 2>/dev/null || true) in
@@ -737,17 +737,66 @@ if [ -n "$_nl_tmp" ] && [ -x "$HOME/.config/bin/night-light" ]; then
 	fi
 	rm -rf "$_nl_tmp"
 fi
+# The mode/warmth file is what the Settings row writes and the login line
+# reads. `config` is the read-back, so a parser change cannot silently flip
+# sunset to warm or ignore the Kelvin value.
+_nl_conf_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-night-light-conf.XXXXXX" 2>/dev/null || true)
+if [ -n "$_nl_conf_tmp" ] && [ -x "$HOME/.config/bin/night-light" ]; then
+	mkdir -p "$_nl_conf_tmp/lazyos"
+	printf 'mode=warm\nwarmth=3500\n' >"$_nl_conf_tmp/lazyos/night-light.conf"
+	_nl_conf=$(XDG_CONFIG_HOME="$_nl_conf_tmp" "$HOME/.config/bin/night-light" config 2>/dev/null || true)
+	if [ "$_nl_conf" = 'mode=warm warmth=3500' ]; then
+		ok "night-light config reads the mode and warmth Settings writes"
+	else
+		fail "night-light config read '$_nl_conf', not 'mode=warm warmth=3500': the Settings row and the login line would disagree"
+	fi
+	rm -rf "$_nl_conf_tmp"
+fi
 
 # The Settings rows that open the existing system pickers. A lost row is a
 # feature nobody can find from the menu, even though the helper is installed.
 _settings_missing=""
-for _settings_row in lazyos-dns lazyos-ssh lazyos-tz lazyos-pkg lazyos-clean; do
+for _settings_row in lazyos-dns lazyos-ssh lazyos-tz lazyos-pkg lazyos-clean touchpad.conf reduced-motion.conf; do
 	settings_runs "$_settings_row" || _settings_missing="$_settings_missing $_settings_row"
 done
 if [ -z "$_settings_missing" ]; then
-	ok "Settings exposes DNS, SSH, date & time, updates and free space"
+	ok "Settings exposes DNS, SSH, date & time, updates, free space, touchpad and reduced motion"
 else
 	fail "Settings lost row(s):$_settings_missing (the helper is installed but the menu cannot reach it)"
+fi
+_settings_sections="$(lazyos menu settings --sections 2>/dev/null || true)"
+_settings_sections_missing=""
+for _settings_section in network display-sound input power-idle system accessibility; do
+	awk -F'\t' -v want="$_settings_section" '$1 == want { found = 1 } END { exit !found }' \
+		<<<"$_settings_sections" || _settings_sections_missing="$_settings_sections_missing $_settings_section"
+done
+if [ -z "$_settings_sections_missing" ]; then
+	ok "Settings has the six sections (network, display-sound, input, power-idle, system, accessibility)"
+else
+	fail "Settings lost section(s):$_settings_sections_missing (the menu is flat or a section vanished)"
+fi
+# The idle/lock setting is a user-level override of the system swayidle chain.
+# The helper must exist, the login drop-in must start it, and its config reader
+# must answer the defaults and a written file without starting swayidle.
+_idle_bin="$HOME/.config/bin/lazyos-idle"
+_idle_dropin="$HOME/.config/sway/config.d/36-idle.conf"
+if [ -x "$_idle_bin" ] && grep -qs 'lazyos-idle start' "$_idle_dropin"; then
+	_idle_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-idle-probe.XXXXXX" 2>/dev/null || true)
+	if [ -n "$_idle_tmp" ]; then
+		mkdir -p "$_idle_tmp/empty" "$_idle_tmp/custom/lazyos"
+		printf 'screen_off=60\nlock=120\ndpms=180\n' >"$_idle_tmp/custom/lazyos/idle.conf"
+		_idle_default=$(XDG_CONFIG_HOME="$_idle_tmp/empty" "$_idle_bin" status 2>/dev/null || true)
+		_idle_custom=$(XDG_CONFIG_HOME="$_idle_tmp/custom" "$_idle_bin" status 2>/dev/null || true)
+		if [ "$_idle_default" = 'screen_off=150 lock=300 dpms=360' ] &&
+			[ "$_idle_custom" = 'screen_off=60 lock=120 dpms=180' ]; then
+			ok "idle/lock reads its config and defaults to the system 150/300/360 s"
+		else
+			fail "idle/lock status is wrong (default='$_idle_default' custom='$_idle_custom'): the Settings row would show or apply the wrong timeouts"
+		fi
+		rm -rf "$_idle_tmp"
+	fi
+else
+	fail "idle/lock incomplete (bin/lazyos-idle or config.d/36-idle.conf): the Settings row cannot change the swayidle chain"
 fi
 
 # The bug the guard in lazyos-screensaver exists for: a saver left running under
@@ -2564,7 +2613,7 @@ if systemctl is-active --quiet polkit 2>/dev/null; then
 else
 	warn "polkitd is not running: a plugged stick will not mount (the rule is not read)"
 fi
-if settings_label 'Auto-mount USB drives'; then
+if grep -q $'\tAuto-mount USB drives\t' <<<"$SETTINGS_ROWS"; then
 	ok "Settings has the auto-mount switch"
 else
 	fail "Settings (lazyos menu settings) lost the 'Auto-mount USB drives' row: the switch is unreachable"
