@@ -38,13 +38,19 @@ fn open_in_files(path: &Path) {
     let Some(dir) = files_dir(path) else {
         return;
     };
-    let _ = Command::new("lazyos-files")
+    let opened = Command::new("lazyos-files")
         .arg(&dir)
         .env_remove("LAZYOS_UI")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn();
+    if let Err(error) = opened {
+        eprintln!(
+            "lazyos-notify: cannot open Files at {}: {error}",
+            dir.display()
+        );
+    }
 }
 
 pub struct WaylandState {
