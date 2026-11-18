@@ -8,16 +8,23 @@
 # while the Settings switch still says on - and why the session needs one owner
 # for the command line:
 #
+#   night-light apply    apply ~/.config/lazyos/night-light.conf
 #   night-light login    follow the sunset at the maintainer's coordinates
-#   night-light start    force the warm end (-T = -t), what the switch does
+#   night-light start    force the warm end (-T = -t)
 #   night-light stop     kill it and forget the mode
 #   night-light resume   restart the mode that login or start left running
 #   night-light status   "on schedule", "on warm", "off <mode>" or "off"
+#   night-light config   "mode=auto|warm|off warmth=<kelvin>"
 #
 # The mode is one line in $XDG_RUNTIME_DIR/lazyos-night-light, so a session that
 # dies takes it with it and the next login decides again.  Nothing here is
 # resident: wlsunset is the client the session already had, and this script
 # exits after it has started or stopped it.
+#
+# The user's choice lives in ~/.config/lazyos/night-light.conf: `mode` is
+# auto (sunset), warm (always) or off, and `warmth` is the Kelvin value passed
+# to wlsunset. Settings writes that file and calls `apply`; `login` calls
+# `apply` too, so the login line and the Settings row cannot disagree.
 #
 # The state is written after the client is started, so `status` can tell the
 # truth about both halves: the file says which mode was asked for, pgrep says
@@ -28,10 +35,32 @@
 set -eu
 
 state="${XDG_RUNTIME_DIR:-/tmp}/lazyos-night-light"
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/lazyos/night-light.conf"
+mode=auto
+warmth=4000
 
 die() {
 	printf 'night-light: %s\n' "$*" >&2
 	exit 1
+}
+
+read_config() {
+	[ -r "$conf" ] || return 0
+	while IFS='=' read -r _key _value; do
+		case $_key in
+		mode)
+			case $_value in
+			auto | warm | off) mode=$_value ;;
+			esac
+			;;
+		warmth)
+			case $_value in
+			'' | *[!0-9]*) ;;
+			*) [ "$_value" -ge 2000 ] && [ "$_value" -le 6500 ] && warmth=$_value ;;
+			esac
+			;;
+		esac
+	done <"$conf"
 }
 
 # wlsunset restores the previous gamma table when it exits, and a second client
@@ -47,10 +76,11 @@ stop_wlsunset() {
 	done
 }
 
-start_wlsunset() { # schedule|warm
+start_wlsunset() { # schedule|warm [warmth]
+	_warmth=${2:-$warmth}
 	case $1 in
-	schedule) _args='-l 20.67 -L -103.35 -t 4000' ;;
-	warm) _args='-T 4000 -t 4000' ;;
+	schedule) _args="-l 20.67 -L -103.35 -t $_warmth" ;;
+	warm) _args="-T $_warmth -t $_warmth" ;;
 	*) die "unknown mode '$1' (schedule or warm)" ;;
 	esac
 	# setsid detaches it from this script, so the menu or the login line can
@@ -61,14 +91,32 @@ start_wlsunset() { # schedule|warm
 	printf '%s\n' "$1" >"$state"
 }
 
+apply() {
+	read_config
+	case $mode in
+	off)
+		stop_wlsunset
+		rm -f "$state"
+		;;
+	auto)
+		stop_wlsunset
+		start_wlsunset schedule "$warmth"
+		;;
+	warm)
+		stop_wlsunset
+		start_wlsunset warm "$warmth"
+		;;
+	esac
+}
+
 login() {
-	stop_wlsunset
-	start_wlsunset schedule
+	apply
 }
 
 start() {
+	read_config
 	stop_wlsunset
-	start_wlsunset warm
+	start_wlsunset warm "$warmth"
 }
 
 stop() {
@@ -91,8 +139,9 @@ resume() {
 		return 0
 		;;
 	esac
+	read_config
 	stop_wlsunset
-	start_wlsunset "$_mode"
+	start_wlsunset "$_mode" "$warmth"
 }
 
 status() {
@@ -107,13 +156,18 @@ status() {
 }
 
 case ${1:-} in
+apply) apply ;;
 login) login ;;
 start) start ;;
 stop) stop ;;
 resume) resume ;;
 status) status ;;
+config)
+	read_config
+	printf 'mode=%s warmth=%s\n' "$mode" "$warmth"
+	;;
 *)
-	echo "usage: night-light login|start|stop|resume|status" >&2
+	echo "usage: night-light apply|login|start|stop|resume|status|config" >&2
 	exit 2
 	;;
 esac

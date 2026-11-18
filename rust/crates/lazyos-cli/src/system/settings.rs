@@ -34,22 +34,19 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("bt-radio", "Bluetooth radio", "bluetoothctl power"),
         ("bt", "Bluetooth devices", "bar-bt"),
         ("dns", "DNS", "lazyos-dns"),
-        ("night", "Night light", "night-light start"),
+        ("night", "Night light", "night-light apply"),
         ("notify", "Notifications", "lazyos-notify-history"),
         ("dnd", "Do not disturb", "makoctl mode -t do-not-disturb"),
         ("vnc", "Share this screen", "lazyos-vnc"),
         ("ssh", "Remote login (SSH)", "lazyos-ssh"),
         ("tz", "Date & time", "lazyos-tz"),
-        (
-            "touchpad",
-            "Touchpad",
-            "swaymsg input type:touchpad events toggle",
-        ),
+        ("touchpad", "Touchpad", "touchpad.conf"),
         ("rotation", "Rotation", "swaymsg output transform"),
         ("display", "Display arrangement", "lazyos-display"),
         ("theme", "Appearance & Themes", "lazyos-theme-picker"),
         ("greeter", "Login screen (Greeter)", "lazyos menu greeter"),
         ("automount", "Auto-mount USB drives", "automount.conf"),
+        ("idle", "Idle & lock", "lazyos-idle"),
         ("updates", "System updates", "lazyos-pkg"),
         ("clean", "Free space", "lazyos-clean"),
         ("tablet", "Tablet mode", "tablet-mode toggle"),
@@ -59,12 +56,22 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
             "tablet-mode calibrate",
         ),
         ("layout", "Keyboard layout", "lazyos-layout"),
+        ("reduced-motion", "Reduced motion", "reduced-motion.conf"),
         ("translate", "Translate", "translate config"),
         ("audio", "Audio output", "bar-audio"),
         ("mixer", "Volume per application", "pavucontrol"),
         ("media", "Media", "lazyos-media"),
         ("power", "Battery", "bar-power"),
     ]
+}
+
+/// The top-level sections, for `lazyos menu settings --sections` and for an
+/// agent that needs to know where a setting lives.
+pub fn sections() -> Vec<(&'static str, &'static str, &'static str)> {
+    Section::ALL
+        .iter()
+        .map(|section| (section.key(), section.label(), section.detail()))
+        .collect()
 }
 
 /// The `--status` output (not used as a separate subcommand, but the Settings
@@ -256,6 +263,32 @@ fn automount_on() -> bool {
         .unwrap_or(true)
 }
 
+fn reduced_motion_path() -> std::path::PathBuf {
+    std::env::var("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::var("HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| std::path::PathBuf::from("/"))
+                .join(".config")
+        })
+        .join("lazyos/reduced-motion")
+}
+
+fn reduced_motion_on() -> bool {
+    std::fs::read_to_string(reduced_motion_path())
+        .map(|text| matches!(text.trim(), "1" | "yes" | "true"))
+        .unwrap_or(false)
+}
+
+fn set_reduced_motion(on: bool) -> std::io::Result<()> {
+    let path = reduced_motion_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, if on { "1\n" } else { "0\n" })
+}
+
 fn audio_detail() -> String {
     out(&["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"])
         .map(|v| {
@@ -293,199 +326,293 @@ fn battery_detail() -> String {
 }
 
 /// Build the rows for the settings menu.
-fn build_rows() -> (Vec<lazyos_ui::Row>, Vec<String>) {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Section {
+    Network,
+    DisplaySound,
+    Input,
+    PowerIdle,
+    System,
+    Accessibility,
+}
+
+impl Section {
+    const ALL: [Self; 6] = [
+        Self::Network,
+        Self::DisplaySound,
+        Self::Input,
+        Self::PowerIdle,
+        Self::System,
+        Self::Accessibility,
+    ];
+
+    fn key(self) -> &'static str {
+        match self {
+            Self::Network => "network",
+            Self::DisplaySound => "display-sound",
+            Self::Input => "input",
+            Self::PowerIdle => "power-idle",
+            Self::System => "system",
+            Self::Accessibility => "accessibility",
+        }
+    }
+
+    fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|section| section.key() == key)
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Network => "Network",
+            Self::DisplaySound => "Display & Sound",
+            Self::Input => "Input",
+            Self::PowerIdle => "Power & Idle",
+            Self::System => "System",
+            Self::Accessibility => "Accessibility",
+        }
+    }
+
+    fn detail(self) -> &'static str {
+        match self {
+            Self::Network => "Wi-Fi, Bluetooth, DNS, SSH, screen sharing",
+            Self::DisplaySound => "Night light, theme, display, rotation, audio, media",
+            Self::Input => "Touchpad, keyboard, tablet mode",
+            Self::PowerIdle => "Battery, idle & lock, power menu",
+            Self::System => "Date & time, updates, storage, notifications, login",
+            Self::Accessibility => "Reduced motion",
+        }
+    }
+
+    fn glyph(self) -> Glyph {
+        match self {
+            Self::Network => Glyph::Wifi,
+            Self::DisplaySound => Glyph::Display,
+            Self::Input => Glyph::Keyboard,
+            Self::PowerIdle => Glyph::Battery,
+            Self::System => Glyph::Gear,
+            Self::Accessibility => Glyph::Eye,
+        }
+    }
+}
+
+fn section_keys(section: Section) -> &'static [&'static str] {
+    match section {
+        Section::Network => &["wifi-radio", "wifi", "bt-radio", "bt", "dns", "vnc", "ssh"],
+        Section::DisplaySound => &[
+            "night", "rotation", "display", "theme", "audio", "mixer", "media",
+        ],
+        Section::Input => &["touchpad", "layout", "tablet", "tablet-calibrate"],
+        Section::PowerIdle => &["power", "idle"],
+        Section::System => &[
+            "tz",
+            "notify",
+            "dnd",
+            "updates",
+            "clean",
+            "automount",
+            "greeter",
+            "translate",
+        ],
+        Section::Accessibility => &["reduced-motion"],
+    }
+}
+
+fn section_rows() -> (Vec<lazyos_ui::Row>, Vec<String>) {
+    let mut rows = Vec::new();
+    let mut keys = Vec::new();
+    for section in Section::ALL {
+        rows.push(row(section.label(), section.detail(), section.glyph()));
+        keys.push(format!("section:{}", section.key()));
+    }
+    (rows, keys)
+}
+
+fn back_row(rows: &mut Vec<lazyos_ui::Row>, keys: &mut Vec<String>) {
+    rows.push(row("Back", "Settings sections", Glyph::ArrowLeft));
+    keys.push("back".to_string());
+}
+
+fn build_rows(section: Section) -> (Vec<lazyos_ui::Row>, Vec<String>) {
     let mut rows = Vec::new();
     let mut keys = Vec::new();
 
-    // Wi-Fi
-    if wifi_on() {
-        rows.push(row("Wi-Fi radio", "on", Glyph::Wifi));
-        rows.push(row("Wi-Fi networks", wifi_detail(), Glyph::Globe));
-        keys.push("wifi-radio".to_string());
-        keys.push("wifi".to_string());
-    } else {
-        rows.push(row("Wi-Fi radio", "off", Glyph::Wifi));
-        rows.push(row("Wi-Fi networks", wifi_detail(), Glyph::Globe));
-        keys.push("wifi-radio".to_string());
-        keys.push("wifi".to_string());
+    match section {
+        Section::Network => {
+            // Wi-Fi
+            rows.push(row(
+                "Wi-Fi radio",
+                if wifi_on() { "on" } else { "off" },
+                Glyph::Wifi,
+            ));
+            rows.push(row("Wi-Fi networks", wifi_detail(), Glyph::Globe));
+            keys.push("wifi-radio".to_string());
+            keys.push("wifi".to_string());
+
+            // Bluetooth
+            rows.push(row(
+                "Bluetooth radio",
+                if bt_on() { "on" } else { "off" },
+                Glyph::Bluetooth,
+            ));
+            rows.push(row("Bluetooth devices", bt_detail(), Glyph::Link));
+            keys.push("bt-radio".to_string());
+            keys.push("bt".to_string());
+
+            rows.push(row(
+                "DNS",
+                "the resolver this connection uses",
+                Glyph::Cloud,
+            ));
+            keys.push("dns".to_string());
+
+            rows.push(row("Share this screen", super::vnc::status(), Glyph::Eye));
+            keys.push("vnc".to_string());
+
+            rows.push(row(
+                "Remote login (SSH)",
+                "remote login status",
+                Glyph::Server,
+            ));
+            keys.push("ssh".to_string());
+        }
+        Section::DisplaySound => {
+            rows.push(row(
+                "Night light",
+                super::night_light::status(),
+                Glyph::Moon,
+            ));
+            keys.push("night".to_string());
+
+            rows.push(row("Rotation", rotation_name(), Glyph::Rotate));
+            keys.push("rotation".to_string());
+
+            rows.push(row(
+                "Display arrangement",
+                super::display::status(),
+                Glyph::Display,
+            ));
+            keys.push("display".to_string());
+
+            let p = crate::theme::paths();
+            let theme_current =
+                lazyos_theme::store::active(&p).unwrap_or_else(|| "solarized".to_string());
+            rows.push(row("Appearance & Themes", theme_current, Glyph::Palette));
+            keys.push("theme".to_string());
+
+            rows.push(row("Audio output", audio_detail(), Glyph::Volume));
+            keys.push("audio".to_string());
+
+            rows.push(row("Volume per application", "pavucontrol", Glyph::Volume));
+            keys.push("mixer".to_string());
+
+            rows.push(row("Media", media_detail(), Glyph::Music));
+            keys.push("media".to_string());
+        }
+        Section::Input => {
+            rows.push(row("Touchpad", super::touchpad::status(), Glyph::Mouse));
+            keys.push("touchpad".to_string());
+
+            let layout = out(&["swaymsg", "-t", "get_inputs", "-r"])
+                .and_then(|s| {
+                    let v: Result<Vec<serde_json::Value>, _> = serde_json::from_str(&s);
+                    v.ok().and_then(|inputs| {
+                        inputs
+                            .iter()
+                            .find(|i| i["type"].as_str() == Some("keyboard"))
+                            .and_then(|i| i["xkb_active_layout_name"].as_str())
+                            .map(|s| s.to_string())
+                    })
+                })
+                .unwrap_or_else(|| "unknown".to_string());
+            rows.push(row("Keyboard layout", layout, Glyph::Keyboard));
+            keys.push("layout".to_string());
+
+            let tm = tablet_mode_detail();
+            rows.push(row("Tablet mode", tm.clone(), Glyph::Keyboard));
+            keys.push("tablet".to_string());
+            if tm != "off" {
+                let calib = out(&[&bin_script("tablet-mode"), "calibration"])
+                    .unwrap_or_else(|| "unknown".to_string());
+                rows.push(row("Calibrate rotation", calib, Glyph::Rotate));
+                keys.push("tablet-calibrate".to_string());
+            }
+        }
+        Section::PowerIdle => {
+            rows.push(row("Battery", battery_detail(), Glyph::Battery));
+            keys.push("power".to_string());
+            rows.push(row("Idle & lock", super::idle::status(), Glyph::Clock));
+            keys.push("idle".to_string());
+        }
+        Section::System => {
+            rows.push(row("Date & time", super::tz::status(), Glyph::Clock));
+            keys.push("tz".to_string());
+
+            if dnd_on() {
+                rows.push(row("Notifications", "do not disturb", Glyph::BellOff));
+                rows.push(row("Do not disturb", "on", Glyph::BellOff));
+            } else {
+                rows.push(row("Notifications", "allowed", Glyph::Bell));
+                rows.push(row("Do not disturb", "off", Glyph::Bell));
+            }
+            keys.push("notify".to_string());
+            keys.push("dnd".to_string());
+
+            rows.push(row(
+                "System updates",
+                "apt: search, install, upgrade",
+                Glyph::Sync,
+            ));
+            keys.push("updates".to_string());
+
+            rows.push(row("Free space", "caches, journal and trash", Glyph::Trash));
+            keys.push("clean".to_string());
+
+            if automount_on() {
+                rows.push(row(
+                    "Auto-mount USB drives",
+                    "a plugged stick mounts itself",
+                    Glyph::Disk,
+                ));
+            } else {
+                rows.push(row(
+                    "Auto-mount USB drives",
+                    "off · Places mounts a stick when you pick it",
+                    Glyph::Disk,
+                ));
+            }
+            keys.push("automount".to_string());
+
+            rows.push(row(
+                "Login screen (Greeter)",
+                crate::greeter::settings::status_summary(),
+                Glyph::Gear,
+            ));
+            keys.push("greeter".to_string());
+
+            let translate_target = out(&[&bin_script("translate"), "--target-name"])
+                .unwrap_or_else(|| "English".to_string());
+            rows.push(row(
+                "Translate",
+                format!("into {}", translate_target),
+                Glyph::Globe,
+            ));
+            keys.push("translate".to_string());
+        }
+        Section::Accessibility => {
+            rows.push(row(
+                "Reduced motion",
+                if reduced_motion_on() {
+                    "on · new windows"
+                } else {
+                    "off"
+                },
+                Glyph::Eye,
+            ));
+            keys.push("reduced-motion".to_string());
+        }
     }
 
-    // Bluetooth
-    if bt_on() {
-        rows.push(row("Bluetooth radio", "on", Glyph::Bluetooth));
-        rows.push(row("Bluetooth devices", bt_detail(), Glyph::Link));
-        keys.push("bt-radio".to_string());
-        keys.push("bt".to_string());
-    } else {
-        rows.push(row("Bluetooth radio", "off", Glyph::Bluetooth));
-        rows.push(row("Bluetooth devices", bt_detail(), Glyph::Link));
-        keys.push("bt-radio".to_string());
-        keys.push("bt".to_string());
-    }
-
-    // DNS
-    rows.push(row(
-        "DNS",
-        "the resolver this connection uses",
-        Glyph::Cloud,
-    ));
-    keys.push("dns".to_string());
-
-    // Night light
-    if night_on() {
-        rows.push(row("Night light", "on", Glyph::Moon));
-        keys.push("night".to_string());
-    } else {
-        rows.push(row("Night light", "off", Glyph::Moon));
-        keys.push("night".to_string());
-    }
-
-    // Notifications / DND
-    if dnd_on() {
-        rows.push(row("Notifications", "do not disturb", Glyph::BellOff));
-        rows.push(row("Do not disturb", "on", Glyph::BellOff));
-        keys.push("notify".to_string());
-        keys.push("dnd".to_string());
-    } else {
-        rows.push(row("Notifications", "allowed", Glyph::Bell));
-        rows.push(row("Do not disturb", "off", Glyph::Bell));
-        keys.push("notify".to_string());
-        keys.push("dnd".to_string());
-    }
-
-    // VNC screen sharing
-    let vnc_status = super::vnc::status();
-    rows.push(row("Share this screen", vnc_status, Glyph::Eye));
-    keys.push("vnc".to_string());
-
-    // Remote login
-    rows.push(row(
-        "Remote login (SSH)",
-        "remote login status",
-        Glyph::Server,
-    ));
-    keys.push("ssh".to_string());
-
-    // Date & time
-    rows.push(row("Date & time", super::tz::status(), Glyph::Clock));
-    keys.push("tz".to_string());
-
-    // Touchpad
-    if touchpad_on() {
-        rows.push(row("Touchpad", "enabled", Glyph::Mouse));
-        keys.push("touchpad".to_string());
-    } else {
-        rows.push(row("Touchpad", "disabled", Glyph::Mouse));
-        keys.push("touchpad".to_string());
-    }
-
-    // Rotation
-    rows.push(row("Rotation", rotation_name(), Glyph::Rotate));
-    keys.push("rotation".to_string());
-
-    // Display arrangement
-    let display_status = super::display::status();
-    rows.push(row("Display arrangement", display_status, Glyph::Display));
-    keys.push("display".to_string());
-
-    // Appearance & Themes
-    let p = crate::theme::paths();
-    let theme_current = lazyos_theme::store::active(&p).unwrap_or_else(|| "solarized".to_string());
-    rows.push(row("Appearance & Themes", theme_current, Glyph::Palette));
-    keys.push("theme".to_string());
-
-    // Login screen (Greeter)
-    rows.push(row(
-        "Login screen (Greeter)",
-        crate::greeter::settings::status_summary(),
-        Glyph::Gear,
-    ));
-    keys.push("greeter".to_string());
-
-    // Auto-mount USB drives
-    if automount_on() {
-        rows.push(row(
-            "Auto-mount USB drives",
-            "a plugged stick mounts itself",
-            Glyph::Disk,
-        ));
-        keys.push("automount".to_string());
-    } else {
-        rows.push(row(
-            "Auto-mount USB drives",
-            "off · Places mounts a stick when you pick it",
-            Glyph::Disk,
-        ));
-        keys.push("automount".to_string());
-    }
-
-    // System updates and storage
-    rows.push(row(
-        "System updates",
-        "apt: search, install, upgrade",
-        Glyph::Sync,
-    ));
-    keys.push("updates".to_string());
-    rows.push(row("Free space", "caches, journal and trash", Glyph::Trash));
-    keys.push("clean".to_string());
-
-    // Tablet mode
-    let tm = tablet_mode_detail();
-    if tm == "off" {
-        rows.push(row("Tablet mode", tm, Glyph::Keyboard));
-        keys.push("tablet".to_string());
-    } else {
-        rows.push(row("Tablet mode", tm, Glyph::Keyboard));
-        keys.push("tablet".to_string());
-        // Calibrate rotation
-        let calib = out(&[&bin_script("tablet-mode"), "calibration"])
-            .unwrap_or_else(|| "unknown".to_string());
-        rows.push(row("Calibrate rotation", calib, Glyph::Rotate));
-        keys.push("tablet-calibrate".to_string());
-    }
-
-    // Keyboard layout
-    let layout = out(&["swaymsg", "-t", "get_inputs", "-r"])
-        .and_then(|s| {
-            let v: Result<Vec<serde_json::Value>, _> = serde_json::from_str(&s);
-            v.ok().and_then(|inputs| {
-                inputs
-                    .iter()
-                    .find(|i| i["type"].as_str() == Some("keyboard"))
-                    .and_then(|i| i["xkb_active_layout_name"].as_str())
-                    .map(|s| s.to_string())
-            })
-        })
-        .unwrap_or_else(|| "unknown".to_string());
-    rows.push(row("Keyboard layout", layout, Glyph::Keyboard));
-    keys.push("layout".to_string());
-
-    // Translate
-    let translate_target =
-        out(&[&bin_script("translate"), "--target-name"]).unwrap_or_else(|| "English".to_string());
-    rows.push(row(
-        "Translate",
-        format!("into {}", translate_target),
-        Glyph::Globe,
-    ));
-    keys.push("translate".to_string());
-
-    // Audio output
-    rows.push(row("Audio output", audio_detail(), Glyph::Volume));
-    keys.push("audio".to_string());
-
-    // Volume per application (pavucontrol)
-    rows.push(row("Volume per application", "pavucontrol", Glyph::Volume));
-    keys.push("mixer".to_string());
-
-    // Media
-    rows.push(row("Media", media_detail(), Glyph::Music));
-    keys.push("media".to_string());
-
-    // Battery / Power
-    rows.push(row("Battery", battery_detail(), Glyph::Battery));
-    keys.push("power".to_string());
-
+    back_row(&mut rows, &mut keys);
     (rows, keys)
 }
 
@@ -502,26 +629,52 @@ pub fn menu(
     }
 
     let mut banner: Option<String> = None;
+    let mut section: Option<Section> = None;
 
     loop {
-        let (rows, keys) = build_rows();
-        let note = banner
-            .take()
-            .unwrap_or_else(|| "Enter switches or opens \u{00b7} Escape closes".to_string());
+        let (rows, keys, title) = match section {
+            Some(section) => {
+                let (rows, keys) = build_rows(section);
+                (rows, keys, section.label())
+            }
+            None => {
+                let (rows, keys) = section_rows();
+                (rows, keys, "Settings")
+            }
+        };
+        let note = banner.take().unwrap_or_else(|| {
+            if section.is_some() {
+                "Enter acts \u{00b7} Escape returns to Settings".to_string()
+            } else {
+                "Enter opens a section \u{00b7} Escape closes".to_string()
+            }
+        });
 
-        let mut picker = Picker::new(
-            "Settings",
-            vec![Question::choose("Settings", note, rows, keys)],
-        );
+        let mut picker = Picker::new(title, vec![Question::choose(title, note, rows, keys)]);
 
-        let code = crate::run_screen(terminal, design, "Settings", &mut picker)?;
+        let code = crate::run_screen(terminal, design, title, &mut picker)?;
         if code != 0 {
+            if section.is_some() {
+                section = None;
+                continue;
+            }
             return Ok(code);
         }
 
         let Some(key) = picker.answers().first().cloned() else {
             return Ok(1);
         };
+
+        if let Some(section_key) = key.strip_prefix("section:") {
+            if let Some(next) = Section::from_key(section_key) {
+                section = Some(next);
+            }
+            continue;
+        }
+        if key == "back" {
+            section = None;
+            continue;
+        }
 
         match key.as_str() {
             "wifi-radio" => {
@@ -556,12 +709,56 @@ pub fn menu(
                 let _ = super::dns::menu(terminal, design)?;
             }
             "night" => {
-                let cmd = if night_on() { "stop" } else { "start" };
-                let _ = out(&[&bin_script("night-light"), cmd]);
-                banner = Some(format!(
-                    "Night light: {}",
-                    if cmd == "start" { "on" } else { "off" }
-                ));
+                use super::night_light::Mode;
+                let current = super::night_light::read();
+                let choices = [
+                    (Mode::Off, 4000, "Off", "no warm tint"),
+                    (Mode::Auto, 3500, "Sunset · 3500 K", "warmer after dark"),
+                    (Mode::Auto, 4000, "Sunset · 4000 K", "default warmth"),
+                    (Mode::Auto, 4500, "Sunset · 4500 K", "milder after dark"),
+                    (Mode::Warm, 3500, "Warm now · 3500 K", "always warm"),
+                    (Mode::Warm, 4000, "Warm now · 4000 K", "always warm"),
+                    (Mode::Warm, 4500, "Warm now · 4500 K", "always mild"),
+                ];
+                let rows: Vec<lazyos_ui::Row> = choices
+                    .iter()
+                    .map(|(mode, warmth, label, detail)| {
+                        let state = if current == (*mode, *warmth) {
+                            "current"
+                        } else {
+                            detail
+                        };
+                        row((*label).to_string(), state.to_string(), Glyph::Moon)
+                    })
+                    .collect();
+                let keys: Vec<String> = choices
+                    .iter()
+                    .map(|(mode, warmth, _, _)| format!("{}:{warmth}", mode.as_str()))
+                    .collect();
+                let mut night_picker = Picker::new(
+                    "Night light",
+                    vec![Question::choose(
+                        "Night light",
+                        "Enter applies · Escape returns to Settings",
+                        rows,
+                        keys,
+                    )],
+                );
+                let code = crate::run_screen(terminal, design, "Night light", &mut night_picker)?;
+                if code == 0
+                    && let Some(answer) = night_picker.answers().first()
+                    && let Some((mode, warmth)) = answer.split_once(':')
+                    && let Some(mode) = Mode::parse(mode)
+                    && let Ok(warmth) = warmth.parse::<u16>()
+                {
+                    if let Err(error) = super::night_light::write(mode, warmth) {
+                        banner = Some(format!("Could not write night-light.conf: {error}"));
+                    } else if let Err(error) = super::night_light::apply() {
+                        banner = Some(format!("Saved, but {error}"));
+                    } else {
+                        banner = Some(format!("Night light: {}", super::night_light::status()));
+                    }
+                }
             }
             "dnd" => {
                 let path = dnd_path();
@@ -589,11 +786,105 @@ pub fn menu(
                 let _ = super::tz::menu(terminal, design)?;
             }
             "touchpad" => {
-                let _ = out(&["swaymsg", "input", "type:touchpad", "events", "toggle"]);
-                banner = Some(format!(
-                    "Touchpad {}",
-                    if touchpad_on() { "enabled" } else { "disabled" }
-                ));
+                let mut note =
+                    "Enter toggles or opens speed · Escape returns to Settings".to_string();
+                loop {
+                    let settings = super::touchpad::read();
+                    let rows = vec![
+                        row(
+                            "Tap to click",
+                            if settings.tap { "on" } else { "off" },
+                            Glyph::Mouse,
+                        ),
+                        row(
+                            "Natural scrolling",
+                            if settings.natural_scroll { "on" } else { "off" },
+                            Glyph::Mouse,
+                        ),
+                        row(
+                            "Disable while typing",
+                            if settings.dwt { "on" } else { "off" },
+                            Glyph::Mouse,
+                        ),
+                        row("Pointer speed", settings.speed_label(), Glyph::Mouse),
+                        row("Back", "Settings sections", Glyph::ArrowLeft),
+                    ];
+                    let keys = ["tap", "natural", "dwt", "speed", "back"];
+                    let mut pad_picker = Picker::new(
+                        "Touchpad",
+                        vec![Question::choose(
+                            "Touchpad",
+                            note.clone(),
+                            rows,
+                            keys.iter().map(|key| (*key).to_string()).collect(),
+                        )],
+                    );
+                    let code = crate::run_screen(terminal, design, "Touchpad", &mut pad_picker)?;
+                    if code != 0 {
+                        break;
+                    }
+                    let Some(key) = pad_picker.answers().first().cloned() else {
+                        break;
+                    };
+                    if key == "back" {
+                        break;
+                    }
+                    let mut next = settings;
+                    match key.as_str() {
+                        "tap" => next.tap = !next.tap,
+                        "natural" => next.natural_scroll = !next.natural_scroll,
+                        "dwt" => next.dwt = !next.dwt,
+                        "speed" => {
+                            let speeds = [
+                                (-0.3f32, "Slow", "less pointer movement"),
+                                (0.0, "Normal", "libinput default"),
+                                (0.3, "Fast", "more pointer movement"),
+                            ];
+                            let s_rows: Vec<lazyos_ui::Row> = speeds
+                                .iter()
+                                .map(|(_, label, detail)| {
+                                    row((*label).to_string(), (*detail).to_string(), Glyph::Mouse)
+                                })
+                                .collect();
+                            let s_keys: Vec<String> = speeds
+                                .iter()
+                                .map(|(value, _, _)| format!("{value}"))
+                                .collect();
+                            let mut speed_picker = Picker::new(
+                                "Pointer speed",
+                                vec![Question::choose(
+                                    "Pointer speed",
+                                    "Enter applies · Escape returns to Touchpad",
+                                    s_rows,
+                                    s_keys,
+                                )],
+                            );
+                            let s_code = crate::run_screen(
+                                terminal,
+                                design,
+                                "Pointer speed",
+                                &mut speed_picker,
+                            )?;
+                            if s_code == 0
+                                && let Some(value) = speed_picker.answers().first()
+                                && let Ok(value) = value.parse::<f32>()
+                            {
+                                next.accel = value;
+                            } else {
+                                continue;
+                            }
+                        }
+                        _ => continue,
+                    }
+                    if let Err(error) = super::touchpad::write(next) {
+                        note = format!("Could not write touchpad.conf: {error}");
+                    } else if let Err(error) = super::touchpad::apply(next) {
+                        note = format!("Saved, but {error}");
+                    } else {
+                        note = format!("Touchpad: {}", super::touchpad::status());
+                    }
+                }
+                banner = Some(note);
             }
             "rotation" => {
                 let cur = rotation_name();
@@ -678,6 +969,17 @@ pub fn menu(
             "translate" => {
                 let _ = super::translate::menu(&["config".to_string()], terminal, design)?;
             }
+            "reduced-motion" => {
+                let on = !reduced_motion_on();
+                if let Err(error) = set_reduced_motion(on) {
+                    banner = Some(format!("Could not save reduced motion: {error}"));
+                } else {
+                    banner = Some(format!(
+                        "Reduced motion: {} (new windows)",
+                        if on { "on" } else { "off" }
+                    ));
+                }
+            }
             "audio" => {
                 let _ = super::audio::menu(terminal, design)?;
             }
@@ -687,6 +989,52 @@ pub fn menu(
             }
             "media" => {
                 let _ = super::media::menu(terminal, design)?;
+            }
+            "idle" => {
+                let current = super::idle::read();
+                let presets = super::idle::presets();
+                let rows: Vec<lazyos_ui::Row> = presets
+                    .iter()
+                    .map(|(screen_off, lock, dpms, label, detail)| {
+                        let state = if current == (*screen_off, *lock, *dpms) {
+                            "current"
+                        } else {
+                            detail
+                        };
+                        row((*label).to_string(), state.to_string(), Glyph::Clock)
+                    })
+                    .collect();
+                let keys: Vec<String> = presets
+                    .iter()
+                    .map(|(screen_off, lock, dpms, _, _)| format!("{screen_off}:{lock}:{dpms}"))
+                    .collect();
+                let mut idle_picker = Picker::new(
+                    "Idle & lock",
+                    vec![Question::choose(
+                        "Idle & lock",
+                        "Enter applies \u{00b7} Escape returns to Settings",
+                        rows,
+                        keys,
+                    )],
+                );
+                let code = crate::run_screen(terminal, design, "Idle & lock", &mut idle_picker)?;
+                if code == 0
+                    && let Some(answer) = idle_picker.answers().first()
+                {
+                    let parts: Vec<u64> = answer
+                        .split(':')
+                        .filter_map(|part| part.parse::<u64>().ok())
+                        .collect();
+                    if let [screen_off, lock, dpms] = parts.as_slice() {
+                        if let Err(error) = super::idle::write(*screen_off, *lock, *dpms) {
+                            banner = Some(format!("Could not write idle.conf: {error}"));
+                        } else if let Err(error) = super::idle::restart() {
+                            banner = Some(format!("Saved, but {error}"));
+                        } else {
+                            banner = Some(format!("Idle & lock: {}", super::idle::status()));
+                        }
+                    }
+                }
             }
             "power" => {
                 spawn_subcommand("lazyos", &["menu", "power"]);
@@ -735,6 +1083,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn every_settings_row_belongs_to_one_section() {
+        use std::collections::HashSet;
+        let mut seen = HashSet::new();
+        for section in Section::ALL {
+            for key in section_keys(section) {
+                assert!(seen.insert(*key), "{key} is in two sections");
+            }
+        }
+        for (key, _, _) in rows() {
+            assert!(seen.contains(key), "{key} is in no section");
+        }
+    }
+
+    #[test]
     fn rows_table_wires_real_session_commands() {
         let table = rows();
         assert!(
@@ -750,7 +1112,7 @@ mod tests {
         assert!(
             table
                 .iter()
-                .any(|(k, _, r)| *k == "night" && *r == "night-light start")
+                .any(|(k, _, r)| *k == "night" && *r == "night-light apply")
         );
         assert!(
             table
@@ -768,6 +1130,10 @@ mod tests {
             ("tz", "lazyos-tz"),
             ("updates", "lazyos-pkg"),
             ("clean", "lazyos-clean"),
+            ("idle", "lazyos-idle"),
+            ("touchpad", "touchpad.conf"),
+            ("reduced-motion", "reduced-motion.conf"),
+            ("night", "night-light apply"),
         ] {
             assert!(
                 table.iter().any(|(k, _, r)| *k == key && *r == runs),

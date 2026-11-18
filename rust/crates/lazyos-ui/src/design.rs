@@ -147,6 +147,27 @@ pub struct Design {
     reduced_motion: bool,
 }
 
+fn reduced_motion_file() -> std::path::PathBuf {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config"))
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
+    base.join("lazyos").join("reduced-motion")
+}
+
+fn reduced_motion_in(path: &std::path::Path) -> bool {
+    std::fs::read_to_string(path)
+        .map(|text| matches!(text.trim(), "1" | "yes" | "true"))
+        .unwrap_or(false)
+}
+
+fn reduced_motion_requested() -> bool {
+    matches!(std::env::var("LAZYOS_REDUCED_MOTION"), Ok(v) if v == "1")
+        || reduced_motion_in(&reduced_motion_file())
+}
+
 impl Design {
     pub const fn new(palette: Palette, density: Density, reduced_motion: bool) -> Self {
         Self {
@@ -161,14 +182,15 @@ impl Design {
     }
 
     /// The session's design: the active theme's palette, the density the tablet state asks for,
-    /// and `LAZYOS_REDUCED_MOTION=1` honoured.
+    /// and reduced motion from `LAZYOS_REDUCED_MOTION=1` or the saved
+    /// `~/.config/lazyos/reduced-motion` setting.
     pub fn for_session(runtime_dir: Option<&str>) -> Self {
         let paths = lazyos_theme::Paths::from_env();
         let palette = Palette::for_session(&paths);
         Self::new(
             palette,
             Self::detect_density(runtime_dir),
-            matches!(std::env::var("LAZYOS_REDUCED_MOTION"), Ok(v) if v == "1"),
+            reduced_motion_requested(),
         )
     }
 
@@ -317,6 +339,20 @@ pub const GLYPHS: &[char] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reduced_motion_reads_the_saved_setting() {
+        let dir =
+            std::env::temp_dir().join(format!("lazyos-reduced-motion-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("reduced-motion");
+        std::fs::write(&path, "1\n").unwrap();
+        assert!(reduced_motion_in(&path));
+        std::fs::write(&path, "0\n").unwrap();
+        assert!(!reduced_motion_in(&path));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn every_role_maps_to_a_palette_colour() {

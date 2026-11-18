@@ -89,13 +89,17 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
   `check-desktop.sh` reproduces that with a `000` directory and asserts `Documents` still travels.
 
 ## Shell State Protocols
-The session helpers keep their state in `$XDG_RUNTIME_DIR` (the welcome marker in
-`$XDG_STATE_HOME`), and the menu and the bar read the same file. Treat that file as the
-contract; never add a second one.
+The session helpers keep runtime state in `$XDG_RUNTIME_DIR` (the welcome marker in
+`$XDG_STATE_HOME`) and user choices in `~/.config/lazyos` or
+`~/.config/sway/config.d`. The menu, the bar and the login line read the same file. Treat
+that file as the contract; never add a second one.
 
 | Helper | State | Values |
 |---|---|---|
-| `night-light` | `$XDG_RUNTIME_DIR/lazyos-night-light` | `schedule`, `warm`; absent = off. `status` answers `off`, `off <mode>` (the client died) or `on <mode>`. |
+| `night-light` | `$XDG_RUNTIME_DIR/lazyos-night-light` + `~/.config/lazyos/night-light.conf` | runtime `schedule`, `warm`; absent = off. Config `mode=auto\|warm\|off`, `warmth=2000..6500`. `apply` reads the config. |
+| `lazyos-idle` | `~/.config/lazyos/idle.conf` | `screen_off`, `lock`, `dpms` in seconds; `0` = never. `start`/`restart` replaces the system swayidle chain. |
+| `touchpad` | `~/.config/sway/config.d/36-touchpad.conf` | `tap`, `natural_scroll`, `dwt`, `pointer_accel`; Settings applies the same values with `swaymsg input`. |
+| `reduced motion` | `~/.config/lazyos/reduced-motion` | `1`/`yes`/`true` = on. `Design::for_session` reads it alongside `LAZYOS_REDUCED_MOTION=1`. |
 | `tablet-mode` | `$XDG_RUNTIME_DIR/lazyos-tablet/` | `kbd.pid`, `poller.pid`, `out` while on; absent while off. `off` repairs a missing directory. |
 | `busy` / `bar-busy` | `$XDG_RUNTIME_DIR/lazyos-busy/<tag>.{label,id,icon,stop}` | `.stop` is the line the bar runs; `busy cancelled` says whether the card is gone. |
 | `lazyos-profile` | target archive + `$XDG_CACHE_HOME/lazyos` | export writes `.partial` then renames; import backs up then extracts; `report` is one file. |
@@ -106,6 +110,17 @@ contract; never add a second one.
 `check-desktop.sh` exercises the transitions that are invisible until they fail:
 night-light status, tablet stale repair, busy stop/cancelled, and the profile export.
 Add a probe when a new state is introduced.
+
+## Settings Structure
+- `system/settings.rs` has six sections: Network, Display & Sound, Input, Power & Idle,
+  System, Accessibility. `rows()` is the flat canonical table for `check-system.sh`;
+  `sections()` / `--sections` is the UI structure. Every row belongs to exactly one section
+  (`every_settings_row_belongs_to_one_section`).
+- A new setting writes a user config file and delegates to a helper (`lazyos-idle`,
+  `night-light`, `touchpad`, `reduced-motion`), rather than adding a second state file or a
+  second copy of the command line.
+- A section row's detail comes from the same reader the submenu uses; a top-level section
+  stays cheap (no nmcli/systemctl probe storm) and the live status is one level down.
 
 ## Cross-Repo Boundaries & Pure-Rust Installer (No Hardcoded Paths!)
 - Never put device-specific keymaps, udev rules, IRQ tuning, or board hacks into `uis/sway/files/`.
