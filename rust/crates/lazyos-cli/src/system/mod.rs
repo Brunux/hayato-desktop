@@ -88,6 +88,7 @@
 
 pub mod about;
 pub mod agents;
+pub mod appearance;
 pub mod apps;
 pub mod audio;
 pub mod bluetooth;

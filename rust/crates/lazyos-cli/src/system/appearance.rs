@@ -1,0 +1,693 @@
+//! Appearance: theme, wallpaper, bar and the compositor's window effects.
+//!
+//! One user file, `~/.config/lazyos/appearance.conf`, is the source of truth
+//! for the effects. It is rendered into
+//! `~/.config/sway/config.d/41-appearance.conf` so the next login gets the
+//! same values, and the same commands are sent through `swaymsg` so the
+//! current session changes immediately. The bar is different: its position and
+//! density already live in `~/.config/waybar/config.jsonc`, so this module
+//! edits those lines and signals Waybar instead of adding a second copy.
+
+use std::path::PathBuf;
+use std::process::Command;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Corners {
+    Sharp,
+    Rounded,
+    Soft,
+}
+
+impl Corners {
+    fn parse(word: &str) -> Option<Self> {
+        match word.trim() {
+            "sharp" => Some(Self::Sharp),
+            "rounded" => Some(Self::Rounded),
+            "soft" => Some(Self::Soft),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Sharp => "sharp",
+            Self::Rounded => "rounded",
+            Self::Soft => "soft",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        self.as_str()
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::Sharp => Self::Rounded,
+            Self::Rounded => Self::Soft,
+            Self::Soft => Self::Sharp,
+        }
+    }
+
+    fn radius(self) -> u8 {
+        match self {
+            Self::Sharp => 0,
+            Self::Rounded => 6,
+            Self::Soft => 12,
+        }
+    }
+
+    fn smart(self) -> bool {
+        !matches!(self, Self::Sharp)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Blur {
+    Off,
+    Frosted,
+    Xray,
+}
+
+impl Blur {
+    fn parse(word: &str) -> Option<Self> {
+        match word.trim() {
+            "off" => Some(Self::Off),
+            "frosted" => Some(Self::Frosted),
+            "xray" => Some(Self::Xray),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Frosted => "frosted",
+            Self::Xray => "xray",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        self.as_str()
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::Off => Self::Frosted,
+            Self::Frosted => Self::Xray,
+            Self::Xray => Self::Off,
+        }
+    }
+
+    fn enabled(self) -> bool {
+        !matches!(self, Self::Off)
+    }
+
+    fn xray(self) -> bool {
+        matches!(self, Self::Xray)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Animation {
+    Off,
+    Calm,
+    Normal,
+}
+
+impl Animation {
+    fn parse(word: &str) -> Option<Self> {
+        match word.trim() {
+            "off" => Some(Self::Off),
+            "calm" => Some(Self::Calm),
+            "normal" => Some(Self::Normal),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Calm => "calm",
+            Self::Normal => "normal",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        self.as_str()
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::Off => Self::Calm,
+            Self::Calm => Self::Normal,
+            Self::Normal => Self::Off,
+        }
+    }
+
+    fn millis(self) -> u16 {
+        match self {
+            Self::Off => 0,
+            Self::Calm => 80,
+            Self::Normal => 150,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Effects {
+    pub corners: Corners,
+    pub shadows: bool,
+    pub blur: Blur,
+    pub animation: Animation,
+}
+
+impl Default for Effects {
+    fn default() -> Self {
+        Self {
+            corners: Corners::Rounded,
+            shadows: true,
+            blur: Blur::Frosted,
+            animation: Animation::Normal,
+        }
+    }
+}
+
+fn config_home() -> PathBuf {
+    std::env::var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::var("HOME")
+                .map(|home| PathBuf::from(home).join(".config"))
+                .unwrap_or_else(|_| PathBuf::from("/tmp"))
+        })
+}
+
+fn appearance_path() -> PathBuf {
+    config_home().join("lazyos/appearance.conf")
+}
+
+fn dropin_path() -> PathBuf {
+    config_home().join("sway/config.d/41-appearance.conf")
+}
+
+fn waybar_path() -> PathBuf {
+    config_home().join("waybar/config.jsonc")
+}
+
+fn parse_effects(text: &str) -> Effects {
+    let mut effects = Effects::default();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value.trim();
+        match key.trim() {
+            "corners" => {
+                if let Some(corners) = Corners::parse(value) {
+                    effects.corners = corners;
+                }
+            }
+            "shadows" => effects.shadows = matches!(value, "on" | "yes" | "true" | "1"),
+            "blur" => {
+                if let Some(blur) = Blur::parse(value) {
+                    effects.blur = blur;
+                }
+            }
+            "animations" => {
+                if let Some(animation) = Animation::parse(value) {
+                    effects.animation = animation;
+                }
+            }
+            _ => {}
+        }
+    }
+    effects
+}
+
+fn effects_body(effects: Effects) -> String {
+    format!(
+        "# Written by Settings -> Appearance.\n\
+         corners={}\n\
+         shadows={}\n\
+         blur={}\n\
+         animations={}\n",
+        effects.corners.as_str(),
+        if effects.shadows { "on" } else { "off" },
+        effects.blur.as_str(),
+        effects.animation.as_str()
+    )
+}
+
+pub fn load() -> Effects {
+    std::fs::read_to_string(appearance_path())
+        .map(|text| parse_effects(&text))
+        .unwrap_or_default()
+}
+
+fn write_atomic(path: &PathBuf, body: &str) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("{} has no directory", path.display()))?;
+    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    let temp = path.with_extension("new");
+    std::fs::write(&temp, body).map_err(|error| error.to_string())?;
+    std::fs::rename(&temp, path).map_err(|error| error.to_string())
+}
+
+fn dropin_body(effects: Effects) -> String {
+    format!(
+        "# Written by Settings -> Appearance. Delete this file to go back to\n\
+         # the session defaults in /etc/sway/config.d/26-swayfx.conf.\n\
+         corner_radius {}\n\
+         smart_corner_radius {}\n\
+         shadows {}\n\
+         blur {}\n\
+         blur_xray {}\n\
+         animation_duration_ms {}\n",
+        effects.corners.radius(),
+        if effects.corners.smart() {
+            "enable"
+        } else {
+            "disable"
+        },
+        if effects.shadows { "enable" } else { "disable" },
+        if effects.blur.enabled() {
+            "enable"
+        } else {
+            "disable"
+        },
+        if effects.blur.xray() {
+            "enable"
+        } else {
+            "disable"
+        },
+        effects.animation.millis()
+    )
+}
+
+fn live_commands(effects: Effects) -> Vec<String> {
+    vec![
+        format!("corner_radius {}", effects.corners.radius()),
+        format!(
+            "smart_corner_radius {}",
+            if effects.corners.smart() {
+                "enable"
+            } else {
+                "disable"
+            }
+        ),
+        format!(
+            "shadows {}",
+            if effects.shadows { "enable" } else { "disable" }
+        ),
+        format!(
+            "blur {}",
+            if effects.blur.enabled() {
+                "enable"
+            } else {
+                "disable"
+            }
+        ),
+        format!(
+            "blur_xray {}",
+            if effects.blur.xray() {
+                "enable"
+            } else {
+                "disable"
+            }
+        ),
+        format!("animation_duration_ms {}", effects.animation.millis()),
+    ]
+}
+
+fn apply(effects: Effects) -> Result<(), String> {
+    write_atomic(&appearance_path(), &effects_body(effects))?;
+    write_atomic(&dropin_path(), &dropin_body(effects))?;
+    for command in live_commands(effects) {
+        let _ = Command::new("swaymsg").arg(&command).status();
+    }
+    Ok(())
+}
+
+fn change(update: impl FnOnce(&mut Effects)) -> Result<String, String> {
+    let mut effects = load();
+    update(&mut effects);
+    apply(effects)?;
+    Ok(status())
+}
+
+pub fn status() -> String {
+    let effects = load();
+    format!(
+        "{} corners · shadows {} · blur {} · animations {} · bar {} {}",
+        effects.corners.label(),
+        if effects.shadows { "on" } else { "off" },
+        effects.blur.label(),
+        effects.animation.label(),
+        bar_position_label(),
+        bar_density_label()
+    )
+}
+
+pub fn corners_label() -> String {
+    load().corners.label().to_string()
+}
+
+pub fn shadows_label() -> String {
+    if load().shadows {
+        "on".to_string()
+    } else {
+        "off".to_string()
+    }
+}
+
+pub fn blur_label() -> String {
+    load().blur.label().to_string()
+}
+
+pub fn animation_label() -> String {
+    load().animation.label().to_string()
+}
+
+pub fn cycle_corners() -> Result<String, String> {
+    change(|effects| effects.corners = effects.corners.next())
+}
+
+pub fn toggle_shadows() -> Result<String, String> {
+    change(|effects| effects.shadows = !effects.shadows)
+}
+
+pub fn cycle_blur() -> Result<String, String> {
+    change(|effects| effects.blur = effects.blur.next())
+}
+
+pub fn cycle_animations() -> Result<String, String> {
+    change(|effects| effects.animation = effects.animation.next())
+}
+
+pub fn theme_name() -> String {
+    let paths = crate::theme::paths();
+    let slug = lazyos_theme::store::active(&paths).unwrap_or_else(|| "solarized".to_string());
+    crate::theme::theme(&slug)
+        .map(|theme| theme.name)
+        .unwrap_or(slug)
+}
+
+pub fn wallpaper_name() -> String {
+    let paths = crate::theme::paths();
+    std::fs::read_to_string(paths.state.join("wallpaper"))
+        .ok()
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+        .unwrap_or_else(|| "theme default".to_string())
+}
+
+pub fn cycle_wallpaper() -> Result<String, String> {
+    let paths = crate::theme::paths();
+    let (wallpaper, _) = crate::theme::cycle_wallpaper_for(&paths, None)?;
+    Ok(format!("Wallpaper: {wallpaper}"))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BarPosition {
+    Top,
+    Bottom,
+}
+
+impl BarPosition {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Top => "top",
+            Self::Bottom => "bottom",
+        }
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::Top => Self::Bottom,
+            Self::Bottom => Self::Top,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BarDensity {
+    Comfortable,
+    Compact,
+}
+
+impl BarDensity {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Comfortable => "comfortable",
+            Self::Compact => "compact",
+        }
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::Comfortable => Self::Compact,
+            Self::Compact => Self::Comfortable,
+        }
+    }
+
+    fn height(self) -> u16 {
+        match self {
+            Self::Comfortable => 30,
+            Self::Compact => 24,
+        }
+    }
+
+    fn spacing(self) -> u16 {
+        match self {
+            Self::Comfortable => 4,
+            Self::Compact => 2,
+        }
+    }
+}
+
+fn bar_text() -> Result<String, String> {
+    std::fs::read_to_string(waybar_path())
+        .map_err(|error| format!("cannot read {}: {error}", waybar_path().display()))
+}
+
+pub fn bar_position() -> BarPosition {
+    bar_text()
+        .map(|text| bar_position_from(&text))
+        .unwrap_or(BarPosition::Top)
+}
+
+pub fn bar_density() -> BarDensity {
+    bar_text()
+        .map(|text| bar_density_from(&text))
+        .unwrap_or(BarDensity::Comfortable)
+}
+
+pub fn bar_position_label() -> String {
+    bar_position().label().to_string()
+}
+
+pub fn bar_density_label() -> String {
+    bar_density().label().to_string()
+}
+
+fn bar_position_from(text: &str) -> BarPosition {
+    for line in text.lines() {
+        if line.contains("\"position\":") {
+            if line.contains("\"bottom\"") {
+                return BarPosition::Bottom;
+            }
+            if line.contains("\"top\"") {
+                return BarPosition::Top;
+            }
+        }
+    }
+    BarPosition::Top
+}
+
+fn bar_density_from(text: &str) -> BarDensity {
+    let mut height = None;
+    let mut spacing = None;
+    for line in text.lines() {
+        if height.is_none() && line.contains("\"height\":") {
+            height = number_after(line, "\"height\":");
+        }
+        if spacing.is_none() && line.contains("\"spacing\":") {
+            spacing = number_after(line, "\"spacing\":");
+        }
+        if height.is_some() && spacing.is_some() {
+            break;
+        }
+    }
+    let height = height.unwrap_or(30);
+    let spacing = spacing.unwrap_or(4);
+    if height <= 26 || spacing <= 2 {
+        BarDensity::Compact
+    } else {
+        BarDensity::Comfortable
+    }
+}
+
+fn number_after(line: &str, key: &str) -> Option<u16> {
+    let rest = &line[line.find(key)? + key.len()..];
+    let digits: String = rest
+        .trim_start()
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit())
+        .collect();
+    digits.parse().ok()
+}
+
+fn string_after<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    let rest = &line[line.find(key)? + key.len()..];
+    let start = rest.find('"')? + 1;
+    let end = rest[start..].find('"')? + start;
+    Some(&rest[start..end])
+}
+
+fn replace_string(line: &str, key: &str, value: &str) -> String {
+    let Some(old) = string_after(line, key) else {
+        return line.to_string();
+    };
+    line.replacen(&format!("\"{old}\""), &format!("\"{value}\""), 1)
+}
+
+fn replace_number(line: &str, key: &str, value: u16) -> String {
+    let Some(old) = number_after(line, key) else {
+        return line.to_string();
+    };
+    let old = old.to_string();
+    let start = line.find(key).unwrap_or(0) + key.len();
+    let rest = &line[start..];
+    let offset = rest.find(&old).unwrap_or(0) + start;
+    format!(
+        "{}{}{}",
+        &line[..offset],
+        value,
+        &line[offset + old.len()..]
+    )
+}
+
+fn bar_body(text: &str, position: BarPosition, density: BarDensity) -> String {
+    let mut out = Vec::new();
+    let mut position_done = false;
+    let mut margin_done = false;
+    let mut height_done = false;
+    let mut spacing_done = false;
+    for line in text.lines() {
+        let mut line = line.to_string();
+        if !position_done && line.contains("\"position\":") {
+            line = replace_string(&line, "\"position\":", position.label());
+            position_done = true;
+        }
+        if !margin_done {
+            if matches!(position, BarPosition::Bottom) && line.contains("\"margin-top\":") {
+                line = line.replacen("\"margin-top\":", "\"margin-bottom\":", 1);
+                margin_done = true;
+            } else if matches!(position, BarPosition::Top) && line.contains("\"margin-bottom\":") {
+                line = line.replacen("\"margin-bottom\":", "\"margin-top\":", 1);
+                margin_done = true;
+            }
+        }
+        if !height_done && line.contains("\"height\":") {
+            line = replace_number(&line, "\"height\":", density.height());
+            height_done = true;
+        }
+        if !spacing_done && line.contains("\"spacing\":") {
+            line = replace_number(&line, "\"spacing\":", density.spacing());
+            spacing_done = true;
+        }
+        out.push(line);
+    }
+    let mut body = out.join("\n");
+    if text.ends_with('\n') {
+        body.push('\n');
+    }
+    body
+}
+
+fn signal_waybar() {
+    let _ = Command::new("pkill").args(["-SIGUSR2", "waybar"]).status();
+}
+
+fn set_bar(position: BarPosition, density: BarDensity) -> Result<(), String> {
+    let text = bar_text()?;
+    write_atomic(&waybar_path(), &bar_body(&text, position, density))?;
+    signal_waybar();
+    Ok(())
+}
+
+pub fn toggle_bar_position() -> Result<String, String> {
+    let position = bar_position().next();
+    set_bar(position, bar_density())?;
+    Ok(format!(
+        "Bar: {} · {}",
+        position.label(),
+        bar_density().label()
+    ))
+}
+
+pub fn toggle_bar_density() -> Result<String, String> {
+    let density = bar_density().next();
+    set_bar(bar_position(), density)?;
+    Ok(format!(
+        "Bar: {} · {}",
+        bar_position().label(),
+        density.label()
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effects_round_trip_and_cycle() {
+        let effects = Effects {
+            corners: Corners::Soft,
+            shadows: false,
+            blur: Blur::Xray,
+            animation: Animation::Calm,
+        };
+        assert_eq!(parse_effects(&effects_body(effects)), effects);
+        assert_eq!(Corners::Sharp.next(), Corners::Rounded);
+        assert_eq!(Blur::Xray.next(), Blur::Off);
+        assert_eq!(Animation::Normal.next(), Animation::Off);
+    }
+
+    #[test]
+    fn the_dropin_is_the_live_command_list() {
+        let effects = Effects::default();
+        let body = dropin_body(effects);
+        assert!(body.contains("corner_radius 6"));
+        assert!(body.contains("smart_corner_radius enable"));
+        assert!(body.contains("shadows enable"));
+        assert!(body.contains("blur enable"));
+        assert!(body.contains("blur_xray disable"));
+        assert!(body.contains("animation_duration_ms 150"));
+    }
+
+    #[test]
+    fn bar_lines_are_replaced_without_touching_comments() {
+        let text = "// top bar\n{\n    \"position\": \"top\",\n    \"height\": 30,\n    \"spacing\": 4,\n    \"margin-top\": 4,\n    \"tray\": { \"spacing\": 10 }\n}\n";
+        let body = bar_body(text, BarPosition::Bottom, BarDensity::Compact);
+        assert!(body.contains("\"position\": \"bottom\""));
+        assert!(body.contains("\"height\": 24"));
+        assert!(body.contains("\"spacing\": 2"));
+        assert!(body.contains("\"margin-bottom\": 4"));
+        assert!(body.contains("// top bar"));
+        assert!(body.ends_with('\n'));
+        assert_eq!(bar_position_from(&body), BarPosition::Bottom);
+        assert_eq!(bar_density_from(&body), BarDensity::Compact);
+    }
+
+    #[test]
+    fn a_bar_without_effects_defaults_to_top_comfortable() {
+        assert_eq!(bar_position_from("{}"), BarPosition::Top);
+        assert_eq!(bar_density_from("{}"), BarDensity::Comfortable);
+    }
+}
