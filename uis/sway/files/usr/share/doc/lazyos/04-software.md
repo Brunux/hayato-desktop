@@ -203,6 +203,12 @@ the path or result. Recordings start/stop from the same menu and write to
 `~/Videos/`; while one runs the bar carries the spinner and no card is drawn
 into the file (normal notifications wait, critical ones still show).
 
+**Recording audio** cycles no audio → microphone → system audio (line out), and
+**Webcam overlay** toggles an mpv camera preview in the bottom-right corner.
+Both are saved in `~/.config/lazyos/record.conf`; the webcam is a normal
+floating window, so `wf-recorder` captures it as part of the screen. For an area
+recording the overlay is placed inside the selected area.
+
 
 
 

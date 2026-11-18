@@ -1799,6 +1799,141 @@ else
 	warn "could not make a fake recording session: the start/stop probe was skipped"
 fi
 
+# The webinar choices in ~/.config/lazyos/record.conf: audio names a source
+# (the default microphone or the default sink's monitor) and webcam starts an
+# overlay. A fake pactl names the source, a fake mpv is the camera window and a
+# fake swaymsg says it exists, so the check proves the recorder is handed
+# --audio=<source> and that Stop ends the camera with the recorder.
+_web_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-webinar.XXXXXX" 2>/dev/null || true)
+if [ -n "$_web_tmp" ]; then
+	mkdir -p "$_web_tmp/bin" "$_web_tmp/run/lazyos-capture" "$_web_tmp/home/.config/lazyos"
+	cat >"$_web_tmp/bin/wf-recorder" <<-'REC'
+		#!/bin/sh
+		trap 'exit 0' INT TERM
+		out=""
+		prev=""
+		for arg in "$@"; do
+			[ "$prev" = "-f" ] && out=$arg
+			prev=$arg
+		done
+		printf '%s\n' "$*" >"${RECORDER_ARGV:?}"
+		[ -n "$out" ] && printf 'fake recording\n' >"$out"
+		while :; do sleep 0.1; done
+	REC
+	cat >"$_web_tmp/bin/pactl" <<-'PACTL'
+		#!/bin/sh
+		case "$1" in
+			get-default-source) printf 'fake_mic\n' ;;
+			get-default-sink) printf 'fake_sink\n' ;;
+			*) exit 1 ;;
+		esac
+	PACTL
+	cat >"$_web_tmp/bin/mpv" <<-'MPV'
+		#!/bin/sh
+		printf '%s\n' "$*" >"${MPV_ARGV:?}"
+		trap 'exit 0' INT TERM
+		while :; do sleep 0.1; done
+	MPV
+	cat >"$_web_tmp/bin/swaymsg" <<-'SWAY'
+		#!/bin/sh
+		case "$*" in
+			*get_tree*) printf '{"app_id":"lazyos-webcam"}\n' ;;
+			*get_workspaces*|*get_outputs*) printf '[{"focused":true,"rect":{"x":0,"y":0,"width":1366,"height":768}}]\n' ;;
+			*) printf '[]\n' ;;
+		esac
+	SWAY
+	cat >"$_web_tmp/bin/busy" <<-BUSY
+		#!/bin/sh
+		printf '%s\n' "\$*" >>"$_web_tmp/busy.log"
+	BUSY
+	chmod +x "$_web_tmp/bin/wf-recorder" "$_web_tmp/bin/pactl" \
+		"$_web_tmp/bin/mpv" "$_web_tmp/bin/swaymsg" "$_web_tmp/bin/busy"
+	_web_start() {
+		env HOME="$_web_tmp/home" XDG_RUNTIME_DIR="$_web_tmp/run" \
+			PATH="$_web_tmp/bin:$PATH" RECORDER_ARGV="$_web_tmp/argv.log" \
+			MPV_ARGV="$_web_tmp/mpv.argv" \
+			lazyos menu capture --start >/dev/null 2>&1 || true
+		_web_pid=$(cat "$_web_tmp/run/lazyos-capture/recording.pid" 2>/dev/null || true)
+		_web_file=$(cat "$_web_tmp/run/lazyos-capture/recording.file" 2>/dev/null || true)
+	}
+	_web_stop() {
+		if [ -n "${_web_pid:-}" ]; then
+			env HOME="$_web_tmp/home" XDG_RUNTIME_DIR="$_web_tmp/run" \
+				PATH="$_web_tmp/bin:$PATH" \
+				lazyos menu capture --stop-wait "$_web_pid" "$_web_file" >/dev/null 2>&1 || true
+		fi
+	}
+	printf 'audio=mic\nwebcam=on\n' >"$_web_tmp/home/.config/lazyos/record.conf"
+	_web_start
+	if grep -qs -- '--audio=fake_mic' "$_web_tmp/argv.log" 2>/dev/null; then
+		ok "a microphone recording hands the default source to wf-recorder"
+	else
+		fail "a microphone recording did not pass --audio=<default source> to wf-recorder"
+	fi
+	if grep -qs -- 'lazyos-webcam' "$_web_tmp/mpv.argv" 2>/dev/null; then
+		ok "the webcam overlay starts as the lazyos-webcam window"
+	else
+		fail "the webcam overlay did not start an mpv window with app_id lazyos-webcam"
+	fi
+	_web_cam=$(cat "$_web_tmp/run/lazyos-capture/camera.pid" 2>/dev/null || true)
+	if [ -n "$_web_cam" ] && [ "$(cat "/proc/$_web_cam/comm" 2>/dev/null)" = "mpv" ]; then
+		ok "the recording saves the webcam overlay's own pid"
+	else
+		fail "the recording did not save a live mpv camera pid (pid=${_web_cam:-none})"
+	fi
+	_web_stop
+	sleep 0.3
+	_web_state=$(awk '{print $3}' "/proc/$_web_cam/stat" 2>/dev/null || true)
+	if [ -n "$_web_cam" ] && [ ! -e "$_web_tmp/run/lazyos-capture/camera.pid" ] &&
+		{ [ -z "$_web_state" ] || [ "$_web_state" = "Z" ]; }; then
+		ok "Stop ends the webcam overlay and clears its pid"
+	else
+		fail "Stop left the webcam overlay running (pid=${_web_cam:-none}, state=${_web_state:-gone})"
+	fi
+	printf 'audio=system\nwebcam=off\n' >"$_web_tmp/home/.config/lazyos/record.conf"
+	rm -f "$_web_tmp/argv.log" "$_web_tmp/mpv.argv"
+	_web_start
+	if grep -qs -- '--audio=fake_sink.monitor' "$_web_tmp/argv.log" 2>/dev/null; then
+		ok "system audio records the default sink's monitor source"
+	else
+		fail "system audio did not pass the default sink's .monitor source to wf-recorder"
+	fi
+	if [ ! -e "$_web_tmp/run/lazyos-capture/camera.pid" ]; then
+		ok "no camera starts when the webcam overlay is off"
+	else
+		fail "a recording with the webcam off still saved a camera pid"
+	fi
+	_web_stop
+	printf 'audio=off\nwebcam=off\n' >"$_web_tmp/home/.config/lazyos/record.conf"
+	rm -f "$_web_tmp/argv.log"
+	_web_start
+	if [ -n "${_web_pid:-}" ] && ! grep -qs -- '--audio=' "$_web_tmp/argv.log" 2>/dev/null; then
+		ok "audio off leaves wf-recorder with no audio source"
+	else
+		fail "audio off still passed an audio source to wf-recorder"
+	fi
+	_web_stop
+	# A camera that exits instead of showing a window must stop the recording
+	# from starting, not leave a silent file with no overlay.
+	cat >"$_web_tmp/bin/mpv" <<-'MPV'
+		#!/bin/sh
+		exit 1
+	MPV
+	chmod +x "$_web_tmp/bin/mpv"
+	printf 'audio=off\nwebcam=on\n' >"$_web_tmp/home/.config/lazyos/record.conf"
+	: >"$_web_tmp/busy.log"
+	_web_start
+	if [ ! -e "$_web_tmp/run/lazyos-capture/recording.pid" ] &&
+		grep -qs 'did not start' "$_web_tmp/busy.log"; then
+		ok "a camera that exits fails the start instead of recording without an overlay"
+	else
+		fail "a camera that exits still started a recording, or did not report the failure"
+	fi
+	rm -rf "$_web_tmp"
+else
+	warn "could not make a fake webinar session: the audio/webcam probe was skipped"
+fi
+
 # The daemon's half: with a live process named wf-recorder behind the state
 # file, a normal card is held back (the recorder would capture it) and a
 # critical one still draws; once the process is gone, both draw again.
