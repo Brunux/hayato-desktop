@@ -85,6 +85,25 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
   aborts the whole archive with `Cannot open: Permission denied` after copying the rest.
   `check-desktop.sh` reproduces that with a `000` directory and asserts `Documents` still travels.
 
+## Shell State Protocols
+The session helpers keep their state in `$XDG_RUNTIME_DIR` (the welcome marker in
+`$XDG_STATE_HOME`), and the menu and the bar read the same file. Treat that file as the
+contract; never add a second one.
+
+| Helper | State | Values |
+|---|---|---|
+| `night-light` | `$XDG_RUNTIME_DIR/lazyos-night-light` | `schedule`, `warm`; absent = off. `status` answers `off`, `off <mode>` (the client died) or `on <mode>`. |
+| `tablet-mode` | `$XDG_RUNTIME_DIR/lazyos-tablet/` | `kbd.pid`, `poller.pid`, `out` while on; absent while off. `off` repairs a missing directory. |
+| `busy` / `bar-busy` | `$XDG_RUNTIME_DIR/lazyos-busy/<tag>.{label,id,icon,stop}` | `.stop` is the line the bar runs; `busy cancelled` says whether the card is gone. |
+| `lazyos-profile` | target archive + `$XDG_CACHE_HOME/lazyos` | export writes `.partial` then renames; import backs up then extracts; `report` is one file. |
+| `sway-lock` | no file | lock/unlock belongs to the compositor; readiness is the fifo handshake. |
+| `lazyos-screensaver` | no file | one `foot` window; idempotent by `pgrep`. |
+| `lazyos-welcome` | `$XDG_STATE_HOME/lazyos/welcome` | the machine id last shown; absent = show once. |
+
+`check-desktop.sh` exercises the transitions that are invisible until they fail:
+night-light status, tablet stale repair, busy stop/cancelled, and the profile export.
+Add a probe when a new state is introduced.
+
 ## Cross-Repo Boundaries & Pure-Rust Installer (No Hardcoded Paths!)
 - Never put device-specific keymaps, udev rules, IRQ tuning, or board hacks into `uis/sway/files/`.
 - Pure-Rust installer (`lazyos installer` / `lazyos installer apply` under `src/installer/`) reads
