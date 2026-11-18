@@ -32,7 +32,7 @@ use lazyos_ui::{
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 
-use crate::system::missing;
+use crate::system::{missing, out};
 
 const NEEDED: &[&str] = &[
     "grimshot",
@@ -81,7 +81,9 @@ impl CaptureScreen {
         if !self.recorder.is_recording() {
             // A pid whose comm is not wf-recorder is a session that died or a
             // number that was reused: forget it rather than offer a Stop that
-            // signals somebody else.
+            // signals somebody else. A webcam overlay from that recording goes
+            // with it.
+            stop_camera(&state);
             lazyos_ui::recording::clear_in(&state);
         }
     }
@@ -104,6 +106,25 @@ impl CaptureScreen {
             );
             keys.push("stop".to_string());
         } else {
+            let options = lazyos_ui::recording::load_options();
+            rows.push(
+                Row::new("Recording audio")
+                    .glyph(Glyph::Volume)
+                    .detail(options.audio.label())
+                    .value("Enter cycles"),
+            );
+            keys.push("record:audio".to_string());
+            rows.push(
+                Row::new("Webcam overlay")
+                    .glyph(Glyph::Camera)
+                    .detail(if options.webcam {
+                        "on · bottom-right corner"
+                    } else {
+                        "off"
+                    })
+                    .value("Enter toggles"),
+            );
+            keys.push("record:webcam".to_string());
             let shotdir = dirs::picture_dir()
                 .map(|p| p.join("Screenshots"))
                 .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Pictures"));
@@ -141,13 +162,13 @@ impl CaptureScreen {
             rows.push(
                 Row::new("Record · the whole screen")
                     .glyph(Glyph::Video)
-                    .detail("until you stop it"),
+                    .detail(format!("until you stop it · {}", options.summary())),
             );
             keys.push("rec:none".to_string());
             rows.push(
                 Row::new("Record · an area")
                     .glyph(Glyph::Video)
-                    .detail("pick it with the pointer"),
+                    .detail(format!("pick it with the pointer · {}", options.summary())),
             );
             keys.push("rec:area".to_string());
         }
@@ -262,7 +283,19 @@ impl CaptureScreen {
             return Outcome::Continue;
         };
         let key = key.as_str();
-        if key.starts_with("shot:") {
+        if key == "record:audio" {
+            let mut options = lazyos_ui::recording::load_options();
+            options.audio = options.audio.cycle();
+            let _ = lazyos_ui::recording::save_options(options);
+            self.build_rows();
+            Outcome::Continue
+        } else if key == "record:webcam" {
+            let mut options = lazyos_ui::recording::load_options();
+            options.webcam = !options.webcam;
+            let _ = lazyos_ui::recording::save_options(options);
+            self.build_rows();
+            Outcome::Continue
+        } else if key.starts_with("shot:") {
             let action = &key[5..];
             let target = action.split(':').nth(1).unwrap_or("");
             let act = action.split(':').next().unwrap_or("");
@@ -441,7 +474,7 @@ fn spawn_self(args: &[String]) {
 ///
 /// `-g` sits before `-f` exactly as `wf-recorder` expects it. The caller owns
 /// every word, so a path with a space stays one argument.
-pub fn recorder_argv(file: &Path, geometry: Option<&str>) -> Vec<String> {
+pub fn recorder_argv(file: &Path, geometry: Option<&str>, audio: Option<&str>) -> Vec<String> {
     let mut argv = vec![
         "wf-recorder".to_string(),
         "-c".to_string(),
@@ -453,6 +486,9 @@ pub fn recorder_argv(file: &Path, geometry: Option<&str>) -> Vec<String> {
         "-r".to_string(),
         "30".to_string(),
     ];
+    if let Some(audio) = audio {
+        argv.push(format!("--audio={audio}"));
+    }
     if let Some(geometry) = geometry {
         argv.push("-g".to_string());
         argv.push(geometry.to_string());
@@ -514,8 +550,12 @@ fn last_line(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-fn announce_recording(file: &Path) {
-    let body = format!("Capturing to {} · Alt+Ctrl+C stops it", basename(file));
+fn announce_recording(file: &Path, options: lazyos_ui::recording::Options) {
+    let body = format!(
+        "Capturing to {} · {} · Alt+Ctrl+C stops it",
+        basename(file),
+        options.summary()
+    );
     if crate::system::have_busy() {
         crate::system::busy("record", "Recording", &body, "media-record");
     } else {
@@ -589,6 +629,200 @@ fn wait_gone(pid: u32, tenths: u32) -> bool {
     !lazyos_ui::recording::is_recorder(pid)
 }
 
+/// The PulseAudio/PipeWire source for the chosen mode.
+fn audio_source(mode: lazyos_ui::recording::AudioMode) -> Result<Option<String>, String> {
+    use lazyos_ui::recording::AudioMode;
+    match mode {
+        AudioMode::Off => Ok(None),
+        AudioMode::Mic => {
+            if let Some(source) = out(&["pactl", "get-default-source"])
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+            {
+                return Ok(Some(source));
+            }
+            let source = out(&["pactl", "list", "short", "sources"]).and_then(|text| {
+                text.lines().find_map(|line| {
+                    let name = line.split_whitespace().nth(1)?;
+                    (!name.ends_with(".monitor")).then(|| name.to_string())
+                })
+            });
+            source
+                .map(Some)
+                .ok_or_else(|| "No microphone source is available (pactl found none)".to_string())
+        }
+        AudioMode::System => {
+            if let Some(sink) = out(&["pactl", "get-default-sink"])
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+            {
+                return Ok(Some(format!("{sink}.monitor")));
+            }
+            let source = out(&["pactl", "list", "short", "sources"]).and_then(|text| {
+                text.lines().find_map(|line| {
+                    let name = line.split_whitespace().nth(1)?;
+                    name.ends_with(".monitor").then(|| name.to_string())
+                })
+            });
+            source.map(Some).ok_or_else(|| {
+                "No system-audio monitor source is available (pactl found none)".to_string()
+            })
+        }
+    }
+}
+
+fn webcam_window_exists() -> bool {
+    out(&["swaymsg", "-t", "get_tree", "-r"])
+        .map(|tree| tree.contains("\"lazyos-webcam\""))
+        .unwrap_or(false)
+}
+
+fn geometry_rect(geometry: Option<&str>) -> (i64, i64, i64, i64) {
+    if let Some(geometry) = geometry
+        && let Some((pos, size)) = geometry.split_once(' ')
+        && let (Some(x), Some(y)) = (
+            pos.split(',').next().and_then(|v| v.trim().parse().ok()),
+            pos.split(',').nth(1).and_then(|v| v.trim().parse().ok()),
+        )
+        && let (Some(w), Some(h)) = (
+            size.split('x').next().and_then(|v| v.trim().parse().ok()),
+            size.split('x').nth(1).and_then(|v| v.trim().parse().ok()),
+        )
+    {
+        return (x, y, w, h);
+    }
+    let fallback = (0, 0, 1366, 768);
+    let Some(text) = out(&["swaymsg", "-t", "get_outputs", "-r"]) else {
+        return fallback;
+    };
+    let Ok(outputs) = serde_json::from_str::<Vec<serde_json::Value>>(&text) else {
+        return fallback;
+    };
+    let Some(output) = outputs
+        .iter()
+        .find(|output| output["focused"].as_bool().unwrap_or(false))
+    else {
+        return fallback;
+    };
+    let rect = &output["rect"];
+    (
+        rect["x"].as_i64().unwrap_or(0),
+        rect["y"].as_i64().unwrap_or(0),
+        rect["width"].as_i64().unwrap_or(1366),
+        rect["height"].as_i64().unwrap_or(768),
+    )
+}
+
+fn workspace_origin() -> (i64, i64) {
+    let Some(text) = out(&["swaymsg", "-t", "get_workspaces", "-r"]) else {
+        return (0, 0);
+    };
+    let Ok(workspaces) = serde_json::from_str::<Vec<serde_json::Value>>(&text) else {
+        return (0, 0);
+    };
+    workspaces
+        .iter()
+        .find(|workspace| workspace["focused"].as_bool().unwrap_or(false))
+        .map(|workspace| {
+            (
+                workspace["rect"]["x"].as_i64().unwrap_or(0),
+                workspace["rect"]["y"].as_i64().unwrap_or(0),
+            )
+        })
+        .unwrap_or((0, 0))
+}
+
+fn place_webcam(geometry: Option<&str>) {
+    let (x, y, w, h) = geometry_rect(geometry);
+    let (wx, wy) = workspace_origin();
+    let px = (x + w - 320 - 20 - wx).max(10);
+    let py = (y + h - 240 - 20 - wy).max(10);
+    let command = format!(
+        "[app_id=\"lazyos-webcam\"] floating enable, border none, resize set 320 240, move position {px} {py}"
+    );
+    let _ = Command::new("swaymsg").arg(command).status();
+}
+
+/// Start the webcam preview window. It is a normal mpv window, placed as a
+/// floating bottom-right overlay; wf-recorder records it as part of the screen.
+fn start_webcam(geometry: Option<&str>) -> Result<u32, String> {
+    if !crate::system::have("mpv") {
+        return Err("mpv is not installed, so the webcam overlay cannot start".to_string());
+    }
+    let state = lazyos_ui::recording::state_dir();
+    let _ = std::fs::create_dir_all(&state);
+    let log = state.join("camera.log");
+    let log_out = File::create(&log).map_err(|error| format!("camera log: {error}"))?;
+    let log_err = log_out
+        .try_clone()
+        .map_err(|error| format!("camera log: {error}"))?;
+    let mut command = Command::new("mpv");
+    command
+        .args([
+            "--no-config",
+            "--really-quiet",
+            "--vo=wlshm",
+            "--no-osc",
+            "--no-input-default-bindings",
+            "--no-border",
+            "--ontop",
+            "--wayland-app-id=lazyos-webcam",
+            "--title=LazyOS Webcam",
+            "--geometry=320x240",
+            "av://v4l2:/dev/video0",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(log_out))
+        .stderr(Stdio::from(log_err));
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let child = command
+        .spawn()
+        .map_err(|error| format!("cannot start mpv: {error}"))?;
+    let pid = child.id();
+    for _ in 0..15 {
+        std::thread::sleep(Duration::from_millis(100));
+        if webcam_window_exists() {
+            break;
+        }
+    }
+    place_webcam(geometry);
+    // mpv finishes sizing the surface just after the app id appears; a second
+    // placement wins over that resize and leaves the 320x240 overlay.
+    std::thread::sleep(Duration::from_millis(300));
+    place_webcam(geometry);
+    Ok(pid)
+}
+
+fn stop_camera_pid(pid: Option<u32>) {
+    if let Some(pid) = pid {
+        signal(pid, libc::SIGTERM);
+    }
+}
+
+fn stop_camera(state: &Path) {
+    let path = state.join("camera.pid");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let _ = std::fs::remove_file(&path);
+    let Ok(pid) = text.trim().parse::<u32>() else {
+        return;
+    };
+    let comm = std::fs::read_to_string(format!("/proc/{pid}/comm"))
+        .map(|value| value.trim().to_string())
+        .ok();
+    if comm.as_deref() == Some("mpv") {
+        signal(pid, libc::SIGTERM);
+    }
+}
+
 /// `lazyos menu capture --start [area]`: run detached by the menu.
 ///
 /// The recorder is spawned as its own argv, so the pid saved here is the
@@ -606,6 +840,25 @@ pub fn start_headless(area: bool) -> i32 {
     } else {
         None
     };
+    let options = lazyos_ui::recording::load_options();
+    let audio = match audio_source(options.audio) {
+        Ok(source) => source,
+        Err(error) => {
+            announce_start_failure(&error);
+            return 1;
+        }
+    };
+    let camera = if options.webcam {
+        match start_webcam(geometry.as_deref()) {
+            Ok(pid) => Some(pid),
+            Err(error) => {
+                announce_start_failure(&error);
+                return 1;
+            }
+        }
+    } else {
+        None
+    };
     let state = lazyos_ui::recording::state_dir();
     let file = videos_file();
     if let Some(parent) = file.parent() {
@@ -614,14 +867,16 @@ pub fn start_headless(area: bool) -> i32 {
     let _ = std::fs::create_dir_all(&state);
     let log = state.join("recorder.log");
     let Ok(log_out) = File::create(&log) else {
+        stop_camera_pid(camera);
         announce_start_failure("the recorder log could not be opened");
         return 1;
     };
     let Ok(log_err) = log_out.try_clone() else {
+        stop_camera_pid(camera);
         announce_start_failure("the recorder log could not be opened");
         return 1;
     };
-    let argv = recorder_argv(&file, geometry.as_deref());
+    let argv = recorder_argv(&file, geometry.as_deref(), audio.as_deref());
     let mut command = Command::new(&argv[0]);
     command
         .args(&argv[1..])
@@ -641,6 +896,7 @@ pub fn start_headless(area: bool) -> i32 {
     let child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
+            stop_camera_pid(camera);
             lazyos_ui::recording::clear_in(&state);
             announce_start_failure(&error.to_string());
             return 1;
@@ -651,19 +907,24 @@ pub fn start_headless(area: bool) -> i32 {
     if lazyos_ui::recording::is_recorder(pid) {
         match write_state(&state, pid, &file) {
             Ok(()) => {
-                announce_recording(&file);
+                if let Some(camera) = camera {
+                    let _ = std::fs::write(state.join("camera.pid"), format!("{camera}\n"));
+                }
+                announce_recording(&file, options);
                 0
             }
             Err(error) => {
                 // A recorder with no saved pid cannot be stopped from the menu,
                 // so end it now instead of leaving it running invisibly.
                 signal(pid, libc::SIGINT);
+                stop_camera_pid(camera);
                 lazyos_ui::recording::clear_in(&state);
                 announce_start_failure(&format!("the recording state could not be saved: {error}"));
                 1
             }
         }
     } else {
+        stop_camera_pid(camera);
         lazyos_ui::recording::clear_in(&state);
         announce_start_failure(&last_line(&log));
         1
@@ -691,7 +952,9 @@ pub fn stop_wait(pid: u32, file: &str) -> i32 {
         signal(pid, libc::SIGKILL);
         true
     };
-    lazyos_ui::recording::clear();
+    let state = lazyos_ui::recording::state_dir();
+    stop_camera(&state);
+    lazyos_ui::recording::clear_in(&state);
     announce_stopped(&path, forced);
     0
 }
@@ -751,7 +1014,7 @@ mod tests {
 
     #[test]
     fn the_recorder_is_started_as_its_own_argv() {
-        let argv = recorder_argv(Path::new("/home/brunux/Videos/a.mp4"), None);
+        let argv = recorder_argv(Path::new("/home/brunux/Videos/a.mp4"), None, None);
         assert_eq!(argv[0], "wf-recorder");
         assert!(
             !argv.iter().any(|arg| arg == "sh" || arg == "eval"),
@@ -768,7 +1031,7 @@ mod tests {
 
     #[test]
     fn an_area_recording_passes_the_slurp_geometry_directly() {
-        let argv = recorder_argv(Path::new("/tmp/a.mp4"), Some("10,20 300x200"));
+        let argv = recorder_argv(Path::new("/tmp/a.mp4"), Some("10,20 300x200"), None);
         let geometry = argv.iter().position(|arg| arg == "-g").unwrap();
         assert_eq!(argv[geometry + 1], "10,20 300x200");
         let file = argv.iter().position(|arg| arg == "-f").unwrap();
@@ -779,9 +1042,28 @@ mod tests {
     }
 
     #[test]
+    fn an_audio_recording_names_the_source_as_one_argument() {
+        let argv = recorder_argv(
+            Path::new("/tmp/a.mp4"),
+            None,
+            Some("alsa_input.platform-sound.HiFi__Mic__source"),
+        );
+        assert!(
+            argv.iter()
+                .any(|arg| arg == "--audio=alsa_input.platform-sound.HiFi__Mic__source")
+        );
+        let audio = argv
+            .iter()
+            .position(|arg| arg.starts_with("--audio="))
+            .unwrap();
+        let file = argv.iter().position(|arg| arg == "-f").unwrap();
+        assert!(audio < file, "audio is a recorder option");
+    }
+
+    #[test]
     fn a_path_with_a_space_or_quote_stays_one_argument() {
         let path = Path::new("/home/brunux/My Videos/it's.mp4");
-        let argv = recorder_argv(path, None);
+        let argv = recorder_argv(path, None, None);
         assert!(argv.iter().any(|arg| arg == &path.to_string_lossy()));
         assert_eq!(argv.iter().filter(|arg| *arg == "-f").count(), 1);
     }

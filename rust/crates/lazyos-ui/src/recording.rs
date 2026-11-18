@@ -115,6 +115,135 @@ pub fn read() -> Recorder {
     read_in(&state_dir())
 }
 
+/// What to record beside the screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AudioMode {
+    Off,
+    Mic,
+    System,
+}
+
+impl AudioMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Mic => "mic",
+            Self::System => "system",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        match text.trim() {
+            "off" => Some(Self::Off),
+            "mic" => Some(Self::Mic),
+            "system" => Some(Self::System),
+            _ => None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "no audio",
+            Self::Mic => "microphone",
+            Self::System => "system audio (line out)",
+        }
+    }
+
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Off => Self::Mic,
+            Self::Mic => Self::System,
+            Self::System => Self::Off,
+        }
+    }
+}
+
+/// The webinar options saved between recordings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Options {
+    pub audio: AudioMode,
+    pub webcam: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            audio: AudioMode::Off,
+            webcam: false,
+        }
+    }
+}
+
+impl Options {
+    pub fn summary(self) -> String {
+        format!(
+            "{} · camera {}",
+            self.audio.label(),
+            if self.webcam { "on" } else { "off" }
+        )
+    }
+}
+
+/// `~/.config/lazyos/record.conf`: what the next recording includes.
+pub fn options_path() -> PathBuf {
+    let base = std::env::var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::var("HOME")
+                .map(|home| PathBuf::from(home).join(".config"))
+                .unwrap_or_else(|_| PathBuf::from("/tmp"))
+        });
+    base.join("lazyos/record.conf")
+}
+
+fn parse_options(text: &str) -> Options {
+    let mut options = Options::default();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        match key.trim() {
+            "audio" => {
+                if let Some(mode) = AudioMode::parse(value) {
+                    options.audio = mode;
+                }
+            }
+            "webcam" => options.webcam = value.trim() == "on",
+            _ => {}
+        }
+    }
+    options
+}
+
+fn options_body(options: Options) -> String {
+    format!(
+        "# LazyOS recording options. Read by `lazyos menu capture --start`.\n\
+         audio={}\nwebcam={}\n",
+        options.audio.as_str(),
+        if options.webcam { "on" } else { "off" }
+    )
+}
+
+pub fn load_options() -> Options {
+    std::fs::read_to_string(options_path())
+        .map(|text| parse_options(&text))
+        .unwrap_or_default()
+}
+
+pub fn save_options(options: Options) -> std::io::Result<()> {
+    let path = options_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("part");
+    std::fs::write(&tmp, options_body(options))?;
+    std::fs::rename(tmp, path)
+}
+
 /// Is a capture running in this state directory?
 pub fn is_recording_in(state: &Path) -> bool {
     pid_in(state).is_some_and(is_recorder)
@@ -129,6 +258,7 @@ pub fn is_recording() -> bool {
 pub fn clear_in(state: &Path) {
     let _ = std::fs::remove_file(state.join("recording.pid"));
     let _ = std::fs::remove_file(state.join("recording.file"));
+    let _ = std::fs::remove_file(state.join("camera.pid"));
 }
 
 /// Forget this session's recorder. Safe when there was none.
@@ -237,6 +367,20 @@ mod tests {
         std::fs::write(state.join("recording.pid"), "not a pid\n").unwrap();
         assert!(!is_recording_in(&state));
         let _ = std::fs::remove_dir_all(&state);
+    }
+
+    #[test]
+    fn record_options_round_trip_and_cycle() {
+        let options = Options {
+            audio: AudioMode::Mic,
+            webcam: true,
+        };
+        let text = options_body(options);
+        assert_eq!(parse_options(&text), options);
+        assert_eq!(AudioMode::Off.cycle(), AudioMode::Mic);
+        assert_eq!(AudioMode::Mic.cycle(), AudioMode::System);
+        assert_eq!(AudioMode::System.cycle(), AudioMode::Off);
+        assert_eq!(AudioMode::System.label(), "system audio (line out)");
     }
 
     #[test]

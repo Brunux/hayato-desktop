@@ -330,7 +330,9 @@ ends before the list closes again:
 | **Text from an area** | `slurp` picks the region, `tesseract` reads it, and the text lands in the clipboard, with the first line in the notification. English is what the image ships (`tesseract-ocr-eng`); other languages are one `apt install` away |
 | **QR code from an area** | `zbarimg` reads a QR code (or an EAN/Code-128 barcode) from the region and copies what it says |
 | **Make a QR code** | the Wi-Fi network's password (read from the saved profile, so it is not typed again) or any text, drawn in a floating terminal by `qrencode`; nothing is left on disk |
-| **Record** · the whole screen / an area | `wf-recorder` starts writing an `.mp4` into `~/Videos`, and the same menu row turns into **Stop recording** |
+| **Recording audio** | cycles **no audio** → **microphone** → **system audio (line out)**; the choice is saved for the next recording |
+| **Webcam overlay** | on/off; on starts an mpv camera preview in the bottom-right corner, and `wf-recorder` records it as part of the screen |
+| **Record** · the whole screen / an area | `wf-recorder` starts writing an `.mp4` into `~/Videos` with the chosen audio and camera, and the same menu row turns into **Stop recording** |
 
 The recording is the one thing that outlives the list, so it says so on the bar:
 the spinner carries `Recording` until it is stopped. **No card is drawn while a
@@ -340,14 +342,19 @@ like a broken region). Other notifications are held back for the same reason
 and still land in the notification history; critical ones (a failing disk, a
 dying battery) still show. It encodes with x264 on the CPU because this SoC has
 no hardware encoder (`veryfast`, crf 28, 30 fps - the point where a full-screen
-recording still leaves the compositor its frame budget). There is **no audio
-track**: that needs a PipeWire monitor source and nothing here wires one, so
-`wf-recorder -a` would record the microphone instead. The file is finalised on
-SIGINT, which is what Stop sends to `wf-recorder` itself; the menu starts the
-recorder as its own process (never through a shell), so the pid it saves is the
-recorder's and Stop cannot signal a wrapper. If it ignores SIGINT, Stop sends
-SIGTERM and then kills it, and says the file may be incomplete instead of
-claiming success. The "saved" card appears only after the recorder is gone, so
+recording still leaves the compositor its frame budget). **Recording audio**
+uses the default PipeWire source for **microphone** or the default sink's
+`.monitor` source for **system audio (line out)**; `wf-recorder` writes it into
+the same `.mp4`. **Webcam overlay** starts `mpv` on `/dev/video0` as a floating
+bottom-right window, so the camera is part of the recorded screen; for an area
+recording the overlay is placed inside the selected area. The options are saved
+in `~/.config/lazyos/record.conf` and shown in the record row. The file is
+finalised on SIGINT, which is what Stop sends to `wf-recorder` itself; the menu
+starts the recorder as its own process (never through a shell), so the pid it
+saves is the recorder's and Stop cannot signal a wrapper. If it ignores SIGINT,
+Stop sends SIGTERM and then kills it, and says the file may be incomplete
+instead of claiming success. The "saved" card appears only after the recorder
+is gone, so
 it is not in the video either.
 
 The QR the Wi-Fi row shows is the phone-readable `WIFI:T:WPA;S:…;P:…;;`, with

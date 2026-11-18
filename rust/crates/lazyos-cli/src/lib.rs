@@ -391,7 +391,7 @@ fn query(resolved: &Resolved) -> Option<i32> {
                 .first()
                 .copied()
                 .filter(|geometry| !geometry.is_empty());
-            for arg in system::capture::recorder_argv(std::path::Path::new(file), geometry) {
+            for arg in system::capture::recorder_argv(std::path::Path::new(file), geometry, None) {
                 println!("{arg}");
             }
             Some(EXIT_OK)
