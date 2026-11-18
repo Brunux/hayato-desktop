@@ -23,6 +23,7 @@ never loads a web page; its scan, ids and launch rules live in
 | type | filter the current tab by title or platform |
 | f | favourite / unfavourite |
 | s | rescan `~/Games` |
+| **m** | **this manual**, inside the library: scroll it, Esc goes back |
 | Esc | clear the filter, then close the library |
 | Alt+F | fullscreen on or off (the compositor) |
 
@@ -36,6 +37,21 @@ library without a separate mode.
 The Games library does **not** use the browser's Gamepad API; the HTML game
 does. RetroArch reads the pad through udev and its own autoconfig, so a pad
 never moves two things at once.
+
+## The manual, inside the library
+
+**`m`** opens a manual over the library: where a ROM goes, the platform table
+with its extensions and core, the firmware files, the steps to play, the keys,
+the save locations and the fixes for the common failures. ↑/↓ scroll a line,
+**PgUp/PgDn** a page, **Home/End** the ends, and **Esc** (or `m`) goes back to
+the list. It is the same information as this page, short enough to read without
+leaving the window.
+
+The table is not a copy: it is built from `platform::PLATFORMS`, the table the
+scan itself uses, and each row asks the library whether that core is installed
+— so a row that says **core missing** here is the same answer Enter gives.
+Adding a platform to that table adds it to the manual, the scan and the launch
+path at once.
 
 ## Retro games
 

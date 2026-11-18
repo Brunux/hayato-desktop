@@ -98,6 +98,12 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    **exits before a game starts**; the host returns to a new `lazyos menu games` window, so the
    TUI and the game window are never alive together on a 4 GB machine. Web games are trusted
    local data; the sandbox and per-origin storage are the boundary, not a second shell.
+   **`m` opens the library's manual in the same screen** (`Mode::Manual`): where a ROM goes, the
+   firmware names, the keys, the saves and the common failures, wrapped to the window and
+   scrollable. Its platform table is generated from `platform::PLATFORMS` and asks
+   `Library::core_present` per row, so the manual cannot drift from the scan or from Enter;
+   never write a second copy of that table by hand. The prose is a short form of
+   `08-games.md`, which stays the long reference.
 15. **A controller is the session's input helper**: `lazyos gamepad` reads `/dev/input` through
    evdev and injects arrows, Enter and Escape with `wtype` into the focused `lazyos-*` window
    (the root menu, Settings, Files, the Games TUI). The library is one of those windows; its tabs
