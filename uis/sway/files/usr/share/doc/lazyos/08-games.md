@@ -56,26 +56,44 @@ list type to filter); Alt+O/M/R are unbound everywhere else, so a press still
 cannot move two things at once. `f` (favourite) and `s` (rescan) are keyboard
 keys.
 
+Those are the defaults, and they fit a PlayStation 3 pad as well as an Xbox
+one: **Cross** confirms, **Circle** cancels, **Square** opens the options,
+**Triangle** the manual, **L1** the folder. Every button can be reassigned in
+**Settings → Input → Controller**, or from the library's **`o` → Controller**
+row, which opens the same screen in its own window. The screen works with no
+pad connected — the action is chosen with ←/→ — so a preconfigured pad can be
+edited before it is paired. Changes go to `~/.config/lazyos/pad.json` and
+`lazyos gamepad` reads the file again within two seconds; no restart.
+
+A PlayStation 3 pad is paired once over USB: plug it in, press the **PS**
+button, unplug it, and press **PS** again. BlueZ's sixaxis support writes this
+machine's address into the pad; the mapper picks the pad up as soon as it
+appears.
+
 The Games library does **not** use the browser's Gamepad API; the HTML game
 does. RetroArch reads the pad through udev and its own autoconfig, so a pad
 never moves two things at once.
 
 ## Options
 
-**`o`** opens four settings, and only four — the rest are keys, not
+**`o`** opens four settings and one action — the rest are keys, not
 preferences:
 
-| Option | Values | Does |
+| Row | Values | Does |
 |---|---|---|
 | **Sort** | Title, Recent, Platform | the order of the shelf |
 | **Layout** | Shelf, List | rich cards, or the dense one-line list |
 | **Covers** | On, Off | the cartridge and the hero's monogram |
 | **Hide missing cores** | Off, On | hide a game whose core is not installed |
+| **Controller** | Enter | the pad's buttons, in their own window |
 
-↑/↓ pick a row, ←/→ (or Enter/Space) change it, **Esc** goes back. Every change
-is saved in `~/.local/state/lazyos/games/state.json` with the favourites and the
-position, so the library opens the way you left it, and the window resizes when
-you switch between Shelf and List.
+↑/↓ pick a row, ←/→ (or Enter/Space) change a value, **Esc** goes back. Every
+value is saved in `~/.local/state/lazyos/games/state.json` with the favourites
+and the position, so the library opens the way you left it, and the window
+resizes when you switch between Shelf and List. **Controller** is the one row
+that opens a screen instead of changing a value: it is the same
+`Settings → Input → Controller` screen, which remaps the pad and explains the
+PS3 pairing.
 
 ## The manual, inside the library
 

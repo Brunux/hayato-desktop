@@ -11,6 +11,13 @@
 //! letter would type into another screen's filter (the root menu types to
 //! filter, the files list too), while Alt+O, Alt+M and Alt+R are unbound in
 //! every other framework window, so a press still cannot move two things.
+//!
+//! The button table is not in this file: it is [`crate::padmap`], the same one
+//! the Controller screen (`lazyos menu controller`) edits and saves to
+//! `~/.config/lazyos/pad.json`. This loop reloads that file when its mtime
+//! changes, so a remap takes effect within two seconds and never needs a
+//! restart.
+//!
 //! The Games library reads the pad itself (`lazyos-games`), RetroArch and the
 //! HTML games keep their own input, and a plain `foot` shell or any other app is
 //! left alone, so the same D-pad cannot move two things at once.
@@ -21,7 +28,9 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
+
+use crate::padmap::{Action, Bindings};
 
 struct Pad {
     device: evdev::Device,
@@ -37,6 +46,8 @@ pub fn run() -> i32 {
         let _ = std::fs::write(&lock, std::process::id().to_string());
     }
 
+    let mut bindings = Bindings::load();
+    let mut config_mtime = config_stamp();
     let mut pads: Vec<Pad> = Vec::new();
     let mut known: BTreeSet<PathBuf> = BTreeSet::new();
     let mut last_scan = Instant::now() - Duration::from_secs(5);
@@ -55,6 +66,11 @@ pub fn run() -> i32 {
 
         if last_scan.elapsed() >= Duration::from_secs(2) {
             last_scan = Instant::now();
+            let mtime = config_stamp();
+            if mtime != config_mtime {
+                config_mtime = mtime;
+                bindings = Bindings::load();
+            }
             for (path, device) in evdev::enumerate() {
                 if !known.insert(path) {
                     continue;
@@ -90,10 +106,8 @@ pub fn run() -> i32 {
                 match event.destructure() {
                     evdev::EventSummary::Key(_, key, 1) => {
                         if active {
-                            if let Some(name) = key_name(key) {
-                                send_key(name);
-                            } else if let Some(letter) = alt_name(key) {
-                                send_alt(letter);
+                            if let Some(action) = bindings.action_for(key) {
+                                send_action(action);
                             }
                         }
                         match key {
@@ -160,27 +174,33 @@ pub fn run() -> i32 {
     }
 }
 
-fn key_name(key: evdev::KeyCode) -> Option<&'static str> {
-    match key {
-        evdev::KeyCode::BTN_DPAD_LEFT => Some("Left"),
-        evdev::KeyCode::BTN_DPAD_RIGHT => Some("Right"),
-        evdev::KeyCode::BTN_DPAD_UP => Some("Up"),
-        evdev::KeyCode::BTN_DPAD_DOWN => Some("Down"),
-        evdev::KeyCode::BTN_SOUTH | evdev::KeyCode::BTN_START => Some("Return"),
-        evdev::KeyCode::BTN_EAST => Some("Escape"),
-        _ => None,
+/// What a table action becomes on the keyboard: a key every framework window
+/// reads, or an Alt+letter for the three actions that are the library's own.
+fn send_action(action: Action) {
+    if let Some(letter) = action.alt() {
+        send_alt(letter);
+        return;
     }
+    let key = match action {
+        Action::Nothing => return,
+        Action::Up => "Up",
+        Action::Down => "Down",
+        Action::Left => "Left",
+        Action::Right => "Right",
+        Action::Enter => "Return",
+        Action::Escape => "Escape",
+        // `alt()` handled these three above.
+        Action::Options | Action::Manual | Action::Folder => return,
+    };
+    send_key(key);
 }
 
-/// The Games library's own buttons. They are Alt+letter for the reason in the
-/// module comment: the letters alone would reach another screen's filter.
-fn alt_name(key: evdev::KeyCode) -> Option<&'static str> {
-    match key {
-        evdev::KeyCode::BTN_WEST => Some("o"),
-        evdev::KeyCode::BTN_NORTH => Some("m"),
-        evdev::KeyCode::BTN_TL => Some("r"),
-        _ => None,
-    }
+/// The pad file's mtime, or `None` when there is no file yet. The mapper reads
+/// the table again when this changes, which is how a remap applies without a
+/// restart.
+fn config_stamp() -> Option<SystemTime> {
+    let path = Bindings::path()?;
+    std::fs::metadata(path).ok()?.modified().ok()
 }
 
 fn send_alt(letter: &str) {
@@ -256,22 +276,4 @@ fn already_running(lock: &PathBuf) -> bool {
     cmdline
         .split(|byte| *byte == 0)
         .any(|part| part == b"gamepad")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_face_buttons_carry_the_library_actions() {
-        assert_eq!(alt_name(evdev::KeyCode::BTN_WEST), Some("o"));
-        assert_eq!(alt_name(evdev::KeyCode::BTN_NORTH), Some("m"));
-        assert_eq!(alt_name(evdev::KeyCode::BTN_TL), Some("r"));
-        // A, B, Start and the d-pad stay the keys every screen reads.
-        assert_eq!(alt_name(evdev::KeyCode::BTN_SOUTH), None);
-        assert_eq!(alt_name(evdev::KeyCode::BTN_EAST), None);
-        assert_eq!(alt_name(evdev::KeyCode::BTN_DPAD_UP), None);
-        assert_eq!(key_name(evdev::KeyCode::BTN_SOUTH), Some("Return"));
-        assert_eq!(key_name(evdev::KeyCode::BTN_EAST), Some("Escape"));
-    }
 }

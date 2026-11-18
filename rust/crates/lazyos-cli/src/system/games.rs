@@ -46,7 +46,7 @@ const LIST_SIZE: (u16, u16) = (1000, 640);
 const HERO_MIN_WIDTH: u16 = 100;
 /// A shelf card: the cartridge, the title, the detail and the path.
 const CARD_HEIGHT: u16 = 3;
-const OPTION_ROWS: usize = 4;
+const OPTION_ROWS: usize = 5;
 
 pub struct GamesScreen {
     options: ScanOptions,
@@ -401,6 +401,23 @@ impl GamesScreen {
                 Outcome::Consumed
             }
         }
+    }
+
+    /// The Controller screen in its own window, like `r` opens Files: this
+    /// screen owns no terminal to hand a nested screen, and the mapper reads
+    /// the file the window writes, so nothing here has to know the table.
+    fn open_controller(&mut self) {
+        let result = std::process::Command::new("foot")
+            .args(["--app-id=lazyos-pick", "-e", "lazyos", "menu", "controller"])
+            .env("LAZYOS_UI", "1")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        self.note = Some(match result {
+            Ok(_) => "Opened the controller settings".to_string(),
+            Err(error) => format!("Cannot open the controller settings: {error}"),
+        });
     }
 
     /// Open the selected game's folder in Files, in its own window. The shelf
@@ -808,11 +825,17 @@ impl GamesScreen {
                 Outcome::Consumed
             }
             KeyCode::Left | KeyCode::Char('h') => {
-                self.cycle_option(row, -1);
+                if row + 1 < OPTION_ROWS {
+                    self.cycle_option(row, -1);
+                }
                 Outcome::Consumed
             }
             KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter | KeyCode::Char(' ') => {
-                self.cycle_option(row, 1);
+                if row + 1 == OPTION_ROWS {
+                    self.open_controller();
+                } else {
+                    self.cycle_option(row, 1);
+                }
                 Outcome::Consumed
             }
             KeyCode::Esc | KeyCode::Char('o') | KeyCode::Char('q') => {
@@ -1007,6 +1030,7 @@ fn option_rows(options: &Options) -> [(&'static str, String); OPTION_ROWS] {
         ("Layout", layout_label(options.layout).to_string()),
         ("Covers", on_off(options.covers)),
         ("Hide missing cores", on_off(options.hide_missing)),
+        ("Controller", "remap".to_string()),
     ]
 }
 
@@ -1036,7 +1060,7 @@ fn draw_options(ctx: &mut BodyCtx, state: &OptionsState, options: &Options) {
         ctx.area,
         Style::default().bg(ctx.design.color(ColorRole::Bg)),
     );
-    let card = centered(ctx.area, 50, 9);
+    let card = centered(ctx.area, 50, 10);
     draw_card_with(
         ctx.buf,
         card,
@@ -1092,6 +1116,14 @@ fn draw_options(ctx: &mut BodyCtx, state: &OptionsState, options: &Options) {
             .fg(ctx.design.color(ColorRole::Dim))
             .bg(background);
         ctx.buf.set_string(inner.x, y, label, label_style);
+        if index + 1 == OPTION_ROWS {
+            let action = "open ↵";
+            let action_x = inner
+                .right()
+                .saturating_sub(UnicodeWidthStr::width(action) as u16);
+            ctx.buf.set_string(action_x, y, action, value_style);
+            continue;
+        }
         let arrows = "‹  ›";
         let arrows_x = inner
             .right()
@@ -1416,7 +1448,7 @@ fn manual_markdown(roots: &[PathBuf], core_present: &dyn Fn(&str) -> bool) -> St
          | `↑` / `↓` | move through the games |\n\
          | `Enter` | play the selected game |\n\
          | type | filter the platform by title or platform |\n\
-         | `o` | options: sort, layout, covers, hide missing cores |\n\
+         | `o` | options: sort, layout, covers, hide missing cores, controller |\n\
          | `m` | this manual |\n\
          | `r` | open the game's folder in Files |\n\
          | `f` | favourite / unfavourite |\n\
@@ -1640,13 +1672,14 @@ mod tests {
     }
 
     #[test]
-    fn the_options_are_four_and_name_the_current_value() {
+    fn the_options_are_four_values_and_a_controller_row() {
         let rows = option_rows(&Options::default());
         assert_eq!(rows.len(), OPTION_ROWS);
         assert_eq!(rows[0], ("Sort", "Title".to_string()));
         assert_eq!(rows[1], ("Layout", "Shelf".to_string()));
         assert_eq!(rows[2], ("Covers", "On".to_string()));
         assert_eq!(rows[3], ("Hide missing cores", "Off".to_string()));
+        assert_eq!(rows[4], ("Controller", "remap".to_string()));
     }
 
     #[test]

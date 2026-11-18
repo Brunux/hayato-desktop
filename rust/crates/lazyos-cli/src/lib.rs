@@ -47,6 +47,7 @@ pub mod installer;
 pub mod mcp;
 pub mod menu;
 mod notify;
+pub mod padmap;
 pub mod paths;
 pub mod system;
 pub mod task_cmd;
@@ -288,6 +289,12 @@ fn query(resolved: &Resolved) -> Option<i32> {
         }
         ("menu games", ["--rows"]) => {
             for row in system::games::rows() {
+                println!("{row}");
+            }
+            Some(EXIT_OK)
+        }
+        ("menu controller", ["--rows"]) => {
+            for row in system::pad::rows() {
                 println!("{row}");
             }
             Some(EXIT_OK)
@@ -577,6 +584,7 @@ fn execute(
         "menu find" => find_menu(resolved, terminal, design),
         "menu grep" => grep_menu(resolved, terminal, design),
         "menu games" => system::games::menu(terminal, design),
+        "menu controller" => system::pad::menu(terminal, design),
         "menu media" => system::media::menu(terminal, design),
         "menu notify" => system::notify::menu(terminal, design),
         "menu clip" => system::clip::menu(terminal, design),

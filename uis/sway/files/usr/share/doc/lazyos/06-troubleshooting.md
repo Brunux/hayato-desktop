@@ -930,6 +930,13 @@ where it fails.
   options/manual are **X** and **Y** (sent as Alt+O and Alt+M). A plain
   `foot` shell, Firefox and other applications are deliberately not mapped,
   because they may handle a pad themselves.
+- **A PlayStation 3 pad does not appear**: it pairs over USB, not by scanning.
+  Plug it in, press **PS** (BlueZ's sixaxis support writes this machine's
+  address into the pad), unplug it and press **PS** again. It then connects by
+  Bluetooth and appears within two seconds; `bluetoothctl info <MAC>` or
+  Settings → Network → Bluetooth shows the link. If it connects but the buttons
+  do the wrong thing, open **Settings → Input → Controller**: every button's
+  action is there, and the table can be edited with no pad connected.
 - **In the HTML game window only**: the game uses the browser Gamepad API,
   which is separate from the mapper; check that the game calls
   `navigator.getGamepads()` and that the pad is a standard-mapping one.

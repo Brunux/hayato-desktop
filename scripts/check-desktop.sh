@@ -3892,6 +3892,36 @@ if have lazyos-games; then
 	else
 		fail "lazyos menu games --rows failed (the library screen is not reachable)"
 	fi
+	if lazyos menu controller --rows >/dev/null 2>&1; then
+		ok "the Controller screen answers --rows"
+	else
+		fail "lazyos menu controller --rows failed (the pad table is not reachable)"
+	fi
+	_controller_rows=$(lazyos menu controller --rows 2>/dev/null | wc -l)
+	if [ "${_controller_rows:-0}" -eq 16 ]; then
+		ok "the pad table has sixteen buttons"
+	else
+		fail "the pad table has ${_controller_rows:-0} rows, expected 16"
+	fi
+	_hid_sony=
+	if have modinfo && modinfo -F filename hid_sony >/dev/null 2>&1; then
+		_hid_sony=1
+	else
+		for _hid_module in /lib/modules/"$(uname -r)"/kernel/drivers/hid/hid-sony.ko*; do
+			[ -e "$_hid_module" ] && _hid_sony=1
+		done
+	fi
+	if [ -n "$_hid_sony" ]; then
+		ok "the kernel has the PlayStation HID driver (hid_sony)"
+	else
+		warn "no hid_sony module: a PS3 pad may not appear"
+	fi
+	if [ -x /usr/libexec/bluetooth/bluetoothd ] &&
+		grep -aq sixaxis /usr/libexec/bluetooth/bluetoothd; then
+		ok "BlueZ can cable-pair a PS3 pad (sixaxis is built in)"
+	else
+		warn "BlueZ has no sixaxis support: a PS3 pad needs an external pairing tool"
+	fi
 	if have retroarch; then
 		_ra_version="$(retroarch --version 2>/dev/null | sed -n 's/^Version: //p' | head -n 1)"
 		ok "RetroArch is installed (${_ra_version:-version unknown})"

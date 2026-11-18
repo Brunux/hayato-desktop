@@ -14,7 +14,7 @@ greeter, and user manual for [LazyOS](https://github.com/Brunux/LazyOS).
 - `brand/` — SVG master artwork and generated brand assets
 - `packages/tools.list` — Desktop userland CLI package manifest
 - `packages/games.list` — Libretro cores, installed after the slim RetroArch package
-- `lazyos gamepad` — the session's controller mapper (`lazyos-cli/src/gamepad.rs`): evdev → `wtype` arrows/Enter/Escape for the `lazyos-*` windows
+- `lazyos gamepad` — the session's controller mapper (`lazyos-cli/src/gamepad.rs`): evdev → `wtype` arrows/Enter/Escape for the `lazyos-*` windows, with the button table in `padmap.rs` and a Controller screen (`menu controller`) that edits it
 - `scripts/` — Build, asset generation, staging (`stage-desktop.sh`), and `check-desktop.sh`
 
 ## Verification

@@ -314,6 +314,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &[],
     },
     CommandSpec {
+        // The controller: what each pad button does, saved where the mapper
+        // reads it. The row is also reachable from Settings → Input.
+        path: "menu controller",
+        summary: "the gamepad: what each button does, and the PS3 pairing",
+        shape: Shape::Pick,
+        symlinks: &[],
+        installed: &[],
+    },
+    CommandSpec {
         // Media: player state and transport (spec 011).
         path: "menu media",
         summary: "what is playing, and the transport keys (spec 011)",

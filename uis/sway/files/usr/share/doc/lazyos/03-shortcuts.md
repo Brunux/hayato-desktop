@@ -16,8 +16,8 @@ replacement for the keyboard.
 | Pad | Every LazyOS window (root menu, Settings, Files, Games, …) |
 |---|---|
 | D-pad / left stick | arrows: move the focused row |
-| A / Start | Enter: open / play |
-| B | Escape: back or close |
+| A / Cross / Start | Enter: open / play |
+| B / Circle | Escape: back or close |
 | Select + Start | Escape |
 | X | options, in the Games library |
 | Y | manual, in the Games library |
@@ -30,9 +30,20 @@ is **↑ / ↓**, and the manual it opens with **m** (or **Y**) scrolls with the
 same arrows. X, Y and L1 are sent as Alt+O, Alt+M and Alt+R: a bare letter would
 type into another screen's filter, and those three combinations are unbound
 everywhere else.
+Every button can be reassigned in **Settings → Input → Controller** (or **`o` →
+Controller** in the game library). The screen shows the pad it found, or
+**No controller connected** — the table is still editable with ←/→, so a pad can
+be configured before it is paired. Changes are written to
+`~/.config/lazyos/pad.json` and `lazyos gamepad` reloads it within two seconds.
+
+A **PlayStation 3** pad is already covered by the defaults. Pair it once over
+USB: plug it in, press **PS**, unplug it and press **PS** again; BlueZ's
+sixaxis support stores this machine's address, and the mapper picks the pad up
+when it appears. `06-troubleshooting.md` has the checks when a pad does nothing.
+
 The HTML game host and RetroArch keep their own input (the browser Gamepad API
 and udev), and a plain `foot` shell and other applications are deliberately not
-mapped. `06-troubleshooting.md` has the checks when a pad does nothing.
+mapped.
 
 ## Getting around
 

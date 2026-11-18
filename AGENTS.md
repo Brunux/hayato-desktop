@@ -124,8 +124,14 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    are Left/Right and its list Up/Down. Its own surfaces get three buttons — X options, Y manual,
    L1 the folder in Files — sent as **Alt+O / Alt+M / Alt+R**, never bare letters, because a bare
    letter would type into another screen's filter; the Alt combinations are unbound elsewhere.
-   The HTML game host and RetroArch keep their own input (the browser Gamepad API and udev), so a
-   press never moves two things. It is the one resident input helper; a pid lock keeps it single. The game stack itself is built, not installed from
+   The table lives in `crate::padmap`, not in the mapper: the Controller screen (`menu controller`,
+   Settings → Input, and the library's `o` row) edits it and writes
+   `~/.config/lazyos/pad.json`, and the mapper reloads the file when its mtime changes, so a remap
+   needs no restart and works with no pad connected. The defaults are the console layout and cover
+   a PS3 pad (Cross confirm, Circle cancel); PS3 pairing is BlueZ's sixaxis plugin over USB, never
+   a scan. The HTML game host and RetroArch keep their own input (the browser Gamepad API and
+   udev), so a press never moves two things. It is the one resident input helper; a pid lock keeps
+   it single. The game stack itself is built, not installed from
    Debian: `tools/retroarch/` builds the slim emulator (no Qt, assets, FFmpeg, Vulkan or updater)
    and `tools/mupen64plus-next/` builds the N64 core Debian does not have; `tools/fbneo/`
    builds **FBNeo** (`REGEN_HEADERS=1`, the libretro fork) for every arcade board, because Debian
