@@ -17,6 +17,9 @@ ever names a path, a command or an argument.
 | Key | Does |
 |---|---|
 | arrows / left stick, D-pad | move in the grid |
+| ↑ from the first row | go to the platform rail (All games, Recent, Favourites, …) |
+| ← / → in the rail | previous / next platform, applied at once |
+| ↓ or Enter in the rail | back to the grid |
 | Enter / A | play the selected game |
 | F | favourite / unfavourite |
 | S | rescan `~/Games` |
@@ -31,7 +34,9 @@ RetroArch reads the pad through udev and its own autoconfig.
 
 | Pad | Does |
 |---|---|
-| D-pad / left stick | move in the grid |
+| D-pad / left stick | move in the grid; ↑ from the first row goes to the rail |
+| ← / → in the rail | previous / next platform |
+| ↓ in the rail | back to the grid |
 | A / Start | play the selected game |
 | B | back: clear the search, then All games |
 | Y | favourite / unfavourite |

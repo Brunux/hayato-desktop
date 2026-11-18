@@ -10,6 +10,7 @@ const state = {
   data: null,
   filter: "all",
   query: "",
+  zone: "grid",
   selected: 0,
   games: [],
 };
@@ -114,6 +115,7 @@ function renderRail() {
     button.addEventListener("click", () => {
       state.filter = platform.id;
       state.selected = 0;
+      state.zone = "grid";
       apply();
       el.grid.focus();
     });
@@ -125,6 +127,17 @@ function renderRail() {
     button.append(title, count);
     el.platforms.append(button);
   }
+  paintRailFocus();
+}
+
+function paintRailFocus() {
+  const buttons = Array.from(el.platforms.children);
+  state.data.platforms.forEach((platform, index) => {
+    buttons[index]?.classList.toggle(
+      "focused",
+      state.zone === "rail" && platform.id === state.filter,
+    );
+  });
 }
 
 function renderHeader() {
@@ -206,6 +219,7 @@ function renderGrid() {
 
     card.append(cover, name, meta);
     card.addEventListener("click", () => {
+      state.zone = "grid";
       select(index);
       if (COARSE) play(game);
     });
@@ -271,8 +285,23 @@ function columns() {
 }
 
 function move(dx, dy) {
-  if (state.games.length === 0) return;
   const width = Math.max(1, columns());
+  if (state.zone === "rail") {
+    if (dx) {
+      cycleFilter(dx);
+    } else if (dy > 0) {
+      state.zone = "grid";
+      el.grid.focus();
+      paintRailFocus();
+    }
+    return;
+  }
+  if (dy < 0 && state.selected < width) {
+    state.zone = "rail";
+    paintRailFocus();
+    return;
+  }
+  if (state.games.length === 0) return;
   const next = state.selected + dx + dy * width;
   select(Math.max(0, Math.min(next, state.games.length - 1)));
 }
@@ -331,6 +360,7 @@ el.search.addEventListener("keydown", (event) => {
     play(state.games[state.selected]);
   } else if (event.key === "ArrowDown") {
     event.preventDefault();
+    state.zone = "grid";
     el.search.blur();
     el.grid.focus();
   }
@@ -374,6 +404,12 @@ addEventListener("keydown", (event) => {
     cycleFilter(1);
   } else if (key === "Enter" || key === " ") {
     event.preventDefault();
+    if (state.zone === "rail") {
+      state.zone = "grid";
+      el.grid.focus();
+      paintRailFocus();
+      return;
+    }
     play(state.games[state.selected]);
   } else if (key === "f" || key === "F") {
     event.preventDefault();
@@ -390,6 +426,12 @@ addEventListener("keydown", (event) => {
     el.search.focus();
     el.search.select();
   } else if (key === "Escape") {
+    if (state.zone === "rail") {
+      state.zone = "grid";
+      el.grid.focus();
+      paintRailFocus();
+      return;
+    }
     if (state.query) {
       el.search.value = "";
       state.query = "";
@@ -402,6 +444,7 @@ addEventListener("keydown", (event) => {
 
 document.addEventListener("pointerdown", () => {
   if (document.activeElement === el.search) return;
+  state.zone = "grid";
   el.grid.focus();
 }, true);
 
@@ -421,6 +464,7 @@ function cycleFilter(step) {
   state.filter = ids[(at + step + ids.length) % ids.length];
   state.selected = 0;
   apply();
+  paintRailFocus();
 }
 
 // The controller is read by the Rust side (gilrs, the kernel's evdev) and
