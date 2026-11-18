@@ -466,7 +466,7 @@ list below says why.
 
 ## Quick settings
 
-The **Settings** menu (Alt+Ctrl+O, and the root menu) is the radio switches for the session: Wi-Fi radio, Bluetooth radio, Night light, Do not disturb, Touchpad, Tablet mode (with Calibrate rotation when on), Display arrangement, Auto-mount USB drives, Keyboard layout, Translate, Audio output, Volume per application (pavucontrol), Media, and Battery/Power. Each row shows the real state from the same probe as today and delegates to the existing pickers/panels (bar-net, bar-bt, bar-audio, bar-power, lazyos-display, lazyos-vnc) instead of duplicating them.
+The **Settings** menu (Alt+Ctrl+O, and the root menu) is the radio switches for the session: Wi-Fi radio, Bluetooth radio, DNS, Night light, Do not disturb, Touchpad, Tablet mode (with Calibrate rotation when on), Display arrangement, Auto-mount USB drives, System updates, Free space, Keyboard layout, Translate, Audio output, Volume per application (pavucontrol), Media, and Battery/Power. It also carries **Date & time** (time zone and network time) and **Remote login (SSH)**. Each row shows the real state from the same probe as today and delegates to the existing pickers/panels (bar-net, bar-bt, bar-audio, bar-power, lazyos-display, lazyos-vnc, lazyos-dns, lazyos-ssh, lazyos-tz, lazyos-pkg, lazyos-clean) instead of duplicating them.
 
 The VNC row shows the current sharing state. The display row shows the arrangement from `lazyos-display --status`. The tablet mode row adds a "Calibrate rotation" sub-row when the mode is on.
 
