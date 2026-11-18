@@ -231,6 +231,17 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &[],
     },
     CommandSpec {
+        // The Quake console (Alt+`): a terminal that drops from the top of the
+        // screen, holding the default agent. Sway's scratchpad keeps the
+        // window alive between toggles, so this command opens no window of its
+        // own and has nothing to draw.
+        path: "quake",
+        summary: "toggle the drop-down agent console (Alt+`)",
+        shape: Shape::Direct,
+        symlinks: &["lazyos-quake"],
+        installed: &["lazyos-quake"],
+    },
+    CommandSpec {
         // The file list (spec 009). `lazyos-files` is a link to this binary in
         // the UI tree, so Alt+Ctrl+F, Alt+Search (`--search`), the launcher
         // entry and the scripts that open a folder did not change.

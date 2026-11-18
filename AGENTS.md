@@ -113,6 +113,7 @@ that file as the contract; never add a second one.
 | `busy` / `bar-busy` | `$XDG_RUNTIME_DIR/lazyos-busy/<tag>.{label,id,icon,stop}` | `.stop` is the line the bar runs; `busy cancelled` says whether the card is gone. |
 | `lazyos-profile` | target archive + `$XDG_CACHE_HOME/lazyos` | export writes `.partial` then renames; import backs up then extracts; `report` is one file. |
 | `sway-lock` | no file | lock/unlock belongs to the compositor; readiness is the fifo handshake. |
+| `quake` console | no file | the window is the state: it waits in Sway's scratchpad while hidden, and `lazyos quake --status` reads `swaymsg -t get_tree` for `absent`/`hidden`/`visible`. `34-agent-console.conf` owns its geometry (full width, 60% tall, top, no border) and `Alt+grave` toggles it. |
 | `lazyos-screensaver` | no file | one `foot` window; idempotent by `pgrep`. |
 | `lazyos-welcome` | `$XDG_STATE_HOME/lazyos/welcome` | the machine id last shown; absent = show once. |
 

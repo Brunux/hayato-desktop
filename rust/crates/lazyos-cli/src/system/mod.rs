@@ -126,6 +126,7 @@ pub mod places;
 pub mod portal;
 pub mod power;
 pub mod qr;
+pub mod quake;
 pub mod remind;
 pub mod run;
 pub mod settings;

@@ -3209,6 +3209,58 @@ menu_runs 'lazyos-agents --default' &&
 	ok "the root menu's AI group starts a session with the default agent" ||
 	fail "the root menu lost the Agent session row: its AI group can only open the list"
 
+# The Quake console (Alt+grave) is a window that lives in the scratchpad between
+# toggles, so "where is it" is the whole toggle: `lazyos quake --status` answers
+# from sway's tree and must say absent, hidden or visible. A stub swaymsg gives
+# the three answers without opening a window; the real command is asked first,
+# so a missing binary is the failure and not a missing session.
+if [ -x "$HOME/.config/bin/lazyos-quake" ]; then
+	ok "agent console (lazyos-quake) is executable"
+	_quake_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-quake.XXXXXX" 2>/dev/null || true)
+	if [ -n "$_quake_tmp" ] && mkdir -p "$_quake_tmp/bin"; then
+		cat >"$_quake_tmp/bin/swaymsg" <<'SWAY'
+#!/bin/sh
+printf '%s\n' "$LAZYOS_QUAKE_TREE"
+SWAY
+		chmod 0755 "$_quake_tmp/bin/swaymsg"
+		_quake_ok=1
+		for _quake_want in absent hidden visible; do
+			case $_quake_want in
+			absent) _quake_tree='{"nodes":[],"floating_nodes":[]}' ;;
+			hidden) _quake_tree='{"nodes":[],"floating_nodes":[{"app_id":"lazyos-quake","visible":false}]}' ;;
+			visible) _quake_tree='{"nodes":[],"floating_nodes":[{"app_id":"lazyos-quake","visible":true}]}' ;;
+			esac
+			_quake_got=$(PATH="$_quake_tmp/bin:$PATH" LAZYOS_QUAKE_TREE="$_quake_tree" \
+				lazyos quake --status 2>/dev/null || true)
+			[ "$_quake_got" = "$_quake_want" ] || _quake_ok=
+		done
+		rm -rf "$_quake_tmp"
+		if [ -n "$_quake_ok" ]; then
+			ok "the agent console reads absent, hidden and visible from sway's tree"
+		else
+			fail "lazyos quake --status does not report where the console is"
+		fi
+	fi
+else
+	fail "bin/lazyos-quake is missing: Alt+grave does nothing"
+fi
+if [ -r /etc/sway/config.d/34-agent-console.conf ] &&
+	grep -qs 'app_id="lazyos-quake"' /etc/sway/config.d/34-agent-console.conf; then
+	ok "the agent console drops from the top (34-agent-console.conf)"
+else
+	fail "/etc/sway/config.d/34-agent-console.conf is missing: the console tiles or loses its geometry"
+fi
+if grep -qs 'bindsym $mod+grave exec .*lazyos-quake' /etc/sway/config.d/24-keys.conf 2>/dev/null; then
+	ok "Alt+grave opens the agent console"
+else
+	fail "24-keys.conf lost Alt+grave -> lazyos-quake: the console has no key"
+fi
+if grep -qs 'bindsym $mod+Ctrl+grave scratchpad show' /etc/sway/config.d/24-keys.conf 2>/dev/null; then
+	ok "Alt+Ctrl+grave still shows the scratchpad"
+else
+	fail "the scratchpad lost its key when Alt+grave became the console"
+fi
+
 # The Ask strip (spec 007) runs the agent once, in a process group of its own,
 # and ends the group - and anything that left it - when the answer is in or the
 # window closes. Every process it starts carries LAZYOS_ASK=<question id> in its

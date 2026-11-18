@@ -487,6 +487,7 @@ fn run_direct(resolved: &Resolved) -> i32 {
     match resolved.spec.path {
         "theme" => theme::run(resolved),
         "notify" => notify::run(resolved),
+        "quake" => system::quake::run(&resolved.args),
         "mcp" => mcp::run(resolved),
         "task stop" => task_cmd::stop(resolved),
         "open" => open_path(resolved),

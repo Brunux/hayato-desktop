@@ -36,7 +36,8 @@ read. This page is the tour.
 | Alt+Q (or Alt+Shift+Q) | close the focused window |
 | Alt+Shift+C | reload the configuration |
 | Alt+Shift+E | exit the session (asks first) |
-| Alt+grave / Alt+Shift+grave | scratchpad: show the hidden window / send the focused one there |
+| Alt+grave | agent console: the default coding agent in a drop-down terminal (the same key hides it) |
+| Alt+Ctrl+grave / Alt+Shift+grave | scratchpad: show the hidden window / send the focused one there |
 | Alt+R | resize mode (arrows, Return or Escape to leave) |
 
 The **Search key** and **Alt+D** open the same launcher: every application, one
@@ -130,6 +131,7 @@ These are the bar's panels and session controls on the keyboard:
 | Alt+Ctrl+X | dictation on/off (the notification stays while it records; press again to stop) |
 | Alt+Ctrl+M | the local model: Qwen3.5-0.8B on this machine, offline (see `04-software.md` § A local model) |
 | Alt+Ctrl+Shift+A | agents (launch, accounts, install) |
+| Alt+grave | the agent console: the default agent in a drop-down terminal, hidden again by the same key |
 | Alt+Ctrl+O | settings: Wi-Fi and Bluetooth radios, night light, do-not-disturb, touchpad, tablet mode, rotation, display arrangement |
 | Alt+Ctrl+Shift+D | the internal panel back on, with nothing on screen: the way out of a black screen (it runs a sway command, not a menu) |
 | Alt+Ctrl+N | notifications: history, do-not-disturb, copy |
@@ -319,10 +321,11 @@ not by reading the mode's state directory, which such a session takes with it.
 | emoji picker | **Alt+Ctrl+E** |
 | dictation | **Alt+Ctrl+X** |
 | agents | **Alt+Ctrl+Shift+A** |
+| agent console (drop-down terminal) | **Alt+grave** |
 | theme picker | **Alt+Ctrl+Shift+T** |
 | floating | **Alt+T** |
 | close window | **Alt+Q** (Alt+W is sway's tabbed layout) |
-| scratchpad | **Alt+grave** / **Alt+Shift+grave** |
+| scratchpad | **Alt+Ctrl+grave** / **Alt+Shift+grave** |
 | lock | **Alt+Ctrl+L** (and the Lock key) |
 | power menu | **Alt+Escape** or **Alt+Ctrl+P** |
 | audio / Bluetooth / network panels | **Alt+Ctrl+A** / **Alt+Ctrl+B** / **Alt+Ctrl+W** |

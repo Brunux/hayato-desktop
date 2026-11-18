@@ -128,6 +128,92 @@ pub fn set_default_agent(binary: &str) -> std::io::Result<()> {
     fs::write(default_agent_file(), format!("{binary}\n"))
 }
 
+/// The account an agent starts with, when it keeps accounts under
+/// `~/.local/share/lazyos/agents/<binary>/`.
+pub fn default_account(agent: &AgentDef) -> Option<String> {
+    if agent.envvar.is_empty() {
+        return None;
+    }
+    fs::read_to_string(data_dir().join(agent.binary).join("default"))
+        .ok()
+        .map(|content| content.lines().next().unwrap_or("").trim().to_string())
+        .filter(|line| !line.is_empty())
+}
+
+fn shell_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
+}
+
+/// The window title and the `bash -lc` line that starts an agent session.
+/// One builder for the Agents menu, `lazyos-agents --default` and the Quake
+/// console, so an account picked in one place is the account every surface
+/// starts.
+pub fn session(agent: &AgentDef, account: Option<&str>) -> (String, String) {
+    let title = session_title(agent, account);
+    (title, agent_line(agent, account, &[]))
+}
+
+fn session_title(agent: &AgentDef, account: Option<&str>) -> String {
+    match account {
+        Some(acc) => format!("{} · {}", agent.name, acc),
+        None => agent.name.to_string(),
+    }
+}
+
+fn agent_line(agent: &AgentDef, account: Option<&str>, extra: &[String]) -> String {
+    let mut line = String::new();
+    if !agent.envvar.is_empty() {
+        if let Some(acc) = account {
+            let p = data_dir().join(agent.binary).join(acc);
+            line.push_str(&format!(
+                "export {}={}; ",
+                agent.envvar,
+                shell_quote(&p.display().to_string())
+            ));
+        }
+    }
+    line.push_str(&format!("exec {}", agent.binary));
+    for argument in extra {
+        line.push(' ');
+        line.push_str(&shell_quote(argument));
+    }
+    line
+}
+
+/// OpenCode's TUI reopens the most recently viewed session, which would put the
+/// console on whatever session another window already has - two views of one
+/// conversation. Its CLI has no "start empty" flag for the TUI, so the console
+/// creates the session on the server first (the API's documented create) and
+/// passes that id. Every other agent starts a new session on its own.
+fn create_opencode_session(dir: &Path) -> Option<String> {
+    let directory = serde_json::to_string(&dir.display().to_string()).ok()?;
+    let body = format!(r#"{{"location":{{"directory":{directory}}}}}"#);
+    let text = super::out(&["opencode", "api", "post", "/api/session", "--data", &body])?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    value["data"]["id"].as_str().map(str::to_string)
+}
+
+/// The console's session: the default agent in `dir`, with a session of its own
+/// so it never attaches to the window the person already has open. `None` when
+/// OpenCode is the agent and its server cannot create one - the caller shows a
+/// shell rather than hijacking another window's conversation.
+pub fn console_session(
+    agent: &AgentDef,
+    account: Option<&str>,
+    dir: &Path,
+) -> Option<(String, String)> {
+    let extra = if agent.binary == "opencode" {
+        let id = create_opencode_session(dir)?;
+        vec!["--session".to_string(), id]
+    } else {
+        Vec::new()
+    };
+    Some((
+        session_title(agent, account),
+        agent_line(agent, account, &extra),
+    ))
+}
+
 /// Launch agent CLI in a terminal.
 pub fn launch(agent: &AgentDef, account: Option<&str>) {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
@@ -138,23 +224,11 @@ pub fn launch(agent: &AgentDef, account: Option<&str>) {
         PathBuf::from(home)
     };
 
-    let mut pre = String::new();
-    if !agent.envvar.is_empty() {
-        if let Some(acc) = account {
-            let p = data_dir().join(agent.binary).join(acc);
-            pre = format!("export {}='{}'; ", agent.envvar, p.display());
-        }
-    }
-
-    let title = match account {
-        Some(acc) => format!("{} · {}", agent.name, acc),
-        None => agent.name.to_string(),
-    };
+    let (title, line) = session(agent, account);
 
     let script = format!(
-        "cd '{}' 2>/dev/null || cd ~; {pre}exec {}",
-        cwd.display(),
-        agent.binary
+        "cd {} 2>/dev/null || cd ~; {line}",
+        shell_quote(&cwd.display().to_string())
     );
     let escaped_title = title.replace('\'', "'\\''");
     let escaped_script = script.replace('\'', "'\\''");
@@ -278,6 +352,13 @@ pub fn menu(
         ));
         keys.push("default".to_string());
 
+        rows.push(row(
+            "Agent console",
+            "drop down from the top · Alt+`",
+            Glyph::Terminal,
+        ));
+        keys.push("console".to_string());
+
         rows.push(row("Open a terminal in ~/Work", "~/Work", Glyph::Terminal));
         keys.push("shell".to_string());
 
@@ -299,6 +380,10 @@ pub fn menu(
         };
 
         match action.as_str() {
+            "console" => {
+                let _ = super::quake::toggle();
+                return Ok(0);
+            }
             "shell" => {
                 let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
                 let work = Path::new(&home).join("Work");
@@ -529,5 +614,32 @@ mod tests {
 
         let opencode = AGENTS.iter().find(|a| a.binary == "opencode").unwrap();
         assert_eq!(opencode.envvar, "");
+    }
+
+    #[test]
+    fn an_account_is_exported_before_the_binary_starts() {
+        let claude = AGENTS.iter().find(|a| a.binary == "claude").unwrap();
+        let line = agent_line(claude, Some("work"), &[]);
+        assert!(line.starts_with("export CLAUDE_CONFIG_DIR="));
+        assert!(line.ends_with("exec claude"));
+        assert!(line.contains("/lazyos/agents/claude/work'"));
+    }
+
+    #[test]
+    fn extra_arguments_land_after_the_binary() {
+        let opencode = AGENTS.iter().find(|a| a.binary == "opencode").unwrap();
+        let extra = vec!["--session".to_string(), "ses_abc".to_string()];
+        assert_eq!(
+            agent_line(opencode, None, &extra),
+            "exec opencode '--session' 'ses_abc'"
+        );
+    }
+
+    #[test]
+    fn an_agent_that_starts_fresh_needs_no_server_call() {
+        let claude = AGENTS.iter().find(|a| a.binary == "claude").unwrap();
+        let (title, line) = console_session(claude, None, Path::new("/tmp")).unwrap();
+        assert_eq!(title, "Claude Code");
+        assert_eq!(line, "exec claude");
     }
 }
