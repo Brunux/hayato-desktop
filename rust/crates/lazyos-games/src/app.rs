@@ -5,7 +5,10 @@
 //! shows one web game fullscreen and, when it closes, `exec`s the library back.
 //! The two are never alive together, which is the point on a 4 GB machine.
 
+use std::collections::BTreeSet;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use gtk4 as gtk;
 use gtk4::gio;
@@ -137,6 +140,7 @@ fn present_library(app: &gtk::Application, ctx: Arc<Ctx>) {
     let webview = build_webview(app, &window, ctx, Mode::Library);
     finish_window(&window, &webview, app, Mode::Library);
     webview.load_uri("lazyos-game://library/index.html");
+    install_gamepad(app, &webview, &Mode::Library);
 }
 
 fn present_game(app: &gtk::Application, ctx: Arc<Ctx>, uri: String, title: String) {
@@ -144,6 +148,7 @@ fn present_game(app: &gtk::Application, ctx: Arc<Ctx>, uri: String, title: Strin
     let webview = build_webview(app, &window, ctx, Mode::Game);
     finish_window(&window, &webview, app, Mode::Game);
     webview.load_uri(&uri);
+    install_gamepad(app, &webview, &Mode::Game);
 }
 
 fn build_window(app: &gtk::Application, title: &str) -> gtk::ApplicationWindow {
@@ -249,9 +254,216 @@ fn build_webview(
         eprintln!("lazyos-games: the web view has no context; the game scheme is unavailable");
     }
 
-    connect_bridge(&manager, app, &webview, ctx, mode);
+    connect_bridge(&manager, app, &webview, ctx, mode.clone());
     window.set_child(Some(&webview));
     webview
+}
+
+/// The menu's controller listener. It reads `/dev/input/event*` directly
+/// through evdev on its own thread: WebKit's Gamepad API is what the games
+/// use, but the menu must work with a USB or Bluetooth pad even when the web
+/// engine does not see it. The thread sends actions to this window's main
+/// loop; nothing is a daemon, and a slow device scan cannot delay the frame.
+enum PadMessage {
+    Action(&'static str),
+    Connected(String),
+    Quit,
+}
+
+struct Pad {
+    device: evdev::Device,
+    x: (i32, i32),
+    y: (i32, i32),
+}
+
+fn install_gamepad(app: &gtk::Application, webview: &WebView, mode: &Mode) {
+    let library = matches!(mode, Mode::Library);
+    let (sender, receiver) = std::sync::mpsc::channel::<PadMessage>();
+
+    std::thread::spawn(move || {
+        let mut pads: Vec<Pad> = Vec::new();
+        let mut known: BTreeSet<PathBuf> = BTreeSet::new();
+        let mut last_scan = Instant::now() - Duration::from_secs(5);
+        let mut stick = (0.0_f32, 0.0_f32);
+        let mut direction = "";
+        let mut next = Instant::now();
+        let mut combo = (false, false);
+
+        loop {
+            if last_scan.elapsed() >= Duration::from_secs(2) {
+                last_scan = Instant::now();
+                for (path, device) in evdev::enumerate() {
+                    if !known.insert(path) {
+                        continue;
+                    }
+                    let gamepad = device
+                        .supported_keys()
+                        .map(|keys| keys.contains(evdev::KeyCode::BTN_SOUTH))
+                        .unwrap_or(false);
+                    if !gamepad {
+                        continue;
+                    }
+                    let mut x = (-32768, 32767);
+                    let mut y = (-32768, 32767);
+                    if let Ok(info) = device.get_absinfo() {
+                        for (axis, abs) in info {
+                            match axis {
+                                evdev::AbsoluteAxisCode::ABS_X => {
+                                    x = (abs.minimum(), abs.maximum());
+                                }
+                                evdev::AbsoluteAxisCode::ABS_Y => {
+                                    y = (abs.minimum(), abs.maximum());
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    let name = device.name().unwrap_or("gamepad").to_string();
+                    if sender.send(PadMessage::Connected(name)).is_err() {
+                        return;
+                    }
+                    pads.push(Pad { device, x, y });
+                }
+            }
+
+            for pad in &mut pads {
+                let Ok(events) = pad.device.fetch_events() else {
+                    continue;
+                };
+                for event in events {
+                    match event.destructure() {
+                        evdev::EventSummary::Key(_, key, 1) => {
+                            if library
+                                && let Some(action) = key_action(key)
+                                && sender.send(PadMessage::Action(action)).is_err()
+                            {
+                                return;
+                            }
+                            match key {
+                                evdev::KeyCode::BTN_SELECT => combo.0 = true,
+                                evdev::KeyCode::BTN_START => combo.1 = true,
+                                _ => {}
+                            }
+                            if combo.0 && combo.1 {
+                                let _ = sender.send(PadMessage::Quit);
+                            }
+                        }
+                        evdev::EventSummary::Key(_, key, 0) => match key {
+                            evdev::KeyCode::BTN_SELECT => combo.0 = false,
+                            evdev::KeyCode::BTN_START => combo.1 = false,
+                            _ => {}
+                        },
+                        evdev::EventSummary::AbsoluteAxis(_, axis, value) => match axis {
+                            evdev::AbsoluteAxisCode::ABS_X => stick.0 = normalise(value, pad.x),
+                            evdev::AbsoluteAxisCode::ABS_Y => stick.1 = normalise(value, pad.y),
+                            evdev::AbsoluteAxisCode::ABS_HAT0X if library && value != 0 => {
+                                let action = if value < 0 { "left" } else { "right" };
+                                if sender.send(PadMessage::Action(action)).is_err() {
+                                    return;
+                                }
+                            }
+                            evdev::AbsoluteAxisCode::ABS_HAT0Y if library && value != 0 => {
+                                let action = if value < 0 { "up" } else { "down" };
+                                if sender.send(PadMessage::Action(action)).is_err() {
+                                    return;
+                                }
+                            }
+                            _ => {}
+                        },
+                        _ => {}
+                    }
+                }
+            }
+
+            if library {
+                let now = Instant::now();
+                let dir = if stick.0 < -0.55 {
+                    "left"
+                } else if stick.0 > 0.55 {
+                    "right"
+                } else if stick.1 < -0.55 {
+                    "up"
+                } else if stick.1 > 0.55 {
+                    "down"
+                } else {
+                    ""
+                };
+                if dir != direction {
+                    direction = dir;
+                    next = now + Duration::from_millis(260);
+                    if !dir.is_empty() && sender.send(PadMessage::Action(dir)).is_err() {
+                        return;
+                    }
+                } else if !dir.is_empty() && now >= next {
+                    next = now + Duration::from_millis(170);
+                    if sender.send(PadMessage::Action(dir)).is_err() {
+                        return;
+                    }
+                }
+            }
+            std::thread::sleep(Duration::from_millis(8));
+        }
+    });
+
+    let app = app.clone();
+    let webview = webview.clone();
+    glib::timeout_add_local(Duration::from_millis(16), move || {
+        while let Ok(message) = receiver.try_recv() {
+            match message {
+                PadMessage::Action(action) => gamepad_call(&webview, action),
+                PadMessage::Connected(name) => {
+                    let script = format!(
+                        "window.LazyOSGamepadConnected && window.LazyOSGamepadConnected({})",
+                        serde_json::to_string(&name).unwrap_or_default()
+                    );
+                    webview.evaluate_javascript(
+                        &script,
+                        None,
+                        None,
+                        None::<&gtk::gio::Cancellable>,
+                        |_| {},
+                    );
+                }
+                PadMessage::Quit => {
+                    app.quit();
+                    return glib::ControlFlow::Break;
+                }
+            }
+        }
+        glib::ControlFlow::Continue
+    });
+}
+
+fn normalise(value: i32, (min, max): (i32, i32)) -> f32 {
+    if max <= min {
+        return 0.0;
+    }
+    (2.0 * (value - min) as f32 / (max - min) as f32) - 1.0
+}
+
+fn key_action(key: evdev::KeyCode) -> Option<&'static str> {
+    match key {
+        evdev::KeyCode::BTN_DPAD_LEFT => Some("left"),
+        evdev::KeyCode::BTN_DPAD_RIGHT => Some("right"),
+        evdev::KeyCode::BTN_DPAD_UP => Some("up"),
+        evdev::KeyCode::BTN_DPAD_DOWN => Some("down"),
+        evdev::KeyCode::BTN_SOUTH => Some("a"),
+        evdev::KeyCode::BTN_EAST => Some("b"),
+        evdev::KeyCode::BTN_NORTH => Some("y"),
+        evdev::KeyCode::BTN_WEST => Some("x"),
+        evdev::KeyCode::BTN_TL => Some("l1"),
+        evdev::KeyCode::BTN_TR => Some("r1"),
+        evdev::KeyCode::BTN_START => Some("start"),
+        _ => None,
+    }
+}
+
+fn gamepad_call(webview: &WebView, action: &str) {
+    let script = format!(
+        "window.LazyOSGamepad && window.LazyOSGamepad({})",
+        serde_json::to_string(action).unwrap_or_default()
+    );
+    webview.evaluate_javascript(&script, None, None, None::<&gtk::gio::Cancellable>, |_| {});
 }
 
 fn finish_window(

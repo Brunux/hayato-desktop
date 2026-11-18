@@ -90,7 +90,10 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    only inside a game directory (canonicalise + prefix), and no ROM, BIOS or copyrighted art ships.
    The library **exits before a game starts** and `exec`s itself when it ends: the WebView and the
    emulator are never alive together on a 4 GB machine. Web games are trusted local data; the
-   sandbox and per-origin storage are the boundary, not a second shell.
+   sandbox and per-origin storage are the boundary, not a second shell. The menu's controller is
+   read from `/dev/input` (evdev) on the window's own thread, not WebKit's Gamepad API and not a
+   daemon: USB and Bluetooth pads must navigate the library even when the web engine does not see
+   them. The games keep the browser API.
 15. **The game stack is built, not installed from Debian**: `tools/retroarch/` builds the slim
    emulator (no Qt, assets, FFmpeg, Vulkan or updater) and `tools/mupen64plus-next/` builds the
    N64 core Debian does not have. The cores in `packages/games.list` Depends on `retroarch`, so

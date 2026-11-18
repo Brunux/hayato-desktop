@@ -364,6 +364,12 @@ addEventListener("keydown", (event) => {
   } else if (key === "End") {
     event.preventDefault();
     select(state.games.length - 1);
+  } else if (key === "PageUp" || key === "[") {
+    event.preventDefault();
+    cycleFilter(-1);
+  } else if (key === "PageDown" || key === "]") {
+    event.preventDefault();
+    cycleFilter(1);
   } else if (key === "Enter" || key === " ") {
     event.preventDefault();
     play(state.games[state.selected]);
@@ -392,57 +398,68 @@ addEventListener("keydown", (event) => {
   }
 });
 
-// Gamepad navigation. The browser polls the pad; a 170 ms repeat is slow
-// enough to pick one card per press and fast enough to cross a grid.
-let padDirection = "";
-let padNext = 0;
-function pollGamepad(now) {
-  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-  const pad = Array.from(pads).find(Boolean);
-  if (pad) {
-    const axisX = pad.axes[0] || 0;
-    const axisY = pad.axes[1] || 0;
-    const pressed = (index) => !!pad.buttons[index]?.pressed;
-    let direction = "";
-    if (pressed(14) || axisX < -0.55) direction = "left";
-    else if (pressed(15) || axisX > 0.55) direction = "right";
-    else if (pressed(12) || axisY < -0.55) direction = "up";
-    else if (pressed(13) || axisY > 0.55) direction = "down";
+function cycleFilter(step) {
+  const ids = state.data.platforms.map((platform) => platform.id);
+  if (ids.length === 0) return;
+  const at = Math.max(0, ids.indexOf(state.filter));
+  state.filter = ids[(at + step + ids.length) % ids.length];
+  state.selected = 0;
+  apply();
+}
 
-    if (direction !== padDirection) {
-      padDirection = direction;
-      padNext = now + 260;
-      if (direction) {
-        const step = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }[direction];
-        move(step[0], step[1]);
-      }
-    } else if (direction && now >= padNext) {
-      padNext = now + 170;
-      const step = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }[direction];
-      move(step[0], step[1]);
-    }
-
-    if (pressed(0) || pressed(9)) {
-      if (!pollGamepad.aHeld) play(state.games[state.selected]);
-      pollGamepad.aHeld = true;
-    } else {
-      pollGamepad.aHeld = false;
-    }
-    if (pressed(1)) {
-      if (!pollGamepad.bHeld && state.query) {
+// The controller is read by the Rust side (gilrs, the kernel's evdev) and
+// arrives here one action at a time: the menu does not depend on the web
+// engine's Gamepad API. The games still use that API themselves.
+window.LazyOSGamepad = (action) => {
+  switch (action) {
+    case "left":
+      move(-1, 0);
+      break;
+    case "right":
+      move(1, 0);
+      break;
+    case "up":
+      move(0, -1);
+      break;
+    case "down":
+      move(0, 1);
+      break;
+    case "a":
+    case "start":
+      play(state.games[state.selected]);
+      break;
+    case "b":
+      if (state.query) {
         el.search.value = "";
         state.query = "";
         apply();
+      } else if (state.filter !== "all") {
+        state.filter = "all";
+        state.selected = 0;
+        apply();
       }
-      pollGamepad.bHeld = true;
-    } else {
-      pollGamepad.bHeld = false;
+      break;
+    case "y":
+      favourite(state.games[state.selected]);
+      break;
+    case "x": {
+      const game = state.games[state.selected];
+      if (game) window.LazyOS.reveal(game.id);
+      break;
     }
+    case "l1":
+      cycleFilter(-1);
+      break;
+    case "r1":
+      cycleFilter(1);
+      break;
   }
-  requestAnimationFrame(pollGamepad);
-}
+};
+
+window.LazyOSGamepadConnected = (name) => {
+  toast(`Gamepad: ${String(name).slice(0, 42)}`);
+};
 
 restore();
 load();
 el.grid.focus();
-requestAnimationFrame(pollGamepad);

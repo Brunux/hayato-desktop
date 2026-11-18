@@ -346,6 +346,17 @@ footer {
   font-size: 11px;
 }
 
+footer .pad {
+  margin-left: auto;
+  color: var(--faint);
+}
+
+@media (max-width: 900px) {
+  footer .pad {
+    display: none;
+  }
+}
+
 kbd {
   display: inline-block;
   min-width: 1.6em;

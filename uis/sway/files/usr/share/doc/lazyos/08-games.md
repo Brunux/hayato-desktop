@@ -24,9 +24,20 @@ ever names a path, a command or an argument.
 | Q / Escape | quit the library |
 | F11 | fullscreen on or off |
 
-A gamepad is optional. The library uses the browser's Gamepad API (libmanette,
-which WebKitGTK brings), so the same pad works in the library and in an HTML
-game. In a retro game RetroArch reads it through udev and its own autoconfig.
+A gamepad is optional. The library reads USB and Bluetooth pads **directly from
+`/dev/input` (evdev)**, so the grid is navigable even when WebKit's Gamepad API
+does not see a pad; the games themselves use the browser's Gamepad API, and
+RetroArch reads the pad through udev and its own autoconfig.
+
+| Pad | Does |
+|---|---|
+| D-pad / left stick | move in the grid |
+| A / Start | play the selected game |
+| B | back: clear the search, then All games |
+| Y | favourite / unfavourite |
+| X | open the game's folder in Files |
+| L1 / R1 | previous / next platform |
+| Select + Start | quit the library (or leave a game) |
 
 ## Retro games
 
