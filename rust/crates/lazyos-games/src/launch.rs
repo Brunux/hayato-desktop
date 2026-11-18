@@ -54,11 +54,24 @@ pub fn run_retro(game: &Game, libretro_dir: &Path) -> io::Result<ExitStatus> {
 
 /// Start the `--play` process detached from the library's process group, so
 /// quitting the library does not take the game with it.
+/// This binary's path, even after a rebuild replaced the file while it was
+/// running. `/proc/self/exe` then ends in " (deleted)", and `Command::new`
+/// on that path is ENOENT even though the new binary sits at the same path.
+fn self_exe() -> PathBuf {
+    let path = std::env::current_exe().unwrap_or_default();
+    let text = path.to_string_lossy();
+    let candidate = PathBuf::from(text.strip_suffix(" (deleted)").unwrap_or(&text));
+    if candidate.is_file() {
+        candidate
+    } else {
+        PathBuf::from("lazyos-games")
+    }
+}
+
 pub fn spawn_play(id: &str) -> io::Result<()> {
     use std::os::unix::process::CommandExt;
 
-    let exe = std::env::current_exe()?;
-    let mut command = Command::new(exe);
+    let mut command = Command::new(self_exe());
     command.arg("--play").arg(id);
     command.process_group(0);
     command.spawn()?;
@@ -82,9 +95,8 @@ pub fn return_to_library() -> ! {
     if std::env::var_os("LAZYOS_GAMES_NO_RETURN").is_some() {
         std::process::exit(0);
     }
-    let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("lazyos-games"));
     use std::os::unix::process::CommandExt;
-    let error = Command::new(exe).arg("--library").exec();
+    let error = Command::new(self_exe()).arg("--library").exec();
     eprintln!("lazyos-games: cannot return to the library: {error}");
     std::process::exit(1);
 }

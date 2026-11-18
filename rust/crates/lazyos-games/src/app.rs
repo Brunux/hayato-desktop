@@ -587,7 +587,21 @@ fn handle_library(app: &gtk::Application, webview: &WebView, ctx: &Arc<Ctx>, mes
             ctx.save_state();
             match launch::spawn_play(&id) {
                 Ok(()) => app.quit(),
-                Err(error) => eprintln!("lazyos-games: cannot start {id}: {error}"),
+                Err(error) => {
+                    eprintln!("lazyos-games: cannot start {id}: {error}");
+                    let message = format!("Cannot start {id}: {error}");
+                    let script = format!(
+                        "window.LazyOSError && window.LazyOSError({})",
+                        serde_json::to_string(&message).unwrap_or_default()
+                    );
+                    webview.evaluate_javascript(
+                        &script,
+                        None,
+                        None,
+                        None::<&gtk::gio::Cancellable>,
+                        |_| {},
+                    );
+                }
             }
         }
         "favorite" => {

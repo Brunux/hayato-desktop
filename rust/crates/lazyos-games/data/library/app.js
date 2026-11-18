@@ -336,29 +336,31 @@ el.search.addEventListener("keydown", (event) => {
   }
 });
 
-el.scan.addEventListener("click", () => {
-  toast("Rescanning…");
-  window.LazyOS.rescan();
-});
-
-el.quit.addEventListener("click", () => window.LazyOS.quit());
+const ARROWS = {
+  ArrowLeft: [-1, 0],
+  Left: [-1, 0],
+  ArrowRight: [1, 0],
+  Right: [1, 0],
+  ArrowUp: [0, -1],
+  Up: [0, -1],
+  ArrowDown: [0, 1],
+  Down: [0, 1],
+};
 
 addEventListener("keydown", (event) => {
-  if (document.activeElement === el.search) return;
   const key = event.key;
-  if (key === "ArrowRight") {
+  const arrow = ARROWS[key] || ARROWS[event.code];
+  if (arrow) {
     event.preventDefault();
-    move(1, 0);
-  } else if (key === "ArrowLeft") {
-    event.preventDefault();
-    move(-1, 0);
-  } else if (key === "ArrowDown") {
-    event.preventDefault();
-    move(0, 1);
-  } else if (key === "ArrowUp") {
-    event.preventDefault();
-    move(0, -1);
-  } else if (key === "Home") {
+    if (document.activeElement === el.search) {
+      el.search.blur();
+      el.grid.focus();
+    }
+    move(arrow[0], arrow[1]);
+    return;
+  }
+  if (document.activeElement === el.search) return;
+  if (key === "Home") {
     event.preventDefault();
     select(0);
   } else if (key === "End") {
@@ -397,6 +399,20 @@ addEventListener("keydown", (event) => {
     }
   }
 });
+
+document.addEventListener("pointerdown", () => {
+  if (document.activeElement === el.search) return;
+  el.grid.focus();
+}, true);
+
+
+el.scan.addEventListener("click", () => {
+  toast("Rescanning…");
+  window.LazyOS.rescan();
+});
+
+el.quit.addEventListener("click", () => window.LazyOS.quit());
+
 
 function cycleFilter(step) {
   const ids = state.data.platforms.map((platform) => platform.id);
@@ -458,6 +474,10 @@ window.LazyOSGamepad = (action) => {
 
 window.LazyOSGamepadConnected = (name) => {
   toast(`Gamepad: ${String(name).slice(0, 42)}`);
+};
+
+window.LazyOSError = (message) => {
+  toast(String(message));
 };
 
 restore();

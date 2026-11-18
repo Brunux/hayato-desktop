@@ -32,9 +32,12 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `ratatui::Frame` or `&mut Frame` inside `lazyos-cli/src/` fails `tests/frame.rs`.
 3. **Zero allocations per steady-state frame**: `lazyos-ui/tests/no_alloc.rs` asserts `0` frame
    allocations when redrawing cached rows. Pre-format widget state on events/state changes, not per tick.
-4. **No resident daemons except `cliphist` and `workstyle`**: Never add polling daemons or background
-   units in `uis/sway/`. Tool discovery runs async in-window on open; progress lives in `TaskView` or
-   in-window `ActionRunner` banners (`lazyos-notify` is strictly for headless events).
+4. **No resident daemons except `cliphist`, `workstyle` and `lazyos gamepad`**: Never add polling
+   daemons or background units in `uis/sway/`. Tool discovery runs async in-window on open; progress
+   lives in `TaskView` or in-window `ActionRunner` banners (`lazyos-notify` is strictly for headless
+   events). `lazyos gamepad` is the one input helper: it reads `/dev/input` and injects
+   arrows/Enter/Escape into the focused `lazyos-*` window, because a USB or Bluetooth pad must
+   navigate every framework menu, not only the Games library; its pid lock keeps it single.
 5. **Dual density support**: `Screen::key` and `Screen::hit` receive `&Design` (`$XDG_RUNTIME_DIR/lazyos-tablet`)
    rather than caching hit boxes across normal vs tablet row spacing.
 6. **Generated glyph & icon tables**:

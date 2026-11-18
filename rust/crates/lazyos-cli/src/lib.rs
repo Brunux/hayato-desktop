@@ -40,6 +40,7 @@
 pub mod ask;
 pub mod command;
 pub mod files;
+pub mod gamepad;
 pub mod greeter;
 pub mod host;
 pub mod installer;
@@ -485,6 +486,20 @@ fn print_commands(out: &mut impl Write) {
 /// runs where it was called - a `foot` window for a `mv` would steal the focus.
 fn run_direct(resolved: &Resolved) -> i32 {
     match resolved.spec.path {
+        "gamepad" => {
+            if resolved
+                .args
+                .iter()
+                .any(|arg| arg == "--help" || arg == "-h")
+            {
+                println!(
+                    "lazyos gamepad: a USB or Bluetooth pad as arrows, Enter and Escape for the framework windows"
+                );
+                EXIT_OK
+            } else {
+                gamepad::run()
+            }
+        }
         "theme" => theme::run(resolved),
         "notify" => notify::run(resolved),
         "mcp" => mcp::run(resolved),

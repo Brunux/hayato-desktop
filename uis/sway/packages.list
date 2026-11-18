@@ -170,6 +170,11 @@ libglib2.0-bin
 # popups run here as well (with --app-id=popup, see bar-panels.conf), and
 # ~/.config/foot/foot.ini carries the solarized palette.
 foot
+# wtype injects a key into the focused Wayland surface through
+# zwp_virtual_keyboard_manager_v1. `lazyos gamepad` (the session's controller
+# mapper) is what runs it: a pad as arrows/Enter/Escape for the framework's
+# `lazyos-*` windows. 36 kB plus libxkbcommon, which the session already has.
+wtype
 # (the bar's click-through menus are native now, so fuzzel is not needed.)
 # jq parses `swaymsg -t get_inputs` for the keyboard-layout indicator.
 jq

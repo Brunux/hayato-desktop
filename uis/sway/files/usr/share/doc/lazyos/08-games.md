@@ -39,6 +39,14 @@ RetroArch reads the pad through udev and its own autoconfig.
 | L1 / R1 | previous / next platform |
 | Select + Start | quit the library (or leave a game) |
 
+The framework's own windows (the root menu, Settings, Files, every `lazyos`
+TUI screen) are `foot` surfaces with a `lazyos-*` app id. `lazyos gamepad`, the
+session's one resident input helper, reads the same pad and injects arrows,
+Enter and Escape into whichever of those windows has focus; that is how the
+controller navigates **all** of LazyOS's own UI, not only this grid. It leaves
+a plain `foot` shell, the Games library (which reads the pad itself), RetroArch
+and the HTML games alone, so one press never moves two things.
+
 ## Retro games
 
 Put a ROM in a platform folder, then press **S** (or reopen the library):

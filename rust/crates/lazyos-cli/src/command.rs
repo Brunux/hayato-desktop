@@ -97,6 +97,16 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &["lazyos-menu", "bar-menu"],
     },
     CommandSpec {
+        // The session's controller mapper: a USB or Bluetooth pad as arrows,
+        // Enter and Escape for the framework's own `lazyos-*` windows. The
+        // Games library reads the pad itself; games keep their own input.
+        path: "gamepad",
+        summary: "translate a gamepad to arrows, Enter and Escape for the framework windows",
+        shape: Shape::Direct,
+        symlinks: &[],
+        installed: &[],
+    },
+    CommandSpec {
         // `lazyos-power`: lock, suspend, hibernate, log out, reboot, shut down.
         // The first three act at once and the last three ask with Cancel
         // first, which is the confirm `--power ACTION` also opens (spec 010).

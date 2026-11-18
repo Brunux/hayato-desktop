@@ -3912,6 +3912,16 @@ if have lazyos-games; then
 		else
 			warn "no N64 core: N64 rows will say the core is missing (tools/mupen64plus-next/)"
 		fi
+		if have wtype; then
+			ok "wtype is installed (the controller mapper's key injector)"
+		else
+			fail "wtype is missing: the framework menus cannot be navigated with a gamepad"
+		fi
+		if pgrep -f 'lazyos gamepad' >/dev/null 2>&1; then
+			ok "the gamepad mapper is running"
+		else
+			fail "lazyos gamepad is not running: the framework menus cannot be navigated with a gamepad"
+		fi
 	else
 		fail "retroarch is not installed (run scripts/build-retroarch.sh && core/scripts/install-retroarch.sh)"
 	fi

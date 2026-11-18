@@ -1484,6 +1484,7 @@ version = "0.0.0"
 dependencies = [
  "chrono",
  "dirs",
+ "evdev",
  "image",
  "lazyos-mcp",
  "lazyos-theme",
