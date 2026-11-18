@@ -13,7 +13,7 @@ use wayland_client::{Connection, Dispatch, QueueHandle};
 use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
 
 use crate::config::Config;
-use crate::model::{AnimState, Notification};
+use crate::model::{AnimState, Control, Notification};
 use crate::render::Renderer;
 
 pub enum UiEvent {
@@ -93,6 +93,76 @@ impl WaylandState {
             renderer: Renderer::with_layout(config.card_width, config.max_visible),
             event_tx,
         }
+    }
+
+    /// Act on the newest card without taking keyboard focus. A file card opens
+    /// its folder, a card with an action presses it, and a plain card closes.
+    pub fn control(&mut self, command: Control) -> bool {
+        match command {
+            Control::DismissAll => {
+                if self.notifications.is_empty() {
+                    return false;
+                }
+                let ids: Vec<u32> = self.notifications.iter().map(|n| n.id).collect();
+                self.notifications.clear();
+                for id in ids {
+                    let _ = self.event_tx.send(UiEvent::NotificationClosed(id, 2));
+                }
+                true
+            }
+            Control::DismissNewest => {
+                let Some(index) = self.newest_index() else {
+                    return false;
+                };
+                self.close_at(index);
+                true
+            }
+            Control::ActNewest => {
+                let Some(index) = self.newest_index() else {
+                    return false;
+                };
+                let id = self.notifications[index].id;
+                let open_path = self.notifications[index].open_path.clone();
+                let action = self.notifications[index]
+                    .actions
+                    .iter()
+                    .find(|action| action.key == "default")
+                    .or_else(|| self.notifications[index].actions.first())
+                    .cloned();
+                match action {
+                    Some(action) if action.key == "lazyos-open" => {
+                        if let Some(path) = open_path {
+                            open_in_files(&path);
+                        }
+                    }
+                    Some(action) => {
+                        let _ = self.event_tx.send(UiEvent::ActionInvoked(id, action.key));
+                    }
+                    None => {
+                        if let Some(path) = open_path {
+                            open_in_files(&path);
+                        }
+                    }
+                }
+                self.close_at(index);
+                true
+            }
+        }
+    }
+
+    fn newest_index(&self) -> Option<usize> {
+        self.notifications
+            .iter()
+            .enumerate()
+            .filter(|(_, notification)| !notification.is_closing())
+            .max_by_key(|(_, notification)| notification.created_at)
+            .map(|(index, _)| index)
+    }
+
+    fn close_at(&mut self, index: usize) {
+        let id = self.notifications[index].id;
+        self.notifications.remove(index);
+        let _ = self.event_tx.send(UiEvent::NotificationClosed(id, 2));
     }
 
     pub fn setup_layer_surface(&mut self, qh: &QueueHandle<Self>, w: u32, h: u32) {
@@ -297,7 +367,13 @@ impl WaylandState {
                     }
                 } else if let Some(action_key) = clicked_action {
                     let id = self.notifications[idx].id;
-                    let _ = self.event_tx.send(UiEvent::ActionInvoked(id, action_key));
+                    if action_key == "lazyos-open" {
+                        if let Some(path) = self.notifications[idx].open_path.clone() {
+                            open_in_files(&path);
+                        }
+                    } else {
+                        let _ = self.event_tx.send(UiEvent::ActionInvoked(id, action_key));
+                    }
                     let _ = self.event_tx.send(UiEvent::NotificationClosed(id, 2));
                     if reduced {
                         self.notifications.remove(idx);

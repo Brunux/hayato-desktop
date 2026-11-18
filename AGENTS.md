@@ -105,7 +105,7 @@ that file as the contract; never add a second one.
 | `lazyos-idle` | `~/.config/lazyos/idle.conf` | `screen_off`, `lock`, `dpms` in seconds; `0` = never. `start`/`restart` replaces the system swayidle chain. |
 | `touchpad` | `~/.config/sway/config.d/36-touchpad.conf` | `tap`, `natural_scroll`, `dwt`, `pointer_accel`; Settings applies the same values with `swaymsg input`. |
 | `reduced motion` | `~/.config/lazyos/reduced-motion` | `1`/`yes`/`true` = on. `Design::for_session` reads it alongside `LAZYOS_REDUCED_MOTION=1`. |
-| `lazyos-notify` | `~/.config/lazyos/notify.conf` | `default_timeout` (ms, 0 = never), `max_visible`, `card_width`, `history_limit`. Read once at startup; Settings restarts the daemon after a save. |
+| `lazyos-notify` | `~/.config/lazyos/notify.conf` + `$XDG_RUNTIME_DIR/lazyos-notify.sock` | `default_timeout` (ms, 0 = never), `max_visible`, `card_width`, `history_limit`, `group_by_sender`, `collapse_repeats`. Read once at startup; Settings restarts the daemon after a save. The 0600 socket takes `act-newest`, `dismiss-newest`, `dismiss-all` from the keyboard keys and dies with the session. |
 | `lazyos-clipboard` | `~/.config/lazyos/clipboard.conf` | `enabled=yes\|no`; the helper starts/stops `wl-paste --watch cliphist store`. |
 | `lazyos-capture` | `~/.config/lazyos/record.conf` + `$XDG_RUNTIME_DIR/lazyos-capture/camera.pid` | `audio=off\|mic\|system`, `webcam=on\|off`; the camera pid is the mpv overlay, signalled with the recorder. |
 | `tablet-mode` | `$XDG_RUNTIME_DIR/lazyos-tablet/` | `kbd.pid`, `poller.pid`, `out` while on; absent while off. `off` repairs a missing directory. |

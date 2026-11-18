@@ -137,10 +137,14 @@ dismissed.
 
 **Interaction:**
 * **Left-click on card body:** when the card names a written file (a screenshot, an annotation, a saved recording), opens that file's folder in Files; otherwise invokes the default action (if defined) or dismisses.
-* **Left-click on action pill:** triggers that specific action and signals the sender via D-Bus.
+* **Left-click on action pill:** triggers that specific action and signals the sender via D-Bus. A file card always carries a **Files** pill.
+* **Alt+Comma:** acts on the newest card without taking focus: its default action, its file's folder, or dismiss.
+* **Alt+Shift+Comma:** dismisses the newest card. **Alt+Ctrl+Comma** clears the visible stack.
 * **Left-click on top-right '✕':** closes the notification.
 * **Right-click on card:** dismisses the card.
 * **Middle-click on card:** dismisses all notifications from that application.
+
+Cards from the same sender sit together, and identical repeats collapse into one card with a **×N** badge. The history still records every repeat.
 
 Each card carries a high-resolution icon from the LazyOS theme or a single-advance Nerd
 Font glyph fallback, rendered in the active theme's palette matching the Waybar hover tooltip
