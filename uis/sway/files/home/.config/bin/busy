@@ -68,16 +68,20 @@ icon=$(cat "$dir/$tag.icon" 2>/dev/null || true)
 # the one the task registered unless the caller names another (fail does, so a
 # failure reads as one at a glance instead of as another step of the action).
 send() { # TIMEOUT URGENCY MESSAGE [ICON]
+	_timeout=$1
+	_urgency=$2
+	_message=$3
 	_icon=${4:-${icon:-dialog-information}}
+	set -- -a LazyOS -i "$_icon" -u "$_urgency" -t "$_timeout"
 	if [ -n "$id" ]; then
-		notify-send -a LazyOS -i "$_icon" -u "$2" -t "$1" \
-			-r "$id" -h "string:x-canonical-private-synchronous:lazyos-$tag" \
-			"$label" "$3" 2>/dev/null || true
-	else
-		notify-send -a LazyOS -i "$_icon" -u "$2" -t "$1" \
-			-h "string:x-canonical-private-synchronous:lazyos-$tag" \
-			"$label" "$3" 2>/dev/null || true
+		set -- "$@" -r "$id"
 	fi
+	set -- "$@" -h "string:x-canonical-private-synchronous:lazyos-$tag"
+	# A result that names a file can be clicked to show it in Files.
+	if [ -n "${BUSY_OPEN:-}" ]; then
+		set -- "$@" -h "string:x-lazyos-open-path:$BUSY_OPEN"
+	fi
+	notify-send "$@" "$label" "$_message" 2>/dev/null || true
 }
 
 forget() { rm -f "$dir/$tag.id" "$dir/$tag.label" "$dir/$tag.icon" "$dir/$tag.stop"; }

@@ -3741,6 +3741,24 @@ if [ -z "$_card_bare" ]; then
 else
 	fail "notify-send without -i (a text-only card that nothing logs): $(tr '\n' ' ' <<<"$_card_bare")"
 fi
+# A card about a written file is clickable: the sender names the file and the
+# daemon opens its folder in Files. The CLI and the busy result are the two
+# senders a script uses, so both must carry the hint.
+if lazyos notify --help 2>&1 | grep -qs -- '--open PATH'; then
+	ok "lazyos notify can name the file a click opens (--open PATH)"
+else
+	fail "lazyos notify has no --open PATH: a script cannot make its file card clickable"
+fi
+if grep -qs 'x-lazyos-open-path' "$HOME/.config/bin/busy"; then
+	ok "a busy result carries the open-path hint for its written file"
+else
+	fail "busy does not pass the open-path hint: a saved-file result is not clickable"
+fi
+if grep -qs 'x-lazyos-open-path' "$HOME/.config/bin/lazyos-profile"; then
+	ok "a saved profile or diagnostics card names its file for a click"
+else
+	fail "lazyos-profile does not pass the open-path hint: its saved card is not clickable"
+fi
 if have lazyos-notify; then
 	ok "lazyos-notify resolves /usr/share/icons/LazyOS and Nerd Font glyphs natively"
 elif grep -qsE '^icon-path=([^ ]*:)?/usr/share/icons/LazyOS(:|$)' "$HOME/.config/mako/config"; then

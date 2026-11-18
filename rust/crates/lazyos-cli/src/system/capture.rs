@@ -375,7 +375,7 @@ _path=$("{home}/.config/bin/screenshot" save area) || exit 0
 [ -n "$_path" ] || exit 0
 swappy -f "$_path" -o "$_path" || true
 if [ -s "$_path" ]; then
-    notify-send -a LazyOS -i camera-web "Capture" "Saved $(basename "$_path")"
+    notify-send -a LazyOS -i camera-web -h "string:x-lazyos-open-path:$_path" "Capture" "Saved $(basename "$_path") · click to show"
 else
     notify-send -a LazyOS -i camera-web "Capture" "The annotation was not saved"
 fi"#
@@ -570,7 +570,7 @@ fn announce_start_failure(why: &str) {
         format!("Recording did not start · {why}")
     };
     if crate::system::have_busy() {
-        crate::system::busy_fail("record", "Capture", &body, "dialog-error");
+        crate::system::busy_fail("record", "Capture", &body, "dialog-error", None);
     } else {
         crate::system::say("Capture", body, Urgency::Critical, Glyph::Warning);
     }
@@ -591,9 +591,9 @@ fn announce_stopped(file: &Path, forced: bool) {
     };
     if crate::system::have_busy() {
         if critical {
-            crate::system::busy_fail("record", "Capture", &body, "dialog-error");
+            crate::system::busy_fail("record", "Capture", &body, "dialog-error", Some(file));
         } else {
-            crate::system::busy_end("record", "Recording", &body);
+            crate::system::busy_end("record", "Recording", &body, Some(file));
         }
     } else {
         let glyph = if critical {
@@ -606,7 +606,7 @@ fn announce_stopped(file: &Path, forced: bool) {
         } else {
             Urgency::Normal
         };
-        crate::system::say("Recording", body, urgency, glyph);
+        crate::system::say_open("Recording", body, urgency, glyph, file);
     }
 }
 

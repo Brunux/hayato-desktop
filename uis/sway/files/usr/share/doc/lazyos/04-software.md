@@ -209,6 +209,10 @@ Both are saved in `~/.config/lazyos/record.conf`; the webcam is a normal
 floating window, so `wf-recorder` captures it as part of the screen. For an area
 recording the overlay is placed inside the selected area.
 
+A notification that a file was written (a screenshot, an annotation, a saved
+recording) is clickable: a left click opens the file's folder in Files, where
+the file is one row away. The card never opens the file itself.
+
 
 
 

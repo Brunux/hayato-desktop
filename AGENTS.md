@@ -78,6 +78,11 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    through `Screen::phase()`; `LAZYOS_DEBUG_STATE=1` appends transitions to
    `$XDG_STATE_HOME/lazyos/state.log` (never stderr, which would paint over the
    frame).
+13. **A file card opens its folder**: a notification about a written file carries the
+   `x-lazyos-open-path` hint (`Card::open_path`, `lazyos notify --open`, or `BUSY_OPEN` for a
+   busy result). A left click on the card body runs `lazyos-files <parent>`; grimshot predates the
+   hint, so its absolute `app_icon` (the saved picture) is the fallback. The daemon never opens
+   the file itself: Files is where the person decides what to do with it.
 
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single

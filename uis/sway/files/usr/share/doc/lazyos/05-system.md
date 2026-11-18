@@ -136,7 +136,7 @@ Normal and low notifications expire automatically; critical cards remain until
 dismissed.
 
 **Interaction:**
-* **Left-click on card body:** invokes the default action (if defined) or dismisses.
+* **Left-click on card body:** when the card names a written file (a screenshot, an annotation, a saved recording), opens that file's folder in Files; otherwise invokes the default action (if defined) or dismisses.
 * **Left-click on action pill:** triggers that specific action and signals the sender via D-Bus.
 * **Left-click on top-right '✕':** closes the notification.
 * **Right-click on card:** dismisses the card.

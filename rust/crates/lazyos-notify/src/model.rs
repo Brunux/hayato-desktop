@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,6 +73,8 @@ pub struct Notification {
     pub category: Option<String>,
     pub progress: Option<u8>,
     pub sync_tag: Option<String>,
+    /// A click on the card opens this file's folder in Files.
+    pub open_path: Option<PathBuf>,
     pub created_at: Instant,
     pub timeout: Duration,
 
@@ -163,6 +166,7 @@ mod tests {
             category: None,
             progress: None,
             sync_tag: None,
+            open_path: None,
             created_at: Instant::now(),
             timeout: Duration::from_secs(5),
             anim_state,

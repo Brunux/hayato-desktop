@@ -147,6 +147,7 @@ pub struct Card {
     progress: Option<u8>,
     progress_label: String,
     group: Option<String>,
+    open_path: Option<String>,
     timeout: Timeout,
 }
 
@@ -162,6 +163,7 @@ impl Card {
             progress: None,
             progress_label: String::new(),
             group: None,
+            open_path: None,
             timeout: Timeout::Default,
         }
     }
@@ -210,6 +212,16 @@ impl Card {
 
     pub fn timeout(mut self, timeout: Timeout) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// Clicking the card opens this file's folder in Files. The path is a hint
+    /// the daemon understands; a card without one keeps the usual click.
+    pub fn open_path(mut self, path: impl Into<String>) -> Self {
+        let path = path.into();
+        if !path.is_empty() {
+            self.open_path = Some(path);
+        }
         self
     }
 
@@ -267,6 +279,7 @@ impl Card {
                 },
                 group: self.group.as_ref().map(|tag| format!("lazyos-{tag}")),
                 value: self.progress,
+                open_path: self.open_path.clone(),
             },
             fallback,
         }
@@ -375,6 +388,8 @@ pub struct Message {
     pub group: Option<String>,
     /// The `value` hint, 0 to 100.
     pub value: Option<u8>,
+    /// The file whose folder a click opens, as the `x-lazyos-open-path` hint.
+    pub open_path: Option<String>,
 }
 
 /// A [`Message`] and the reason its picture, if one was asked for, is missing.
@@ -389,6 +404,9 @@ pub const APP_NAME: &str = "LazyOS";
 
 /// The hint key mako reads a group tag from.
 pub const GROUP_HINT: &str = "x-canonical-private-synchronous";
+
+/// The hint that says a click on the card opens this file's folder in Files.
+pub const OPEN_PATH_HINT: &str = "x-lazyos-open-path";
 
 /// Where the theme's pictures are, in the order mako searches them. The first
 /// root is the one `~/.config/mako/config` names in `icon-path`.
