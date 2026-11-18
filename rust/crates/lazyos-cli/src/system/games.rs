@@ -1461,7 +1461,10 @@ fn manual_markdown(roots: &[PathBuf], core_present: &dyn Fn(&str) -> bool) -> St
          same arrows, Enter and Escape in every LazyOS window, this one included. On\n\
          this screen **X** opens the options, **Y** the manual and **L1** the game's\n\
          folder in Files; those three are Alt+O, Alt+M and Alt+R, because a bare\n\
-         letter would type into another screen's filter.\n\n\
+         letter would type into another screen's filter. Every button can be\n\
+         reassigned in `o` → Controller (it works with no pad connected), and a\n\
+         PlayStation 3 pad pairs once over USB: plug it in, press PS, unplug it and\n\
+         press PS again.\n\n\
          ## Saves\n\n\
          Battery saves live in `~/.local/share/lazyos/games/saves` and save states in\n\
          `~/.local/state/lazyos/games/states`. Both load and save automatically, so a\n\
