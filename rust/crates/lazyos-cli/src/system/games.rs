@@ -657,7 +657,7 @@ fn manual_blocks(roots: &[PathBuf], core_present: &dyn Fn(&str) -> bool) -> Vec<
         Block::Code(bios_rows().join("\n")),
         Block::Section("Play a game"),
         Block::Text(
-            "1. Copy the ROM into ~/Games, unzipped.\n\
+            "1. Copy the ROM into ~/Games (a Neo Geo romset stays zipped, in neogeo/).\n\
              2. Press s here to rescan, or reopen the library.\n\
              3. ← / → choose a tab, ↑ / ↓ a game, Enter plays it.\n\
              4. Esc in the game comes back here; F1 opens RetroArch's menu."
