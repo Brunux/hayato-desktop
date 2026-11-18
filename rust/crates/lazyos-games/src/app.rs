@@ -333,7 +333,11 @@ fn install_gamepad(app: &gtk::Application, webview: &WebView, mode: &Mode) {
                 for event in events {
                     match event.destructure() {
                         evdev::EventSummary::Key(_, key, 1) => {
+                            // Select+Start is the way out, not "play"; do not
+                            // forward the Start that completes the combo.
+                            let combo_start = key == evdev::KeyCode::BTN_START && combo.0;
                             if library
+                                && !combo_start
                                 && let Some(action) = key_action(key)
                                 && sender.send(PadMessage::Action(action)).is_err()
                             {
