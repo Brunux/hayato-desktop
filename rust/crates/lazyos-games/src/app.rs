@@ -39,6 +39,16 @@ struct Ctx {
 impl Ctx {
     fn new() -> Self {
         let options = ScanOptions::from_env();
+        // RetroArch writes saves, states and screenshots into these; creating
+        // them here means the first game does not depend on the emulator
+        // creating a parent directory it only knows as a string.
+        for directory in [
+            paths::data_dir().join("saves"),
+            paths::state_dir().join("states"),
+            paths::data_dir().join("shots"),
+        ] {
+            let _ = std::fs::create_dir_all(directory);
+        }
         let state = library::load_state(&options.state_path());
         let library = library::scan(&options, &state);
         let handler = Handler::new(library, options.system_dir.clone(), paths::theme_css());
@@ -168,6 +178,20 @@ fn paint_window(_window: &gtk::ApplicationWindow) {
     }
 }
 
+/// The theme the session is actually using, for the frame before the page
+/// loads. Solarized Dark is the fallback only when the state file or the
+/// built-in table cannot answer.
+fn active_theme() -> lazyos_theme::Theme {
+    let paths = lazyos_theme::Paths::from_env();
+    lazyos_theme::store::active(&paths)
+        .and_then(|slug| lazyos_theme::builtin::get(&slug))
+        .and_then(|text| lazyos_theme::Theme::parse(text).ok())
+        .unwrap_or_else(|| {
+            lazyos_theme::Theme::parse(lazyos_theme::builtin::SOLARIZED)
+                .expect("the built-in Solarized theme parses")
+        })
+}
+
 fn build_webview(
     app: &gtk::Application,
     window: &gtk::ApplicationWindow,
@@ -211,9 +235,7 @@ fn build_webview(
         .settings(&settings)
         .build();
 
-    let background = lazyos_theme::Theme::parse(lazyos_theme::builtin::SOLARIZED)
-        .map(|theme| theme.colors.background.0)
-        .unwrap_or(lazyos_theme::BASE03);
+    let background = active_theme().colors.background.0;
     webview.set_background_color(&gtk::gdk::RGBA::new(
         f32::from(background.r) / 255.0,
         f32::from(background.g) / 255.0,
@@ -393,9 +415,10 @@ fn handle_library(app: &gtk::Application, webview: &WebView, ctx: &Arc<Ctx>, mes
                 return;
             };
             let game = ctx.handler.library().find(&id).cloned();
-            if let Some(game) = game
-                && let Err(error) = launch::reveal(&game)
-            {
+            let Some(game) = game else {
+                return;
+            };
+            if let Err(error) = launch::reveal(&game) {
                 eprintln!("lazyos-games: cannot open the folder: {error}");
             }
         }

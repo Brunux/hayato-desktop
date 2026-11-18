@@ -266,8 +266,9 @@ pub struct PublicGame {
 pub fn scan(options: &ScanOptions, state: &State) -> Library {
     let mut games = Vec::new();
     let mut seen = BTreeSet::new();
+    let mut visited = BTreeSet::new();
     for root in &options.roots {
-        walk_roms(root, options, state, &mut games, &mut seen);
+        walk_roms(root, options, state, &mut games, &mut seen, &mut visited);
     }
     scan_web(&options.system_dir.join("web"), state, &mut games);
     scan_web(&options.data_dir.join("web"), state, &mut games);
@@ -291,7 +292,14 @@ fn walk_roms(
     state: &State,
     games: &mut Vec<Game>,
     seen: &mut BTreeSet<PathBuf>,
+    visited: &mut BTreeSet<PathBuf>,
 ) {
+    // A symlink to a parent would otherwise recurse forever; the canonical
+    // directory is the identity, not the path that reached it.
+    let canonical_dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+    if !visited.insert(canonical_dir) {
+        return;
+    }
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -308,7 +316,7 @@ fn walk_roms(
             ) {
                 continue;
             }
-            walk_roms(&path, options, state, games, seen);
+            walk_roms(&path, options, state, games, seen, visited);
             continue;
         }
         let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
