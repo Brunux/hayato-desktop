@@ -36,7 +36,7 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("bt", "Bluetooth devices", "bar-bt"),
         ("dns", "DNS", "lazyos-dns"),
         ("night", "Night light", "night-light apply"),
-        ("notify", "Notifications", "lazyos-notify-history"),
+        ("notify", "Notifications", "notify.conf"),
         ("dnd", "Do not disturb", "makoctl mode -t do-not-disturb"),
         ("vnc", "Share this screen", "lazyos-vnc"),
         ("ssh", "Remote login (SSH)", "lazyos-ssh"),
@@ -45,6 +45,7 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("hostname", "Hostname", "hostnamectl"),
         ("default-apps", "Default apps", "xdg-mime"),
         ("password", "Change password", "chpasswd"),
+        ("clipboard", "Clipboard history", "clipboard.conf"),
         ("touchpad", "Touchpad", "touchpad.conf"),
         ("rotation", "Rotation", "swaymsg output transform"),
         ("display", "Display arrangement", "lazyos-display"),
@@ -268,6 +269,53 @@ fn automount_on() -> bool {
         .unwrap_or(true)
 }
 
+fn clipboard_conf_path() -> std::path::PathBuf {
+    std::env::var("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::var("HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| std::path::PathBuf::from("/"))
+                .join(".config")
+        })
+        .join("lazyos/clipboard.conf")
+}
+
+fn clipboard_enabled() -> bool {
+    std::fs::read_to_string(clipboard_conf_path())
+        .map(|text| {
+            text.lines()
+                .find_map(|line| line.trim().strip_prefix("enabled="))
+                .map(|value| value != "no")
+                .unwrap_or(true)
+        })
+        .unwrap_or(true)
+}
+
+fn set_clipboard_enabled(enabled: bool) -> std::io::Result<()> {
+    let path = clipboard_conf_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("part");
+    std::fs::write(
+        &tmp,
+        format!("enabled={}\n", if enabled { "yes" } else { "no" }),
+    )?;
+    std::fs::rename(tmp, path)
+}
+
+fn clipboard_status() -> String {
+    let status = out(&[&bin_script("lazyos-clipboard"), "status"]).unwrap_or_default();
+    let enabled = status.contains("enabled=yes");
+    let running = status.contains("running=yes");
+    match (enabled, running) {
+        (true, true) => "on · running".to_string(),
+        (true, false) => "on · not running".to_string(),
+        _ => "off".to_string(),
+    }
+}
+
 fn reduced_motion_path() -> std::path::PathBuf {
     std::env::var("XDG_CONFIG_HOME")
         .map(std::path::PathBuf::from)
@@ -414,6 +462,7 @@ fn section_keys(section: Section) -> &'static [&'static str] {
             "hostname",
             "default-apps",
             "password",
+            "clipboard",
             "notify",
             "dnd",
             "updates",
@@ -576,11 +625,22 @@ fn build_rows(section: Section) -> (Vec<lazyos_ui::Row>, Vec<String>) {
             rows.push(row("Change password", "this account", Glyph::Key));
             keys.push("password".to_string());
 
+            rows.push(row(
+                "Clipboard history",
+                clipboard_status(),
+                Glyph::Clipboard,
+            ));
+            keys.push("clipboard".to_string());
+
             if dnd_on() {
                 rows.push(row("Notifications", "do not disturb", Glyph::BellOff));
                 rows.push(row("Do not disturb", "on", Glyph::BellOff));
             } else {
-                rows.push(row("Notifications", "allowed", Glyph::Bell));
+                rows.push(row(
+                    "Notifications",
+                    super::notify_settings::status(),
+                    Glyph::Bell,
+                ));
                 rows.push(row("Do not disturb", "off", Glyph::Bell));
             }
             keys.push("notify".to_string());
@@ -803,7 +863,298 @@ pub fn menu(
                 }
             }
             "notify" => {
-                let _ = super::notify::menu(terminal, design)?;
+                let mut note = "Enter opens · Escape returns to Settings".to_string();
+                loop {
+                    let config = super::notify_settings::read();
+                    let timeout = if config.default_timeout == 0 {
+                        "never".to_string()
+                    } else {
+                        format!("{}s", config.default_timeout / 1000)
+                    };
+                    let rows = vec![
+                        row(
+                            "Notification history",
+                            "copy or clear past cards",
+                            Glyph::Bell,
+                        ),
+                        row(
+                            "Do not disturb",
+                            if dnd_on() { "on" } else { "off" },
+                            Glyph::BellOff,
+                        ),
+                        row("Default timeout", timeout, Glyph::Clock),
+                        row(
+                            "Max visible",
+                            format!("{} cards", config.max_visible),
+                            Glyph::Bell,
+                        ),
+                        row(
+                            "Card width",
+                            format!("{} px", config.card_width as u32),
+                            Glyph::Display,
+                        ),
+                        row(
+                            "History limit",
+                            format!("{} entries", config.history_limit),
+                            Glyph::Trash,
+                        ),
+                        row("Clear notification history", "asks first", Glyph::Trash),
+                        row("Back", "Settings sections", Glyph::ArrowLeft),
+                    ];
+                    let keys = [
+                        "history",
+                        "dnd",
+                        "timeout",
+                        "visible",
+                        "width",
+                        "history-limit",
+                        "clear",
+                        "back",
+                    ];
+                    let mut picker = Picker::new(
+                        "Notifications",
+                        vec![Question::choose(
+                            "Notifications",
+                            note.clone(),
+                            rows,
+                            keys.iter().map(|key| (*key).to_string()).collect(),
+                        )],
+                    );
+                    let code = crate::run_screen(terminal, design, "Notifications", &mut picker)?;
+                    if code != 0 {
+                        break;
+                    }
+                    let Some(key) = picker.answers().first().cloned() else {
+                        break;
+                    };
+                    if key == "back" {
+                        break;
+                    }
+                    match key.as_str() {
+                        "history" => {
+                            let _ = super::notify::menu(terminal, design)?;
+                        }
+                        "dnd" => {
+                            let path = dnd_path();
+                            if path.exists() {
+                                let _ = std::fs::remove_file(&path);
+                                note = "Do not disturb: off".to_string();
+                            } else {
+                                if let Some(parent) = path.parent() {
+                                    let _ = std::fs::create_dir_all(parent);
+                                }
+                                let _ = std::fs::write(&path, "1\n");
+                                note = "Do not disturb: on".to_string();
+                            }
+                        }
+                        "timeout" => {
+                            let choices = [
+                                (3000u64, "3 seconds"),
+                                (5000, "5 seconds"),
+                                (10000, "10 seconds"),
+                                (0, "Never"),
+                            ];
+                            let rows: Vec<lazyos_ui::Row> = choices
+                                .iter()
+                                .map(|(value, label)| {
+                                    row(
+                                        (*label).to_string(),
+                                        if config.default_timeout == *value {
+                                            "current"
+                                        } else {
+                                            ""
+                                        },
+                                        Glyph::Clock,
+                                    )
+                                })
+                                .collect();
+                            let keys: Vec<String> =
+                                choices.iter().map(|(value, _)| value.to_string()).collect();
+                            let mut picker = Picker::new(
+                                "Default timeout",
+                                vec![Question::choose(
+                                    "Default timeout",
+                                    "Enter applies · Escape returns",
+                                    rows,
+                                    keys,
+                                )],
+                            );
+                            let code = crate::run_screen(
+                                terminal,
+                                design,
+                                "Default timeout",
+                                &mut picker,
+                            )?;
+                            if code == 0
+                                && let Some(value) = picker.answers().first()
+                                && let Ok(value) = value.parse::<u64>()
+                            {
+                                let mut next = config;
+                                next.default_timeout = value;
+                                match save_notify(next) {
+                                    Ok(message) => note = message,
+                                    Err(error) => note = error,
+                                }
+                            }
+                        }
+                        "visible" => {
+                            let choices = [1usize, 3, 5];
+                            let rows: Vec<lazyos_ui::Row> = choices
+                                .iter()
+                                .map(|value| {
+                                    row(
+                                        format!(
+                                            "{value} card{}",
+                                            if *value == 1 { "" } else { "s" }
+                                        ),
+                                        if config.max_visible == *value {
+                                            "current"
+                                        } else {
+                                            ""
+                                        },
+                                        Glyph::Bell,
+                                    )
+                                })
+                                .collect();
+                            let keys: Vec<String> =
+                                choices.iter().map(|value| value.to_string()).collect();
+                            let mut picker = Picker::new(
+                                "Max visible",
+                                vec![Question::choose(
+                                    "Max visible",
+                                    "Enter applies · Escape returns",
+                                    rows,
+                                    keys,
+                                )],
+                            );
+                            let code =
+                                crate::run_screen(terminal, design, "Max visible", &mut picker)?;
+                            if code == 0
+                                && let Some(value) = picker.answers().first()
+                                && let Ok(value) = value.parse::<usize>()
+                            {
+                                let mut next = config;
+                                next.max_visible = value;
+                                match save_notify(next) {
+                                    Ok(message) => note = message,
+                                    Err(error) => note = error,
+                                }
+                            }
+                        }
+                        "width" => {
+                            let choices = [300u32, 340, 400];
+                            let rows: Vec<lazyos_ui::Row> = choices
+                                .iter()
+                                .map(|value| {
+                                    row(
+                                        format!("{value} px"),
+                                        if config.card_width as u32 == *value {
+                                            "current"
+                                        } else {
+                                            ""
+                                        },
+                                        Glyph::Display,
+                                    )
+                                })
+                                .collect();
+                            let keys: Vec<String> =
+                                choices.iter().map(|value| value.to_string()).collect();
+                            let mut picker = Picker::new(
+                                "Card width",
+                                vec![Question::choose(
+                                    "Card width",
+                                    "Enter applies · Escape returns",
+                                    rows,
+                                    keys,
+                                )],
+                            );
+                            let code =
+                                crate::run_screen(terminal, design, "Card width", &mut picker)?;
+                            if code == 0
+                                && let Some(value) = picker.answers().first()
+                                && let Ok(value) = value.parse::<u32>()
+                            {
+                                let mut next = config;
+                                next.card_width = value as f32;
+                                match save_notify(next) {
+                                    Ok(message) => note = message,
+                                    Err(error) => note = error,
+                                }
+                            }
+                        }
+                        "history-limit" => {
+                            let choices = [100usize, 200, 500];
+                            let rows: Vec<lazyos_ui::Row> = choices
+                                .iter()
+                                .map(|value| {
+                                    row(
+                                        format!("{value} entries"),
+                                        if config.history_limit == *value {
+                                            "current"
+                                        } else {
+                                            ""
+                                        },
+                                        Glyph::Trash,
+                                    )
+                                })
+                                .collect();
+                            let keys: Vec<String> =
+                                choices.iter().map(|value| value.to_string()).collect();
+                            let mut picker = Picker::new(
+                                "History limit",
+                                vec![Question::choose(
+                                    "History limit",
+                                    "Enter applies · Escape returns",
+                                    rows,
+                                    keys,
+                                )],
+                            );
+                            let code =
+                                crate::run_screen(terminal, design, "History limit", &mut picker)?;
+                            if code == 0
+                                && let Some(value) = picker.answers().first()
+                                && let Ok(value) = value.parse::<usize>()
+                            {
+                                let mut next = config;
+                                next.history_limit = value;
+                                match save_notify(next) {
+                                    Ok(message) => note = message,
+                                    Err(error) => note = error,
+                                }
+                            }
+                        }
+                        "clear" => {
+                            let mut picker = Picker::new(
+                                "Clear notification history",
+                                vec![Question::ask(
+                                    "Clear notification history?",
+                                    "This removes the stored cards; current cards stay on screen",
+                                    "clear the history",
+                                    "Clear",
+                                    "yes",
+                                )],
+                            );
+                            let code = crate::run_screen(
+                                terminal,
+                                design,
+                                "Clear notification history",
+                                &mut picker,
+                            )?;
+                            if code == 0
+                                && picker.answers().first().map(String::as_str) == Some("yes")
+                            {
+                                match super::notify::clear_history() {
+                                    Ok(()) => note = "Notification history cleared".to_string(),
+                                    Err(error) => {
+                                        note = format!("Could not clear history: {error}")
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                banner = Some(note);
             }
             "vnc" => {
                 let _ = super::vnc::menu(terminal, design)?;
@@ -989,6 +1340,93 @@ pub fn menu(
                         },
                     }
                 }
+            }
+            "clipboard" => {
+                let mut note = "Enter acts · Escape returns to Settings".to_string();
+                loop {
+                    let enabled = clipboard_enabled();
+                    let rows = vec![
+                        row(
+                            "Keep clipboard history",
+                            if enabled { "on" } else { "off" },
+                            Glyph::Clipboard,
+                        ),
+                        row(
+                            "Open clipboard history",
+                            clipboard_status(),
+                            Glyph::Clipboard,
+                        ),
+                        row("Clear clipboard history", "asks first", Glyph::Trash),
+                        row("Back", "Settings sections", Glyph::ArrowLeft),
+                    ];
+                    let keys = ["toggle", "history", "clear", "back"];
+                    let mut picker = Picker::new(
+                        "Clipboard history",
+                        vec![Question::choose(
+                            "Clipboard history",
+                            note.clone(),
+                            rows,
+                            keys.iter().map(|key| (*key).to_string()).collect(),
+                        )],
+                    );
+                    let code =
+                        crate::run_screen(terminal, design, "Clipboard history", &mut picker)?;
+                    if code != 0 {
+                        break;
+                    }
+                    let Some(key) = picker.answers().first().cloned() else {
+                        break;
+                    };
+                    match key.as_str() {
+                        "back" => break,
+                        "toggle" => {
+                            let next = !enabled;
+                            if let Err(error) = set_clipboard_enabled(next) {
+                                note = format!("Could not save clipboard.conf: {error}");
+                            } else {
+                                let _ = out(&[&bin_script("lazyos-clipboard"), "restart"]);
+                                note = format!(
+                                    "Clipboard history: {}",
+                                    if next { "on" } else { "off" }
+                                );
+                            }
+                        }
+                        "history" => {
+                            let _ = super::clip::menu(terminal, design)?;
+                        }
+                        "clear" => {
+                            let mut picker = Picker::new(
+                                "Clear clipboard history",
+                                vec![Question::ask(
+                                    "Clear clipboard history?",
+                                    "This removes the stored entries; the current selection stays",
+                                    "wipe the history",
+                                    "Clear",
+                                    "yes",
+                                )],
+                            );
+                            let code = crate::run_screen(
+                                terminal,
+                                design,
+                                "Clear clipboard history",
+                                &mut picker,
+                            )?;
+                            if code == 0
+                                && picker.answers().first().map(String::as_str) == Some("yes")
+                            {
+                                match checked(&["cliphist", "wipe"]) {
+                                    Ok(_) => note = "Clipboard history cleared".to_string(),
+                                    Err(error) => {
+                                        note =
+                                            format!("Could not clear clipboard history: {error}");
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                banner = Some(note);
             }
             "touchpad" => {
                 let mut note =
@@ -1248,6 +1686,16 @@ pub fn menu(
             _ => {}
         }
     }
+}
+
+fn save_notify(config: super::notify_settings::Config) -> Result<String, String> {
+    super::notify_settings::write(config)
+        .map_err(|error| format!("could not write notify.conf: {error}"))?;
+    super::notify_settings::restart()?;
+    Ok(format!(
+        "Notifications restarted (cards cleared): {}",
+        super::notify_settings::status()
+    ))
 }
 
 fn change_password(password: &str) -> Result<(), String> {

@@ -8,7 +8,6 @@ use crate::model::{Notification, Rect, Urgency};
 
 pub const OSD_WIDTH: f32 = 280.0;
 pub const OSD_HEIGHT: f32 = 44.0;
-pub const CARD_WIDTH: f32 = 340.0;
 pub const CARD_SPACING: f32 = 8.0;
 pub const CORNER_RADIUS: f32 = 6.0;
 
@@ -107,13 +106,17 @@ pub struct LayoutMetrics {
 pub struct Renderer {
     pub font: FontRenderer,
     pub theme: CardTheme,
+    pub card_width: f32,
+    pub max_visible: usize,
 }
 
 impl Renderer {
-    pub fn new() -> Self {
+    pub fn with_layout(card_width: f32, max_visible: usize) -> Self {
         Self {
             font: FontRenderer::new(),
             theme: CardTheme::from_active(),
+            card_width,
+            max_visible: max_visible.max(1),
         }
     }
 
@@ -137,27 +140,38 @@ impl Renderer {
     }
 
     pub fn compute_layout(&self, notifications: &mut [Notification]) -> LayoutMetrics {
+        let start = notifications.len().saturating_sub(self.max_visible);
         let mut max_w = 0.0f32;
-        for notif in notifications.iter() {
+        for notif in notifications[start..].iter() {
             let w = if notif.is_osd() {
                 OSD_WIDTH
             } else {
-                CARD_WIDTH
+                self.card_width
             };
             if w > max_w {
                 max_w = w;
             }
         }
         if max_w == 0.0 {
-            max_w = CARD_WIDTH;
+            max_w = self.card_width;
         }
 
         let mut cur_y = 0.0f32;
-        for notif in notifications.iter_mut() {
+        for (index, notif) in notifications.iter_mut().enumerate() {
+            if index < start {
+                notif.card_y = 0.0;
+                notif.card_height = 0.0;
+                notif.card_bounds = Rect::new(0.0, 0.0, 0.0, 0.0);
+                notif.action_rects.clear();
+                notif.close_rect = None;
+                notif.is_hovered = false;
+                notif.hovered_action = None;
+                continue;
+            }
             let card_w = if notif.is_osd() {
                 OSD_WIDTH
             } else {
-                CARD_WIDTH
+                self.card_width
             };
             let card_x = max_w - card_w;
 
@@ -208,6 +222,9 @@ impl Renderer {
         pixmap.fill(Color::TRANSPARENT);
 
         for notif in notifications.iter_mut() {
+            if notif.card_bounds.w <= 0.0 || notif.card_bounds.h <= 0.0 {
+                continue;
+            }
             self.render_card(pixmap, notif);
         }
     }
@@ -763,9 +780,47 @@ mod tests {
     use crate::model::{ActionItem, AnimState};
     use std::time::{Duration, Instant};
 
+    fn card(id: u32) -> Notification {
+        Notification {
+            id,
+            app_name: "lazyos".to_string(),
+            summary: format!("card {id}"),
+            body: String::new(),
+            app_icon: String::new(),
+            actions: Vec::new(),
+            urgency: Urgency::Normal,
+            category: None,
+            progress: None,
+            sync_tag: None,
+            created_at: Instant::now(),
+            timeout: Duration::from_secs(5),
+            anim_state: AnimState::Active,
+            card_y: 0.0,
+            card_height: 0.0,
+            card_bounds: Rect::new(0.0, 0.0, 0.0, 0.0),
+            action_rects: Vec::new(),
+            close_rect: None,
+            is_hovered: false,
+            hovered_action: None,
+            dismissing: false,
+            progress_color_override: None,
+        }
+    }
+
+    #[test]
+    fn only_the_newest_cards_are_laid_out() {
+        let renderer = Renderer::with_layout(340.0, 2);
+        let mut notifications = vec![card(1), card(2), card(3)];
+        let metrics = renderer.compute_layout(&mut notifications);
+        assert_eq!(notifications[0].card_bounds.w, 0.0);
+        assert!(notifications[1].card_bounds.h > 0.0);
+        assert!(notifications[2].card_bounds.h > 0.0);
+        assert!(metrics.total_height > 0.0);
+    }
+
     #[test]
     fn test_compute_layout_and_render() {
-        let renderer = Renderer::new();
+        let renderer = Renderer::with_layout(340.0, 4);
         let mut notifications = vec![Notification {
             id: 1,
             app_name: "lazyos".to_string(),
@@ -833,7 +888,7 @@ mod tests {
 
     #[test]
     fn test_compute_layout_and_render_osd() {
-        let renderer = Renderer::new();
+        let renderer = Renderer::with_layout(340.0, 4);
         let mut notifications = vec![Notification {
             id: 2,
             app_name: "LazyOS".to_string(),

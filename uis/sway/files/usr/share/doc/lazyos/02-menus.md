@@ -391,12 +391,15 @@ lists what has been copied since the session started. Enter puts an entry back o
 the clipboard, ready to paste; Alt+1 deletes that one entry.
 
 The history is kept by `cliphist`, which is fed by `wl-paste --watch cliphist
-store` — one line in `etc/sway/config.d/27-clipboard.conf`, and the only
-long-running process this session has (about 2 MB). `wl-clipboard` alone only
-ever knows the current selection, so a history needs something watching it; there
-is no way to have one without that watcher. The database is
-`~/.cache/cliphist/db`, it holds **everything** copied — a password from a
-password manager included — and the last row of the menu clears it.
+store` through `~/.config/bin/lazyos-clipboard` — one line in
+`etc/sway/config.d/27-clipboard.conf`, and the only long-running process this
+session has (about 2 MB). **Settings → System → Clipboard history** can pause
+the watcher (`enabled=no` in `~/.config/lazyos/clipboard.conf`) or clear the
+database. `wl-clipboard` alone only ever knows the current selection, so a
+history needs something watching it; there is no way to have one without that
+watcher. The database is `~/.cache/cliphist/db`, it holds **everything** copied
+— a password from a password manager included — and both the menu and Settings
+can clear it.
 
 Rows are classified by their content: text, a link (starts with `http`) or an
 image. An image is listed by what `cliphist` knows about it (`[[ binary data 64000

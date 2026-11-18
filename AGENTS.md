@@ -100,6 +100,8 @@ that file as the contract; never add a second one.
 | `lazyos-idle` | `~/.config/lazyos/idle.conf` | `screen_off`, `lock`, `dpms` in seconds; `0` = never. `start`/`restart` replaces the system swayidle chain. |
 | `touchpad` | `~/.config/sway/config.d/36-touchpad.conf` | `tap`, `natural_scroll`, `dwt`, `pointer_accel`; Settings applies the same values with `swaymsg input`. |
 | `reduced motion` | `~/.config/lazyos/reduced-motion` | `1`/`yes`/`true` = on. `Design::for_session` reads it alongside `LAZYOS_REDUCED_MOTION=1`. |
+| `lazyos-notify` | `~/.config/lazyos/notify.conf` | `default_timeout` (ms, 0 = never), `max_visible`, `card_width`, `history_limit`. Read once at startup; Settings restarts the daemon after a save. |
+| `lazyos-clipboard` | `~/.config/lazyos/clipboard.conf` | `enabled=yes\|no`; the helper starts/stops `wl-paste --watch cliphist store`. |
 | `tablet-mode` | `$XDG_RUNTIME_DIR/lazyos-tablet/` | `kbd.pid`, `poller.pid`, `out` while on; absent while off. `off` repairs a missing directory. |
 | `busy` / `bar-busy` | `$XDG_RUNTIME_DIR/lazyos-busy/<tag>.{label,id,icon,stop}` | `.stop` is the line the bar runs; `busy cancelled` says whether the card is gone. |
 | `lazyos-profile` | target archive + `$XDG_CACHE_HOME/lazyos` | export writes `.partial` then renames; import backs up then extracts; `report` is one file. |
@@ -124,6 +126,10 @@ Add a probe when a new state is introduced.
 - System identity uses the system tools: `localectl` for language (next login),
   `hostnamectl` plus `/etc/hosts` for the name, `xdg-mime`/`gio` for default apps, and
   `chpasswd` with the password on stdin for the account password.
+- Notification and clipboard settings are user config files read by their helpers.
+  `lazyos-notify` reads its file once at startup; saving a notification setting restarts
+  the daemon and clears visible cards. `lazyos-clipboard` starts/stops the `cliphist`
+  watcher from `clipboard.conf`.
 
 ## Cross-Repo Boundaries & Pure-Rust Installer (No Hardcoded Paths!)
 - Never put device-specific keymaps, udev rules, IRQ tuning, or board hacks into `uis/sway/files/`.

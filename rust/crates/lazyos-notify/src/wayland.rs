@@ -10,6 +10,7 @@ use wayland_client::protocol::{
 use wayland_client::{Connection, Dispatch, QueueHandle};
 use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
 
+use crate::config::Config;
 use crate::model::{AnimState, Notification};
 use crate::render::Renderer;
 
@@ -40,7 +41,7 @@ pub struct WaylandState {
 }
 
 impl WaylandState {
-    pub fn new(event_tx: Sender<UiEvent>) -> Self {
+    pub fn new(event_tx: Sender<UiEvent>, config: &Config) -> Self {
         Self {
             compositor: None,
             shm: None,
@@ -55,7 +56,7 @@ impl WaylandState {
             pointer_x: 0.0,
             pointer_y: 0.0,
             notifications: Vec::new(),
-            renderer: Renderer::new(),
+            renderer: Renderer::with_layout(config.card_width, config.max_visible),
             event_tx,
         }
     }

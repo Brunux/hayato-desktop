@@ -32,7 +32,7 @@ pub fn history_path() -> PathBuf {
     base.join("lazyos").join("notify").join("history.jsonl")
 }
 
-pub fn append_record(record: &HistoryRecord) {
+pub fn append_record(record: &HistoryRecord, limit: usize) {
     let path = history_path();
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
@@ -42,6 +42,36 @@ pub fn append_record(record: &HistoryRecord) {
         if let Ok(line) = serde_json::to_string(record) {
             let _ = writeln!(file, "{line}");
         }
+    }
+    if limit > 0 {
+        prune_history(&path, limit);
+    }
+}
+
+fn prune_lines(text: &str, limit: usize) -> String {
+    let lines: Vec<&str> = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    if lines.len() <= limit {
+        return text.to_string();
+    }
+    let mut out = lines[lines.len() - limit..].join("\n");
+    out.push('\n');
+    out
+}
+
+fn prune_history(path: &PathBuf, limit: usize) {
+    let Ok(text) = fs::read_to_string(path) else {
+        return;
+    };
+    let pruned = prune_lines(&text, limit);
+    if pruned == text {
+        return;
+    }
+    let tmp = path.with_extension("tmp");
+    if fs::write(&tmp, pruned).is_ok() {
+        let _ = fs::rename(tmp, path);
     }
 }
 
@@ -99,6 +129,14 @@ pub fn clear_history() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pruning_keeps_the_newest_records() {
+        let text = "one\ntwo\nthree\nfour\n";
+        assert_eq!(prune_lines(text, 2), "three\nfour\n");
+        assert_eq!(prune_lines(text, 10), text);
+        assert_eq!(prune_lines("", 2), "");
+    }
 
     #[test]
     fn history_jsonl_roundtrip() {
