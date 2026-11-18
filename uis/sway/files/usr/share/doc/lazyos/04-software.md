@@ -472,12 +472,14 @@ The **Settings** menu (Alt+Ctrl+O, and the root menu) is grouped into six sectio
 - **Display & Sound** - Night light, Appearance & Themes, Display arrangement, Rotation, Audio output, Volume per application (pavucontrol), Media.
 - **Input** - Touchpad, Keyboard layout, Tablet mode (with Calibrate rotation when on).
 - **Power & Idle** - Battery, the power menu, and **Idle & lock** (screen-off, lock and panel-off timeouts, with a "Never" choice).
-- **System** - Date & time (time zone and network time), Notifications, Do not disturb, System updates, Free space, Auto-mount USB drives, Login screen (Greeter), Translate.
+- **System** - Date & time (time zone and network time), Language & region, Hostname, Default apps, Change password, Notifications, Do not disturb, System updates, Free space, Auto-mount USB drives, Login screen (Greeter), Translate.
 - **Accessibility** - Reduced motion, saved to `~/.config/lazyos/reduced-motion` and honored by new windows (the same file the design reads alongside `LAZYOS_REDUCED_MOTION=1`).
 
 Each row shows the real state from the same probe as today and delegates to the existing pickers/panels (bar-net, bar-bt, bar-audio, bar-power, lazyos-display, lazyos-vnc, lazyos-dns, lazyos-ssh, lazyos-tz, lazyos-pkg, lazyos-clean) instead of duplicating them. Escape inside a section returns to the section list; Escape there closes Settings.
 
 **Input → Touchpad** writes `~/.config/sway/config.d/36-touchpad.conf` and applies the same values with `swaymsg input type:touchpad` immediately. It covers tap-to-click, natural scrolling, disable-while-typing and pointer speed; the file is the user override read after `/etc/sway/config`, so it wins over the system tap/natural-scroll defaults at the next login.
+
+**System → Language & region** uses `localectl` and takes effect at the next login. **Hostname** uses `hostnamectl` and keeps the `127.0.1.1` line in `/etc/hosts` in step. **Default apps** lists what `gio mime` registers for the browser, file manager, text editor, image/video/music player and PDF viewer, and writes the choice with `xdg-mime` (plus `xdg-settings` for the browser). **Change password** uses `chpasswd` with the password on stdin, never on a command line.
 
 The VNC row shows the current sharing state. The display row shows the arrangement from `lazyos-display --status`. The tablet mode row adds a "Calibrate rotation" sub-row when the mode is on.
 
