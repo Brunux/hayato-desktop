@@ -50,7 +50,32 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("touchpad", "Touchpad", "touchpad.conf"),
         ("rotation", "Rotation", "swaymsg output transform"),
         ("display", "Display arrangement", "lazyos-display"),
-        ("theme", "Appearance & Themes", "lazyos-theme-picker"),
+        ("theme", "Theme", "lazyos-theme-picker"),
+        ("wallpaper", "Wallpaper", "lazyos menu files ~/Pictures"),
+        (
+            "wallpaper-next",
+            "Next preset",
+            "lazyos theme wallpaper next",
+        ),
+        (
+            "wallpaper-theme",
+            "Use theme wallpaper",
+            "36-custom-wallpaper.conf",
+        ),
+        (
+            "bar-position",
+            "Bar position",
+            "~/.config/waybar/config.jsonc",
+        ),
+        (
+            "bar-density",
+            "Bar density",
+            "~/.config/waybar/config.jsonc",
+        ),
+        ("corners", "Window corners", "swaymsg corner_radius"),
+        ("shadows", "Window shadows", "swaymsg shadows"),
+        ("blur", "Window blur", "swaymsg blur"),
+        ("animations", "Animations", "swaymsg animation_duration_ms"),
         ("greeter", "Login screen (Greeter)", "lazyos menu greeter"),
         ("automount", "Auto-mount USB drives", "automount.conf"),
         ("idle", "Idle & lock", "lazyos-idle"),
@@ -91,8 +116,14 @@ pub fn status() -> String {
     let tp = if touchpad_on() { "enabled" } else { "disabled" };
     let am = if automount_on() { "on" } else { "off" };
     format!(
-        "Wi-Fi: {} · BT: {} · Night: {} · DND: {} · TP: {} · AM: {}",
-        wifi, bt, night, dnd, tp, am
+        "Wi-Fi: {} · BT: {} · Night: {} · DND: {} · TP: {} · AM: {} · Appearance: {}",
+        wifi,
+        bt,
+        night,
+        dnd,
+        tp,
+        am,
+        super::appearance::status()
     )
 }
 
@@ -384,6 +415,7 @@ fn battery_detail() -> String {
 enum Section {
     Network,
     DisplaySound,
+    Appearance,
     Input,
     PowerIdle,
     System,
@@ -391,9 +423,10 @@ enum Section {
 }
 
 impl Section {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Network,
         Self::DisplaySound,
+        Self::Appearance,
         Self::Input,
         Self::PowerIdle,
         Self::System,
@@ -404,6 +437,7 @@ impl Section {
         match self {
             Self::Network => "network",
             Self::DisplaySound => "display-sound",
+            Self::Appearance => "appearance",
             Self::Input => "input",
             Self::PowerIdle => "power-idle",
             Self::System => "system",
@@ -419,6 +453,7 @@ impl Section {
         match self {
             Self::Network => "Network",
             Self::DisplaySound => "Display & Sound",
+            Self::Appearance => "Appearance",
             Self::Input => "Input",
             Self::PowerIdle => "Power & Idle",
             Self::System => "System",
@@ -429,7 +464,8 @@ impl Section {
     fn detail(self) -> &'static str {
         match self {
             Self::Network => "Wi-Fi, Bluetooth, DNS, SSH, screen sharing",
-            Self::DisplaySound => "Night light, theme, display, rotation, audio, media",
+            Self::DisplaySound => "Night light, display, rotation, audio, media",
+            Self::Appearance => "Theme, wallpaper, bar, windows, animations",
             Self::Input => "Touchpad, keyboard, tablet mode",
             Self::PowerIdle => "Battery, idle & lock, power menu",
             Self::System => "Date & time, updates, storage, notifications, login",
@@ -441,6 +477,7 @@ impl Section {
         match self {
             Self::Network => Glyph::Wifi,
             Self::DisplaySound => Glyph::Display,
+            Self::Appearance => Glyph::Image,
             Self::Input => Glyph::Keyboard,
             Self::PowerIdle => Glyph::Battery,
             Self::System => Glyph::Gear,
@@ -461,8 +498,18 @@ fn section_keys(section: Section) -> &'static [&'static str] {
             "vnc",
             "ssh",
         ],
-        Section::DisplaySound => &[
-            "night", "rotation", "display", "theme", "audio", "mixer", "media",
+        Section::DisplaySound => &["night", "rotation", "display", "audio", "mixer", "media"],
+        Section::Appearance => &[
+            "theme",
+            "wallpaper",
+            "wallpaper-next",
+            "wallpaper-theme",
+            "bar-position",
+            "bar-density",
+            "corners",
+            "shadows",
+            "blur",
+            "animations",
         ],
         Section::Input => &["touchpad", "layout", "tablet", "tablet-calibrate"],
         Section::PowerIdle => &["power", "idle"],
@@ -569,12 +616,6 @@ fn build_rows(section: Section) -> (Vec<lazyos_ui::Row>, Vec<String>) {
             ));
             keys.push("display".to_string());
 
-            let p = crate::theme::paths();
-            let theme_current =
-                lazyos_theme::store::active(&p).unwrap_or_else(|| "solarized".to_string());
-            rows.push(row("Appearance & Themes", theme_current, Glyph::Palette));
-            keys.push("theme".to_string());
-
             rows.push(row("Audio output", audio_detail(), Glyph::Volume));
             keys.push("audio".to_string());
 
@@ -583,6 +624,75 @@ fn build_rows(section: Section) -> (Vec<lazyos_ui::Row>, Vec<String>) {
 
             rows.push(row("Media", media_detail(), Glyph::Music));
             keys.push("media".to_string());
+        }
+        Section::Appearance => {
+            rows.push(row("Theme", super::appearance::theme_name(), Glyph::Theme));
+            keys.push("theme".to_string());
+
+            rows.push(row(
+                "Wallpaper",
+                super::appearance::wallpaper_name(),
+                Glyph::Image,
+            ));
+            keys.push("wallpaper".to_string());
+
+            rows.push(row(
+                "Next preset",
+                "cycle the theme's wallpapers",
+                Glyph::Next,
+            ));
+            keys.push("wallpaper-next".to_string());
+
+            if super::appearance::has_custom_wallpaper() {
+                rows.push(row(
+                    "Use theme wallpaper",
+                    "back to the theme preset",
+                    Glyph::Undo,
+                ));
+                keys.push("wallpaper-theme".to_string());
+            }
+
+            rows.push(row(
+                "Bar position",
+                super::appearance::bar_position_label(),
+                Glyph::Display,
+            ));
+            keys.push("bar-position".to_string());
+
+            rows.push(row(
+                "Bar density",
+                super::appearance::bar_density_label(),
+                Glyph::Display,
+            ));
+            keys.push("bar-density".to_string());
+
+            rows.push(row(
+                "Window corners",
+                super::appearance::corners_label(),
+                Glyph::Window,
+            ));
+            keys.push("corners".to_string());
+
+            rows.push(row(
+                "Window shadows",
+                super::appearance::shadows_label(),
+                Glyph::Window,
+            ));
+            keys.push("shadows".to_string());
+
+            rows.push(row(
+                "Window blur",
+                super::appearance::blur_label(),
+                Glyph::Window,
+            ));
+            keys.push("blur".to_string());
+
+            rows.push(row(
+                "Animations",
+                super::appearance::animation_label(),
+                Glyph::Sync,
+            ));
+            keys.push("animations".to_string());
         }
         Section::Input => {
             rows.push(row("Touchpad", super::touchpad::status(), Glyph::Mouse));
@@ -1592,6 +1702,43 @@ pub fn menu(
             "theme" => {
                 let _ = super::theme_picker::menu(terminal, design)?;
             }
+            "wallpaper" => {
+                if let Some(message) = super::appearance::pick_wallpaper(terminal, design)? {
+                    banner = Some(message);
+                }
+            }
+            "wallpaper-next" => match super::appearance::cycle_wallpaper() {
+                Ok(message) => banner = Some(message),
+                Err(reason) => banner = Some(reason),
+            },
+            "wallpaper-theme" => match super::appearance::clear_custom_wallpaper() {
+                Ok(message) => banner = Some(message),
+                Err(reason) => banner = Some(reason),
+            },
+            "bar-position" => match super::appearance::toggle_bar_position() {
+                Ok(message) => banner = Some(message),
+                Err(reason) => banner = Some(reason),
+            },
+            "bar-density" => match super::appearance::toggle_bar_density() {
+                Ok(message) => banner = Some(message),
+                Err(reason) => banner = Some(reason),
+            },
+            "corners" => match super::appearance::cycle_corners() {
+                Ok(message) => banner = Some(message),
+                Err(reason) => banner = Some(reason),
+            },
+            "shadows" => match super::appearance::toggle_shadows() {
+                Ok(message) => banner = Some(message),
+                Err(reason) => banner = Some(reason),
+            },
+            "blur" => match super::appearance::cycle_blur() {
+                Ok(message) => banner = Some(message),
+                Err(reason) => banner = Some(reason),
+            },
+            "animations" => match super::appearance::cycle_animations() {
+                Ok(message) => banner = Some(message),
+                Err(reason) => banner = Some(reason),
+            },
             "greeter" => {
                 let _ = crate::greeter::settings::menu(terminal, design)?;
             }

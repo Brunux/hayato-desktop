@@ -840,15 +840,33 @@ else
 fi
 _settings_sections="$(lazyos menu settings --sections 2>/dev/null || true)"
 _settings_sections_missing=""
-for _settings_section in network display-sound input power-idle system accessibility; do
+for _settings_section in network display-sound appearance input power-idle system accessibility; do
 	awk -F'\t' -v want="$_settings_section" '$1 == want { found = 1 } END { exit !found }' \
 		<<<"$_settings_sections" || _settings_sections_missing="$_settings_sections_missing $_settings_section"
 done
 if [ -z "$_settings_sections_missing" ]; then
-	ok "Settings has the six sections (network, display-sound, input, power-idle, system, accessibility)"
+	ok "Settings has the seven sections (network, display-sound, appearance, input, power-idle, system, accessibility)"
 else
 	fail "Settings lost section(s):$_settings_sections_missing (the menu is flat or a section vanished)"
 fi
+# Appearance must expose the theme, wallpaper, bar and window-effect rows, and
+# its status must read the same file the menu writes.
+_settings_rows="$(lazyos menu settings --rows 2>/dev/null || true)"
+_settings_appearance_missing=""
+for _appearance_row in wallpaper wallpaper-next wallpaper-theme bar-position bar-density corners shadows blur animations; do
+	awk -F'\t' -v want="$_appearance_row" '$1 == want { found = 1 } END { exit !found }' \
+		<<<"$_settings_rows" || _settings_appearance_missing="$_settings_appearance_missing $_appearance_row"
+done
+if [ -z "$_settings_appearance_missing" ]; then
+	ok "Appearance exposes theme, wallpaper, bar and window effects"
+else
+	fail "Appearance lost row(s):$_settings_appearance_missing"
+fi
+_appearance_status=$(lazyos menu settings --status 2>/dev/null || true)
+case "$_appearance_status" in
+*"Appearance:"*) ok "Appearance status reads the effects and bar state" ;;
+*) fail "lazyos menu settings --status does not name Appearance" ;;
+esac
 # The idle/lock setting is a user-level override of the system swayidle chain.
 # The helper must exist, the login drop-in must start it, and its config reader
 # must answer the defaults and a written file without starting swayidle.

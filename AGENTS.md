@@ -105,6 +105,7 @@ that file as the contract; never add a second one.
 | `lazyos-idle` | `~/.config/lazyos/idle.conf` | `screen_off`, `lock`, `dpms` in seconds; `0` = never. `start`/`restart` replaces the system swayidle chain. |
 | `touchpad` | `~/.config/sway/config.d/36-touchpad.conf` | `tap`, `natural_scroll`, `dwt`, `pointer_accel`; Settings applies the same values with `swaymsg input`. |
 | `reduced motion` | `~/.config/lazyos/reduced-motion` | `1`/`yes`/`true` = on. `Design::for_session` reads it alongside `LAZYOS_REDUCED_MOTION=1`. |
+| `appearance` | `~/.config/lazyos/appearance.conf` + `~/.config/sway/config.d/41-appearance.conf` + `~/.config/sway/config.d/36-custom-wallpaper.conf` | `corners=sharp\|rounded\|soft`, `shadows=on\|off`, `blur=off\|frosted\|xray`, `animations=off\|calm\|normal`, `wallpaper=theme\|/abs/path`; the 41 drop-in is the generated compositor copy, and the 36 drop-in is the custom image override (copied into `~/.local/share/lazyos/wallpapers/`). Bar position/density live in `~/.config/waybar/config.jsonc`, not here. |
 | `lazyos-notify` | `~/.config/lazyos/notify.conf` + `$XDG_RUNTIME_DIR/lazyos-notify.sock` | `default_timeout` (ms, 0 = never), `max_visible`, `card_width`, `history_limit`, `group_by_sender`, `collapse_repeats`. Read once at startup; Settings restarts the daemon after a save. The 0600 socket takes `act-newest`, `dismiss-newest`, `dismiss-all` from the keyboard keys and dies with the session. |
 | `lazyos-clipboard` | `~/.config/lazyos/clipboard.conf` | `enabled=yes\|no`; the helper starts/stops `wl-paste --watch cliphist store`. |
 | `lazyos-capture` | `~/.config/lazyos/record.conf` + `$XDG_RUNTIME_DIR/lazyos-capture/camera.pid` | `audio=off\|mic\|system`, `webcam=on\|off`; the camera pid is the mpv overlay, signalled with the recorder. |
@@ -120,10 +121,10 @@ night-light status, tablet stale repair, busy stop/cancelled, and the profile ex
 Add a probe when a new state is introduced.
 
 ## Settings Structure
-- `system/settings.rs` has six sections: Network, Display & Sound, Input, Power & Idle,
-  System, Accessibility. `rows()` is the flat canonical table for `check-system.sh`;
-  `sections()` / `--sections` is the UI structure. Every row belongs to exactly one section
-  (`every_settings_row_belongs_to_one_section`).
+- `system/settings.rs` has seven sections: Network, Display & Sound, Appearance, Input,
+  Power & Idle, System, Accessibility. `rows()` is the flat canonical table for
+  `check-system.sh`; `sections()` / `--sections` is the UI structure. Every row belongs to
+  exactly one section (`every_settings_row_belongs_to_one_section`).
 - A new setting writes a user config file and delegates to a helper (`lazyos-idle`,
   `night-light`, `touchpad`, `reduced-motion`), rather than adding a second state file or a
   second copy of the command line.
