@@ -16,6 +16,7 @@ use ratatui::backend::CrosstermBackend;
 
 use super::pick::{Picker, Question, row};
 use super::{checked, out, sudo};
+use crate::installer::config::validate_password;
 
 /// What the menu needs before it offers anything.
 pub const NEEDED: &[&str] = &["nmcli", "bluetoothctl", "swaymsg", "iw"];
@@ -40,6 +41,10 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("vnc", "Share this screen", "lazyos-vnc"),
         ("ssh", "Remote login (SSH)", "lazyos-ssh"),
         ("tz", "Date & time", "lazyos-tz"),
+        ("locale", "Language & region", "localectl"),
+        ("hostname", "Hostname", "hostnamectl"),
+        ("default-apps", "Default apps", "xdg-mime"),
+        ("password", "Change password", "chpasswd"),
         ("touchpad", "Touchpad", "touchpad.conf"),
         ("rotation", "Rotation", "swaymsg output transform"),
         ("display", "Display arrangement", "lazyos-display"),
@@ -405,6 +410,10 @@ fn section_keys(section: Section) -> &'static [&'static str] {
         Section::PowerIdle => &["power", "idle"],
         Section::System => &[
             "tz",
+            "locale",
+            "hostname",
+            "default-apps",
+            "password",
             "notify",
             "dnd",
             "updates",
@@ -546,6 +555,26 @@ fn build_rows(section: Section) -> (Vec<lazyos_ui::Row>, Vec<String>) {
         Section::System => {
             rows.push(row("Date & time", super::tz::status(), Glyph::Clock));
             keys.push("tz".to_string());
+
+            rows.push(row(
+                "Language & region",
+                super::locale::current(),
+                Glyph::Globe,
+            ));
+            keys.push("locale".to_string());
+
+            rows.push(row("Hostname", super::hostname::current(), Glyph::Server));
+            keys.push("hostname".to_string());
+
+            rows.push(row(
+                "Default apps",
+                super::default_apps::summary(),
+                Glyph::Globe,
+            ));
+            keys.push("default-apps".to_string());
+
+            rows.push(row("Change password", "this account", Glyph::Key));
+            keys.push("password".to_string());
 
             if dnd_on() {
                 rows.push(row("Notifications", "do not disturb", Glyph::BellOff));
@@ -784,6 +813,182 @@ pub fn menu(
             }
             "tz" => {
                 let _ = super::tz::menu(terminal, design)?;
+            }
+            "locale" => {
+                let current = super::locale::current();
+                let locales = super::locale::list();
+                if locales.is_empty() {
+                    banner =
+                        Some("No locales are available (localectl list-locales is empty)".into());
+                } else {
+                    let rows: Vec<lazyos_ui::Row> = locales
+                        .iter()
+                        .map(|locale| {
+                            row(
+                                locale.clone(),
+                                if *locale == current { "current" } else { "" },
+                                Glyph::Globe,
+                            )
+                        })
+                        .collect();
+                    let mut picker = Picker::new(
+                        "Language & region",
+                        vec![Question::choose(
+                            "Language & region",
+                            format!("Current: {current} · Enter sets · Escape returns"),
+                            rows,
+                            locales.clone(),
+                        )],
+                    );
+                    let code =
+                        crate::run_screen(terminal, design, "Language & region", &mut picker)?;
+                    if code == 0
+                        && let Some(locale) = picker.answers().first()
+                    {
+                        match super::locale::set(locale) {
+                            Ok(()) => {
+                                banner = Some(format!(
+                                    "Language & region: {locale} (log out and back in)"
+                                ));
+                            }
+                            Err(error) => banner = Some(format!("Could not set locale: {error}")),
+                        }
+                    }
+                }
+            }
+            "hostname" => {
+                let current = super::hostname::current();
+                let mut picker = Picker::new(
+                    "Hostname",
+                    vec![Question::input(
+                        "Hostname",
+                        format!("Current: {current} · letters, numbers and hyphens"),
+                        "my-chromebook",
+                        false,
+                    )],
+                );
+                let code = crate::run_screen(terminal, design, "Hostname", &mut picker)?;
+                if code == 0
+                    && let Some(name) = picker.answers().first()
+                {
+                    match super::hostname::set(name) {
+                        Ok(()) => banner = Some(format!("Hostname: {name}")),
+                        Err(error) => banner = Some(format!("Could not set hostname: {error}")),
+                    }
+                }
+            }
+            "default-apps" => {
+                let rows: Vec<lazyos_ui::Row> = super::default_apps::CATEGORIES
+                    .iter()
+                    .map(|category| {
+                        let current = super::default_apps::current(category)
+                            .map(|id| super::default_apps::desktop_name(&id))
+                            .unwrap_or_else(|| "not set".to_string());
+                        row(category.label, current, Glyph::Desktop)
+                    })
+                    .collect();
+                let keys: Vec<String> = super::default_apps::CATEGORIES
+                    .iter()
+                    .map(|category| category.key.to_string())
+                    .collect();
+                let mut picker = Picker::new(
+                    "Default apps",
+                    vec![Question::choose(
+                        "Default apps",
+                        "Enter opens a category · Escape returns to Settings",
+                        rows,
+                        keys,
+                    )],
+                );
+                let code = crate::run_screen(terminal, design, "Default apps", &mut picker)?;
+                if code == 0
+                    && let Some(key) = picker.answers().first()
+                    && let Some(category) = super::default_apps::category(key)
+                {
+                    let ids = super::default_apps::candidates(category);
+                    if ids.is_empty() {
+                        banner = Some(format!(
+                            "No applications are registered for {}",
+                            category.label
+                        ));
+                    } else {
+                        let current = super::default_apps::current(category);
+                        let rows: Vec<lazyos_ui::Row> = ids
+                            .iter()
+                            .map(|id| {
+                                row(
+                                    super::default_apps::desktop_name(id),
+                                    if current.as_deref() == Some(id.as_str()) {
+                                        "current"
+                                    } else {
+                                        ""
+                                    },
+                                    Glyph::Desktop,
+                                )
+                            })
+                            .collect();
+                        let mut picker = Picker::new(
+                            category.label,
+                            vec![Question::choose(
+                                category.label,
+                                "Enter sets the default · Escape returns",
+                                rows,
+                                ids.clone(),
+                            )],
+                        );
+                        let code =
+                            crate::run_screen(terminal, design, category.label, &mut picker)?;
+                        if code == 0
+                            && let Some(id) = picker.answers().first()
+                        {
+                            match super::default_apps::set(category, id) {
+                                Ok(()) => {
+                                    banner = Some(format!(
+                                        "{}: {}",
+                                        category.label,
+                                        super::default_apps::desktop_name(id)
+                                    ));
+                                }
+                                Err(error) => {
+                                    banner = Some(format!("Could not set default: {error}"));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "password" => {
+                let mut picker = Picker::new(
+                    "Change password",
+                    vec![
+                        Question::input(
+                            "New password",
+                            "at least one character · Escape returns",
+                            "new password",
+                            true,
+                        ),
+                        Question::input(
+                            "Confirm password",
+                            "type it again",
+                            "confirm password",
+                            true,
+                        ),
+                    ],
+                );
+                let code = crate::run_screen(terminal, design, "Change password", &mut picker)?;
+                if code == 0
+                    && let [password, confirm] = picker.answers().as_slice()
+                {
+                    match validate_password(password, confirm) {
+                        Err(error) => banner = Some(error.to_string()),
+                        Ok(()) => match change_password(password) {
+                            Ok(()) => banner = Some("Password changed".to_string()),
+                            Err(error) => {
+                                banner = Some(format!("Could not change password: {error}"))
+                            }
+                        },
+                    }
+                }
             }
             "touchpad" => {
                 let mut note =
@@ -1042,6 +1247,38 @@ pub fn menu(
             }
             _ => {}
         }
+    }
+}
+
+fn change_password(password: &str) -> Result<(), String> {
+    use std::io::Write as _;
+    let user = out(&["id", "-un"]).unwrap_or_else(|| "lazyos".to_string());
+    let mut child = std::process::Command::new("sudo")
+        .args(["-n", "/usr/sbin/chpasswd"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("cannot run chpasswd: {error}"))?;
+    let Some(mut stdin) = child.stdin.take() else {
+        return Err("chpasswd has no stdin".to_string());
+    };
+    if let Err(error) = writeln!(stdin, "{user}:{password}") {
+        return Err(format!("cannot send the password: {error}"));
+    }
+    drop(stdin);
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("chpasswd did not finish: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let reason = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(if reason.is_empty() {
+            "chpasswd refused the change".to_string()
+        } else {
+            reason
+        })
     }
 }
 

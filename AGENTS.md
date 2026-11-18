@@ -121,6 +121,9 @@ Add a probe when a new state is introduced.
   second copy of the command line.
 - A section row's detail comes from the same reader the submenu uses; a top-level section
   stays cheap (no nmcli/systemctl probe storm) and the live status is one level down.
+- System identity uses the system tools: `localectl` for language (next login),
+  `hostnamectl` plus `/etc/hosts` for the name, `xdg-mime`/`gio` for default apps, and
+  `chpasswd` with the password on stdin for the account password.
 
 ## Cross-Repo Boundaries & Pure-Rust Installer (No Hardcoded Paths!)
 - Never put device-specific keymaps, udev rules, IRQ tuning, or board hacks into `uis/sway/files/`.
