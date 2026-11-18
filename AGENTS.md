@@ -136,6 +136,10 @@ Add a probe when a new state is introduced.
   `lazyos-notify` reads its file once at startup; saving a notification setting restarts
   the daemon and clears visible cards. `lazyos-clipboard` starts/stops the `cliphist`
   watcher from `clipboard.conf`.
+- Captive portal sign-in is a read-only probe in `system::portal`: NetworkManager's
+  `CONNECTIVITY` says whether a page is needed, and the URL comes from the connectivity
+  endpoint's redirect. It opens only `http`/`https`, writes no state, and is reachable as
+  `lazyos menu net --portal` for checks.
 
 ## Cross-Repo Boundaries & Pure-Rust Installer (No Hardcoded Paths!)
 - Never put device-specific keymaps, udev rules, IRQ tuning, or board hacks into `uis/sway/files/`.

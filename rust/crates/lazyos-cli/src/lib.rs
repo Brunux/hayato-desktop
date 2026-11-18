@@ -418,6 +418,13 @@ fn query(resolved: &Resolved) -> Option<i32> {
             println!("{}", system::net::status_json());
             Some(EXIT_OK)
         }
+        ("menu net", ["--portal"] | ["portal"]) => {
+            println!(
+                "{}",
+                system::portal::portal_url().unwrap_or_else(|| "none".to_string())
+            );
+            Some(EXIT_OK)
+        }
         ("menu clean", ["--dry-run"] | ["dry-run"]) => {
             system::clean::dry_run();
             Some(EXIT_OK)

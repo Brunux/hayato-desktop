@@ -230,6 +230,18 @@ The menu offers Automatic (DHCP), Cloudflare, Google, Quad9, AdGuard, and a cust
 
 The `--status` subcommand returns the current servers and ignore-auto-dns state.
 
+## Hotel and airport Wi-Fi
+
+A network that wants you to accept its terms before it lets you online is a
+**captive portal**. NetworkManager reports it as `portal` or `limited`; the
+**Wi-Fi** menu (`lazyos menu net`) then starts with **Sign in to this network**,
+and Enter opens the page in Firefox. The page is found by asking NetworkManager's
+own connectivity endpoint where it redirects; only `http` and `https` URLs are
+opened. Settings → Network shows the same row while a sign-in is pending. After
+the page accepts you, the row disappears on the next scan or connection.
+
+`lazyos menu net --portal` prints the URL (or `none`) for scripts and checks.
+
 ## Looking at the screen from another machine
 
 `wayvnc` serves this session as VNC, so a screen that is misbehaving can be

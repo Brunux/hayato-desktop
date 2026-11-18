@@ -32,6 +32,7 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
     vec![
         ("wifi-radio", "Wi-Fi radio", "nmcli radio wifi"),
         ("wifi", "Wi-Fi networks", "bar-net"),
+        ("portal", "Network sign-in", "lazyos menu net --portal"),
         ("bt-radio", "Bluetooth radio", "bluetoothctl power"),
         ("bt", "Bluetooth devices", "bar-bt"),
         ("dns", "DNS", "lazyos-dns"),
@@ -450,7 +451,16 @@ impl Section {
 
 fn section_keys(section: Section) -> &'static [&'static str] {
     match section {
-        Section::Network => &["wifi-radio", "wifi", "bt-radio", "bt", "dns", "vnc", "ssh"],
+        Section::Network => &[
+            "wifi-radio",
+            "wifi",
+            "portal",
+            "bt-radio",
+            "bt",
+            "dns",
+            "vnc",
+            "ssh",
+        ],
         Section::DisplaySound => &[
             "night", "rotation", "display", "theme", "audio", "mixer", "media",
         ],
@@ -505,6 +515,14 @@ fn build_rows(section: Section) -> (Vec<lazyos_ui::Row>, Vec<String>) {
             rows.push(row("Wi-Fi networks", wifi_detail(), Glyph::Globe));
             keys.push("wifi-radio".to_string());
             keys.push("wifi".to_string());
+            if super::portal::needs_signin() {
+                rows.push(row(
+                    "Network sign-in",
+                    "the network asks for a page",
+                    Glyph::Globe,
+                ));
+                keys.push("portal".to_string());
+            }
 
             // Bluetooth
             rows.push(row(
@@ -791,6 +809,10 @@ pub fn menu(
             "wifi" => {
                 let _ = super::net::menu(terminal, design)?;
             }
+            "portal" => match super::portal::open() {
+                Ok(url) => banner = Some(format!("Opened the sign-in page: {url}")),
+                Err(reason) => banner = Some(reason),
+            },
             "bt" => {
                 let _ = super::bluetooth::menu(terminal, design)?;
             }
