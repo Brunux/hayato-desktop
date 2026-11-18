@@ -51,7 +51,17 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("rotation", "Rotation", "swaymsg output transform"),
         ("display", "Display arrangement", "lazyos-display"),
         ("theme", "Theme", "lazyos-theme-picker"),
-        ("wallpaper", "Wallpaper", "lazyos theme wallpaper next"),
+        ("wallpaper", "Wallpaper", "lazyos menu files ~/Pictures"),
+        (
+            "wallpaper-next",
+            "Next preset",
+            "lazyos theme wallpaper next",
+        ),
+        (
+            "wallpaper-theme",
+            "Use theme wallpaper",
+            "36-custom-wallpaper.conf",
+        ),
         (
             "bar-position",
             "Bar position",
@@ -492,6 +502,8 @@ fn section_keys(section: Section) -> &'static [&'static str] {
         Section::Appearance => &[
             "theme",
             "wallpaper",
+            "wallpaper-next",
+            "wallpaper-theme",
             "bar-position",
             "bar-density",
             "corners",
@@ -623,6 +635,22 @@ fn build_rows(section: Section) -> (Vec<lazyos_ui::Row>, Vec<String>) {
                 Glyph::Image,
             ));
             keys.push("wallpaper".to_string());
+
+            rows.push(row(
+                "Next preset",
+                "cycle the theme's wallpapers",
+                Glyph::Next,
+            ));
+            keys.push("wallpaper-next".to_string());
+
+            if super::appearance::has_custom_wallpaper() {
+                rows.push(row(
+                    "Use theme wallpaper",
+                    "back to the theme preset",
+                    Glyph::Undo,
+                ));
+                keys.push("wallpaper-theme".to_string());
+            }
 
             rows.push(row(
                 "Bar position",
@@ -1674,7 +1702,16 @@ pub fn menu(
             "theme" => {
                 let _ = super::theme_picker::menu(terminal, design)?;
             }
-            "wallpaper" => match super::appearance::cycle_wallpaper() {
+            "wallpaper" => {
+                if let Some(message) = super::appearance::pick_wallpaper(terminal, design)? {
+                    banner = Some(message);
+                }
+            }
+            "wallpaper-next" => match super::appearance::cycle_wallpaper() {
+                Ok(message) => banner = Some(message),
+                Err(reason) => banner = Some(reason),
+            },
+            "wallpaper-theme" => match super::appearance::clear_custom_wallpaper() {
                 Ok(message) => banner = Some(message),
                 Err(reason) => banner = Some(reason),
             },

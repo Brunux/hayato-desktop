@@ -8,8 +8,12 @@
 //! density already live in `~/.config/waybar/config.jsonc`, so this module
 //! edits those lines and signals Waybar instead of adding a second copy.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use lazyos_ui::Design;
+use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Corners {
@@ -153,12 +157,15 @@ impl Animation {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Effects {
     pub corners: Corners,
     pub shadows: bool,
     pub blur: Blur,
     pub animation: Animation,
+    /// An absolute image path chosen by the person, or `None` for the theme's
+    /// preset wallpaper.
+    pub custom_wallpaper: Option<String>,
 }
 
 impl Default for Effects {
@@ -168,6 +175,7 @@ impl Default for Effects {
             shadows: true,
             blur: Blur::Frosted,
             animation: Animation::Normal,
+            custom_wallpaper: None,
         }
     }
 }
@@ -192,6 +200,34 @@ fn dropin_path() -> PathBuf {
 
 fn waybar_path() -> PathBuf {
     config_home().join("waybar/config.jsonc")
+}
+
+fn custom_dropin_path() -> PathBuf {
+    config_home().join("sway/config.d/36-custom-wallpaper.conf")
+}
+
+fn data_home() -> PathBuf {
+    std::env::var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::var("HOME")
+                .map(|home| PathBuf::from(home).join(".local/share"))
+                .unwrap_or_else(|_| PathBuf::from("/tmp"))
+        })
+}
+
+fn state_home() -> PathBuf {
+    std::env::var("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::var("HOME")
+                .map(|home| PathBuf::from(home).join(".local/state"))
+                .unwrap_or_else(|_| PathBuf::from("/tmp"))
+        })
+}
+
+fn custom_wallpaper_dir() -> PathBuf {
+    data_home().join("lazyos/wallpapers")
 }
 
 fn parse_effects(text: &str) -> Effects {
@@ -222,23 +258,32 @@ fn parse_effects(text: &str) -> Effects {
                     effects.animation = animation;
                 }
             }
+            "wallpaper" => {
+                effects.custom_wallpaper = if value.is_empty() || value == "theme" {
+                    None
+                } else {
+                    Some(value.to_string())
+                };
+            }
             _ => {}
         }
     }
     effects
 }
 
-fn effects_body(effects: Effects) -> String {
+fn effects_body(effects: &Effects) -> String {
     format!(
         "# Written by Settings -> Appearance.\n\
          corners={}\n\
          shadows={}\n\
          blur={}\n\
-         animations={}\n",
+         animations={}\n\
+         wallpaper={}\n",
         effects.corners.as_str(),
         if effects.shadows { "on" } else { "off" },
         effects.blur.as_str(),
-        effects.animation.as_str()
+        effects.animation.as_str(),
+        effects.custom_wallpaper.as_deref().unwrap_or("theme")
     )
 }
 
@@ -258,7 +303,7 @@ fn write_atomic(path: &PathBuf, body: &str) -> Result<(), String> {
     std::fs::rename(&temp, path).map_err(|error| error.to_string())
 }
 
-fn dropin_body(effects: Effects) -> String {
+fn dropin_body(effects: &Effects) -> String {
     format!(
         "# Written by Settings -> Appearance. Delete this file to go back to\n\
          # the session defaults in /etc/sway/config.d/26-swayfx.conf.\n\
@@ -289,7 +334,7 @@ fn dropin_body(effects: Effects) -> String {
     )
 }
 
-fn live_commands(effects: Effects) -> Vec<String> {
+fn live_commands(effects: &Effects) -> Vec<String> {
     vec![
         format!("corner_radius {}", effects.corners.radius()),
         format!(
@@ -324,7 +369,7 @@ fn live_commands(effects: Effects) -> Vec<String> {
     ]
 }
 
-fn apply(effects: Effects) -> Result<(), String> {
+fn apply(effects: &Effects) -> Result<(), String> {
     write_atomic(&appearance_path(), &effects_body(effects))?;
     write_atomic(&dropin_path(), &dropin_body(effects))?;
     for command in live_commands(effects) {
@@ -336,7 +381,7 @@ fn apply(effects: Effects) -> Result<(), String> {
 fn change(update: impl FnOnce(&mut Effects)) -> Result<String, String> {
     let mut effects = load();
     update(&mut effects);
-    apply(effects)?;
+    apply(&effects)?;
     Ok(status())
 }
 
@@ -397,7 +442,18 @@ pub fn theme_name() -> String {
         .unwrap_or(slug)
 }
 
+pub fn has_custom_wallpaper() -> bool {
+    load().custom_wallpaper.is_some()
+}
+
 pub fn wallpaper_name() -> String {
+    if let Some(path) = load().custom_wallpaper {
+        return Path::new(&path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| format!("custom: {name}"))
+            .unwrap_or(path);
+    }
     let paths = crate::theme::paths();
     std::fs::read_to_string(paths.state.join("wallpaper"))
         .ok()
@@ -406,10 +462,147 @@ pub fn wallpaper_name() -> String {
         .unwrap_or_else(|| "theme default".to_string())
 }
 
+fn is_picture(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    matches!(
+        crate::files::open::family(name, false),
+        crate::files::open::Family::Picture
+    )
+}
+
+fn safe_extension(path: &Path) -> String {
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("png")
+        .to_ascii_lowercase();
+    let extension: String = extension
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect();
+    if extension.is_empty() {
+        "png".to_string()
+    } else {
+        extension
+    }
+}
+
+fn custom_dropin_body(path: &Path) -> String {
+    format!(
+        "# Written by Settings -> Appearance -> Wallpaper. Delete this file to\n\
+         # return to the theme's preset wallpaper.\n\
+         output * bg \"{}\" fill\n",
+        path.display()
+    )
+}
+
+fn live_set_wallpaper(path: &Path) {
+    let _ = Command::new("swaymsg")
+        .arg(format!("output * bg \"{}\" fill", path.display()))
+        .status();
+}
+
+fn set_custom_wallpaper(source: &Path) -> Result<String, String> {
+    if !is_picture(source) {
+        return Err("Choose a picture (PNG, JPEG, WebP, GIF, BMP or TIFF)".to_string());
+    }
+    let directory = custom_wallpaper_dir();
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| format!("cannot create {}: {error}", directory.display()))?;
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    let destination = directory.join(format!("custom-{stamp}.{}", safe_extension(source)));
+    std::fs::copy(source, &destination)
+        .map_err(|error| format!("cannot copy {}: {error}", source.display()))?;
+
+    let mut effects = load();
+    effects.custom_wallpaper = Some(destination.to_string_lossy().to_string());
+    write_atomic(&appearance_path(), &effects_body(&effects))?;
+    write_atomic(&custom_dropin_path(), &custom_dropin_body(&destination))?;
+    live_set_wallpaper(&destination);
+    Ok(format!(
+        "Wallpaper: custom {}",
+        destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("image")
+    ))
+}
+
+fn theme_wallpaper_path() -> PathBuf {
+    let paths = crate::theme::paths();
+    let name = std::fs::read_to_string(paths.state.join("wallpaper"))
+        .ok()
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+        .unwrap_or_else(|| "lazyos.png".to_string());
+    paths.home.join("Pictures/Wallpapers").join(name)
+}
+
+pub fn clear_custom_wallpaper() -> Result<String, String> {
+    let mut effects = load();
+    effects.custom_wallpaper = None;
+    write_atomic(&appearance_path(), &effects_body(&effects))?;
+    let _ = std::fs::remove_file(custom_dropin_path());
+    let preset = theme_wallpaper_path();
+    live_set_wallpaper(&preset);
+    Ok(format!(
+        "Wallpaper: {}",
+        preset
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("theme preset")
+    ))
+}
+
 pub fn cycle_wallpaper() -> Result<String, String> {
+    let mut effects = load();
+    if effects.custom_wallpaper.is_some() {
+        effects.custom_wallpaper = None;
+        write_atomic(&appearance_path(), &effects_body(&effects))?;
+        let _ = std::fs::remove_file(custom_dropin_path());
+    }
     let paths = crate::theme::paths();
     let (wallpaper, _) = crate::theme::cycle_wallpaper_for(&paths, None)?;
     Ok(format!("Wallpaper: {wallpaper}"))
+}
+
+pub fn pick_wallpaper(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    design: &Design,
+) -> Result<Option<String>, crate::Failure> {
+    let home = std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/"));
+    let pictures = home.join("Pictures");
+    let start = if pictures.is_dir() {
+        pictures
+    } else {
+        home.clone()
+    };
+    let setup = crate::files::browse::Setup {
+        dir: start,
+        mode: crate::files::browse::Mode::Browse,
+        hidden: false,
+        home: home.clone(),
+        memory: state_home().join("lazyos/files-last"),
+        path_var: std::env::var("PATH").unwrap_or_default(),
+    };
+    let mut screen = crate::files::browse::FilesScreen::new(
+        setup,
+        Some(crate::files::preview::Previewer::for_session(&home)),
+    );
+    let _ = crate::run_screen(terminal, design, "Choose a wallpaper", &mut screen)?;
+    match screen.chosen.take() {
+        Some(crate::files::Chosen::Open(path)) => Ok(Some(match set_custom_wallpaper(&path) {
+            Ok(message) => message,
+            Err(reason) => reason,
+        })),
+        Some(crate::files::Chosen::Actions(_)) => Ok(None),
+        None => Ok(None),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -675,17 +868,29 @@ mod tests {
             shadows: false,
             blur: Blur::Xray,
             animation: Animation::Calm,
+            custom_wallpaper: Some("/home/b/Pictures/wall.jpg".to_string()),
         };
-        assert_eq!(parse_effects(&effects_body(effects)), effects);
+        assert_eq!(parse_effects(&effects_body(&effects)), effects);
         assert_eq!(Corners::Sharp.next(), Corners::Rounded);
         assert_eq!(Blur::Xray.next(), Blur::Off);
         assert_eq!(Animation::Normal.next(), Animation::Off);
     }
 
     #[test]
+    fn a_custom_wallpaper_round_trips_and_is_quoted() {
+        let effects = Effects {
+            custom_wallpaper: Some("/home/b/My Wall.jpg".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(parse_effects(&effects_body(&effects)), effects);
+        let body = custom_dropin_body(Path::new("/home/b/My Wall.jpg"));
+        assert!(body.contains("output * bg \"/home/b/My Wall.jpg\" fill"));
+    }
+
+    #[test]
     fn the_dropin_is_the_live_command_list() {
         let effects = Effects::default();
-        let body = dropin_body(effects);
+        let body = dropin_body(&effects);
         assert!(body.contains("corner_radius 6"));
         assert!(body.contains("smart_corner_radius enable"));
         assert!(body.contains("shadows enable"));

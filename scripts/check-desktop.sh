@@ -853,7 +853,7 @@ fi
 # its status must read the same file the menu writes.
 _settings_rows="$(lazyos menu settings --rows 2>/dev/null || true)"
 _settings_appearance_missing=""
-for _appearance_row in wallpaper bar-position bar-density corners shadows blur animations; do
+for _appearance_row in wallpaper wallpaper-next wallpaper-theme bar-position bar-density corners shadows blur animations; do
 	awk -F'\t' -v want="$_appearance_row" '$1 == want { found = 1 } END { exit !found }' \
 		<<<"$_settings_rows" || _settings_appearance_missing="$_settings_appearance_missing $_appearance_row"
 done
