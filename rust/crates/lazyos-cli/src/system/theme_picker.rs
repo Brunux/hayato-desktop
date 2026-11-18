@@ -373,6 +373,14 @@ impl Screen for ThemePickerScreen {
         Some(&self.header)
     }
 
+    fn phase(&self) -> Option<&'static str> {
+        Some(match self.phase {
+            PreviewPhase::Idle => "idle",
+            PreviewPhase::Peeking { .. } => "peeking",
+            PreviewPhase::Committed => "committed",
+        })
+    }
+
     fn keybar(&self) -> Option<&[KeyHint]> {
         Some(&self.keybar)
     }

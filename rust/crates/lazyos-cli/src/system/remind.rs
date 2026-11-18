@@ -566,6 +566,14 @@ impl Screen for RemindScreen {
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some(match &self.mode {
+            RemindMode::List => "list",
+            RemindMode::NewTitle => "new-title",
+            RemindMode::NewWhen(_) => "new-when",
+        })
+    }
 }
 
 impl RemindScreen {

@@ -608,6 +608,16 @@ impl Screen for GreeterSettingsScreen {
         }
     }
 
+    fn phase(&self) -> Option<&'static str> {
+        Some(match self.mode {
+            SettingsMode::Main => "main",
+            SettingsMode::ThemePicker => "theme-picker",
+            SettingsMode::SessionPicker => "session-picker",
+            SettingsMode::EditGreeting => "edit-greeting",
+            SettingsMode::ConfirmReset { .. } => "confirm-reset",
+        })
+    }
+
     fn design(&self) -> Option<Design> {
         Some(Design::new(
             self.theme.palette(),

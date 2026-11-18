@@ -683,6 +683,16 @@ impl Screen for GrepScreen {
         Some(&self.header)
     }
 
+    fn phase(&self) -> Option<&'static str> {
+        Some(match &self.mode {
+            Mode::Prompt(_) => "prompt",
+            Mode::Running(_) => "running",
+            Mode::Results => "results",
+            Mode::Viewing(_) => "viewing",
+            Mode::Failed(_) => "failed",
+        })
+    }
+
     fn needs_tick(&self) -> Option<Duration> {
         self.running().then_some(Duration::from_millis(50))
     }

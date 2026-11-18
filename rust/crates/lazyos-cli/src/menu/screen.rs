@@ -633,6 +633,16 @@ impl Screen for MenuScreen {
         Some(&self.header)
     }
 
+    fn phase(&self) -> Option<&'static str> {
+        Some(match &self.mode {
+            Mode::List => "list",
+            Mode::Power => "power",
+            Mode::Confirm(..) => "confirm",
+            Mode::Ask(_) => "ask",
+            Mode::Answer(answer) => answer.phase(),
+        })
+    }
+
     fn desired_size(&self) -> Option<(u16, u16)> {
         Some((860, 560))
     }
@@ -754,6 +764,19 @@ impl Answer {
                 Some(TaskState::Failed | TaskState::DidNotFinish) => "failed".to_string(),
                 Some(TaskState::Stopped) => "stopped".to_string(),
                 _ => format!("{} is answering", agent.name()),
+            },
+        }
+    }
+
+    fn phase(&self) -> &'static str {
+        match &self.body {
+            AnswerBody::Refused(_) => "answer-refused",
+            AnswerBody::Task { .. } => match self.state() {
+                Some(TaskState::Queued | TaskState::Running) => "answer-running",
+                Some(TaskState::Done) => "answer-done",
+                Some(TaskState::Failed | TaskState::DidNotFinish) => "answer-failed",
+                Some(TaskState::Stopped) => "answer-stopped",
+                None => "answer",
             },
         }
     }

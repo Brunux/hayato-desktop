@@ -696,6 +696,21 @@ impl Screen for InstallerScreen {
         Some(&self.keybar_hints)
     }
 
+    fn phase(&self) -> Option<&'static str> {
+        Some(match self.step {
+            WizardStep::Welcome => "welcome",
+            WizardStep::Localization => "localization",
+            WizardStep::UserAccount => "user-account",
+            WizardStep::DiskReview => "disk-review",
+            WizardStep::Progress => match self.worker_state.status {
+                WorkerPhase::Running => "progress-running",
+                WorkerPhase::Success => "progress-success",
+                WorkerPhase::Failed => "progress-failed",
+            },
+            WizardStep::Complete => "complete",
+        })
+    }
+
     fn needs_tick(&self) -> Option<Duration> {
         if self.step == WizardStep::Progress {
             Some(Duration::from_millis(100))

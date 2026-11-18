@@ -328,6 +328,13 @@ impl Screen for KillScreen {
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some(match &self.mode {
+            KillMode::List => "list",
+            KillMode::ConfirmKill { .. } => "confirm-kill",
+        })
+    }
 }
 
 /// Interactive `lazyos menu kill`.

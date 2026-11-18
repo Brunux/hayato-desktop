@@ -917,6 +917,13 @@ impl Screen for ExportSetupScreen {
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some(match self.stage {
+            ExportStage::Editing => "editing",
+            ExportStage::Submitted => "submitted",
+        })
+    }
 }
 
 fn hits_set_input(hits: &mut ExportHits, focus: ExportFocus, r: Rect) {

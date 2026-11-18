@@ -857,6 +857,23 @@ impl Screen for GreeterScreen {
         }
     }
 
+    fn phase(&self) -> Option<&'static str> {
+        Some(match &self.mode {
+            Mode::Login => {
+                if self.runner.is_running() {
+                    "login-authenticating"
+                } else if self.auth_prompt.is_challenge() {
+                    "login-challenge"
+                } else {
+                    "login"
+                }
+            }
+            Mode::SessionPicker => "session-picker",
+            Mode::ThemePicker => "theme-picker",
+            Mode::ConfirmPower { .. } => "confirm-power",
+        })
+    }
+
     fn design(&self) -> Option<Design> {
         Some(Design::new(
             self.theme.palette(),

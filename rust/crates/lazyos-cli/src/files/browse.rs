@@ -522,6 +522,13 @@ impl Screen for FilesScreen {
         Some(&self.header)
     }
 
+    fn phase(&self) -> Option<&'static str> {
+        Some(match self.setup.mode {
+            Mode::Browse => "browse",
+            Mode::Search => "search",
+        })
+    }
+
     fn needs_tick(&self) -> Option<std::time::Duration> {
         self.previewer.as_ref().and_then(Previewer::needs_tick)
     }

@@ -92,6 +92,23 @@ impl Screen for Menu {
     }
 }
 
+struct PhaseScreen;
+
+impl Screen for PhaseScreen {
+    fn draw(&mut self, _ctx: &mut BodyCtx) {}
+
+    fn phase(&self) -> Option<&'static str> {
+        Some("test-phase")
+    }
+}
+
+#[test]
+fn the_shell_exposes_the_screen_phase() {
+    let mut screen = PhaseScreen;
+    let app = App::new(Header::new("LazyOS")).screen(&mut screen);
+    assert_eq!(app.current_phase(), Some("test-phase"));
+}
+
 fn shell<'a>(menu: &'a mut Menu, design: Design) -> App<'a> {
     App::new(Header::new("LazyOS").subtitle("the session menu"))
         .design(design.with_reduced_motion(true))

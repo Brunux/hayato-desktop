@@ -133,6 +133,17 @@ pub trait Screen {
     fn desired_size(&self) -> Option<(u16, u16)> {
         None
     }
+
+    /// A short, stable name for the screen's current phase, for tests, the
+    /// opt-in state log and an agent reading the surface. `None` when the
+    /// screen has no phase (a one-shot list or a card).
+    ///
+    /// The label is part of the surface's contract: keep it lowercase, stable
+    /// and free of user-facing copy, so a log line can be matched by a test or
+    /// an agent without parsing the screen.
+    fn phase(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 /// Resolve the active Sway IPC socket path, preferring `SWAYSOCK` when it exists
@@ -249,6 +260,19 @@ impl Motion {
     }
 }
 
+/// Where `LAZYOS_DEBUG_STATE=1` writes phase changes. A file, not stderr:
+/// the window owns the terminal, and a debug line printed into it would paint
+/// over the frame it is describing.
+fn state_log_path() -> std::path::PathBuf {
+    let base = std::env::var_os("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".local/state"))
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
+    base.join("lazyos").join("state.log")
+}
+
 /// The shell: a header, the screen's body, and the keys that are not obvious.
 pub struct App<'a> {
     header: Header,
@@ -257,12 +281,18 @@ pub struct App<'a> {
     design: Design,
     motion: Motion,
     body_area: Rect,
+    last_phase: Option<&'static str>,
+    /// `LAZYOS_DEBUG_STATE=1` appends phase changes here, away from the TUI.
+    state_log: Option<std::path::PathBuf>,
 }
 
 impl<'a> App<'a> {
     pub fn new(header: Header) -> Self {
         let design = Design::for_session(std::env::var("XDG_RUNTIME_DIR").ok().as_deref());
         let motion = Motion::new(!design.reduced_motion());
+        let state_log = std::env::var_os("LAZYOS_DEBUG_STATE")
+            .filter(|value| value != "0")
+            .map(|_| state_log_path());
         Self {
             header,
             keybar: Vec::new(),
@@ -270,6 +300,8 @@ impl<'a> App<'a> {
             design,
             motion,
             body_area: Rect::default(),
+            last_phase: None,
+            state_log,
         }
     }
 
@@ -293,6 +325,34 @@ impl<'a> App<'a> {
 
     pub fn design_ref(&self) -> &Design {
         &self.design
+    }
+
+    /// The active screen's phase label, for tests and the opt-in state log.
+    pub fn current_phase(&self) -> Option<&'static str> {
+        self.screen.as_ref().and_then(|screen| screen.phase())
+    }
+
+    fn log_phase(&mut self) {
+        let Some(path) = &self.state_log else {
+            return;
+        };
+        let phase = self.current_phase();
+        if phase == self.last_phase {
+            return;
+        }
+        self.last_phase = phase;
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            use std::io::Write as _;
+            let label = phase.unwrap_or("-");
+            let _ = writeln!(file, "{} phase {label}", std::process::id());
+        }
     }
 
     /// Draw one frame. Everything a command draws goes through `BodyCtx`, so
@@ -442,6 +502,7 @@ impl<'a> App<'a> {
         let mut applied_size = self.screen.as_ref().and_then(|s| s.desired_size());
         let mut first_frame = true;
         loop {
+            self.log_phase();
             terminal.draw(|frame| self.render(frame))?;
             if first_frame {
                 first_frame = false;
