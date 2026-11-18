@@ -133,6 +133,9 @@ These are the bar's panels and session controls on the keyboard:
 | Alt+Ctrl+O | settings: Wi-Fi and Bluetooth radios, night light, do-not-disturb, touchpad, tablet mode, rotation, display arrangement |
 | Alt+Ctrl+Shift+D | the internal panel back on, with nothing on screen: the way out of a black screen (it runs a sway command, not a menu) |
 | Alt+Ctrl+N | notifications: history, do-not-disturb, copy |
+| Alt+Comma | act on the newest notification: its default action, its file's folder, or dismiss |
+| Alt+Shift+Comma | dismiss the newest notification |
+| Alt+Ctrl+Comma | clear the visible notification stack |
 | Alt+C / Alt+Ctrl+Q | calculator |
 | Alt+Ctrl+V | clipboard history (Enter copies back, Alt+1 deletes the entry) |
 | Alt+Ctrl+E | emoji picker (Enter inserts, Alt+1 copies only) |

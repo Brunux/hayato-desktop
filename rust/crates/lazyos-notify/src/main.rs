@@ -3,6 +3,7 @@
 #![allow(clippy::chunks_exact_to_as_chunks)]
 
 mod config;
+mod control;
 mod dbus;
 mod font;
 mod history;
@@ -48,14 +49,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // urgency would be drawn right now, so the "no cards in a recording" rule
     // has an executable witness that needs no Wayland session.
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("--control") {
+        let word = args.get(1).map(String::as_str).unwrap_or("");
+        std::process::exit(control::send(word));
+    }
     if args.first().map(String::as_str) == Some("--config") {
         let config = config::load();
         println!(
-            "default_timeout={} max_visible={} card_width={:.0} history_limit={}",
+            "default_timeout={} max_visible={} card_width={:.0} history_limit={} group_by_sender={} collapse_repeats={}",
             config.default_timeout.as_millis(),
             config.max_visible,
             config.card_width,
-            config.history_limit
+            config.history_limit,
+            if config.group_by_sender { "yes" } else { "no" },
+            if config.collapse_repeats { "yes" } else { "no" }
         );
         return Ok(());
     }
@@ -92,8 +99,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // 1. Start D-Bus thread
+    // 1. Start D-Bus thread and the one-word control socket
+    let control_tx = dbus_tx.clone();
     let server = NotificationServer::new(dbus_tx, wake_fd, config.default_timeout);
+    let _control = match control::listen(control_tx, wake_fd) {
+        Ok(guard) => Some(guard),
+        Err(error) => {
+            eprintln!("lazyos-notify: cannot listen for control: {error}");
+            None
+        }
+    };
 
     let _dbus_thread = thread::spawn(
         move || -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -202,6 +217,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
 
+                    // An identical repeat becomes one card with a count, not a
+                    // stack of identical cards.
+                    if config.collapse_repeats {
+                        if let Some(old_id) = collapse_repeat(&mut state.notifications, &notif) {
+                            if old_id != notif.id {
+                                let _ = ui_tx.send(UiEvent::NotificationClosed(old_id, 2));
+                            }
+                            dirty = true;
+                            continue;
+                        }
+                    }
+
                     // Check for in-place replacement (replaces_id or matching sync_tag)
                     let mut replaced = false;
                     for existing in &mut state.notifications {
@@ -232,7 +259,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     if !replaced {
-                        state.notifications.push(notif);
+                        let insert_at = if config.group_by_sender {
+                            state
+                                .notifications
+                                .iter()
+                                .rposition(|n| n.app_name == notif.app_name)
+                                .map(|index| index + 1)
+                                .unwrap_or(state.notifications.len())
+                        } else {
+                            state.notifications.len()
+                        };
+                        state.notifications.insert(insert_at, notif);
+                        dirty = true;
+                    }
+                }
+                DbusCommand::Control(command) => {
+                    if state.control(command) {
                         dirty = true;
                     }
                 }
@@ -401,6 +443,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// Fold an identical repeat into the card already on screen. Returns the id
+/// that was on screen before the new one replaced it, so the caller can close
+/// the old client's card.
+fn collapse_repeat(notifications: &mut [Notification], notif: &Notification) -> Option<u32> {
+    let existing = notifications.iter_mut().find(|n| {
+        n.app_name == notif.app_name
+            && n.summary == notif.summary
+            && n.body == notif.body
+            && n.urgency == notif.urgency
+            && n.open_path == notif.open_path
+            && n.actions == notif.actions
+    })?;
+    let old_id = existing.id;
+    existing.id = notif.id;
+    existing.repeat_count = existing.repeat_count.saturating_add(1);
+    existing.created_at = Instant::now();
+    existing.timeout = notif.timeout;
+    existing.anim_state = AnimState::Active;
+    existing.hovered_action = None;
+    existing.open_path = notif.open_path.clone();
+    existing.actions = notif.actions.clone();
+    Some(old_id)
+}
+
 /// Close the cards that a recorder would capture. Critical cards stay: a dying
 /// battery matters more than a clean file.
 fn close_non_critical(notifications: &mut [Notification], dirty: &mut bool) {
@@ -417,5 +483,69 @@ fn close_non_critical(notifications: &mut [Notification], dirty: &mut bool) {
             };
             *dirty = true;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Rect;
+
+    fn notification(id: u32, app: &str, body: &str) -> Notification {
+        Notification {
+            id,
+            app_name: app.to_string(),
+            summary: "Saved".to_string(),
+            body: body.to_string(),
+            app_icon: String::new(),
+            actions: Vec::new(),
+            urgency: Urgency::Normal,
+            category: None,
+            progress: None,
+            sync_tag: None,
+            open_path: None,
+            repeat_count: 1,
+            created_at: Instant::now(),
+            timeout: Duration::from_secs(5),
+            anim_state: AnimState::Active,
+            card_y: 0.0,
+            card_height: 70.0,
+            card_bounds: Rect::new(0.0, 0.0, 300.0, 70.0),
+            action_rects: Vec::new(),
+            close_rect: None,
+            is_hovered: false,
+            hovered_action: None,
+            dismissing: false,
+            progress_color_override: None,
+        }
+    }
+
+    #[test]
+    fn identical_repeats_collapse_and_replace_the_id() {
+        let mut cards = vec![notification(1, "LazyOS", "Saved a.png")];
+        let repeat = notification(2, "LazyOS", "Saved a.png");
+        assert_eq!(collapse_repeat(&mut cards, &repeat), Some(1));
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].id, 2);
+        assert_eq!(cards[0].repeat_count, 2);
+    }
+
+    #[test]
+    fn a_different_body_is_a_new_card() {
+        let mut cards = vec![notification(1, "LazyOS", "Saved a.png")];
+        let other = notification(2, "LazyOS", "Saved b.png");
+        assert_eq!(collapse_repeat(&mut cards, &other), None);
+        assert_eq!(cards[0].repeat_count, 1);
+    }
+
+    #[test]
+    fn the_same_text_for_another_file_is_a_new_card() {
+        let mut first = notification(1, "LazyOS", "Saved a.png");
+        first.open_path = Some(std::path::PathBuf::from("/home/b/Pictures/a.png"));
+        let mut second = notification(2, "LazyOS", "Saved a.png");
+        second.open_path = Some(std::path::PathBuf::from("/home/b/Videos/a.png"));
+        let mut cards = vec![first];
+        assert_eq!(collapse_repeat(&mut cards, &second), None);
+        assert_eq!(cards[0].repeat_count, 1);
     }
 }

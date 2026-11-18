@@ -792,10 +792,24 @@ if [ -n "$_nc_tmp" ]; then
 	printf 'default_timeout=8000\nmax_visible=3\ncard_width=380\nhistory_limit=500\n' \
 		>"$_nc_tmp/notify/lazyos/notify.conf"
 	_notify_cfg=$(XDG_CONFIG_HOME="$_nc_tmp/notify" lazyos-notify --config 2>/dev/null || true)
-	if [ "$_notify_cfg" = 'default_timeout=8000 max_visible=3 card_width=380 history_limit=500' ]; then
+	if [ "$_notify_cfg" = 'default_timeout=8000 max_visible=3 card_width=380 history_limit=500 group_by_sender=yes collapse_repeats=yes' ]; then
 		ok "lazyos-notify reads the settings file the Settings menu writes"
 	else
 		fail "lazyos-notify --config read '$_notify_cfg': the notification settings would be ignored"
+	fi
+	_control_usage=$(timeout 2 lazyos-notify --control nope 2>&1 || true)
+	case "$_control_usage" in
+	*"unknown control word"*) ok "lazyos-notify has the keyboard control client" ;;
+	*) fail "lazyos-notify --control is missing: the notification keys would do nothing" ;;
+	esac
+	_keys_conf=${DESKTOP_REPO:+$DESKTOP_REPO/uis/sway/files/etc/sway/config.d/24-keys.conf}
+	[ -r "$_keys_conf" ] || _keys_conf="$HOME/.config/sway/config.d/24-keys.conf"
+	if grep -qs -- '--control act-newest' "$_keys_conf" &&
+		grep -qs -- '--control dismiss-newest' "$_keys_conf" &&
+		grep -qs -- '--control dismiss-all' "$_keys_conf"; then
+		ok "the notification keys act on the newest card, dismiss it, or clear the stack"
+	else
+		fail "notification control keybindings are missing (Alt+comma family)"
 	fi
 	printf 'enabled=no\n' >"$_nc_tmp/clip/lazyos/clipboard.conf"
 	printf '%s\n' '#!/bin/sh' 'exit 1' >"$_nc_tmp/bin/pgrep"

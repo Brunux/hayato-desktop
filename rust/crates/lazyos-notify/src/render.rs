@@ -669,6 +669,21 @@ impl Renderer {
             y
         };
 
+        // A collapsed repeat says how many identical cards it stands for.
+        if notif.repeat_count > 1 {
+            let label = format!("\u{00d7}{}", notif.repeat_count);
+            let label_w = self.font.measure_width(&label, 10.5, true);
+            self.font.draw_text(
+                pixmap,
+                &label,
+                map_x(card_x + card_w - 40.0 - label_w),
+                map_y(card_y + 20.0),
+                10.5 * scale,
+                with_alpha(self.theme.text_dim, alpha),
+                true,
+            );
+        }
+
         // 6. Progress Bar (if present)
         if let Some(pct) = notif.progress {
             let bar_y = if is_single_line {
@@ -793,6 +808,7 @@ mod tests {
             progress: None,
             sync_tag: None,
             open_path: None,
+            repeat_count: 1,
             created_at: Instant::now(),
             timeout: Duration::from_secs(5),
             anim_state: AnimState::Active,
@@ -843,6 +859,7 @@ mod tests {
             progress: Some(85),
             sync_tag: None,
             open_path: None,
+            repeat_count: 1,
             created_at: Instant::now(),
             timeout: Duration::from_secs(5),
             anim_state: AnimState::Active,
@@ -903,6 +920,7 @@ mod tests {
             progress: Some(50),
             sync_tag: Some("lazyos-osd".to_string()),
             open_path: None,
+            repeat_count: 1,
             created_at: Instant::now(),
             timeout: Duration::from_millis(1200),
             anim_state: AnimState::Active,

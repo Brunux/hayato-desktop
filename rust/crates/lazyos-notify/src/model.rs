@@ -61,6 +61,25 @@ pub enum AnimState {
     Closing { start: Instant, reason: u32 },
 }
 
+/// What a keybinding asks the newest card to do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Control {
+    ActNewest,
+    DismissNewest,
+    DismissAll,
+}
+
+impl Control {
+    pub fn parse(word: &str) -> Option<Self> {
+        match word.trim() {
+            "act-newest" => Some(Self::ActNewest),
+            "dismiss-newest" => Some(Self::DismissNewest),
+            "dismiss-all" => Some(Self::DismissAll),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Notification {
     pub id: u32,
@@ -75,6 +94,8 @@ pub struct Notification {
     pub sync_tag: Option<String>,
     /// A click on the card opens this file's folder in Files.
     pub open_path: Option<PathBuf>,
+    /// How many identical notifications this card stands for.
+    pub repeat_count: u32,
     pub created_at: Instant,
     pub timeout: Duration,
 
@@ -167,6 +188,7 @@ mod tests {
             progress: None,
             sync_tag: None,
             open_path: None,
+            repeat_count: 1,
             created_at: Instant::now(),
             timeout: Duration::from_secs(5),
             anim_state,
@@ -239,5 +261,16 @@ mod tests {
         let (scale, alpha) = n_done.animation_factors();
         assert_eq!(scale, 0.85);
         assert_eq!(alpha, 0.0);
+    }
+
+    #[test]
+    fn control_words_are_the_socket_protocol() {
+        assert_eq!(Control::parse("act-newest"), Some(Control::ActNewest));
+        assert_eq!(
+            Control::parse(" dismiss-newest\n"),
+            Some(Control::DismissNewest)
+        );
+        assert_eq!(Control::parse("dismiss-all"), Some(Control::DismissAll));
+        assert_eq!(Control::parse("open"), None);
     }
 }

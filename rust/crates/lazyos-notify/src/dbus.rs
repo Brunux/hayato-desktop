@@ -12,6 +12,7 @@ use crate::model::{ActionItem, AnimState, Notification, Rect, Urgency};
 pub enum DbusCommand {
     New(Box<Notification>),
     Close(u32),
+    Control(crate::model::Control),
 }
 
 pub struct NotificationServer {
@@ -149,6 +150,14 @@ impl NotificationServer {
         while let (Some(key), Some(label)) = (iter.next(), iter.next()) {
             action_items.push(ActionItem { key, label });
         }
+        // A file card gets one visible action even when its sender named none;
+        // the daemon handles this key itself, so no D-Bus client is involved.
+        if open_path.is_some() && !action_items.iter().any(|a| a.key == "lazyos-open") {
+            action_items.push(ActionItem {
+                key: "lazyos-open".to_string(),
+                label: "Files".to_string(),
+            });
+        }
 
         let timeout_ms = match expire_timeout {
             t if t < 0 => match urgency {
@@ -171,6 +180,7 @@ impl NotificationServer {
             progress,
             sync_tag,
             open_path,
+            repeat_count: 1,
             created_at: std::time::Instant::now(),
             timeout: Duration::from_millis(timeout_ms),
             anim_state: AnimState::Opening {
