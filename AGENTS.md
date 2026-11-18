@@ -70,8 +70,9 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `system/pick.rs` (`Current`), `menu/screen.rs` (`AnswerBody`), `system/pkg.rs`
    (`PkgStage::Installing(TaskView)`), `lazyos-ui/src/recording.rs` (`Recorder`),
    `system/theme_picker.rs` (`PreviewPhase`), `system/dev.rs` (`ExportFocus`),
-   `files/find.rs` (`Stage`), `lazyos-ui/src/task.rs` (`StopPhase`), and
-   `system/media.rs` (`PlaybackState`).
+   `files/find.rs` (`Stage`), `lazyos-ui/src/task.rs` (`StopPhase`),
+   `system/media.rs` (`PlaybackState`), `lazyos-ui/src/widgets.rs` (`RunnerState`),
+   and `system/dictate.rs` (`DictationPhase`).
 
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single
