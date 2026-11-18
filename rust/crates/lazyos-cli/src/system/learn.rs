@@ -3,10 +3,10 @@
 #![allow(clippy::vec_init_then_push)]
 /// Learn: the seven manual pages rendered in the window, plus `apropos` over man pages (`lazyos-learn`).
 ///
-/// The old Learn menu opened `glow` in a terminal for each page. This version renders
-/// markdown directly in the TUI using a subset renderer (headings, lists, code fences,
-/// bold, tables) with the theme's code role. The `apropos` search opens man pages in
-/// the same renderer.
+/// The old Learn menu opened `glow` in a terminal for each page. This version runs
+/// glow into a pipe and maps its ANSI back onto the theme's roles, through the
+/// shared `system::manual` renderer; a subset renderer is the fallback when glow is
+/// missing. The `apropos` search opens man pages in the same renderer.
 use std::cell::Cell;
 use std::fs;
 use std::path::{Path, PathBuf};
