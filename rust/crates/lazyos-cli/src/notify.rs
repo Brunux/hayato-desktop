@@ -45,6 +45,7 @@ struct Options {
     group: Option<String>,
     timeout: Option<Timeout>,
     progress: Option<u8>,
+    open: Option<String>,
 }
 
 pub fn run(resolved: &Resolved) -> i32 {
@@ -93,6 +94,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
                 });
             }
             "--progress" => options.progress = Some(percent(&value(&mut iter, "--progress")?)?),
+            "--open" => options.open = Some(value(&mut iter, "--open")?),
             flag if flag.starts_with("--") => return Err(format!("unknown option '{flag}'")),
             word => options.words.push(word.to_string()),
         }
@@ -164,6 +166,9 @@ fn card_from(options: &Options, progress: bool) -> i32 {
     if let Some(tag) = group {
         card = card.group(tag);
     }
+    if let Some(path) = options.open.as_deref() {
+        card = card.open_path(path);
+    }
     if let Some(value) = percent {
         card = card.progress(value);
     }
@@ -203,6 +208,7 @@ fn usage() -> i32 {
     say!("  --group TAG            a card with the same tag replaces the last one");
     say!("  --timeout MS|never     how long it stays up");
     say!("  --progress N           a bar under the text, 0 to 100");
+    say!("  --open PATH            clicking the card shows PATH's folder in Files");
     say!("  --body TEXT            the body, when it is not the second word");
     EXIT_USAGE
 }
@@ -231,12 +237,15 @@ mod tests {
             "build",
             "--progress",
             "42",
+            "--open",
+            "/home/b/Pictures/a.png",
         ]))
         .unwrap();
         assert_eq!(options.words, vec!["Title", "Body"]);
         assert_eq!(options.urgency, Some(Urgency::Critical));
         assert_eq!(options.group.as_deref(), Some("build"));
         assert_eq!(options.progress, Some(42));
+        assert_eq!(options.open.as_deref(), Some("/home/b/Pictures/a.png"));
     }
 
     #[test]

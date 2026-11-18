@@ -218,6 +218,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             existing.body = notif.body.clone();
                             existing.app_icon = notif.app_icon.clone();
                             existing.progress = notif.progress;
+                            existing.open_path = notif.open_path.clone();
                             existing.actions = notif.actions.clone();
                             existing.urgency = notif.urgency;
                             existing.created_at = Instant::now();

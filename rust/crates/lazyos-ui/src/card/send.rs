@@ -15,7 +15,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use super::{APP_NAME, GROUP_HINT, Message};
+use super::{APP_NAME, GROUP_HINT, Message, OPEN_PATH_HINT};
 
 const PROGRAM: &str = "notify-send";
 
@@ -71,6 +71,10 @@ pub fn arguments(message: &Message) -> Vec<String> {
     if let Some(value) = message.value {
         args.push("-h".to_string());
         args.push(format!("int:value:{value}"));
+    }
+    if let Some(path) = &message.open_path {
+        args.push("-h".to_string());
+        args.push(format!("string:{OPEN_PATH_HINT}:{path}"));
     }
     args.push("--".to_string());
     args.push(message.summary.clone());
@@ -172,6 +176,21 @@ mod tests {
         ]));
         assert!(has(&["-h", "int:value:40"]));
         assert!(!has(&["-i"]), "no picture was asked for");
+    }
+
+    #[test]
+    fn a_file_card_carries_the_open_path_hint() {
+        let message = Card::new("Capture")
+            .body("Saved a.png")
+            .open_path("/home/b/Pictures/Screenshots/a.png")
+            .prepare(&[])
+            .message;
+        let args = arguments(&message);
+        assert!(args.windows(2).any(|pair| pair
+            == [
+                "-h",
+                "string:x-lazyos-open-path:/home/b/Pictures/Screenshots/a.png"
+            ]));
     }
 
     #[test]
