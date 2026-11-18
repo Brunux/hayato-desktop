@@ -22,7 +22,7 @@
 //!      the Root Menu dynamically switches its row to `Stop dictation`.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -67,29 +67,94 @@ pub fn model_path() -> PathBuf {
     data_dir.join("whisper/ggml-tiny.en.bin")
 }
 
-/// Check whether `parecord` is actively recording a dictation session.
-pub fn is_recording() -> bool {
-    let dir = runtime_dir();
+/// The recorder's name in `/proc/<pid>/comm`.
+const RECORDER_COMM: &str = "parecord";
+
+/// What the dictation state directory says.
+///
+/// `is_recording` used to trust `kill -0` alone, so a pid file left behind by
+/// a dead session could name an unrelated process that reused the number. A
+/// recording now carries its pid and start time together and only counts when
+/// `/proc/<pid>/comm` is `parecord`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DictationPhase {
+    Idle,
+    Recording { pid: u32, started_ms: u128 },
+}
+
+impl DictationPhase {
+    pub fn is_recording(self) -> bool {
+        matches!(self, Self::Recording { .. })
+    }
+
+    pub fn pid(self) -> Option<u32> {
+        match self {
+            Self::Recording { pid, .. } => Some(pid),
+            Self::Idle => None,
+        }
+    }
+
+    pub fn started_ms(self) -> Option<u128> {
+        match self {
+            Self::Recording { started_ms, .. } => Some(started_ms),
+            Self::Idle => None,
+        }
+    }
+}
+
+fn read_proc_comm(pid: u32) -> Option<String> {
+    fs::read_to_string(format!("/proc/{pid}/comm"))
+        .map(|s| s.trim().to_string())
+        .ok()
+}
+
+/// `/proc/<pid>/stat` is `pid (comm) state ...`; a `Z` state has exited and is
+/// only waiting to be reaped, so it is not the recorder even though its name
+/// and pid still answer `kill -0`.
+fn is_zombie(pid: u32) -> bool {
+    fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|stat| {
+            let (_, rest) = stat.rsplit_once(')')?;
+            rest.split_whitespace().next().map(|state| state == "Z")
+        })
+        .unwrap_or(false)
+}
+
+fn is_recorder(pid: u32) -> bool {
+    read_proc_comm(pid).as_deref() == Some(RECORDER_COMM) && !is_zombie(pid)
+}
+
+/// Read the dictation state from `dir`, forgetting a pid that is not the
+/// recorder. A reused number must never be signalled as if it were parecord.
+pub fn read_in(dir: &Path) -> DictationPhase {
     let state_file = dir.join("pid");
     let Ok(pid_str) = fs::read_to_string(&state_file) else {
-        return false;
+        return DictationPhase::Idle;
     };
-    let Ok(pid) = pid_str.trim().parse::<i32>() else {
+    let Ok(pid) = pid_str.trim().parse::<u32>() else {
         let _ = fs::remove_file(&state_file);
-        return false;
+        return DictationPhase::Idle;
     };
-    let alive = Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if !alive {
+    if !is_recorder(pid) {
         let _ = fs::remove_file(&state_file);
+        return DictationPhase::Idle;
     }
-    alive
+    let started_ms = fs::read_to_string(dir.join("started_ms"))
+        .ok()
+        .and_then(|s| s.trim().parse::<u128>().ok())
+        .unwrap_or(0);
+    DictationPhase::Recording { pid, started_ms }
+}
+
+/// Read this session's dictation state.
+pub fn read() -> DictationPhase {
+    read_in(&runtime_dir())
+}
+
+/// Check whether `parecord` is actively recording a dictation session.
+pub fn is_recording() -> bool {
+    read().is_recording()
 }
 
 fn set_bar_busy(label: &str, stop_cmd: Option<&str>) {
@@ -289,16 +354,15 @@ pub fn cancel_recording() -> i32 {
     let wav_file = dir.join("rec.wav");
     let norm_file = dir.join("norm.wav");
 
-    if let Ok(pid_str) = fs::read_to_string(&state_file) {
-        let _ = fs::remove_file(&state_file);
-        if let Ok(pid) = pid_str.trim().parse::<i32>() {
-            let _ = Command::new("kill")
-                .args(["-INT", &pid.to_string()])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-        }
+    let phase = read_in(&dir);
+    let _ = fs::remove_file(&state_file);
+    if let DictationPhase::Recording { pid, .. } = phase {
+        let _ = Command::new("kill")
+            .args(["-INT", &pid.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
     }
     let _ = fs::remove_file(&started_file);
     let _ = fs::remove_file(&wav_file);
@@ -317,15 +381,16 @@ pub fn stop_and_transcribe() -> i32 {
     let wav_file = dir.join("rec.wav");
     let norm_file = dir.join("norm.wav");
 
-    let Ok(pid_str) = fs::read_to_string(&state_file) else {
+    if !state_file.is_file() {
         return 0;
-    };
+    }
+    let phase = read_in(&dir);
     // Remove `pid` immediately so concurrent stop triggers (e.g., key release + click)
     // do not double-transcribe the same audio.
     let _ = fs::remove_file(&state_file);
     let _ = fs::remove_file(&started_file);
 
-    if let Ok(pid) = pid_str.trim().parse::<i32>() {
+    if let DictationPhase::Recording { pid, .. } = phase {
         let _ = Command::new("kill")
             .args(["-INT", &pid.to_string()])
             .stdin(Stdio::null())
@@ -508,16 +573,11 @@ pub fn handle_press() -> i32 {
 /// If held for >= 350 ms (push-to-talk), stops and transcribes immediately.
 /// If tapped briefly (< 350 ms), keeps recording in hands-free mode and updates the card.
 pub fn handle_release() -> i32 {
-    if !is_recording() {
+    let DictationPhase::Recording { started_ms, .. } = read() else {
         return 0;
-    }
-    let started_file = runtime_dir().join("started_ms");
-    let started = fs::read_to_string(&started_file)
-        .ok()
-        .and_then(|s| s.trim().parse::<u128>().ok())
-        .unwrap_or(0);
-    let elapsed = now_ms().saturating_sub(started);
-    if started == 0 || elapsed >= HOLD_THRESHOLD_MS {
+    };
+    let elapsed = now_ms().saturating_sub(started_ms);
+    if started_ms == 0 || elapsed >= HOLD_THRESHOLD_MS {
         stop_and_transcribe()
     } else {
         // Quick tap: stay in hands-free recording mode and update notification prompt.
@@ -572,6 +632,46 @@ pub fn menu_with_args(args: &[String]) -> Result<i32, crate::Failure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("lazyos-dictate-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn no_state_is_idle() {
+        let dir = temp_dir("empty");
+        assert_eq!(read_in(&dir), DictationPhase::Idle);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_live_pid_that_is_not_parecord_is_stale() {
+        let dir = temp_dir("stale");
+        let state_file = dir.join("pid");
+        fs::write(&state_file, format!("{}\n", std::process::id())).unwrap();
+        // The test binary's comm is not parecord, so this is a reused or
+        // abandoned pid, never a dictation.
+        assert_eq!(read_in(&dir), DictationPhase::Idle);
+        assert!(!state_file.exists(), "the stale pid is forgotten");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_recording_carries_its_pid_and_start_time() {
+        let phase = DictationPhase::Recording {
+            pid: 7,
+            started_ms: 1234,
+        };
+        assert!(phase.is_recording());
+        assert_eq!(phase.pid(), Some(7));
+        assert_eq!(phase.started_ms(), Some(1234));
+        assert!(!DictationPhase::Idle.is_recording());
+        assert_eq!(DictationPhase::Idle.pid(), None);
+    }
 
     #[test]
     fn model_path_defaults_to_whisper_tiny() {
