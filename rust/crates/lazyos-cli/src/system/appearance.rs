@@ -628,6 +628,59 @@ impl BarPosition {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BarModules {
+    Full,
+    Compact,
+    Minimal,
+}
+
+impl BarModules {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Compact => "compact",
+            Self::Minimal => "minimal",
+        }
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::Full => Self::Compact,
+            Self::Compact => Self::Minimal,
+            Self::Minimal => Self::Full,
+        }
+    }
+
+    fn modules(self) -> &'static [&'static str] {
+        match self {
+            Self::Full => &[
+                "custom/busy",
+                "custom/updates",
+                "tray",
+                "custom/keyboard-layout",
+                "custom/bluetooth",
+                "custom/vnc",
+                "network",
+                "pulseaudio",
+                "backlight",
+                "idle_inhibitor",
+                "battery",
+            ],
+            Self::Compact => &[
+                "custom/busy",
+                "tray",
+                "custom/bluetooth",
+                "custom/vnc",
+                "network",
+                "pulseaudio",
+                "battery",
+            ],
+            Self::Minimal => &["custom/busy", "network", "pulseaudio", "battery"],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BarDensity {
     Comfortable,
     Compact,
@@ -688,6 +741,92 @@ pub fn bar_position_label() -> String {
 
 pub fn bar_density_label() -> String {
     bar_density().label().to_string()
+}
+
+pub fn bar_modules_label() -> String {
+    bar_text()
+        .ok()
+        .and_then(|text| bar_modules_from(&text))
+        .map(|modules| modules.label().to_string())
+        .unwrap_or_else(|| "custom".to_string())
+}
+
+fn modules_right(text: &str) -> Vec<String> {
+    let mut inside = false;
+    let mut modules = Vec::new();
+    for line in text.lines() {
+        if !inside {
+            if line.contains("\"modules-right\":") {
+                inside = true;
+            }
+            continue;
+        }
+        if line.trim_start().starts_with(']') {
+            break;
+        }
+        for part in line.split('"').skip(1).step_by(2) {
+            if !part.is_empty() {
+                modules.push(part.to_string());
+            }
+        }
+    }
+    modules
+}
+
+fn bar_modules_from(text: &str) -> Option<BarModules> {
+    let current = modules_right(text);
+    let current: Vec<&str> = current.iter().map(String::as_str).collect();
+    [BarModules::Full, BarModules::Compact, BarModules::Minimal]
+        .into_iter()
+        .find(|modules| modules.modules() == current.as_slice())
+}
+
+fn bar_modules_body(text: &str, modules: BarModules) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let Some(start) = lines
+        .iter()
+        .position(|line| line.contains("\"modules-right\":"))
+    else {
+        return text.to_string();
+    };
+    let Some(end) = lines
+        .iter()
+        .enumerate()
+        .skip(start + 1)
+        .find(|(_, line)| line.trim_start().starts_with(']'))
+        .map(|(index, _)| index)
+    else {
+        return text.to_string();
+    };
+    let indent = " ".repeat(lines[start].len() - lines[start].trim_start().len());
+    let item_indent = format!("{indent}    ");
+    let comma = if lines[end].trim_end().ends_with(',') {
+        ","
+    } else {
+        ""
+    };
+    let mut out: Vec<String> = lines[..start].iter().map(|line| line.to_string()).collect();
+    out.push(format!("{indent}\"modules-right\": ["));
+    for module in modules.modules() {
+        out.push(format!("{item_indent}\"{module}\","));
+    }
+    out.push(format!("{indent}]{comma}"));
+    out.extend(lines[end + 1..].iter().map(|line| line.to_string()));
+    let mut body = out.join("\n");
+    if text.ends_with('\n') {
+        body.push('\n');
+    }
+    body
+}
+
+pub fn toggle_bar_modules() -> Result<String, String> {
+    let text = bar_text()?;
+    let next = bar_modules_from(&text)
+        .map(BarModules::next)
+        .unwrap_or(BarModules::Full);
+    write_atomic(&waybar_path(), &bar_modules_body(&text, next))?;
+    signal_waybar();
+    Ok(format!("Bar modules: {}", next.label()))
 }
 
 fn bar_position_from(text: &str) -> BarPosition {
@@ -985,5 +1124,22 @@ mod tests {
                     .unwrap_or_else(|error| panic!("{position:?}/{density:?}: {error}\n{body}"));
             }
         }
+    }
+
+    #[test]
+    fn bar_module_presets_replace_only_the_right_module_list() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../uis/sway/files/home/.config/waybar/config.jsonc");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(bar_modules_from(&text), Some(BarModules::Full));
+        for modules in [BarModules::Compact, BarModules::Minimal] {
+            let body = bar_modules_body(&text, modules);
+            assert_eq!(bar_modules_from(&body), Some(modules));
+            serde_json::from_str::<serde_json::Value>(&strip_jsonc(&body)).unwrap();
+        }
+        let compact = bar_modules_body(&text, BarModules::Compact);
+        assert_eq!(bar_modules_from(&compact), Some(BarModules::Compact));
+        assert!(compact.contains("\"modules-left\""));
+        assert!(compact.contains("\"tray\""));
     }
 }
