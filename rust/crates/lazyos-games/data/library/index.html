@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Games</title>
+    <link rel="stylesheet" href="theme.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="rail" aria-label="Platforms">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">▚</span>
+          <span>Games</span>
+        </div>
+        <nav id="platforms"></nav>
+        <div class="rail-foot">
+          <button id="scan" class="ghost" type="button" title="Rescan the folders (S)">Rescan</button>
+          <button id="quit" class="ghost" type="button" title="Quit (Q)">Quit</button>
+        </div>
+      </aside>
+
+      <main>
+        <header>
+          <div class="heading">
+            <h1 id="title">All games</h1>
+            <p id="subtitle" class="subtitle"></p>
+          </div>
+          <div class="tools">
+            <input
+              id="search"
+              type="search"
+              placeholder="Search games…  (/)"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Search games"
+            />
+            <span id="count" class="count" aria-live="polite"></span>
+          </div>
+        </header>
+
+        <div id="notice" class="notice" hidden></div>
+        <div id="grid" role="listbox" aria-label="Games" tabindex="-1"></div>
+        <div id="empty" class="empty" hidden></div>
+
+        <footer>
+          <span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> move</span>
+          <span><kbd>Enter</kbd> play</span>
+          <span><kbd>F</kbd> favourite</span>
+          <span><kbd>S</kbd> rescan</span>
+          <span><kbd>Q</kbd> quit</span>
+        </footer>
+      </main>
+    </div>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

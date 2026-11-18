@@ -30,7 +30,7 @@ pub struct Surface {
 
 /// The session's surfaces. A new one is one line here and one template file -
 /// and a golden test, because the test renders whatever is in this table.
-pub const SURFACES: [Surface; 13] = [
+pub const SURFACES: [Surface; 14] = [
     Surface {
         name: "foot",
         template: include_str!("../templates/foot.ini.tpl"),
@@ -95,6 +95,11 @@ pub const SURFACES: [Surface; 13] = [
         name: "gtk4",
         template: include_str!("../templates/gtk4.css.tpl"),
         target: ".config/gtk-4.0/gtk.css",
+    },
+    Surface {
+        name: "games",
+        template: include_str!("../templates/games.css.tpl"),
+        target: ".config/lazyos/games.css",
     },
 ];
 

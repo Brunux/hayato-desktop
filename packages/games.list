@@ -1,0 +1,19 @@
+# The libretro cores the games library launches through RetroArch.
+#
+# Installed by core/scripts/install-retroarch.sh, after the slim RetroArch
+# package, not by rootfs-setup.sh: every core Depends on `retroarch`, and apt
+# would otherwise satisfy that with Debian's package (and its 547 MB of assets
+# and Qt5) before the LazyOS build replaces it. The order is the contract.
+#
+# N64 is not here: Debian has no N64 core. desktop/tools/mupen64plus-next/
+# builds one.
+libretro-core-info
+libretro-nestopia
+libretro-snes9x
+libretro-gambatte
+libretro-mgba
+libretro-genesisplusgx
+libretro-beetle-psx
+libretro-beetle-pce-fast
+libretro-beetle-vb
+libretro-beetle-wswan

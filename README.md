@@ -6,13 +6,14 @@ greeter, and user manual for [LazyOS](https://github.com/Brunux/LazyOS).
 ## Contents
 
 - `rust/` — Cargo workspace (`lazyos-cli`, `lazyos-ui`, `lazyos-theme`, `lazyos-mcp`,
-  `lazyos-notify`, `spike-sixel`)
+  `lazyos-notify`, `lazyos-games`, `spike-sixel`)
 - `uis/sway/` — SwayFX configuration, Waybar panels, launcher shortcuts, desktop entries, icons,
   themes, and bundled user manual (`usr/share/doc/lazyos/`)
 - `compositors/swayfx/` — Pinned SwayFX / SceneFX build versions and hashes
-- `tools/` — Pinned `workstyle` and `opencode` versions and hashes
+- `tools/` — Pinned `workstyle`, `opencode`, `retroarch` and `mupen64plus-next` versions and hashes
 - `brand/` — SVG master artwork and generated brand assets
 - `packages/tools.list` — Desktop userland CLI package manifest
+- `packages/games.list` — Libretro cores, installed after the slim RetroArch package
 - `scripts/` — Build, asset generation, staging (`stage-desktop.sh`), and `check-desktop.sh`
 
 ## Verification

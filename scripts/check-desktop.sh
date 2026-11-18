@@ -1649,7 +1649,7 @@ fi
 # nothing - Colour was the one that had neither the row nor the `case` arm.
 if [ -n "$MENU_ROWS" ]; then
 	_root_missing=
-	for _m in lazyos-dns lazyos-pkg lazyos-color lazyos-about lazyos-remind lazyos-swap lazyos-format lazyos-display lazyos-tz lazyos-vnc lazyos-settings lazyos-ssh; do
+	for _m in lazyos-dns lazyos-pkg lazyos-color lazyos-about lazyos-remind lazyos-swap lazyos-format lazyos-display lazyos-tz lazyos-vnc lazyos-settings lazyos-ssh lazyos-games; do
 		menu_runs "$_m" || menu_runs "lazyos menu ${_m#lazyos-}" || menu_runs "lazyos menu colour" || _root_missing="$_root_missing ${_m#lazyos-}"
 	done
 	[ -z "$_root_missing" ] &&
@@ -3851,6 +3851,75 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+section "Games"
+# ---------------------------------------------------------------------------
+# The library is data plus a WebKit window: the binary, the page, the sample
+# game and a scan that answers. The emulator stack (RetroArch and the cores) is
+# the next phase; this section does not pretend it is installed.
+if have lazyos-games; then
+	ok "the game library is installed"
+	_games_json="$(lazyos-games --scan 2>/dev/null || true)"
+	if [ -z "$_games_json" ]; then
+		fail "lazyos-games --scan printed nothing (the library cannot list its games)"
+	elif ! printf '%s' "$_games_json" | jq -e . >/dev/null 2>&1; then
+		fail "lazyos-games --scan did not print JSON"
+	else
+		_games_count=$(printf '%s' "$_games_json" | jq -r '.games | length' 2>/dev/null || echo 0)
+		ok "the library scan answers ($_games_count games)"
+		printf '%s' "$_games_json" | jq -e '.games | any(.kind == "web")' >/dev/null 2>&1 &&
+			ok "the sample LazyOS game is listed" ||
+			fail "no web game is installed under /usr/share/lazyos/games/web"
+		printf '%s' "$_games_json" | jq -e '[.games[] | select(.kind == "retro" and (.core == null))] | length == 0' >/dev/null 2>&1 &&
+			ok "every retro row names a core" ||
+			fail "a retro row has no core (the library would not know what to run)"
+		printf '%s' "$_games_json" | jq -e '.roots | length > 0' >/dev/null 2>&1 &&
+			ok "the ROM scan roots are reported" ||
+			fail "the library reports no ROM scan root"
+	fi
+	_games_missing=
+	for _games_file in \
+		/usr/share/lazyos/games/library/index.html \
+		/usr/share/lazyos/games/library/app.js \
+		/usr/share/lazyos/games/library/style.css \
+		/usr/share/lazyos/games/library/theme-default.css \
+		/usr/share/lazyos/games/web/snake/game.toml
+	do
+		[ -r "$_games_file" ] || _games_missing="$_games_missing $_games_file"
+	done
+	[ -z "$_games_missing" ] &&
+		ok "the library page and the sample game are installed" ||
+		fail "the games data is incomplete:$_games_missing"
+	if have retroarch; then
+		_ra_version="$(retroarch --version 2>/dev/null | sed -n 's/^Version: //p' | head -n 1)"
+		ok "RetroArch is installed (${_ra_version:-version unknown})"
+		if [ -r /etc/lazyos/retroarch.cfg ] &&
+			grep -q '^video_driver = "wayland"' /etc/lazyos/retroarch.cfg; then
+			ok "the kiosk RetroArch overlay is the Wayland one"
+		else
+			fail "/etc/lazyos/retroarch.cfg is missing or is not the Wayland overlay"
+		fi
+		_libretro_dir="$(ls -d /usr/lib/*/libretro 2>/dev/null | head -n 1)"
+		_cores_missing=
+		for _core in nestopia snes9x gambatte mgba genesis_plus_gx mednafen_psx mednafen_pce_fast mednafen_vb mednafen_wswan; do
+			[ -n "$_libretro_dir" ] && [ -f "$_libretro_dir/${_core}_libretro.so" ] ||
+				_cores_missing="$_cores_missing $_core"
+		done
+		[ -z "$_cores_missing" ] &&
+			ok "every libretro core the library lists is installed" ||
+			fail "missing libretro cores:$_cores_missing"
+		if [ -n "$_libretro_dir" ] && [ -f "$_libretro_dir/mupen64plus_next_libretro.so" ]; then
+			ok "the experimental N64 core is installed"
+		else
+			warn "no N64 core: N64 rows will say the core is missing (tools/mupen64plus-next/)"
+		fi
+	else
+		fail "retroarch is not installed (run scripts/build-retroarch.sh && core/scripts/install-retroarch.sh)"
+	fi
+else
+	fail "lazyos-games is not installed (run scripts/build-lazyos.sh && scripts/install-lazyos.sh)"
+fi
+
+# ---------------------------------------------------------------------------
 section "The theme engine"
 # ---------------------------------------------------------------------------
 # The palette lives in theme.toml and every surface is generated from it (spec
@@ -3875,6 +3944,7 @@ if command -v lazyos >/dev/null 2>&1; then
 			.config/starship.toml \
 			.config/btop/themes/lazyos.theme .config/lazygit/config.yml \
 			.config/nvim/colors/lazyos.vim .config/lazyos/fzf.env \
+			.config/lazyos/games.css \
 			.config/swaylock/config .config/sway/config.d/35-theme.conf
 		do
 			if [ ! -r "$HOME/$_theme_file" ]; then

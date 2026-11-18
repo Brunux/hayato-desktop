@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 640" width="480" height="640" role="img" aria-label="Snake">
+  <rect width="480" height="640" fill="#002b36"/>
+  <g stroke="#073642" stroke-width="1">
+    <path d="M0 80H480M0 160H480M0 240H480M0 320H480M0 400H480M0 480H480M0 560H480"/>
+    <path d="M80 0V640M160 0V640M240 0V640M320 0V640M400 0V640"/>
+  </g>
+  <path d="M120 480h160a40 40 0 0 0 0-80H160a40 40 0 0 1 0-80h120a40 40 0 0 1 0 80h-60"
+        fill="none" stroke="#268bd2" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="300" cy="320" r="17" fill="#2aa198"/>
+  <circle cx="130" cy="480" r="23" fill="#b58900"/>
+  <path d="M130 457v-18" stroke="#859900" stroke-width="7" stroke-linecap="round"/>
+</svg>

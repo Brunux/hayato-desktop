@@ -233,6 +233,7 @@ lazyos-calc                          f1ec
 lazyos-keys                          f11c
 lazyos-notify-history                        f0f3
 lazyos-media                         f001
+lazyos-games                         f11b
 lazyos-kill                          f0e7
 lazyos-clean                         f1f8
 lazyos-agents                        f0c0

@@ -895,3 +895,24 @@ cat /proc/pressure/memory
 
 `Alt+Shift+E` (exit the session) or a VT (Ctrl+Alt+top row with keyd) is the way
 out when the session itself is stuck.
+
+## A game does not start
+
+The **Games** row lists what it found; the badge on a row says which part is
+missing. `08-games.md` has the full list of platforms and firmware.
+
+- **core** on a retro row: the platform's libretro core is not installed. The
+  image installs them from `desktop/packages/games.list`; on a checkout,
+  `sudo apt install libretro-snes9x` (or the core named in the row).
+- **RetroArch is not installed** at the top of the library: the slim package is
+  missing. Build it with `scripts/build-retroarch.sh` and install it with
+  `core/scripts/install-retroarch.sh`.
+- A PS1 game that asks for firmware needs `scph5501.bin` (US) in
+  `~/Games/bios/`; a PC Engine CD needs `syscard3.pce`; an N64 game needs
+  nothing.
+- A ROM that does not appear is ignored by extension or by the size floor (a
+  `README.md` is not a Genesis ROM). Put it under `~/Games`, then press **S**.
+- N64 is experimental: the core is built for the Mali-G57 and 640×480, and some
+  games do not reach full speed. The F1 menu has the resolution option.
+- If the library itself is blank or the GPU misbehaves, start it with
+  `LAZYOS_GAMES_NO_ACCEL=1`; 2D canvas games still work.

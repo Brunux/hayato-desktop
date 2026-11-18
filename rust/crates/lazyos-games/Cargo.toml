@@ -1,0 +1,24 @@
+[package]
+name = "lazyos-games"
+# The version the binary reports comes from the repository's VERSION file,
+# compiled in by src/paths.rs; this one only satisfies cargo and never ships.
+version = "0.0.0"
+edition = "2024"
+description = "The LazyOS game library and HTML game host"
+publish = false
+
+[[bin]]
+name = "lazyos-games"
+path = "src/main.rs"
+
+[dependencies]
+lazyos-theme = { path = "../lazyos-theme" }
+gtk4 = { version = "0.11", features = ["v4_10"] }
+webkit6 = "0.6"
+soup = { package = "soup3", version = "0.9" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.9"
+
+[dev-dependencies]
+tempfile = "3.10"

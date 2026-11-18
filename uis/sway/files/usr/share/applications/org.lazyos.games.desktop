@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Games
+Comment=Retro and LazyOS games
+Exec=lazyos-games
+Icon=lazyos-games
+Terminal=false
+Categories=Game;
+Keywords=games;retro;emulator;nintendo;sega;

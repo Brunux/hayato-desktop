@@ -18,9 +18,10 @@ Rootfs assembly, bootloaders, image creation, and eMMC installers belong in `laz
   - `lazyos-ui`: Ratatui shell (`App` + `Screen` + `BodyCtx`), design tokens (`design.rs`), Nerd Font
     `Glyph` table (`glyphs/`), `ActionStrip` / `TaskView` / `ActionRunner`, `Card` notification &
     in-window panels, terminal raw-mode cleanup (`Drop` + panic hook + signal handlers).
-  - `lazyos-theme`: `theme.toml` palette compiler generating 13 surface configs idempotently.
+  - `lazyos-theme`: `theme.toml` palette compiler generating 14 surface configs idempotently.
   - `lazyos-mcp`: Read/propose-only MCP server (`never` add destructive apply tools).
   - `lazyos-notify`: Layer-shell desktop notification card daemon (`lazyos-notify`).
+  - `lazyos-games`: GTK4 + WebKitGTK 6.0 game library and HTML game host (`lazyos-games`).
   - `spike-sixel`: Sixel image preview probe.
 
 ## Enforced Architecture & Design-System Invariants
@@ -83,6 +84,18 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    busy result). A left click on the card body runs `lazyos-files <parent>`; grimshot predates the
    hint, so its absolute `app_icon` (the saved picture) is the fallback. The daemon never opens
    the file itself: Files is where the person decides what to do with it.
+14. **A game is data, the library launches argv**: the HTML bridge carries a game id from the
+   library's own scan, never a path or a command; `lazyos-games --play` re-scans and resolves it,
+   and RetroArch gets a core from `platform.rs` and a ROM from that scan. `lazyos-game://` serves
+   only inside a game directory (canonicalise + prefix), and no ROM, BIOS or copyrighted art ships.
+   The library **exits before a game starts** and `exec`s itself when it ends: the WebView and the
+   emulator are never alive together on a 4 GB machine. Web games are trusted local data; the
+   sandbox and per-origin storage are the boundary, not a second shell.
+15. **The game stack is built, not installed from Debian**: `tools/retroarch/` builds the slim
+   emulator (no Qt, assets, FFmpeg, Vulkan or updater) and `tools/mupen64plus-next/` builds the
+   N64 core Debian does not have. The cores in `packages/games.list` Depends on `retroarch`, so
+   `install-retroarch.sh` installs the LazyOS package **first** and the cores after it; installing
+   the session list first would pull Debian's retroarch, its 547 MB assets and Qt5.
 
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single
