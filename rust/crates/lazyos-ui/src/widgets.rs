@@ -2662,43 +2662,60 @@ pub struct ActionNotice {
     pub expires_at: Option<std::time::Instant>,
 }
 
+/// What an [`ActionRunner`] is doing: idle, a background closure in flight,
+/// or a post-action notice. The receiver and its label live in the running
+/// variant, so "running" cannot exist without the thing it is running.
+enum RunnerState<T> {
+    Idle,
+    Running {
+        rx: std::sync::mpsc::Receiver<T>,
+        label: String,
+        /// A notice set while the action is still running. Screens currently
+        /// set notices only after `poll` returns, but the old API allowed it
+        /// and `poll` must not lose the result when it happens.
+        notice: Option<ActionNotice>,
+    },
+    Notice(ActionNotice),
+}
+
 /// Non-blocking background action runner for interactive `Screen`s (1–8s operations
 /// like Wi-Fi rescan/connect, Bluetooth toggle/pair, DNS switch, cache cleanup).
 pub struct ActionRunner<T> {
-    label: String,
-    rx: Option<std::sync::mpsc::Receiver<T>>,
+    state: RunnerState<T>,
     frame: usize,
-    notice: Option<ActionNotice>,
 }
 
 impl<T: Send + 'static> ActionRunner<T> {
     pub fn new() -> Self {
         Self {
-            label: String::new(),
-            rx: None,
+            state: RunnerState::Idle,
             frame: 0,
-            notice: None,
         }
     }
 
     /// Spawn a background closure, clear any previous notice, and enter the spinning state.
     pub fn spawn(&mut self, label: impl Into<String>, f: impl FnOnce() -> T + Send + 'static) {
         let (tx, rx) = std::sync::mpsc::channel();
-        self.label = label.into();
-        self.rx = Some(rx);
+        self.state = RunnerState::Running {
+            rx,
+            label: label.into(),
+            notice: None,
+        };
         self.frame = 0;
-        self.notice = None;
         std::thread::spawn(move || {
             let _ = tx.send(f());
         });
     }
 
     pub fn is_running(&self) -> bool {
-        self.rx.is_some()
+        matches!(self.state, RunnerState::Running { .. })
     }
 
     pub fn label(&self) -> Option<&str> {
-        self.rx.as_ref().map(|_| self.label.as_str())
+        match &self.state {
+            RunnerState::Running { label, .. } => Some(label),
+            RunnerState::Idle | RunnerState::Notice(_) => None,
+        }
     }
 
     pub fn spinner(&self) -> &'static str {
@@ -2707,12 +2724,27 @@ impl<T: Send + 'static> ActionRunner<T> {
 
     /// Clear any post-action notice immediately (used when routine scans finish).
     pub fn clear_status(&mut self) {
-        self.notice = None;
+        if let RunnerState::Running { notice, .. } = &mut self.state {
+            *notice = None;
+        } else {
+            self.state = RunnerState::Idle;
+        }
+    }
+
+    fn set_notice(&mut self, notice: ActionNotice) {
+        if let RunnerState::Running {
+            notice: current, ..
+        } = &mut self.state
+        {
+            *current = Some(notice);
+        } else {
+            self.state = RunnerState::Notice(notice);
+        }
     }
 
     /// Show a transient confirmation notice that automatically disappears after 3 seconds.
     pub fn set_transient(&mut self, text: impl Into<String>) {
-        self.notice = Some(ActionNotice {
+        self.set_notice(ActionNotice {
             text: text.into(),
             is_error: false,
             expires_at: Some(std::time::Instant::now() + std::time::Duration::from_secs(3)),
@@ -2722,7 +2754,7 @@ impl<T: Send + 'static> ActionRunner<T> {
     /// Show a persistent error notice (overrides auto-hide because the user must know why
     /// the last triggered action failed).
     pub fn set_persistent_error(&mut self, text: impl Into<String>) {
-        self.notice = Some(ActionNotice {
+        self.set_notice(ActionNotice {
             text: text.into(),
             is_error: true,
             expires_at: None,
@@ -2732,7 +2764,7 @@ impl<T: Send + 'static> ActionRunner<T> {
     /// Show a persistent informational summary (used when the user must read a final
     /// measurement such as total freed disk space).
     pub fn set_persistent_info(&mut self, text: impl Into<String>) {
-        self.notice = Some(ActionNotice {
+        self.set_notice(ActionNotice {
             text: text.into(),
             is_error: false,
             expires_at: None,
@@ -2741,43 +2773,68 @@ impl<T: Send + 'static> ActionRunner<T> {
 
     /// Active post-action notice (if not running and not expired).
     pub fn notice(&self) -> Option<&ActionNotice> {
-        self.notice.as_ref()
+        match &self.state {
+            RunnerState::Running { notice, .. } => notice.as_ref(),
+            RunnerState::Notice(notice) => Some(notice),
+            RunnerState::Idle => None,
+        }
     }
 
     pub fn tick_rate(&self) -> Option<std::time::Duration> {
         if self.is_running() {
             Some(std::time::Duration::from_millis(100))
-        } else if self.notice.as_ref().and_then(|n| n.expires_at).is_some() {
+        } else if let RunnerState::Notice(notice) = &self.state
+            && notice.expires_at.is_some()
+        {
             Some(std::time::Duration::from_millis(250))
         } else {
             None
         }
     }
 
+    fn expire_notice(&mut self) {
+        let expired = match &self.state {
+            RunnerState::Notice(notice) => notice
+                .expires_at
+                .is_some_and(|exp| std::time::Instant::now() >= exp),
+            RunnerState::Running {
+                notice: Some(notice),
+                ..
+            } => notice
+                .expires_at
+                .is_some_and(|exp| std::time::Instant::now() >= exp),
+            _ => false,
+        };
+        if expired {
+            if let RunnerState::Running { notice, .. } = &mut self.state {
+                *notice = None;
+            } else {
+                self.state = RunnerState::Idle;
+            }
+        }
+    }
+
     /// Advance spinner, expire transient notices, and poll for completion;
     /// returns `Some(result)` once the background closure finishes.
     pub fn poll(&mut self) -> Option<T> {
-        if self
-            .notice
-            .as_ref()
-            .and_then(|n| n.expires_at)
-            .is_some_and(|exp| std::time::Instant::now() >= exp)
-        {
-            self.notice = None;
-        }
-        let rx = self.rx.as_ref()?;
-        self.frame = (self.frame + 1) % BRAILLE_SPINNER.len();
-        match rx.try_recv() {
-            Ok(val) => {
-                self.rx = None;
-                Some(val)
+        self.expire_notice();
+        let finished = {
+            let RunnerState::Running { rx, notice, .. } = &mut self.state else {
+                return None;
+            };
+            self.frame = (self.frame + 1) % BRAILLE_SPINNER.len();
+            match rx.try_recv() {
+                Ok(value) => Some((Some(value), notice.take())),
+                Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => Some((None, notice.take())),
             }
-            Err(std::sync::mpsc::TryRecvError::Empty) => None,
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                self.rx = None;
-                None
-            }
-        }
+        };
+        let (value, notice) = finished?;
+        self.state = match notice {
+            Some(notice) => RunnerState::Notice(notice),
+            None => RunnerState::Idle,
+        };
+        value
     }
 }
 
@@ -2807,6 +2864,59 @@ mod tests {
                 .collect(),
         );
         list
+    }
+
+    #[test]
+    fn action_runner_moves_from_running_to_notice_to_idle() {
+        let mut runner = ActionRunner::new();
+        assert!(!runner.is_running());
+        runner.spawn("Working", || 7);
+        assert!(runner.is_running());
+        assert_eq!(runner.label(), Some("Working"));
+
+        let value = (0..100)
+            .find_map(|_| {
+                let value = runner.poll();
+                if value.is_none() {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                value
+            })
+            .expect("the runner finished");
+        assert_eq!(value, 7);
+        assert!(!runner.is_running());
+        assert!(runner.notice().is_none());
+
+        runner.set_transient("done");
+        assert!(runner.notice().is_some());
+        assert!(runner.tick_rate().is_some());
+        runner.clear_status();
+        assert!(runner.notice().is_none());
+        assert!(runner.tick_rate().is_none());
+    }
+
+    #[test]
+    fn a_notice_set_while_running_survives_the_result() {
+        let mut runner = ActionRunner::new();
+        runner.spawn("Slow", || {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            9
+        });
+        runner.set_transient("still working");
+        assert!(runner.is_running());
+        assert!(runner.notice().is_some());
+
+        let value = (0..100)
+            .find_map(|_| {
+                let value = runner.poll();
+                if value.is_none() {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                value
+            })
+            .expect("the runner finished");
+        assert_eq!(value, 9);
+        assert!(runner.notice().is_some(), "the notice survives the result");
     }
 
     #[test]
