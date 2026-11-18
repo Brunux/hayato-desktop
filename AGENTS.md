@@ -72,7 +72,8 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `system/theme_picker.rs` (`PreviewPhase`), `system/dev.rs` (`ExportFocus`),
    `files/find.rs` (`Stage`), `lazyos-ui/src/task.rs` (`StopPhase`),
    `system/media.rs` (`PlaybackState`), `lazyos-ui/src/widgets.rs` (`RunnerState`),
-   `system/dictate.rs` (`DictationPhase`), and `installer/worker.rs` (`WorkerPhase`).
+   `system/dictate.rs` (`DictationPhase`), `installer/worker.rs` (`WorkerPhase`),
+   and `installer/ui.rs` (`LocFocus` / `UserFocus` / `DiskFocus`).
 
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single
