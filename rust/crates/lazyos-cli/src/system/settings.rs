@@ -33,10 +33,13 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("wifi", "Wi-Fi networks", "bar-net"),
         ("bt-radio", "Bluetooth radio", "bluetoothctl power"),
         ("bt", "Bluetooth devices", "bar-bt"),
+        ("dns", "DNS", "lazyos-dns"),
         ("night", "Night light", "night-light start"),
         ("notify", "Notifications", "lazyos-notify-history"),
         ("dnd", "Do not disturb", "makoctl mode -t do-not-disturb"),
         ("vnc", "Share this screen", "lazyos-vnc"),
+        ("ssh", "Remote login (SSH)", "lazyos-ssh"),
+        ("tz", "Date & time", "lazyos-tz"),
         (
             "touchpad",
             "Touchpad",
@@ -47,6 +50,8 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("theme", "Appearance & Themes", "lazyos-theme-picker"),
         ("greeter", "Login screen (Greeter)", "lazyos menu greeter"),
         ("automount", "Auto-mount USB drives", "automount.conf"),
+        ("updates", "System updates", "lazyos-pkg"),
+        ("clean", "Free space", "lazyos-clean"),
         ("tablet", "Tablet mode", "tablet-mode toggle"),
         (
             "tablet-calibrate",
@@ -318,6 +323,14 @@ fn build_rows() -> (Vec<lazyos_ui::Row>, Vec<String>) {
         keys.push("bt".to_string());
     }
 
+    // DNS
+    rows.push(row(
+        "DNS",
+        "the resolver this connection uses",
+        Glyph::Cloud,
+    ));
+    keys.push("dns".to_string());
+
     // Night light
     if night_on() {
         rows.push(row("Night light", "on", Glyph::Moon));
@@ -344,6 +357,18 @@ fn build_rows() -> (Vec<lazyos_ui::Row>, Vec<String>) {
     let vnc_status = super::vnc::status();
     rows.push(row("Share this screen", vnc_status, Glyph::Eye));
     keys.push("vnc".to_string());
+
+    // Remote login
+    rows.push(row(
+        "Remote login (SSH)",
+        "remote login status",
+        Glyph::Server,
+    ));
+    keys.push("ssh".to_string());
+
+    // Date & time
+    rows.push(row("Date & time", super::tz::status(), Glyph::Clock));
+    keys.push("tz".to_string());
 
     // Touchpad
     if touchpad_on() {
@@ -393,6 +418,16 @@ fn build_rows() -> (Vec<lazyos_ui::Row>, Vec<String>) {
         ));
         keys.push("automount".to_string());
     }
+
+    // System updates and storage
+    rows.push(row(
+        "System updates",
+        "apt: search, install, upgrade",
+        Glyph::Sync,
+    ));
+    keys.push("updates".to_string());
+    rows.push(row("Free space", "caches, journal and trash", Glyph::Trash));
+    keys.push("clean".to_string());
 
     // Tablet mode
     let tm = tablet_mode_detail();
@@ -517,6 +552,9 @@ pub fn menu(
             "bt" => {
                 let _ = super::bluetooth::menu(terminal, design)?;
             }
+            "dns" => {
+                let _ = super::dns::menu(terminal, design)?;
+            }
             "night" => {
                 let cmd = if night_on() { "stop" } else { "start" };
                 let _ = out(&[&bin_script("night-light"), cmd]);
@@ -543,6 +581,12 @@ pub fn menu(
             }
             "vnc" => {
                 let _ = super::vnc::menu(terminal, design)?;
+            }
+            "ssh" => {
+                let _ = super::ssh::menu(terminal, design)?;
+            }
+            "tz" => {
+                let _ = super::tz::menu(terminal, design)?;
             }
             "touchpad" => {
                 let _ = out(&["swaymsg", "input", "type:touchpad", "events", "toggle"]);
@@ -613,6 +657,12 @@ pub fn menu(
                     let _ = std::fs::remove_file(&part);
                     banner = Some(format!("Could not write {conf_display}"));
                 }
+            }
+            "updates" => {
+                let _ = super::pkg::menu(terminal, design)?;
+            }
+            "clean" => {
+                let _ = super::clean::menu(terminal, design)?;
             }
             "tablet" => {
                 let _ = out(&[&bin_script("tablet-mode"), "toggle"]);
@@ -712,5 +762,17 @@ mod tests {
                 .iter()
                 .any(|(k, l, _)| *k == "automount" && *l == "Auto-mount USB drives")
         );
+        for (key, runs) in [
+            ("dns", "lazyos-dns"),
+            ("ssh", "lazyos-ssh"),
+            ("tz", "lazyos-tz"),
+            ("updates", "lazyos-pkg"),
+            ("clean", "lazyos-clean"),
+        ] {
+            assert!(
+                table.iter().any(|(k, _, r)| *k == key && *r == runs),
+                "Settings lost the {key} row"
+            );
+        }
     }
 }

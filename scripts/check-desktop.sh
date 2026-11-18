@@ -738,6 +738,18 @@ if [ -n "$_nl_tmp" ] && [ -x "$HOME/.config/bin/night-light" ]; then
 	rm -rf "$_nl_tmp"
 fi
 
+# The Settings rows that open the existing system pickers. A lost row is a
+# feature nobody can find from the menu, even though the helper is installed.
+_settings_missing=""
+for _settings_row in lazyos-dns lazyos-ssh lazyos-tz lazyos-pkg lazyos-clean; do
+	settings_runs "$_settings_row" || _settings_missing="$_settings_missing $_settings_row"
+done
+if [ -z "$_settings_missing" ]; then
+	ok "Settings exposes DNS, SSH, date & time, updates and free space"
+else
+	fail "Settings lost row(s):$_settings_missing (the helper is installed but the menu cannot reach it)"
+fi
+
 # The bug the guard in lazyos-screensaver exists for: a saver left running under
 # an active lock animates to nobody and spends CPU (it used to do exactly that
 # for the 150 s between the two timers).
