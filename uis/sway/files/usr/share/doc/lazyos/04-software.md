@@ -48,6 +48,12 @@ emulator without Qt, assets, FFmpeg, Vulkan or the online updater, and
 `desktop/tools/mupen64plus-next/` builds the N64 core Debian does not have.
 Nothing in the image is a ROM or a BIOS.
 
+A USB or Bluetooth gamepad is handled by `lazyos gamepad`, a session helper
+started at login: it reads `/dev/input` and uses `wtype` (already in
+`packages/tools.list` for dictation) to type arrows, Enter and Escape into the
+framework's `lazyos-*` windows. The Games library reads the pad itself;
+RetroArch and the HTML games keep their own input. See `03-shortcuts.md`.
+
 ## The terminal
 
 **foot**, themed in the active session palette, JetBrains Mono with a Nerd Font

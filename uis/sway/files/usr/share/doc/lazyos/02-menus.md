@@ -558,6 +558,11 @@ application that brings its own icon still shows it in colour.
 * **A menu or tool**: implement a native subcommand in `lazyos` using `lazyos-ui` design
   system components (`List`, `Picker`, `Task`, `Card`).
 
+The menus are also browsable with a USB or Bluetooth gamepad. `lazyos gamepad`
+maps the pad to arrows, Enter and Escape in every `lazyos-*` window; the Games
+library reads the pad itself, and the games keep their own input. The pad
+table is in `03-shortcuts.md`.
+
 ## The retirement of rofi (Spec 014)
 
 With all surfaces running natively in the multi-call binary `lazyos`, the

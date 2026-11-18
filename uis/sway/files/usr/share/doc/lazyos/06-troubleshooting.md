@@ -916,3 +916,30 @@ missing. `08-games.md` has the full list of platforms and firmware.
   games do not reach full speed. The F1 menu has the resolution option.
 - If the library itself is blank or the GPU misbehaves, start it with
   `LAZYOS_GAMES_NO_ACCEL=1`; 2D canvas games still work.
+
+## The gamepad does nothing
+
+A USB or Bluetooth pad is read twice in different places, so first decide
+where it fails.
+
+- **In the Games library only**: the library reads `/dev/input` itself; check
+  the pad's event node and the `input` group (`ls -l /dev/input/by-id`,
+  `id`). A device without `BTN_SOUTH`/`BTN_DPAD_*` is not a gamepad and needs
+  its codes added.
+- **In the framework menus (root menu, Settings, Files, …)**: those are
+  `lazyos-*` windows, and `lazyos gamepad` types the keys into them. Check that
+  it is running (`pgrep -f 'lazyos gamepad'`), that `wtype` is installed
+  (`command -v wtype`), and that the focused window really is a `lazyos-*` one.
+  A plain `foot` shell, Firefox and other applications are deliberately not
+  mapped, because they may handle a pad themselves; the Games library and
+  RetroArch are in that group.
+- **Start the mapper by hand** with `lazyos gamepad` (it is single-instance
+  through `$XDG_RUNTIME_DIR/lazyos-gamepad.pid`), or restart the session so
+  `config.d/40-gamepad.conf` runs it.
+- **In a retro game**: RetroArch reads the pad through udev and its own
+  autoconfig, not through the mapper; check the F1 menu's input settings. An
+  HTML game uses the browser's Gamepad API, which is separate again.
+- **The pad is connected but the arrows are not**: `evtest /dev/input/eventX`
+  shows the kernel events; if `BTN_DPAD_*`/`ABS_HAT0*` never appear, the pad's
+  mode switch (XInput vs DirectInput, or a Bluetooth profile) is the problem,
+  not LazyOS.
