@@ -121,7 +121,12 @@ pub fn return_to_library() -> ! {
 
 /// Open the folder a game came from in Files, where the person can decide what
 /// to do with the file. The library never opens a ROM itself.
+/// Open the folder a game came from in Files, in a window of its own: the
+/// library keeps the shelf, Files gets the place where the person decides what
+/// to do with the file. `LAZYOS_UI=1` keeps the child from opening a third
+/// window of its own.
 pub fn reveal(game: &Game) -> io::Result<()> {
+    use std::process::Stdio;
     let folder = match (game.kind, game.rom.as_deref(), game.root.as_deref()) {
         (GameKind::Retro, Some(rom), _) => rom.parent().map(Path::to_path_buf),
         (GameKind::Web, _, Some(root)) => Some(root.to_path_buf()),
@@ -130,7 +135,14 @@ pub fn reveal(game: &Game) -> io::Result<()> {
     let Some(folder) = folder else {
         return Ok(());
     };
-    Command::new("lazyos-files").arg(folder).spawn()?;
+    Command::new("foot")
+        .args(["--app-id=lazyos-pick", "-e", "lazyos", "menu", "files"])
+        .arg(folder)
+        .env("LAZYOS_UI", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
     Ok(())
 }
 
@@ -156,6 +168,7 @@ mod tests {
             save: false,
             favorite: false,
             last: 0,
+            size: 0,
         }
     }
 

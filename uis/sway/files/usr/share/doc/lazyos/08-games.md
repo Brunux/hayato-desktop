@@ -9,6 +9,18 @@ and navigates the same in its window and fullscreen. It lists two kinds of game:
 - **LazyOS games**: folders of HTML, CSS and JavaScript, played fullscreen in a
   **GTK + WebKitGTK** host. The sample is **Snake**.
 
+It is a **shelf**: a rail of platforms at the top, a card per game down the left
+(the cartridge, the title, the core and the size, the path) and a **hero** on the
+right with the selected game big — its generated monogram, platform, core, size,
+folder, when you last played it, and a **PLAY** button. The window is wide
+because the hero is the point: **1200×780** for the shelf, **1000×640** for the
+dense list, and it re-centres itself when the layout changes. Under about 100
+columns the hero steps aside and the shelf keeps the whole window.
+
+The cartridge and the monogram are **drawn from the game's own title**, not
+loaded from a file: a library with no cover art still looks like a shelf, and a
+theme switch repaints it with everything else.
+
 The GTK/WebKit window exists only for playing an HTML game. The library itself
 never loads a web page; its scan, ids and launch rules live in
 `lazyos-games-core`, shared by the TUI and the host.
@@ -22,8 +34,10 @@ never loads a web page; its scan, ids and launch rules live in
 | Enter | play the selected game |
 | type | filter the current tab by title or platform |
 | f | favourite / unfavourite |
-| s | rescan `~/Games` |
+| **o** | **options**: sort, layout, covers, hide missing cores |
 | **m** | **this manual**, inside the library: scroll it, Esc goes back |
+| **r** | open the game's folder in Files |
+| s | rescan `~/Games` |
 | Esc | clear the filter, then close the library |
 | Alt+F | fullscreen on or off (the compositor) |
 
@@ -37,6 +51,23 @@ library without a separate mode.
 The Games library does **not** use the browser's Gamepad API; the HTML game
 does. RetroArch reads the pad through udev and its own autoconfig, so a pad
 never moves two things at once.
+
+## Options
+
+**`o`** opens four settings, and only four — the rest are keys, not
+preferences:
+
+| Option | Values | Does |
+|---|---|---|
+| **Sort** | Title, Recent, Platform | the order of the shelf |
+| **Layout** | Shelf, List | rich cards, or the dense one-line list |
+| **Covers** | On, Off | the cartridge and the hero's monogram |
+| **Hide missing cores** | Off, On | hide a game whose core is not installed |
+
+↑/↓ pick a row, ←/→ (or Enter/Space) change it, **Esc** goes back. Every change
+is saved in `~/.local/state/lazyos/games/state.json` with the favourites and the
+position, so the library opens the way you left it, and the window resizes when
+you switch between Shelf and List.
 
 ## The manual, inside the library
 
@@ -67,8 +98,14 @@ Put a ROM in a platform folder, then press **s** (or reopen the library):
 The folder name does not matter; the extension selects the platform. A file is
 ignored when it is smaller than the smallest real ROM for that platform, which
 is what keeps a `README.md` out of the Genesis shelf (`.md` is also a Mega Drive
-extension). The one exception is Neo Geo, whose romsets stay zipped: a `.zip` is
-a game only inside `~/Games/neogeo/` (or `mvs/`, `aes/`, `fbneo/`).
+extension).
+
+**The folders are already there.** The first time the library opens it creates
+one folder per platform and `bios/`, plus `~/Games/LAZYOS-GAMES.txt` with the
+same table as below, so all you have to do is drop files in. Arcade romsets are
+the exception to the extension rule: they stay zipped, and the **folder** names
+the board (`neogeo/`, `cps1/`, `cps2/`, `cps3/`, `pgm/`, `arcade/`); a `.zip`
+anywhere else is not a game.
 
 | Platform | Extensions | Core | Firmware |
 |---|---|---|---|
@@ -83,7 +120,12 @@ a game only inside `~/Games/neogeo/` (or `mvs/`, `aes/`, `fbneo/`).
 | Virtual Boy | `vb` | mednafen_vb | — |
 | WonderSwan | `ws`, `wsc` | mednafen_wswan | — |
 | Nintendo 64 | `n64`, `z64`, `v64` | mupen64plus_next | — |
-| Neo Geo | `zip` in `neogeo/`, `mvs/`, `aes/`, `fbneo/` | fbneo_neogeo | `neogeo.zip` (MVS BIOS) |
+| Neo Geo | `zip` in `neogeo/`, `mvs/`, `aes/` | fbneo | `neogeo.zip` (MVS BIOS) |
+| Capcom CPS1 | `zip` in `cps1/` | fbneo | — |
+| Capcom CPS2 | `zip` in `cps2/` | fbneo | `qsound.zip` |
+| Capcom CPS3 | `zip` in `cps3/` | fbneo | `cps3.zip` |
+| IGS PGM | `zip` in `pgm/` | fbneo | `pgm.zip` |
+| Arcade (everything else) | `zip` in `arcade/`, `mame/`, `fbneo/` | fbneo | some boards |
 
 Firmware goes in `~/Games/bios/`. It is not shipped: a BIOS is copyrighted, and
 a PS1 game without one simply does not start. A zipped ROM is not unpacked by
@@ -95,20 +137,25 @@ Mupen64Plus-Next with the AArch64 dynarec and GLideN64 on GLES3 for the
 Mali-G57. Many games run at 640×480; some do not reach full speed. The library
 marks an N64 row whose core is missing instead of pretending it can start.
 
-**Neo Geo is arcade, not a console file.** Debian has no Neo Geo or arcade core
-either, so the image builds FBNeo's Neo Geo subset (`tools/fbneo/`,
-`SUBSET=neogeo`, about 2 MB). A game is the usual MAME/FBNeo romset — `mslug.zip`,
-`kof98.zip`, `2020bb.zip` — and the library lists its file name as the title:
+**Arcade is its own kind of game.** Debian has no arcade core either, so the
+image builds **FBNeo** (`tools/fbneo/`), one core for every board it knows. A
+game is the usual MAME/FBNeo romset — `mslug.zip`, `sf2.zip`, `kof98.zip`,
+`dino.zip` — and the library lists the set's own short name as the title:
 
 ```
-~/Games/neogeo/mslug.zip
-~/Games/bios/neogeo.zip          # the MVS BIOS set, not the game
+~/Games/neogeo/mslug.zip          # Neo Geo MVS
+~/Games/cps1/dino.zip             # Capcom CPS1
+~/Games/cps2/sf2.zip              # Capcom CPS2
+~/Games/bios/neogeo.zip           # the MVS BIOS set, not the game
 ```
 
-The BIOS `neogeo.zip` must be the BIOS archive from the same MAME set, in
-`~/Games/bios/`. The romset must match the core's driver names: a set renamed to
-`Metal Slug.zip` is not found by the core, so keep the short name. Saves are the
-core's NVRAM and states, in the same two folders as every other platform.
+The folder names the board, so a set dropped in the wrong folder is listed under
+the wrong platform (and the core will still refuse it). The BIOS zip must come
+from the same MAME set and live in `~/Games/bios/`: `neogeo.zip` for MVS/AES,
+`qsound.zip` for CPS2, `cps3.zip` for CPS3, `pgm.zip` for PGM. The romset must
+match the core's driver names — a set renamed to `Metal Slug.zip` is not found —
+so keep the short name. Saves are the core's NVRAM and states, in the same two
+folders as every other platform.
 
 RetroArch is the **slim** build in `tools/retroarch/`: Wayland, GLES, no Qt, no
 assets, no FFmpeg, no Vulkan, no online updater. The host passes

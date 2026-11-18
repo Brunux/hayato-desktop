@@ -43,6 +43,64 @@ pub struct Game {
     pub save: bool,
     pub favorite: bool,
     pub last: i64,
+    /// Bytes on disk for a ROM; 0 for a web game (a folder, not a file).
+    pub size: u64,
+}
+
+/// Create the folder for every platform, `bios/`, and a README that explains
+/// them, so a new person only has to drop files in. Idempotent: existing
+/// folders are left alone and the README is written only when the table
+/// changed it.
+///
+/// The first scan root is the one prepared; a second root (`LAZYOS_GAMES_ROM_DIRS`)
+/// is somewhere the person already organised.
+pub fn ensure_layout(options: &ScanOptions) -> io::Result<()> {
+    let Some(root) = options.roots.first() else {
+        return Ok(());
+    };
+    fs::create_dir_all(root)?;
+    for platform in platform::PLATFORMS {
+        let folder = platform
+            .folders
+            .map(|folders| folders[0])
+            .unwrap_or(platform.id);
+        fs::create_dir_all(root.join(folder))?;
+    }
+    fs::create_dir_all(root.join("bios"))?;
+    let readme = root.join("LAZYOS-GAMES.txt");
+    let text = layout_readme();
+    if fs::read_to_string(&readme).ok().as_deref() != Some(text.as_str()) {
+        fs::write(&readme, text)?;
+    }
+    Ok(())
+}
+
+/// The README in the scan root, generated from the platform table so it cannot
+/// disagree with the scan.
+fn layout_readme() -> String {
+    let mut text = String::from(
+        "LazyOS Games\n\
+         ============\n\n\
+         Drop a ROM in the folder for its platform; the file extension picks the\n\
+         core. Arcade romsets stay zipped and keep the set's own name\n\
+         (mslug.zip, sf2.zip). Firmware goes in bios/.\n\n",
+    );
+    for row in platform::PLATFORMS {
+        let folder = row.folders.map(|folders| folders[0]).unwrap_or(row.id);
+        let extensions = row.extensions.join(", ");
+        text.push_str(&format!(
+            "  {folder:<9} {:<30} {extensions:<22} {}\n",
+            row.title, row.core
+        ));
+    }
+    text.push_str("\nFirmware, with the exact name the core expects:\n");
+    for row in platform::PLATFORMS.iter().filter(|row| row.bios.is_some()) {
+        if let Some(bios) = row.bios {
+            text.push_str(&format!("  {:<30} {bios}\n", row.title));
+        }
+    }
+    text.push_str("\nLazyOS ships no ROMs or BIOS. Only use dumps you are allowed to use.\n");
+    text
 }
 
 /// What one scan needs. Every directory is passed in so the tests can build a
@@ -86,6 +144,89 @@ pub struct State {
     pub filter: String,
     #[serde(default)]
     pub index: usize,
+    /// The game itself, so a re-sort or a new favourite keeps the cursor on it.
+    #[serde(default)]
+    pub selected: String,
+    /// The library's own options (`o`), persisted with the rest.
+    #[serde(default)]
+    pub options: Options,
+}
+
+/// How the shelf is ordered.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Sort {
+    #[default]
+    Title,
+    Recent,
+    Platform,
+}
+
+impl Sort {
+    /// The order a person gets by pressing the option again.
+    pub fn next(self, step: isize) -> Self {
+        let order = [Sort::Title, Sort::Recent, Sort::Platform];
+        let at = order.iter().position(|sort| *sort == self).unwrap_or(0) as isize;
+        order[(at + step).rem_euclid(order.len() as isize) as usize]
+    }
+
+    pub fn apply(self, games: &mut [Game]) {
+        match self {
+            Sort::Title => games.sort_by_key(|game| game.title.to_lowercase()),
+            Sort::Recent => games.sort_by(|a, b| {
+                b.last
+                    .cmp(&a.last)
+                    .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+            }),
+            Sort::Platform => games.sort_by(|a, b| {
+                a.platform_title
+                    .cmp(&b.platform_title)
+                    .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+            }),
+        }
+    }
+}
+
+/// The shape of the shelf: rich cards or the dense list.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Layout {
+    #[default]
+    Shelf,
+    List,
+}
+
+impl Layout {
+    pub fn next(self) -> Self {
+        match self {
+            Layout::Shelf => Layout::List,
+            Layout::List => Layout::Shelf,
+        }
+    }
+}
+
+/// The four options the library keeps. Deliberately short: everything else is
+/// a key, not a setting.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Options {
+    pub sort: Sort,
+    pub layout: Layout,
+    /// The generated cartridge art in the shelf and the hero.
+    pub covers: bool,
+    /// Hide a retro game whose core is not installed.
+    pub hide_missing: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            sort: Sort::Title,
+            layout: Layout::Shelf,
+            covers: true,
+            hide_missing: false,
+        }
+    }
 }
 
 pub fn now() -> i64 {
@@ -327,11 +468,8 @@ fn walk_roms(
         // `.md` is a Mega Drive extension and a Markdown one; a README is not a
         // ROM. The same floor keeps a `.cue` descriptor (which is allowed to be
         // tiny) on a platform whose floor is zero.
-        if path
-            .metadata()
-            .map(|metadata| metadata.len() < platform.min_bytes)
-            .unwrap_or(false)
-        {
+        let size = path.metadata().map(|metadata| metadata.len()).unwrap_or(0);
+        if size < platform.min_bytes {
             continue;
         }
         let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
@@ -352,6 +490,7 @@ fn walk_roms(
             save: has_save(options, platform.core, stem),
             favorite: state.favorites.contains(&id),
             last: state.last.get(&id).copied().unwrap_or(0),
+            size,
             rom: Some(canonical),
             root: None,
             entry: None,
@@ -446,6 +585,7 @@ fn scan_web(dir: &Path, state: &State, games: &mut Vec<Game>) {
             save: false,
             favorite: state.favorites.contains(&id),
             last: state.last.get(&id).copied().unwrap_or(0),
+            size: 0,
         });
     }
 }
@@ -545,6 +685,119 @@ mod tests {
             state_dir: root.join("state"),
             libretro_dir: libretro,
         }
+    }
+
+    #[test]
+    fn a_state_file_without_options_still_loads() {
+        // The state written before `o` existed: every new field defaults, so an
+        // upgrade does not lose the favourites or the recents.
+        let state: State = serde_json::from_str(
+            r#"{"favorites":["web:snake"],"last":{},"filter":"all","index":0}"#,
+        )
+        .unwrap();
+        assert_eq!(state.options, Options::default());
+        assert_eq!(state.options.sort, Sort::Title);
+        assert_eq!(state.options.layout, Layout::Shelf);
+        assert!(state.options.covers);
+        assert!(!state.options.hide_missing);
+        assert_eq!(state.selected, "");
+    }
+
+    #[test]
+    fn options_round_trip_through_the_state_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("state.json");
+        let mut state = State::default();
+        state.options.sort = Sort::Recent;
+        state.options.layout = Layout::List;
+        state.options.covers = false;
+        state.options.hide_missing = true;
+        save_state(&path, &state).unwrap();
+        let read = load_state(&path);
+        assert_eq!(read.options, state.options);
+    }
+
+    #[test]
+    fn the_sort_orders_are_the_ones_the_option_names() {
+        let mut games = vec![
+            game("B", "snes", "Super Nintendo", 10),
+            game("A", "nes", "Nintendo Entertainment System", 30),
+            game("C", "snes", "Super Nintendo", 0),
+        ];
+        Sort::Title.apply(&mut games);
+        assert_eq!(titles(&games), ["A", "B", "C"]);
+        Sort::Recent.apply(&mut games);
+        assert_eq!(titles(&games), ["A", "B", "C"]);
+        Sort::Platform.apply(&mut games);
+        assert_eq!(titles(&games), ["A", "B", "C"]);
+        assert_eq!(Sort::Title.next(1), Sort::Recent);
+        assert_eq!(Sort::Recent.next(1), Sort::Platform);
+        assert_eq!(Sort::Platform.next(1), Sort::Title);
+        assert_eq!(Sort::Title.next(-1), Sort::Platform);
+        assert_eq!(Layout::Shelf.next(), Layout::List);
+        assert_eq!(Layout::List.next(), Layout::Shelf);
+    }
+
+    #[test]
+    fn recent_puts_the_last_played_first_and_never_played_last() {
+        let mut games = vec![
+            game("Old", "snes", "Super Nintendo", 10),
+            game("New", "snes", "Super Nintendo", 99),
+            game("Never", "snes", "Super Nintendo", 0),
+        ];
+        Sort::Recent.apply(&mut games);
+        assert_eq!(titles(&games), ["New", "Old", "Never"]);
+    }
+
+    #[test]
+    fn the_layout_is_created_once_and_the_readme_comes_from_the_table() {
+        let temp = tempfile::tempdir().unwrap();
+        let options = options(temp.path());
+        ensure_layout(&options).unwrap();
+        let root = &options.roots[0];
+        for platform in platform::PLATFORMS {
+            let folder = platform
+                .folders
+                .map(|folders| folders[0])
+                .unwrap_or(platform.id);
+            assert!(root.join(folder).is_dir(), "{folder} was not created");
+        }
+        assert!(root.join("bios").is_dir());
+        let readme = fs::read_to_string(root.join("LAZYOS-GAMES.txt")).unwrap();
+        assert!(readme.contains("neogeo"));
+        assert!(readme.contains("neogeo.zip"));
+        assert!(readme.contains("snes9x"));
+        // A second call changes nothing.
+        ensure_layout(&options).unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join("LAZYOS-GAMES.txt")).unwrap(),
+            readme
+        );
+    }
+
+    fn game(title: &str, platform: &str, platform_title: &str, last: i64) -> Game {
+        Game {
+            id: format!("retro:{platform}:{title}"),
+            kind: GameKind::Retro,
+            title: title.into(),
+            platform: platform.into(),
+            platform_title: platform_title.into(),
+            core: Some("core".into()),
+            rom: None,
+            root: None,
+            entry: None,
+            art: None,
+            description: None,
+            author: None,
+            save: false,
+            favorite: false,
+            last,
+            size: 0,
+        }
+    }
+
+    fn titles(games: &[Game]) -> Vec<&str> {
+        games.iter().map(|game| game.title.as_str()).collect()
     }
 
     #[test]

@@ -5,9 +5,9 @@
 # would otherwise satisfy that with Debian's package (and its 547 MB of assets
 # and Qt5) before the LazyOS build replaces it. The order is the contract.
 #
-# N64 and Neo Geo are not here: Debian has no N64 core and no arcade core at
+# N64 and arcade are not here: Debian has no N64 core and no arcade core at
 # all. desktop/tools/mupen64plus-next/ builds the N64 core and
-# desktop/tools/fbneo/ builds the Neo Geo subset of FBNeo.
+# desktop/tools/fbneo/ builds FBNeo (every arcade board).
 libretro-core-info
 libretro-nestopia
 libretro-snes9x

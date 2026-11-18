@@ -97,8 +97,10 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    directory (canonicalise + prefix), and no ROM, BIOS or copyrighted art ships. The platform
    table is the only place a platform is declared: the scan (`platform::detect`), the manual's
    table and the launch core all read `platform::PLATFORMS`. A row with `folders` is claimed only
-   inside those folder names — Neo Geo is the case, because a `.zip` is a romset in `neogeo/`,
-   `mvs/`, `aes/` or `fbneo/`, and a zipped SNES ROM must stay invisible. The library
+   inside those folder names — the six arcade boards are the case, because a `.zip` is a romset in
+   `neogeo/`, `cps1/`, `cps2/`, `cps3/`, `pgm/` or `arcade/`, and a zipped SNES ROM must stay
+   invisible. The first time the library opens it creates one folder per platform plus `bios/`
+   and a generated `LAZYOS-GAMES.txt`, so a new person only drops files in. The library
    **exits before a game starts**; the host returns to a new `lazyos menu games` window, so the
    TUI and the game window are never alive together on a 4 GB machine. Web games are trusted
    local data; the sandbox and per-origin storage are the boundary, not a second shell.
@@ -108,6 +110,11 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `Library::core_present` per row, so the manual cannot drift from the scan or from Enter;
    never write a second copy of that table by hand. The prose is a short form of
    `08-games.md`, which stays the long reference.
+   The shelf is a master-detail surface: the rail is the platform, the shelf (or the dense list)
+   is the game, the hero is the selected one. `o` opens the four options — sort, layout, covers,
+   hide missing cores — stored in `State::options` so they survive the next game; `r` opens the
+   game's folder in Files. The cartridge and the hero's monogram are generated from the title
+   (`system/games/art.rs`), never an asset, so a library with no covers still looks like a shelf.
 15. **A controller is the session's input helper**: `lazyos gamepad` reads `/dev/input` through
    evdev and injects arrows, Enter and Escape with `wtype` into the focused `lazyos-*` window
    (the root menu, Settings, Files, the Games TUI). The library is one of those windows; its tabs
@@ -116,8 +123,8 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    input helper; a pid lock keeps it single. The game stack itself is built, not installed from
    Debian: `tools/retroarch/` builds the slim emulator (no Qt, assets, FFmpeg, Vulkan or updater)
    and `tools/mupen64plus-next/` builds the N64 core Debian does not have; `tools/fbneo/`
-   builds the **Neo Geo subset** of FBNeo (`SUBSET=neogeo REGEN_HEADERS=1`, the libretro fork),
-   because Debian has no arcade core either. The cores in `packages/games.list` Depends on
+   builds **FBNeo** (`REGEN_HEADERS=1`, the libretro fork) for every arcade board, because Debian
+   has no arcade core either. The cores in `packages/games.list` Depends on
    `retroarch`, so `install-retroarch.sh` installs the LazyOS package **first** and the cores
    after it; installing the session list first would pull Debian's retroarch, its 547 MB assets
    and Qt5.

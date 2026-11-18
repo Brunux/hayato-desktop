@@ -3903,7 +3903,7 @@ if have lazyos-games; then
 		fi
 		_libretro_dir="$(ls -d /usr/lib/*/libretro 2>/dev/null | head -n 1)"
 		_cores_missing=
-		for _core in nestopia snes9x gambatte mgba genesis_plus_gx mednafen_psx mednafen_pce_fast mednafen_vb mednafen_wswan fbneo_neogeo; do
+		for _core in nestopia snes9x gambatte mgba genesis_plus_gx mednafen_psx mednafen_pce_fast mednafen_vb mednafen_wswan fbneo; do
 			[ -n "$_libretro_dir" ] && [ -f "$_libretro_dir/${_core}_libretro.so" ] ||
 				_cores_missing="$_cores_missing $_core"
 		done
@@ -3915,10 +3915,10 @@ if have lazyos-games; then
 		else
 			warn "no N64 core: N64 rows will say the core is missing (tools/mupen64plus-next/)"
 		fi
-		if [ -n "$_libretro_dir" ] && [ -f "$_libretro_dir/fbneo_neogeo_libretro.so" ]; then
-			ok "the Neo Geo core is installed (FBNeo, neogeo subset)"
+		if [ -n "$_libretro_dir" ] && [ -f "$_libretro_dir/fbneo_libretro.so" ]; then
+			ok "the arcade core is installed (FBNeo)"
 		else
-			fail "no Neo Geo core: run scripts/build-fbneo.sh (tools/fbneo/)"
+			fail "no arcade core: run scripts/build-fbneo.sh (tools/fbneo/)"
 		fi
 		if have wtype; then
 			ok "wtype is installed (the controller mapper's key injector)"

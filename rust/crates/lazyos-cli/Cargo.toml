@@ -16,6 +16,9 @@ lazyos-mcp = { path = "../lazyos-mcp" }
 lazyos-theme = { path = "../lazyos-theme" }
 lazyos-ui = { path = "../lazyos-ui" }
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
+# The shelf's selection flash: the same runtime lazyos-ui already uses for the
+# opening animation, so this adds no crate to the build.
+tachyonfx = { version = "0.25.2", default-features = false, features = ["std"] }
 # Signals: restoring the terminal on SIGINT/SIGTERM needs `signal(2)` and
 # `write(2)` from a handler. crossterm depends on libc already, and using it
 # directly keeps the dependency count at one small crate instead of a wrapper.

@@ -131,14 +131,61 @@ pub const PLATFORMS: &[Platform] = &[
         folders: None,
         min_bytes: 1024 * 1024,
     },
+    // Arcade boards all run the one FBNeo core; the folder is what tells the
+    // library which board a romset belongs to. A romset stays zipped: FBNeo
+    // reads the .zip itself.
     Platform {
         id: "neogeo",
         title: "Neo Geo",
-        core: "fbneo_neogeo",
-        // A romset stays zipped: FBNeo reads the .zip itself.
+        core: "fbneo",
         extensions: &["zip"],
         bios: Some("neogeo.zip, the MVS BIOS (also AES)"),
-        folders: Some(&["neogeo", "mvs", "aes", "fbneo"]),
+        folders: Some(&["neogeo", "mvs", "aes"]),
+        min_bytes: 64 * 1024,
+    },
+    Platform {
+        id: "cps1",
+        title: "Capcom CPS1",
+        core: "fbneo",
+        extensions: &["zip"],
+        bios: None,
+        folders: Some(&["cps1"]),
+        min_bytes: 64 * 1024,
+    },
+    Platform {
+        id: "cps2",
+        title: "Capcom CPS2",
+        core: "fbneo",
+        extensions: &["zip"],
+        bios: Some("qsound.zip, the QSound samples"),
+        folders: Some(&["cps2"]),
+        min_bytes: 64 * 1024,
+    },
+    Platform {
+        id: "cps3",
+        title: "Capcom CPS3",
+        core: "fbneo",
+        extensions: &["zip"],
+        bios: Some("cps3.zip, the CPS3 BIOS"),
+        folders: Some(&["cps3"]),
+        min_bytes: 64 * 1024,
+    },
+    Platform {
+        id: "pgm",
+        title: "IGS PGM",
+        core: "fbneo",
+        extensions: &["zip"],
+        bios: Some("pgm.zip, the PGM BIOS"),
+        folders: Some(&["pgm"]),
+        min_bytes: 64 * 1024,
+    },
+    Platform {
+        id: "arcade",
+        title: "Arcade",
+        core: "fbneo",
+        extensions: &["zip"],
+        bios: None,
+        folders: Some(&["arcade", "mame", "fbneo"]),
         min_bytes: 64 * 1024,
     },
 ];
@@ -225,10 +272,13 @@ mod tests {
         let mut seen = std::collections::BTreeSet::new();
         for platform in PLATFORMS {
             for extension in platform.extensions {
-                assert!(
-                    seen.insert(*extension),
-                    "{extension} is claimed by more than one platform"
-                );
+                // Folder-scoped rows share `zip`; uniqueness is the folder.
+                if platform.folders.is_none() {
+                    assert!(
+                        seen.insert(*extension),
+                        "{extension} is claimed by more than one platform"
+                    );
+                }
                 match platform.folders {
                     None => assert_eq!(
                         by_extension(extension).map(|p| p.id),
@@ -259,10 +309,22 @@ mod tests {
     }
 
     #[test]
-    fn a_zip_is_neogeo_only_inside_its_folders() {
-        for folder in ["neogeo", "mvs", "aes", "fbneo", "NeoGeo"] {
+    fn a_zip_belongs_to_the_board_named_by_its_folder() {
+        for (folder, board) in [
+            ("neogeo", "neogeo"),
+            ("mvs", "neogeo"),
+            ("aes", "neogeo"),
+            ("NeoGeo", "neogeo"),
+            ("cps1", "cps1"),
+            ("cps2", "cps2"),
+            ("cps3", "cps3"),
+            ("pgm", "pgm"),
+            ("arcade", "arcade"),
+            ("mame", "arcade"),
+            ("fbneo", "arcade"),
+        ] {
             let rom = Path::new(folder).join("mslug.zip");
-            assert_eq!(detect(&rom).map(|p| p.id), Some("neogeo"), "{folder}");
+            assert_eq!(detect(&rom).map(|p| p.id), Some(board), "{folder}");
         }
         assert_eq!(detect(Path::new("snes/zipped.zip")), None);
         assert_eq!(detect(Path::new("zipped.zip")), None);
@@ -300,7 +362,12 @@ mod tests {
             ("genesis", "genesis_plus_gx"),
             ("psx", "mednafen_psx"),
             ("n64", "mupen64plus_next"),
-            ("neogeo", "fbneo_neogeo"),
+            ("neogeo", "fbneo"),
+            ("cps1", "fbneo"),
+            ("cps2", "fbneo"),
+            ("cps3", "fbneo"),
+            ("pgm", "fbneo"),
+            ("arcade", "fbneo"),
         ] {
             assert_eq!(by_id(id).map(|p| p.core), Some(core));
         }

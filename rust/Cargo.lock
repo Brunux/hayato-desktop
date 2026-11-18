@@ -1495,6 +1495,7 @@ dependencies = [
  "ratatui-image",
  "serde",
  "serde_json",
+ "tachyonfx",
  "tempfile",
  "unicode-width",
 ]
