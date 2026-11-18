@@ -26,12 +26,25 @@ agent runs in an empty private directory, Claude Code with no tools and no saved
 session, and nothing of it stays running afterwards. `02-menus.md` § *The root
 menu, the palette and Ask* has the details.
 
+**The console, one key away.** **Alt+grave** drops a terminal from the top of
+the screen - full width, 60% tall, no border - running the default agent in
+`~/Work`; with no agent installed it is a login shell. Pressing the key again
+hides it, and the window waits in Sway's scratchpad, so the agent keeps its
+session and the terminal its scrollback. It is `lazyos-quake`, also the
+**Agent console** row in the Agents menu. The console always starts a session of
+its own - OpenCode's TUI would otherwise reopen the last one and mirror another
+window - so closing the window ends that session and the next `Alt+grave`
+starts a new one. The old scratchpad shortcuts moved to
+**Alt+Ctrl+grave** (show) and **Alt+Shift+grave** (send the focused window
+there), so a drop-down console and a scratchpad bag can be open at once.
+
 | Row | Does |
 |---|---|
 | `<Agent>` | runs it in foot, in `~/Work` when that directory exists (agents remember trust per directory, and they refuse `$HOME`) |
 | `<Agent> — install …` | `npm install -g --prefix ~/.local <package>` in a terminal, so nothing is written to `/usr/local` and no root prompt appears |
 | `<Agent> accounts…` | create, switch and remove accounts (see below) |
 | `Set the default agent…` | marks the agent shown with `●` |
+| `Agent console` | the drop-down terminal above (`Alt+grave`) |
 | `Open a terminal in ~/Work` | a shell where the agent binaries are on `PATH` |
 
 Every row carries the glyph the rest of the session's menus use (`lazyos-ui`):
