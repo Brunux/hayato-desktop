@@ -1025,6 +1025,14 @@ impl Screen for NetScreen {
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some(match &self.mode {
+            NetMode::List => "list",
+            NetMode::Password { .. } => "password",
+            NetMode::WifiQr { .. } => "wifi-qr",
+        })
+    }
 }
 
 /// `lazyos menu net` interactive surface.

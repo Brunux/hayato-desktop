@@ -1394,6 +1394,20 @@ impl Screen for TaskView {
         Some(&self.keybar)
     }
 
+    fn phase(&self) -> Option<&'static str> {
+        if self.task.stop.active().is_some() {
+            return Some("stopping");
+        }
+        Some(match self.task.state {
+            TaskState::Queued => "queued",
+            TaskState::Running => "running",
+            TaskState::Done => "done",
+            TaskState::Failed => "failed",
+            TaskState::Stopped => "stopped",
+            TaskState::DidNotFinish => "did-not-finish",
+        })
+    }
+
     fn desired_size(&self) -> Option<(u16, u16)> {
         Some((940, 620))
     }

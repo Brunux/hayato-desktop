@@ -247,6 +247,13 @@ impl Screen for CaptureScreen {
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some(match &self.recorder {
+            lazyos_ui::recording::Recorder::Idle => "idle",
+            lazyos_ui::recording::Recorder::Recording { .. } => "recording",
+        })
+    }
 }
 
 impl CaptureScreen {

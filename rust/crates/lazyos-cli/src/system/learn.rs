@@ -904,6 +904,15 @@ impl Screen for LearnScreen {
         Some(&self.header)
     }
 
+    fn phase(&self) -> Option<&'static str> {
+        Some(match self.view_mode {
+            LearnMode::List => "list",
+            LearnMode::Page => "page",
+            LearnMode::Search => "search",
+            LearnMode::Apropos => "apropos",
+        })
+    }
+
     fn desired_size(&self) -> Option<(u16, u16)> {
         match self.view_mode {
             LearnMode::Page => Some((1060, 740)),

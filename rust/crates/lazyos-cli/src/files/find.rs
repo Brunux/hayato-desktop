@@ -333,6 +333,13 @@ impl Screen for FindScreen {
         Some(&self.header)
     }
 
+    fn phase(&self) -> Option<&'static str> {
+        Some(match &self.stage {
+            Stage::Walking(_) => "walking",
+            Stage::Done => "done",
+        })
+    }
+
     fn needs_tick(&self) -> Option<Duration> {
         let walk = self.walking().then_some(Duration::from_millis(30));
         let preview = self.previewer.as_ref().and_then(Previewer::needs_tick);

@@ -74,7 +74,10 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `system/media.rs` (`PlaybackState`), `lazyos-ui/src/widgets.rs` (`RunnerState`),
    `system/dictate.rs` (`DictationPhase`), `installer/worker.rs` (`WorkerPhase`),
    `installer/ui.rs` (`LocFocus` / `UserFocus` / `DiskFocus`), and
-   `greeter/screen.rs` (`UserChoice` / `AuthPrompt`).
+   `greeter/screen.rs` (`UserChoice` / `AuthPrompt`). Screens expose the phase
+   through `Screen::phase()`; `LAZYOS_DEBUG_STATE=1` appends transitions to
+   `$XDG_STATE_HOME/lazyos/state.log` (never stderr, which would paint over the
+   frame).
 
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single

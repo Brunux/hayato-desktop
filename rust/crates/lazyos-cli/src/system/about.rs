@@ -896,6 +896,13 @@ impl Screen for AboutScreen {
         Some(&self.header)
     }
 
+    fn phase(&self) -> Option<&'static str> {
+        Some(match self.view_mode {
+            AboutMode::List => "list",
+            AboutMode::Detail => "detail",
+        })
+    }
+
     fn desired_size(&self) -> Option<(u16, u16)> {
         match self.view_mode {
             AboutMode::List => Some((860, 560)),

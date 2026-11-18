@@ -559,6 +559,14 @@ impl Screen for PkgScreen {
         }
         Some(&self.header)
     }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some(match &self.stage {
+            PkgStage::Query => "query",
+            PkgStage::Results => "results",
+            PkgStage::Installing(_) => "installing",
+        })
+    }
 }
 
 impl PkgScreen {

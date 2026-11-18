@@ -648,6 +648,14 @@ impl Screen for QrScreen {
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some(match &self.mode {
+            QrMode::Menu => "menu",
+            QrMode::Typing(_) => "typing",
+            QrMode::Viewing { .. } => "viewing",
+        })
+    }
 }
 
 impl QrScreen {

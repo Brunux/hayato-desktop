@@ -560,6 +560,16 @@ impl Screen for Picker {
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some(match &self.current {
+            Current::Choose { .. } => "choose",
+            Current::Rows { .. } => "rows",
+            Current::Ask { .. } => "ask",
+            Current::Input { .. } => "input",
+            Current::Empty => "empty",
+        })
+    }
 }
 
 impl Picker {
