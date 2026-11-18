@@ -1913,6 +1913,22 @@ if [ -n "$_web_tmp" ]; then
 		fail "audio off still passed an audio source to wf-recorder"
 	fi
 	_web_stop
+	# A camera that exits instead of showing a window must stop the recording
+	# from starting, not leave a silent file with no overlay.
+	cat >"$_web_tmp/bin/mpv" <<-'MPV'
+		#!/bin/sh
+		exit 1
+	MPV
+	chmod +x "$_web_tmp/bin/mpv"
+	printf 'audio=off\nwebcam=on\n' >"$_web_tmp/home/.config/lazyos/record.conf"
+	: >"$_web_tmp/busy.log"
+	_web_start
+	if [ ! -e "$_web_tmp/run/lazyos-capture/recording.pid" ] &&
+		grep -qs 'did not start' "$_web_tmp/busy.log"; then
+		ok "a camera that exits fails the start instead of recording without an overlay"
+	else
+		fail "a camera that exits still started a recording, or did not report the failure"
+	fi
 	rm -rf "$_web_tmp"
 else
 	warn "could not make a fake webinar session: the audio/webcam probe was skipped"

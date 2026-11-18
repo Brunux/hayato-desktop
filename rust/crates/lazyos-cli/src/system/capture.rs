@@ -782,7 +782,7 @@ fn start_webcam(geometry: Option<&str>) -> Result<u32, String> {
             Ok(())
         });
     }
-    let child = command
+    let mut child = command
         .spawn()
         .map_err(|error| format!("cannot start mpv: {error}"))?;
     let pid = child.id();
@@ -797,6 +797,14 @@ fn start_webcam(geometry: Option<&str>) -> Result<u32, String> {
     // placement wins over that resize and leaves the 320x240 overlay.
     std::thread::sleep(Duration::from_millis(300));
     place_webcam(geometry);
+    if let Ok(Some(status)) = child.try_wait() {
+        let detail = last_line(&log);
+        return Err(if detail.is_empty() {
+            format!("the webcam overlay exited ({status})")
+        } else {
+            format!("the webcam overlay exited ({status}): {detail}")
+        });
+    }
     Ok(pid)
 }
 
