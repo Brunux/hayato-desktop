@@ -2,7 +2,7 @@
 Type=Application
 Name=Games
 Comment=Retro and LazyOS games
-Exec=lazyos-games
+Exec=lazyos menu games
 Icon=lazyos-games
 Terminal=false
 Categories=Game;

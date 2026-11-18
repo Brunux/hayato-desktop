@@ -305,6 +305,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &["lazyos-task"],
     },
     CommandSpec {
+        // The game library: a Ratatui list over ~/Games and the LazyOS HTML
+        // games. `lazyos-games` is only the GTK + WebKit host for one web game.
+        path: "menu games",
+        summary: "the game library: retro ROMs and LazyOS HTML games",
+        shape: Shape::Pick,
+        symlinks: &[],
+        installed: &[],
+    },
+    CommandSpec {
         // Media: player state and transport (spec 011).
         path: "menu media",
         summary: "what is playing, and the transport keys (spec 011)",

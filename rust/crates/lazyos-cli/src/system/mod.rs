@@ -107,6 +107,7 @@ pub mod emoji;
 pub mod file_actions;
 pub mod format;
 pub mod fstab;
+pub mod games;
 pub mod hostname;
 pub mod idle;
 pub mod keys;

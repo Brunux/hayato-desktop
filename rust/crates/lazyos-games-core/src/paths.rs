@@ -73,7 +73,7 @@ pub fn system_games() -> PathBuf {
     if installed.is_dir() {
         return installed;
     }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../lazyos-games/data")
 }
 
 /// The folders scanned for ROMs: `~/Games` unless `LAZYOS_GAMES_ROM_DIRS`

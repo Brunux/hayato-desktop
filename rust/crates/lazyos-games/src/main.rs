@@ -1,24 +1,23 @@
-//! The `lazyos-games` binary.
+//! The `lazyos-games` host.
 //!
-//! `--library` (or no argument) is the grid; `--play <id>` is one game and then
-//! back; `--scan` is the headless JSON that `check-desktop.sh` reads.
+//! `--play <id>` runs one game: RetroArch for a retro id (no GTK), or the
+//! WebKit window for a web id, then `lazyos menu games` again. `--scan` is the
+//! headless JSON `check-desktop.sh` reads. The library itself is the Ratatui
+//! screen in `lazyos-cli`; this binary has no library mode.
 
 mod app;
-mod launch;
-mod library;
-mod paths;
-mod platform;
 mod scheme;
 
 use std::process::ExitCode;
 
+use lazyos_games_core::library::{self, ScanOptions};
+use lazyos_games_core::paths;
+
 const HELP: &str = "\
-lazyos-games — the LazyOS game library and HTML game host
+lazyos-games — the GTK + WebKit host for one LazyOS HTML game
 
 Usage:
-  lazyos-games                 open the library
-  lazyos-games --library       open the library (the return from a game)
-  lazyos-games --play <id>     run one game, then return to the library
+  lazyos-games --play <id>     run one game, then return to the TUI library
   lazyos-games --scan          print the library as JSON, no window
   lazyos-games --version       print the desktop version
   lazyos-games --help          this text
@@ -38,7 +37,10 @@ Environment:
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
-        None | Some("--library") => app::run_library(),
+        None => {
+            println!("{HELP}");
+            ExitCode::from(2)
+        }
         Some("--play") => match args.get(1) {
             Some(id) => app::run_play(id),
             None => {
@@ -66,7 +68,7 @@ fn main() -> ExitCode {
 }
 
 fn scan() -> ExitCode {
-    let options = library::ScanOptions::from_env();
+    let options = ScanOptions::from_env();
     let state = library::load_state(&options.state_path());
     let library = library::scan(&options, &state);
     match serde_json::to_string_pretty(&library.public()) {

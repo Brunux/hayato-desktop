@@ -286,6 +286,12 @@ fn query(resolved: &Resolved) -> Option<i32> {
             }
             Some(EXIT_OK)
         }
+        ("menu games", ["--rows"]) => {
+            for row in system::games::rows() {
+                println!("{row}");
+            }
+            Some(EXIT_OK)
+        }
         ("menu display", ["--status"] | ["status"]) => {
             println!("{}", system::display::status());
             Some(EXIT_OK)
@@ -570,6 +576,7 @@ fn execute(
         "menu files" => files_menu(resolved, terminal, design),
         "menu find" => find_menu(resolved, terminal, design),
         "menu grep" => grep_menu(resolved, terminal, design),
+        "menu games" => system::games::menu(terminal, design),
         "menu media" => system::media::menu(terminal, design),
         "menu notify" => system::notify::menu(terminal, design),
         "menu clip" => system::clip::menu(terminal, design),

@@ -13,20 +13,20 @@ read. This page is the tour.
 A USB or Bluetooth controller is a second way through the menus, not a
 replacement for the keyboard.
 
-| Pad | Framework windows (root menu, Settings, Files, …) | Games library |
-|---|---|---|
-| D-pad / left stick | arrows: move the focused row | move the grid; **↑** from the first row goes to the platform rail |
-| A / Start | Enter | play the selected game |
-| B | Escape: back or close | back: clear the search, then All games |
-| L1 / R1 | — | previous / next platform |
-| Select + Start | Escape | quit the library |
+| Pad | Every LazyOS window (root menu, Settings, Files, Games, …) |
+|---|---|
+| D-pad / left stick | arrows: move the focused row |
+| A / Start | Enter: open / play |
+| B | Escape: back or close |
+| Select + Start | Escape |
 
 `lazyos gamepad` starts at login and reads the pad from `/dev/input`; it types
 the arrows, Enter and Escape into the focused `lazyos-*` window with `wtype`.
-The Games library reads the pad itself, and RetroArch and the HTML games keep
-their own input, so one press never moves two things. A plain `foot` shell and
-other applications are deliberately not mapped. `06-troubleshooting.md` has the
-checks when a pad does nothing.
+The game library is one of those windows, so its tabs are **← / →** and its
+list is **↑ / ↓**. The HTML game host and RetroArch keep their own input (the
+browser Gamepad API and udev), and a plain `foot` shell and other applications
+are deliberately not mapped. `06-troubleshooting.md` has the checks when a pad
+does nothing.
 
 ## Getting around
 

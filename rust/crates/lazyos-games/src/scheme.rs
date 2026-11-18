@@ -1,10 +1,9 @@
-//! The `lazyos-game://` scheme: the only way a page reaches a file.
+//! The `lazyos-game://` scheme: the only way a game page reaches a file.
 //!
-//! The library page and every web game are served from here, not from
-//! `file://`. That buys three things: the pages have a real origin (so
-//! `localStorage` is per game), the web process never needs filesystem access,
-//! and a path from a manifest is resolved against its game directory before it
-//! is read. A request for `../../.ssh/id_ed25519` is a 404, not a file.
+//! Each game is served from `lazyos-game://<id>/`, so it has a real origin (its
+//! own `localStorage`/`IndexedDB`), the web process never needs filesystem
+//! access, and a path from a manifest is resolved against its game directory
+//! before it is read. A request for `../../.ssh/id_ed25519` is a 404.
 
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -14,7 +13,7 @@ use gtk4::gio;
 use gtk4::glib;
 use webkit6::{URISchemeRequest, WebContext};
 
-use crate::library::Library;
+use lazyos_games_core::library::Library;
 
 pub const SCHEME: &str = "lazyos-game";
 
@@ -22,18 +21,14 @@ pub struct Handler {
     system_dir: PathBuf,
     config_css: PathBuf,
     library: Arc<Mutex<Library>>,
-    json: Mutex<String>,
 }
 
 impl Handler {
     pub fn new(library: Library, system_dir: PathBuf, config_css: PathBuf) -> Arc<Self> {
-        let json = serde_json::to_string_pretty(&library.public())
-            .unwrap_or_else(|_| "{\"version\":1,\"games\":[]}".into());
         Arc::new(Self {
             system_dir,
             config_css,
             library: Arc::new(Mutex::new(library)),
-            json: Mutex::new(json),
         })
     }
 
@@ -43,21 +38,8 @@ impl Handler {
             .unwrap_or_else(|poison| poison.into_inner())
     }
 
-    /// Rebuild the page's JSON after a scan, a favourite or a launch.
-    pub fn refresh(&self) {
-        let json = serde_json::to_string_pretty(&self.library().public())
-            .unwrap_or_else(|_| "{\"version\":1,\"games\":[]}".into());
-        *self
-            .json
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner()) = json;
-    }
-
     pub fn install(self: &Arc<Self>, context: &WebContext) {
         if let Some(manager) = context.security_manager() {
-            // A secure, local, CORS-enabled scheme is what lets a page use
-            // localStorage and fetch its own assets without being treated as an
-            // opaque `file://` document.
             manager.register_uri_scheme_as_secure(SCHEME);
             manager.register_uri_scheme_as_local(SCHEME);
             manager.register_uri_scheme_as_cors_enabled(SCHEME);
@@ -75,27 +57,6 @@ impl Handler {
         };
         let relative = path.trim_start_matches('/');
 
-        if host == "library" {
-            return match relative {
-                "" | "index.html" => self.serve(request, &self.library_dir().join("index.html")),
-                "library.json" => {
-                    let json = self
-                        .json
-                        .lock()
-                        .unwrap_or_else(|poison| poison.into_inner())
-                        .clone();
-                    self.serve_bytes(request, json.into_bytes(), "application/json")
-                }
-                "theme.css" => self.serve_theme(request),
-                other => match resolve_under(&self.library_dir(), other) {
-                    Some(path) => self.serve(request, &path),
-                    None => self.not_found(request),
-                },
-            };
-        }
-
-        // A game host is a web game's slug; the library is the only source of
-        // the directory, so a made-up host has nowhere to point.
         let game = {
             let library = self.library();
             library
@@ -119,15 +80,11 @@ impl Handler {
         }
     }
 
-    fn library_dir(&self) -> PathBuf {
-        self.system_dir.join("library")
-    }
-
     fn serve_theme(&self, request: &URISchemeRequest) {
         let path = if self.config_css.is_file() {
             self.config_css.clone()
         } else {
-            self.library_dir().join("theme-default.css")
+            self.system_dir.join("theme-default.css")
         };
         self.serve(request, &path);
     }
@@ -142,10 +99,6 @@ impl Handler {
     fn serve_bytes(&self, request: &URISchemeRequest, data: Vec<u8>, mime: &str) {
         let length = data.len() as i64;
         let stream = gio::MemoryInputStream::from_bytes(&glib::Bytes::from_owned(data));
-        // The custom scheme is CORS-enabled, and the page fetches its own
-        // library.json. Without this header WebKit treats that fetch as a
-        // cross-origin request and refuses it (the page then shows an empty
-        // grid even though the file is there).
         let headers = soup::MessageHeaders::new(soup::MessageHeadersType::Response);
         headers.append("Access-Control-Allow-Origin", "*");
         headers.append("Cache-Control", "no-store");
@@ -160,8 +113,7 @@ impl Handler {
     }
 }
 
-/// Split `lazyos-game://host/path` into a host and a decoded path. The path
-/// keeps its leading slash so a caller can tell `/` from `index.html`.
+/// Split `lazyos-game://host/path` into a host and a decoded path.
 pub fn parse_uri(uri: &str) -> Option<(String, String)> {
     let rest = uri.strip_prefix("lazyos-game://")?;
     let (host, path) = match rest.find('/') {
@@ -261,16 +213,12 @@ mod tests {
     #[test]
     fn a_uri_splits_into_a_host_and_a_decoded_path() {
         assert_eq!(
-            parse_uri("lazyos-game://library/index.html"),
-            Some(("library".into(), "/index.html".into()))
+            parse_uri("lazyos-game://snake/index.html"),
+            Some(("snake".into(), "/index.html".into()))
         );
         assert_eq!(
             parse_uri("lazyos-game://snake/My%20Game/index.html"),
             Some(("snake".into(), "/My Game/index.html".into()))
-        );
-        assert_eq!(
-            parse_uri("lazyos-game://library"),
-            Some(("library".into(), "/".into()))
         );
         assert_eq!(parse_uri("https://example.com/"), None);
         assert_eq!(parse_uri("lazyos-game:///index.html"), None);

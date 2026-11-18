@@ -1649,7 +1649,7 @@ fi
 # nothing - Colour was the one that had neither the row nor the `case` arm.
 if [ -n "$MENU_ROWS" ]; then
 	_root_missing=
-	for _m in lazyos-dns lazyos-pkg lazyos-color lazyos-about lazyos-remind lazyos-swap lazyos-format lazyos-display lazyos-tz lazyos-vnc lazyos-settings lazyos-ssh lazyos-games; do
+	for _m in lazyos-dns lazyos-pkg lazyos-color lazyos-about lazyos-remind lazyos-swap lazyos-format lazyos-display lazyos-tz lazyos-vnc lazyos-settings lazyos-ssh 'lazyos menu games'; do
 		menu_runs "$_m" || menu_runs "lazyos menu ${_m#lazyos-}" || menu_runs "lazyos menu colour" || _root_missing="$_root_missing ${_m#lazyos-}"
 	done
 	[ -z "$_root_missing" ] &&
@@ -3878,17 +3878,20 @@ if have lazyos-games; then
 	fi
 	_games_missing=
 	for _games_file in \
-		/usr/share/lazyos/games/library/index.html \
-		/usr/share/lazyos/games/library/app.js \
-		/usr/share/lazyos/games/library/style.css \
-		/usr/share/lazyos/games/library/theme-default.css \
-		/usr/share/lazyos/games/web/snake/game.toml
+		/usr/share/lazyos/games/theme-default.css \
+		/usr/share/lazyos/games/web/snake/game.toml \
+		/usr/share/lazyos/games/web/snake/index.html
 	do
 		[ -r "$_games_file" ] || _games_missing="$_games_missing $_games_file"
 	done
 	[ -z "$_games_missing" ] &&
-		ok "the library page and the sample game are installed" ||
+		ok "the game theme and the sample game are installed" ||
 		fail "the games data is incomplete:$_games_missing"
+	if lazyos menu games --rows >/dev/null 2>&1; then
+		ok "the TUI library answers --rows"
+	else
+		fail "lazyos menu games --rows failed (the library screen is not reachable)"
+	fi
 	if have retroarch; then
 		_ra_version="$(retroarch --version 2>/dev/null | sed -n 's/^Version: //p' | head -n 1)"
 		ok "RetroArch is installed (${_ra_version:-version unknown})"

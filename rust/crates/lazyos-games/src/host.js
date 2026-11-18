@@ -1,9 +1,9 @@
-// The page's only native bridge. Injected at document start into the top frame
-// of every page the game shell loads.
+// The game's only native bridge. Injected at document start into the top frame
+// of the page the host loads.
 //
-// The API is deliberately small: a page can ask to play an id from the library,
-// leave, rescan, favourite, or reveal a folder. It cannot name a command, a
-// path or an argument - those live in the Rust process.
+// A game gets two things: a way to leave (the host returns to the TUI library),
+// and the Select+Start / Ctrl+Q combination that does the same. The library and
+// the launch decisions live in the Rust process, not here.
 (() => {
   "use strict";
 
@@ -16,15 +16,11 @@
   };
 
   const api = {
-    version: "1",
+    version: "2",
     // A game can opt out if Select+Start is a move in the game itself.
     exitCombo: true,
-    play: (id) => send({ cmd: "play", id: String(id) }),
     quit: () => send({ cmd: "quit" }),
     back: () => send({ cmd: "back" }),
-    rescan: () => send({ cmd: "rescan" }),
-    favorite: (id, on) => send({ cmd: "favorite", id: String(id), value: !!on }),
-    reveal: (id) => send({ cmd: "reveal", id: String(id) }),
   };
 
   Object.defineProperty(window, "LazyOS", {
@@ -58,8 +54,7 @@
   };
   requestAnimationFrame(poll);
 
-  // Ctrl+Q is the keyboard way out of a game; the library also has Q and
-  // Escape. Capture it before the game's own handlers see it.
+  // Ctrl+Q is the keyboard way out; Escape belongs to the game.
   addEventListener(
     "keydown",
     (event) => {

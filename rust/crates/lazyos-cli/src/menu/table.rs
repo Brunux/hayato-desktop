@@ -232,8 +232,8 @@ pub const ROOT: &[MenuItem] = &[
         Glyph::Play,
         Open,
         Action::Run {
-            program: Program::System("lazyos-games"),
-            args: &[],
+            program: Program::Lazyos,
+            args: &[Arg::Lit("menu"), Arg::Lit("games")],
         },
     ),
     item(

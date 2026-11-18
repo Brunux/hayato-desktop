@@ -21,7 +21,9 @@ Rootfs assembly, bootloaders, image creation, and eMMC installers belong in `laz
   - `lazyos-theme`: `theme.toml` palette compiler generating 14 surface configs idempotently.
   - `lazyos-mcp`: Read/propose-only MCP server (`never` add destructive apply tools).
   - `lazyos-notify`: Layer-shell desktop notification card daemon (`lazyos-notify`).
-  - `lazyos-games`: GTK4 + WebKitGTK 6.0 game library and HTML game host (`lazyos-games`).
+  - `lazyos-games-core`: the game scan, ids and launch rules, with no UI toolkit; shared by the
+    Ratatui library and the GTK host.
+  - `lazyos-games`: the GTK4 + WebKitGTK host that plays one HTML game fullscreen (`lazyos-games`).
   - `spike-sixel`: Sixel image preview probe.
 
 ## Enforced Architecture & Design-System Invariants
@@ -87,16 +89,26 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    busy result). A left click on the card body runs `lazyos-files <parent>`; grimshot predates the
    hint, so its absolute `app_icon` (the saved picture) is the fallback. The daemon never opens
    the file itself: Files is where the person decides what to do with it.
-14. **A game is data, the library launches argv**: the HTML bridge carries a game id from the
-   library's own scan, never a path or a command; `lazyos-games --play` re-scans and resolves it,
-   and RetroArch gets a core from `platform.rs` and a ROM from that scan. `lazyos-game://` serves
-   only inside a game directory (canonicalise + prefix), and no ROM, BIOS or copyrighted art ships.
-   The library **exits before a game starts** and `exec`s itself when it ends: the WebView and the
-   emulator are never alive together on a 4 GB machine. Web games are trusted local data; the
-   sandbox and per-origin storage are the boundary, not a second shell. The menu's controller is
-   read from `/dev/input` (evdev) on the window's own thread, not WebKit's Gamepad API and not a
-   daemon: USB and Bluetooth pads must navigate the library even when the web engine does not see
-   them. The games keep the browser API.
+14. **The library is a TUI screen; GTK is only the game host**: the Games row runs
+   `lazyos menu games`, a Ratatui screen in `lazyos-cli` (`system/games.rs`); the GTK + WebKit
+   binary `lazyos-games` plays one HTML game and has no library mode. The scan, ids and launch
+   rules live in `lazyos-games-core`, so neither UI owns them. The host gets a game id from the
+   library's scan, never a path or a command; `lazyos-game://` serves only inside that game's
+   directory (canonicalise + prefix), and no ROM, BIOS or copyrighted art ships. The library
+   **exits before a game starts**; the host returns to a new `lazyos menu games` window, so the
+   TUI and the game window are never alive together on a 4 GB machine. Web games are trusted
+   local data; the sandbox and per-origin storage are the boundary, not a second shell.
+15. **A controller is the session's input helper**: `lazyos gamepad` reads `/dev/input` through
+   evdev and injects arrows, Enter and Escape with `wtype` into the focused `lazyos-*` window
+   (the root menu, Settings, Files, the Games TUI). The library is one of those windows; its tabs
+   are Left/Right and its list Up/Down. The HTML game host and RetroArch keep their own input
+   (the browser Gamepad API and udev), so a press never moves two things. It is the one resident
+   input helper; a pid lock keeps it single. The game stack itself is built, not installed from
+   Debian: `tools/retroarch/` builds the slim emulator (no Qt, assets, FFmpeg, Vulkan or updater)
+   and `tools/mupen64plus-next/` builds the N64 core Debian does not have. The cores in
+   `packages/games.list` Depends on `retroarch`, so `install-retroarch.sh` installs the LazyOS
+   package **first** and the cores after it; installing the session list first would pull
+   Debian's retroarch, its 547 MB assets and Qt5.
 15. **The game stack is built, not installed from Debian**: `tools/retroarch/` builds the slim
    emulator (no Qt, assets, FFmpeg, Vulkan or updater) and `tools/mupen64plus-next/` builds the
    N64 core Debian does not have. The cores in `packages/games.list` Depends on `retroarch`, so

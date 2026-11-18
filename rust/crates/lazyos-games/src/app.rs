@@ -1,14 +1,12 @@
-//! The GTK window: a WebKit view, the library page, and the bridge.
+//! The GTK host: one web game, fullscreen, then back to the TUI library.
 //!
-//! There are two modes. `Library` shows the grid and, when a game is chosen,
-//! starts a separate `--play` process and exits. `Game` is that process: it
-//! shows one web game fullscreen and, when it closes, `exec`s the library back.
-//! The two are never alive together, which is the point on a 4 GB machine.
+//! The library itself is a Ratatui screen in `lazyos-cli`. This binary exists
+//! only for the part a terminal cannot do: a WebKitGTK window that gives an
+//! HTML/CSS/JS game its own origin, Gamepad API, storage and fullscreen space.
+//! Retro games never reach this code: `lazyos-games --play retro:…` runs
+//! RetroArch and returns, with no GTK initialized at all.
 
-use std::collections::BTreeSet;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
 
 use gtk4 as gtk;
 use gtk4::gio;
@@ -20,86 +18,26 @@ use webkit6::{
     UserContentManager, UserScript, UserScriptInjectionTime, WebView,
 };
 
-use crate::library::{self, GameKind, ScanOptions, State};
+use lazyos_games_core::library::{self, GameKind, ScanOptions};
+use lazyos_games_core::{launch, paths};
+
 use crate::scheme::Handler;
-use crate::{launch, paths};
 
 const APP_ID: &str = "org.lazyos.Games";
 const HOST_JS: &str = include_str!("host.js");
 
-#[derive(Clone)]
-enum Mode {
-    Library,
-    Game,
-}
-
-struct Ctx {
-    options: ScanOptions,
-    state: Mutex<State>,
-    handler: Arc<Handler>,
-}
-
-impl Ctx {
-    fn new() -> Self {
-        let options = ScanOptions::from_env();
-        // RetroArch writes saves, states and screenshots into these; creating
-        // them here means the first game does not depend on the emulator
-        // creating a parent directory it only knows as a string.
-        for directory in [
-            paths::data_dir().join("saves"),
-            paths::state_dir().join("states"),
-            paths::data_dir().join("shots"),
-        ] {
-            let _ = std::fs::create_dir_all(directory);
-        }
-        let state = library::load_state(&options.state_path());
-        let library = library::scan(&options, &state);
-        let handler = Handler::new(library, options.system_dir.clone(), paths::theme_css());
-        Self {
-            options,
-            state: Mutex::new(state),
-            handler,
-        }
-    }
-
-    fn save_state(&self) {
-        let state = self
-            .state
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
-        if let Err(error) = library::save_state(&self.options.state_path(), &state) {
-            eprintln!("lazyos-games: cannot save the library state: {error}");
-        }
-    }
-}
-
-pub fn run_library() -> std::process::ExitCode {
-    if let Err(error) = gtk::init() {
-        eprintln!("lazyos-games: GTK could not start: {error}");
-        return std::process::ExitCode::FAILURE;
-    }
-    let ctx = Arc::new(Ctx::new());
-    let app = application();
-    let library_ctx = Arc::clone(&ctx);
-    app.connect_activate(move |app| present_library(app, Arc::clone(&library_ctx)));
-    app.run_with_args::<&str>(&[]);
-    std::process::ExitCode::SUCCESS
-}
-
 pub fn run_play(id: &str) -> std::process::ExitCode {
-    let ctx = Arc::new(Ctx::new());
-    let game = {
-        let library = ctx.handler.library();
-        library.find(id).cloned()
-    };
-    let Some(game) = game else {
+    let options = ScanOptions::from_env();
+    let state = library::load_state(&options.state_path());
+    let library = library::scan(&options, &state);
+    let Some(game) = library.find(id).cloned() else {
         eprintln!("lazyos-games: no game with id {id}");
         return std::process::ExitCode::FAILURE;
     };
 
     match game.kind {
         GameKind::Retro => {
-            let libretro_dir = ctx.handler.library().libretro_dir.clone();
+            let libretro_dir = library.libretro_dir.clone();
             if let Err(error) = launch::run_retro(&game, &libretro_dir) {
                 eprintln!("lazyos-games: could not start {}: {error}", game.title);
             }
@@ -114,11 +52,19 @@ pub fn run_play(id: &str) -> std::process::ExitCode {
                 eprintln!("lazyos-games: GTK could not start: {error}");
                 launch::return_to_library();
             }
-            let app = application();
+            let handler = Handler::new(library, options.system_dir.clone(), paths::theme_css());
             let title = game.title.clone();
-            let game_ctx = Arc::clone(&ctx);
+            let app = application();
+            let game_handler = Arc::clone(&handler);
+            let game_uri = uri.clone();
+            let game_title = title.clone();
             app.connect_activate(move |app| {
-                present_game(app, Arc::clone(&game_ctx), uri.clone(), title.clone())
+                present_game(
+                    app,
+                    Arc::clone(&game_handler),
+                    game_uri.clone(),
+                    game_title.clone(),
+                )
             });
             app.run_with_args::<&str>(&[]);
             launch::return_to_library()
@@ -129,26 +75,18 @@ pub fn run_play(id: &str) -> std::process::ExitCode {
 fn application() -> gtk::Application {
     gtk::Application::builder()
         .application_id(APP_ID)
-        // The library and the game it starts overlap for a moment; a unique
-        // application would make the second one activate the first and exit.
+        // The host and the library are never alive together, but a second
+        // `--play` from a desktop entry must not activate the first one and
+        // exit without showing its game.
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build()
 }
 
-fn present_library(app: &gtk::Application, ctx: Arc<Ctx>) {
-    let window = build_window(app, "Games");
-    let webview = build_webview(app, &window, ctx, Mode::Library);
-    finish_window(&window, &webview, app, Mode::Library);
-    webview.load_uri("lazyos-game://library/index.html");
-    install_gamepad(app, &webview, &Mode::Library);
-}
-
-fn present_game(app: &gtk::Application, ctx: Arc<Ctx>, uri: String, title: String) {
+fn present_game(app: &gtk::Application, handler: Arc<Handler>, uri: String, title: String) {
     let window = build_window(app, &title);
-    let webview = build_webview(app, &window, ctx, Mode::Game);
-    finish_window(&window, &webview, app, Mode::Game);
+    let webview = build_webview(app, &window, handler);
+    finish_window(&window, &webview, app);
     webview.load_uri(&uri);
-    install_gamepad(app, &webview, &Mode::Game);
 }
 
 fn build_window(app: &gtk::Application, title: &str) -> gtk::ApplicationWindow {
@@ -158,17 +96,15 @@ fn build_window(app: &gtk::Application, title: &str) -> gtk::ApplicationWindow {
         .default_width(1280)
         .default_height(720)
         .build();
-    paint_window(&window);
+    paint_window();
     window
 }
 
 /// The window and the web view are painted in the active palette before the
 /// page has loaded, so a slow first frame is not a white rectangle in a base03
 /// session.
-fn paint_window(_window: &gtk::ApplicationWindow) {
-    let background = lazyos_theme::Theme::parse(lazyos_theme::builtin::SOLARIZED)
-        .map(|theme| theme.colors.background)
-        .unwrap_or(lazyos_theme::Hex(lazyos_theme::BASE03));
+fn paint_window() {
+    let background = active_theme().colors.background;
     let provider = gtk::CssProvider::new();
     provider.load_from_data(&format!(
         "window {{ background-color: {}; }}",
@@ -200,8 +136,7 @@ fn active_theme() -> lazyos_theme::Theme {
 fn build_webview(
     app: &gtk::Application,
     window: &gtk::ApplicationWindow,
-    ctx: Arc<Ctx>,
-    mode: Mode,
+    handler: Arc<Handler>,
 ) -> WebView {
     let debug = std::env::var_os("LAZYOS_GAMES_DEBUG").is_some();
 
@@ -249,234 +184,18 @@ fn build_webview(
     ));
 
     if let Some(context) = webview.web_context() {
-        ctx.handler.install(&context);
+        handler.install(&context);
     } else {
         eprintln!("lazyos-games: the web view has no context; the game scheme is unavailable");
     }
 
-    connect_bridge(&manager, app, &webview, ctx, mode.clone());
+    connect_bridge(&manager, app);
     window.set_child(Some(&webview));
     webview
 }
 
-/// The menu's controller listener. It reads `/dev/input/event*` directly
-/// through evdev on its own thread: WebKit's Gamepad API is what the games
-/// use, but the menu must work with a USB or Bluetooth pad even when the web
-/// engine does not see it. The thread sends actions to this window's main
-/// loop; nothing is a daemon, and a slow device scan cannot delay the frame.
-enum PadMessage {
-    Action(&'static str),
-    Connected(String),
-    Quit,
-}
-
-struct Pad {
-    device: evdev::Device,
-    x: (i32, i32),
-    y: (i32, i32),
-}
-
-fn install_gamepad(app: &gtk::Application, webview: &WebView, mode: &Mode) {
-    let library = matches!(mode, Mode::Library);
-    let (sender, receiver) = std::sync::mpsc::channel::<PadMessage>();
-
-    std::thread::spawn(move || {
-        let mut pads: Vec<Pad> = Vec::new();
-        let mut known: BTreeSet<PathBuf> = BTreeSet::new();
-        let mut last_scan = Instant::now() - Duration::from_secs(5);
-        let mut stick = (0.0_f32, 0.0_f32);
-        let mut direction = "";
-        let mut next = Instant::now();
-        let mut combo = (false, false);
-
-        loop {
-            if last_scan.elapsed() >= Duration::from_secs(2) {
-                last_scan = Instant::now();
-                for (path, device) in evdev::enumerate() {
-                    if !known.insert(path) {
-                        continue;
-                    }
-                    let gamepad = device
-                        .supported_keys()
-                        .map(|keys| keys.contains(evdev::KeyCode::BTN_SOUTH))
-                        .unwrap_or(false);
-                    if !gamepad {
-                        continue;
-                    }
-                    let mut x = (-32768, 32767);
-                    let mut y = (-32768, 32767);
-                    if let Ok(info) = device.get_absinfo() {
-                        for (axis, abs) in info {
-                            match axis {
-                                evdev::AbsoluteAxisCode::ABS_X => {
-                                    x = (abs.minimum(), abs.maximum());
-                                }
-                                evdev::AbsoluteAxisCode::ABS_Y => {
-                                    y = (abs.minimum(), abs.maximum());
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                    let name = device.name().unwrap_or("gamepad").to_string();
-                    if sender.send(PadMessage::Connected(name)).is_err() {
-                        return;
-                    }
-                    pads.push(Pad { device, x, y });
-                }
-            }
-
-            for pad in &mut pads {
-                let Ok(events) = pad.device.fetch_events() else {
-                    continue;
-                };
-                for event in events {
-                    match event.destructure() {
-                        evdev::EventSummary::Key(_, key, 1) => {
-                            // Select+Start is the way out, not "play"; do not
-                            // forward the Start that completes the combo.
-                            let combo_start = key == evdev::KeyCode::BTN_START && combo.0;
-                            if library
-                                && !combo_start
-                                && let Some(action) = key_action(key)
-                                && sender.send(PadMessage::Action(action)).is_err()
-                            {
-                                return;
-                            }
-                            match key {
-                                evdev::KeyCode::BTN_SELECT => combo.0 = true,
-                                evdev::KeyCode::BTN_START => combo.1 = true,
-                                _ => {}
-                            }
-                            if combo.0 && combo.1 {
-                                let _ = sender.send(PadMessage::Quit);
-                            }
-                        }
-                        evdev::EventSummary::Key(_, key, 0) => match key {
-                            evdev::KeyCode::BTN_SELECT => combo.0 = false,
-                            evdev::KeyCode::BTN_START => combo.1 = false,
-                            _ => {}
-                        },
-                        evdev::EventSummary::AbsoluteAxis(_, axis, value) => match axis {
-                            evdev::AbsoluteAxisCode::ABS_X => stick.0 = normalise(value, pad.x),
-                            evdev::AbsoluteAxisCode::ABS_Y => stick.1 = normalise(value, pad.y),
-                            evdev::AbsoluteAxisCode::ABS_HAT0X if library && value != 0 => {
-                                let action = if value < 0 { "left" } else { "right" };
-                                if sender.send(PadMessage::Action(action)).is_err() {
-                                    return;
-                                }
-                            }
-                            evdev::AbsoluteAxisCode::ABS_HAT0Y if library && value != 0 => {
-                                let action = if value < 0 { "up" } else { "down" };
-                                if sender.send(PadMessage::Action(action)).is_err() {
-                                    return;
-                                }
-                            }
-                            _ => {}
-                        },
-                        _ => {}
-                    }
-                }
-            }
-
-            if library {
-                let now = Instant::now();
-                let dir = if stick.0 < -0.55 {
-                    "left"
-                } else if stick.0 > 0.55 {
-                    "right"
-                } else if stick.1 < -0.55 {
-                    "up"
-                } else if stick.1 > 0.55 {
-                    "down"
-                } else {
-                    ""
-                };
-                if dir != direction {
-                    direction = dir;
-                    next = now + Duration::from_millis(260);
-                    if !dir.is_empty() && sender.send(PadMessage::Action(dir)).is_err() {
-                        return;
-                    }
-                } else if !dir.is_empty() && now >= next {
-                    next = now + Duration::from_millis(170);
-                    if sender.send(PadMessage::Action(dir)).is_err() {
-                        return;
-                    }
-                }
-            }
-            std::thread::sleep(Duration::from_millis(8));
-        }
-    });
-
-    let app = app.clone();
-    let webview = webview.clone();
-    glib::timeout_add_local(Duration::from_millis(16), move || {
-        while let Ok(message) = receiver.try_recv() {
-            match message {
-                PadMessage::Action(action) => gamepad_call(&webview, action),
-                PadMessage::Connected(name) => {
-                    let script = format!(
-                        "window.LazyOSGamepadConnected && window.LazyOSGamepadConnected({})",
-                        serde_json::to_string(&name).unwrap_or_default()
-                    );
-                    webview.evaluate_javascript(
-                        &script,
-                        None,
-                        None,
-                        None::<&gtk::gio::Cancellable>,
-                        |_| {},
-                    );
-                }
-                PadMessage::Quit => {
-                    app.quit();
-                    return glib::ControlFlow::Break;
-                }
-            }
-        }
-        glib::ControlFlow::Continue
-    });
-}
-
-fn normalise(value: i32, (min, max): (i32, i32)) -> f32 {
-    if max <= min {
-        return 0.0;
-    }
-    (2.0 * (value - min) as f32 / (max - min) as f32) - 1.0
-}
-
-fn key_action(key: evdev::KeyCode) -> Option<&'static str> {
-    match key {
-        evdev::KeyCode::BTN_DPAD_LEFT => Some("left"),
-        evdev::KeyCode::BTN_DPAD_RIGHT => Some("right"),
-        evdev::KeyCode::BTN_DPAD_UP => Some("up"),
-        evdev::KeyCode::BTN_DPAD_DOWN => Some("down"),
-        evdev::KeyCode::BTN_SOUTH => Some("a"),
-        evdev::KeyCode::BTN_EAST => Some("b"),
-        evdev::KeyCode::BTN_NORTH => Some("y"),
-        evdev::KeyCode::BTN_WEST => Some("x"),
-        evdev::KeyCode::BTN_TL => Some("l1"),
-        evdev::KeyCode::BTN_TR => Some("r1"),
-        evdev::KeyCode::BTN_START => Some("start"),
-        _ => None,
-    }
-}
-
-fn gamepad_call(webview: &WebView, action: &str) {
-    let script = format!(
-        "window.LazyOSGamepad && window.LazyOSGamepad({})",
-        serde_json::to_string(action).unwrap_or_default()
-    );
-    webview.evaluate_javascript(&script, None, None, None::<&gtk::gio::Cancellable>, |_| {});
-}
-
-fn finish_window(
-    window: &gtk::ApplicationWindow,
-    webview: &WebView,
-    app: &gtk::Application,
-    mode: Mode,
-) {
-    install_keys(window, app, &mode);
+fn finish_window(window: &gtk::ApplicationWindow, webview: &WebView, app: &gtk::Application) {
+    install_keys(window, app);
     window.present();
     if std::env::var_os("LAZYOS_GAMES_WINDOWED").is_none() {
         window.fullscreen();
@@ -484,11 +203,10 @@ fn finish_window(
     webview.grab_focus();
 }
 
-fn install_keys(window: &gtk::ApplicationWindow, app: &gtk::Application, mode: &Mode) {
+fn install_keys(window: &gtk::ApplicationWindow, app: &gtk::Application) {
     let controller = gtk::EventControllerKey::new();
     let app = app.clone();
     let key_window = window.clone();
-    let library = matches!(mode, Mode::Library);
     controller.connect_key_pressed(move |_, key, _, state| {
         if key == gtk::gdk::Key::F11 {
             if key_window.is_fullscreen() {
@@ -503,12 +221,8 @@ fn install_keys(window: &gtk::ApplicationWindow, app: &gtk::Application, mode: &
             app.quit();
             return glib::Propagation::Stop;
         }
-        // In a game, Escape belongs to the game. In the library it is the way
-        // out when the page's own key handling is the thing that broke.
-        if library && key == gtk::gdk::Key::Escape {
-            app.quit();
-            return glib::Propagation::Stop;
-        }
+        // Escape belongs to the game. The host script's Select+Start and
+        // Ctrl+Q are the way out.
         glib::Propagation::Proceed
     });
     window.add_controller(controller);
@@ -517,21 +231,10 @@ fn install_keys(window: &gtk::ApplicationWindow, app: &gtk::Application, mode: &
 #[derive(serde::Deserialize)]
 struct Message {
     cmd: String,
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(default)]
-    value: Option<bool>,
 }
 
-fn connect_bridge(
-    manager: &UserContentManager,
-    app: &gtk::Application,
-    webview: &WebView,
-    ctx: Arc<Ctx>,
-    mode: Mode,
-) {
+fn connect_bridge(manager: &UserContentManager, app: &gtk::Application) {
     let app = app.clone();
-    let webview = webview.clone();
     manager.connect_script_message_received(Some("lazyos"), move |_, value| {
         let Some(text) = value.to_json(0) else {
             return;
@@ -539,120 +242,8 @@ fn connect_bridge(
         let Ok(message) = serde_json::from_str::<Message>(text.as_str()) else {
             return;
         };
-        match mode {
-            Mode::Library => handle_library(&app, &webview, &ctx, message),
-            // A game can leave; it cannot launch another game or rewrite the
-            // library, even if its own JavaScript asks.
-            Mode::Game => {
-                if matches!(message.cmd.as_str(), "quit" | "back") {
-                    app.quit();
-                }
-            }
+        if matches!(message.cmd.as_str(), "quit" | "back") {
+            app.quit();
         }
     });
-}
-
-fn handle_library(app: &gtk::Application, webview: &WebView, ctx: &Arc<Ctx>, message: Message) {
-    match message.cmd.as_str() {
-        "play" => {
-            let Some(id) = message.id else {
-                return;
-            };
-            let runnable = {
-                let library = ctx.handler.library();
-                library.find(&id).is_some_and(|game| {
-                    game.kind == GameKind::Web
-                        || game
-                            .core
-                            .as_deref()
-                            .is_some_and(|core| library.core_present(core))
-                })
-            };
-            if !runnable {
-                return;
-            }
-            let now = library::now();
-            {
-                let mut state = ctx
-                    .state
-                    .lock()
-                    .unwrap_or_else(|poison| poison.into_inner());
-                state.last.insert(id.clone(), now);
-            }
-            {
-                let mut library = ctx.handler.library();
-                library.mark_played(&id, now);
-            }
-            ctx.handler.refresh();
-            ctx.save_state();
-            match launch::spawn_play(&id) {
-                Ok(()) => app.quit(),
-                Err(error) => {
-                    eprintln!("lazyos-games: cannot start {id}: {error}");
-                    let message = format!("Cannot start {id}: {error}");
-                    let script = format!(
-                        "window.LazyOSError && window.LazyOSError({})",
-                        serde_json::to_string(&message).unwrap_or_default()
-                    );
-                    webview.evaluate_javascript(
-                        &script,
-                        None,
-                        None,
-                        None::<&gtk::gio::Cancellable>,
-                        |_| {},
-                    );
-                }
-            }
-        }
-        "favorite" => {
-            let Some(id) = message.id else {
-                return;
-            };
-            let on = message.value.unwrap_or(false);
-            {
-                let mut state = ctx
-                    .state
-                    .lock()
-                    .unwrap_or_else(|poison| poison.into_inner());
-                if on {
-                    state.favorites.insert(id.clone());
-                } else {
-                    state.favorites.remove(&id);
-                }
-            }
-            {
-                let mut library = ctx.handler.library();
-                library.set_favorite(&id, on);
-            }
-            ctx.handler.refresh();
-            ctx.save_state();
-        }
-        "rescan" => {
-            let state = ctx
-                .state
-                .lock()
-                .unwrap_or_else(|poison| poison.into_inner())
-                .clone();
-            let library = library::scan(&ctx.options, &state);
-            {
-                *ctx.handler.library() = library;
-            }
-            ctx.handler.refresh();
-            webview.reload();
-        }
-        "reveal" => {
-            let Some(id) = message.id else {
-                return;
-            };
-            let game = ctx.handler.library().find(&id).cloned();
-            let Some(game) = game else {
-                return;
-            };
-            if let Err(error) = launch::reveal(&game) {
-                eprintln!("lazyos-games: cannot open the folder: {error}");
-            }
-        }
-        "quit" | "back" => app.quit(),
-        _ => {}
-    }
 }

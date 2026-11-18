@@ -922,17 +922,16 @@ missing. `08-games.md` has the full list of platforms and firmware.
 A USB or Bluetooth pad is read twice in different places, so first decide
 where it fails.
 
-- **In the Games library only**: the library reads `/dev/input` itself; check
-  the pad's event node and the `input` group (`ls -l /dev/input/by-id`,
-  `id`). A device without `BTN_SOUTH`/`BTN_DPAD_*` is not a gamepad and needs
-  its codes added.
-- **In the framework menus (root menu, Settings, Files, …)**: those are
-  `lazyos-*` windows, and `lazyos gamepad` types the keys into them. Check that
-  it is running (`pgrep -f 'lazyos gamepad'`), that `wtype` is installed
-  (`command -v wtype`), and that the focused window really is a `lazyos-*` one.
-  A plain `foot` shell, Firefox and other applications are deliberately not
-  mapped, because they may handle a pad themselves; the Games library and
-  RetroArch are in that group.
+- **In the Games library or any framework menu (root menu, Settings, Files,
+  …)**: those are `lazyos-*` windows, and `lazyos gamepad` types the keys into
+  them. Check that it is running (`pgrep -f 'lazyos gamepad'`), that `wtype` is
+  installed (`command -v wtype`), and that the focused window really is a
+  `lazyos-*` one. The library's tabs are **← / →**, its list **↑ / ↓**. A plain
+  `foot` shell, Firefox and other applications are deliberately not mapped,
+  because they may handle a pad themselves.
+- **In the HTML game window only**: the game uses the browser Gamepad API,
+  which is separate from the mapper; check that the game calls
+  `navigator.getGamepads()` and that the pad is a standard-mapping one.
 - **Start the mapper by hand** with `lazyos gamepad` (it is single-instance
   through `$XDG_RUNTIME_DIR/lazyos-gamepad.pid`), or restart the session so
   `config.d/40-gamepad.conf` runs it.

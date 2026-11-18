@@ -11,6 +11,7 @@ name = "lazyos"
 path = "src/main.rs"
 
 [dependencies]
+lazyos-games-core = { path = "../lazyos-games-core" }
 lazyos-mcp = { path = "../lazyos-mcp" }
 lazyos-theme = { path = "../lazyos-theme" }
 lazyos-ui = { path = "../lazyos-ui" }

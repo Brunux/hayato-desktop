@@ -559,9 +559,10 @@ application that brings its own icon still shows it in colour.
   system components (`List`, `Picker`, `Task`, `Card`).
 
 The menus are also browsable with a USB or Bluetooth gamepad. `lazyos gamepad`
-maps the pad to arrows, Enter and Escape in every `lazyos-*` window; the Games
-library reads the pad itself, and the games keep their own input. The pad
-table is in `03-shortcuts.md`.
+maps the pad to arrows, Enter and Escape in every `lazyos-*` window, including
+the Games library (a Ratatui screen: **← / →** tabs, **↑ / ↓** list, Enter
+plays). The GTK + WebKit host and RetroArch keep their own input. The pad table
+is in `03-shortcuts.md`.
 
 ## The retirement of rofi (Spec 014)
 

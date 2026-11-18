@@ -1486,6 +1486,7 @@ dependencies = [
  "dirs",
  "evdev",
  "image",
+ "lazyos-games-core",
  "lazyos-mcp",
  "lazyos-theme",
  "lazyos-ui",
@@ -1502,15 +1503,24 @@ dependencies = [
 name = "lazyos-games"
 version = "0.0.0"
 dependencies = [
- "evdev",
  "gtk4",
+ "lazyos-games-core",
  "lazyos-theme",
  "serde",
  "serde_json",
  "soup3",
  "tempfile",
- "toml 0.9.12+spec-1.1.0",
  "webkit6",
+]
+
+[[package]]
+name = "lazyos-games-core"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]

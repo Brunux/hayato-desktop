@@ -54,25 +54,29 @@ pub fn run_retro(game: &Game, libretro_dir: &Path) -> io::Result<ExitStatus> {
 
 /// Start the `--play` process detached from the library's process group, so
 /// quitting the library does not take the game with it.
-/// This binary's path, even after a rebuild replaced the file while it was
-/// running. `/proc/self/exe` then ends in " (deleted)", and `Command::new`
-/// on that path is ENOENT even though the new binary sits at the same path.
-fn self_exe() -> PathBuf {
-    let path = std::env::current_exe().unwrap_or_default();
-    let text = path.to_string_lossy();
-    let candidate = PathBuf::from(text.strip_suffix(" (deleted)").unwrap_or(&text));
-    if candidate.is_file() {
-        candidate
-    } else {
-        PathBuf::from("lazyos-games")
-    }
+/// The GTK host that plays one game. The TUI library and the desktop entries
+/// start it by name; `LAZYOS_GAMES_HOST` is for a checkout.
+pub fn host_bin() -> PathBuf {
+    std::env::var_os("LAZYOS_GAMES_HOST")
+        .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| PathBuf::from("lazyos-games"))
 }
 
+/// Start the GTK host on one game, detached from the TUI's process group.
 pub fn spawn_play(id: &str) -> io::Result<()> {
     use std::os::unix::process::CommandExt;
+    use std::process::Stdio;
 
-    let mut command = Command::new(self_exe());
+    let mut command = Command::new(host_bin());
     command.arg("--play").arg(id);
+    // The TUI's foot PTY is not the host's terminal: if the host inherited it,
+    // returning would draw a second TUI into the old window. A host with no
+    // terminal always comes back through `foot` (below).
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     command.process_group(0);
     command.spawn()?;
     Ok(())
@@ -88,15 +92,14 @@ pub fn web_uri(game: &Game) -> Option<String> {
     Some(format!("lazyos-game://{host}/{entry}"))
 }
 
-/// Hand the session back to the library. This is the other half of the
-/// `--play` process: it exits, and the library starts fresh with the state the
-/// page saved (filter, position, recents).
+/// Hand the session back to the TUI library. The host exits, and the
+/// `lazyos menu games` screen starts fresh with the saved tab and position.
 pub fn return_to_library() -> ! {
     if std::env::var_os("LAZYOS_GAMES_NO_RETURN").is_some() {
         std::process::exit(0);
     }
     use std::os::unix::process::CommandExt;
-    let error = Command::new(self_exe()).arg("--library").exec();
+    let error = Command::new("lazyos").args(["menu", "games"]).exec();
     eprintln!("lazyos-games: cannot return to the library: {error}");
     std::process::exit(1);
 }
