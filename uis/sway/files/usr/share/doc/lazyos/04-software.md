@@ -478,7 +478,7 @@ list below says why.
 
 The **Settings** menu (Alt+Ctrl+O, and the root menu) is grouped into six sections:
 
-- **Network** - Wi-Fi radio and networks, Bluetooth radio and devices, DNS, Remote login (SSH), Share this screen.
+- **Network** - Wi-Fi radio and networks (with a sign-in row when the network asks for one), Bluetooth radio and devices, DNS, Remote login (SSH), Share this screen.
 - **Display & Sound** - Night light, Appearance & Themes, Display arrangement, Rotation, Audio output, Volume per application (pavucontrol), Media.
 - **Input** - Touchpad, Keyboard layout, Tablet mode (with Calibrate rotation when on).
 - **Power & Idle** - Battery, the power menu, and **Idle & lock** (screen-off, lock and panel-off timeouts, with a "Never" choice).

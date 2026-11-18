@@ -382,6 +382,36 @@ else
 	fail "bar menus broken:$_missing_bar (clicking those indicators does nothing)"
 fi
 
+# A hotel or airport Wi-Fi answers NetworkManager with `portal` or `limited`
+# until its page is accepted. The Wi-Fi list then starts with a sign-in row;
+# `lazyos menu net --portal` is the same lookup without a window, so a fake
+# nmcli/curl can prove the URL is found and only http(s) is accepted.
+_portal_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-portal.XXXXXX" 2>/dev/null || true)
+if [ -n "$_portal_tmp" ]; then
+	mkdir -p "$_portal_tmp/bin"
+	cat >"$_portal_tmp/bin/nmcli" <<-'NMCLI'
+		#!/bin/sh
+		case "$*" in
+			*"-f CONNECTIVITY general"*) printf 'portal\n' ;;
+			*) exit 1 ;;
+		esac
+	NMCLI
+	cat >"$_portal_tmp/bin/curl" <<-'CURL'
+		#!/bin/sh
+		printf '302\nhttp://wifi.example/login\nhttp://connectivity-check.ubuntu.com/\n'
+	CURL
+	chmod +x "$_portal_tmp/bin/nmcli" "$_portal_tmp/bin/curl"
+	_portal_url=$(PATH="$_portal_tmp/bin:$PATH" lazyos menu net --portal 2>/dev/null || true)
+	if [ "$_portal_url" = "http://wifi.example/login" ]; then
+		ok "a captive Wi-Fi sign-in page is found from NetworkManager's redirect"
+	else
+		fail "lazyos menu net --portal found '${_portal_url:-nothing}', not the portal redirect"
+	fi
+	rm -rf "$_portal_tmp"
+else
+	warn "could not make a fake portal: the sign-in probe was skipped"
+fi
+
 # The bar's busy card is also the stop button: config.jsonc's custom/busy
 # on-click runs `bar-busy stop`, and a lost key leaves a spinner that draws and
 # does nothing when clicked - which is indistinguishable from "this action

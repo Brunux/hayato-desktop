@@ -122,6 +122,7 @@ pub mod notify_settings;
 pub mod pick;
 pub mod pkg;
 pub mod places;
+pub mod portal;
 pub mod power;
 pub mod qr;
 pub mod remind;

@@ -241,6 +241,7 @@ enum NetOp {
         radio_on: bool,
         aps: Vec<WifiAp>,
         ip: Option<String>,
+        portal: bool,
     },
     Connected {
         ssid: String,
@@ -248,11 +249,13 @@ enum NetOp {
         radio_on: bool,
         aps: Vec<WifiAp>,
         ip: Option<String>,
+        portal: bool,
     },
     RadioToggled {
         radio_on: bool,
         aps: Vec<WifiAp>,
         ip: Option<String>,
+        portal: bool,
     },
 }
 
@@ -270,10 +273,21 @@ enum NetMode {
     },
 }
 
+/// The AP behind a visible row. The portal row takes the first slot, so every
+/// network row moves down by one while it is present.
+fn ap_index(portal: bool, row: usize) -> Option<usize> {
+    if portal {
+        row.checked_sub(1)
+    } else {
+        Some(row)
+    }
+}
+
 pub struct NetScreen {
     radio_on: bool,
     aps: Vec<WifiAp>,
     active_ip: Option<String>,
+    portal: bool,
     strip: ActionStrip,
     list: ListState,
     mode: NetMode,
@@ -286,10 +300,12 @@ pub struct NetScreen {
 impl NetScreen {
     pub fn new() -> Self {
         let (radio_on, aps, active_ip) = scan_wifi(false);
+        let portal = radio_on && super::portal::needs_signin();
         let mut screen = Self {
             radio_on,
             aps,
             active_ip,
+            portal,
             strip: ActionStrip::default(),
             list: ListState::new(),
             mode: NetMode::List,
@@ -310,7 +326,13 @@ impl NetScreen {
         self.runner
             .spawn("Scanning Wi-Fi networks\u{2026}", move || {
                 let (radio_on, aps, ip) = scan_wifi(true);
-                NetOp::Scanned { radio_on, aps, ip }
+                let portal = radio_on && super::portal::needs_signin();
+                NetOp::Scanned {
+                    radio_on,
+                    aps,
+                    ip,
+                    portal,
+                }
             });
         self.sync_chrome();
     }
@@ -328,12 +350,19 @@ impl NetScreen {
             if target_on {
                 std::thread::sleep(Duration::from_millis(500));
                 let (radio_on, aps, ip) = scan_wifi(true);
-                NetOp::RadioToggled { radio_on, aps, ip }
+                let portal = radio_on && super::portal::needs_signin();
+                NetOp::RadioToggled {
+                    radio_on,
+                    aps,
+                    ip,
+                    portal,
+                }
             } else {
                 NetOp::RadioToggled {
                     radio_on: false,
                     aps: Vec::new(),
                     ip: None,
+                    portal: false,
                 }
             }
         });
@@ -345,12 +374,14 @@ impl NetScreen {
         self.runner.spawn(label, move || {
             let result = connect_to(&ssid, password.as_deref()).map(|_| ());
             let (radio_on, aps, ip) = scan_wifi(false);
+            let portal = radio_on && super::portal::needs_signin();
             NetOp::Connected {
                 ssid,
                 result,
                 radio_on,
                 aps,
                 ip,
+                portal,
             }
         });
         self.sync_chrome();
@@ -361,6 +392,9 @@ impl NetScreen {
         if self.radio_on {
             actions.push(ActionItem::new("rescan", "^R", "Rescan").glyph(Glyph::Sync));
             actions.push(ActionItem::new("toggle", "^T", "Turn off").glyph(Glyph::Power));
+            if self.portal {
+                actions.push(ActionItem::new("portal", "^P", "Sign in").glyph(Glyph::Globe));
+            }
             if self.aps.iter().any(|a| a.in_use) {
                 actions.push(ActionItem::new("qr", "^Q", "Share QR").glyph(Glyph::Qr));
             }
@@ -373,6 +407,14 @@ impl NetScreen {
 
         let mut rows = Vec::new();
         if self.radio_on {
+            if self.portal {
+                rows.push(
+                    Row::new("Sign in to this network")
+                        .glyph(Glyph::Globe)
+                        .detail("the network asks for a sign-in page")
+                        .value("Enter opens"),
+                );
+            }
             for ap in &self.aps {
                 let sec = if ap.security.is_empty() || ap.security == "--" {
                     "open".to_string()
@@ -416,6 +458,8 @@ impl NetScreen {
                     )
                 } else if let Some(notice) = self.runner.notice() {
                     notice.text.clone()
+                } else if self.portal {
+                    "Sign in required \u{00b7} Enter opens the network's page".to_string()
                 } else if !self.radio_on {
                     "Wi-Fi radio is off \u{00b7} Enter or Ctrl+T turns it on".to_string()
                 } else {
@@ -426,7 +470,16 @@ impl NetScreen {
                 };
                 self.header = Header::new("Wi-Fi").subtitle("Network").status(status);
                 self.keybar = vec![
-                    KeyHint::new("Enter", if self.radio_on { "connect" } else { "turn on" }),
+                    KeyHint::new(
+                        "Enter",
+                        if self.portal {
+                            "sign in"
+                        } else if self.radio_on {
+                            "connect"
+                        } else {
+                            "turn on"
+                        },
+                    ),
                     KeyHint::new("Tab", "actions"),
                     KeyHint::new("Ctrl+R", "rescan"),
                     KeyHint::new("Ctrl+T", "radio"),
@@ -499,6 +552,12 @@ impl NetScreen {
                 }
                 Outcome::Consumed
             }
+            "portal" => {
+                if self.portal {
+                    self.open_portal();
+                }
+                Outcome::Consumed
+            }
             "qr" => {
                 self.open_inline_qr();
                 Outcome::Consumed
@@ -511,10 +570,25 @@ impl NetScreen {
         }
     }
 
-    fn activate_ap(&mut self, index: usize) -> Outcome {
+    fn open_portal(&mut self) {
+        match super::portal::open() {
+            Ok(url) => self.runner.set_transient(format!("Opened {url}")),
+            Err(reason) => self.runner.set_persistent_error(reason),
+        }
+        self.sync_chrome();
+    }
+
+    fn activate_ap(&mut self, row: usize) -> Outcome {
         if self.runner.is_running() {
             return Outcome::Consumed;
         }
+        if self.portal && row == 0 {
+            self.open_portal();
+            return Outcome::Consumed;
+        }
+        let Some(index) = ap_index(self.portal, row) else {
+            return Outcome::Continue;
+        };
         let Some(ap) = self.aps.get(index).cloned() else {
             return Outcome::Continue;
         };
@@ -699,11 +773,18 @@ impl Screen for NetScreen {
     fn tick(&mut self) -> Outcome {
         if let Some(op) = self.runner.poll() {
             match op {
-                NetOp::Scanned { radio_on, aps, ip } => {
+                NetOp::Scanned {
+                    radio_on,
+                    aps,
+                    ip,
+                    portal,
+                } => {
+                    let portal_changed = self.portal != portal;
                     self.radio_on = radio_on;
                     self.aps = aps;
                     self.active_ip = ip;
-                    self.rebuild_rows(true);
+                    self.portal = portal;
+                    self.rebuild_rows(!portal_changed);
                     // Routine discovery clears the status banner immediately on completion.
                     self.runner.clear_status();
                 }
@@ -713,11 +794,14 @@ impl Screen for NetScreen {
                     radio_on,
                     aps,
                     ip,
+                    portal,
                 } => {
+                    let portal_changed = self.portal != portal;
                     self.radio_on = radio_on;
                     self.aps = aps;
                     self.active_ip = ip;
-                    self.rebuild_rows(true);
+                    self.portal = portal;
+                    self.rebuild_rows(!portal_changed);
                     match result {
                         Ok(()) => {
                             self.runner.set_transient(format!("Connected to {ssid}"));
@@ -730,10 +814,16 @@ impl Screen for NetScreen {
                         }
                     }
                 }
-                NetOp::RadioToggled { radio_on, aps, ip } => {
+                NetOp::RadioToggled {
+                    radio_on,
+                    aps,
+                    ip,
+                    portal,
+                } => {
                     self.radio_on = radio_on;
                     self.aps = aps;
                     self.active_ip = ip;
+                    self.portal = portal;
                     self.rebuild_rows(false);
                     let msg = if radio_on {
                         "Wi-Fi turned on"
@@ -804,6 +894,8 @@ impl Screen for NetScreen {
                 self.strip.render(strip, ctx.buf, ctx.design);
                 let hint = if !self.radio_on {
                     "Wi-Fi radio is off \u{00b7} press Enter or Ctrl+T to enable"
+                } else if self.portal {
+                    "Sign in to this network \u{00b7} Enter opens the page \u{00b7} Tab focuses actions"
                 } else {
                     "type to filter networks \u{00b7} Enter connects \u{00b7} Tab focuses actions"
                 };
@@ -825,7 +917,7 @@ impl Screen for NetScreen {
                         "Wi-Fi radio is off",
                         "Press Enter or Ctrl+T to turn Wi-Fi on and scan for networks",
                     );
-                } else if self.aps.is_empty() {
+                } else if self.aps.is_empty() && !self.portal {
                     draw_empty(
                         ctx.buf,
                         rows,
@@ -952,6 +1044,9 @@ impl Screen for NetScreen {
                         KeyCode::Char('q') | KeyCode::Char('Q') => {
                             return self.run_strip_action("qr");
                         }
+                        KeyCode::Char('p') | KeyCode::Char('P') => {
+                            return self.run_strip_action("portal");
+                        }
                         KeyCode::Char('n') | KeyCode::Char('N') => {
                             return self.run_strip_action("nmtui");
                         }
@@ -1074,6 +1169,15 @@ mod tests {
 
         assert_eq!(aps[2].ssid, "CoffeeShop");
         assert_eq!(aps[2].security, "--");
+    }
+
+    #[test]
+    fn the_portal_row_does_not_shift_a_network_onto_it() {
+        assert_eq!(ap_index(false, 0), Some(0));
+        assert_eq!(ap_index(false, 2), Some(2));
+        assert_eq!(ap_index(true, 0), None);
+        assert_eq!(ap_index(true, 1), Some(0));
+        assert_eq!(ap_index(true, 3), Some(2));
     }
 
     #[test]
