@@ -458,7 +458,9 @@ impl BarDensity {
     fn height(self) -> u16 {
         match self {
             Self::Comfortable => 30,
-            Self::Compact => 24,
+            // 29 is the smallest height Waybar's modules accept on this bar;
+            // 24 made Waybar clamp it and log a warning on every reload.
+            Self::Compact => 29,
         }
     }
 
@@ -610,8 +612,29 @@ fn bar_body(text: &str, position: BarPosition, density: BarDensity) -> String {
     body
 }
 
+fn waybar_running() -> bool {
+    Command::new("pgrep")
+        .args(["-x", "waybar"])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
 fn signal_waybar() {
+    let was_running = waybar_running();
     let _ = Command::new("pkill").args(["-SIGUSR2", "waybar"]).status();
+    // A reload that leaves no bar is worse than a settings change that did not
+    // apply yet. Only restart one that was already up; a session that does not
+    // use Waybar is left alone.
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    if was_running && !waybar_running() {
+        let config = waybar_path().to_string_lossy().to_string();
+        let style = config_home()
+            .join("waybar/style.css")
+            .to_string_lossy()
+            .to_string();
+        crate::system::spawn_detached_argv("waybar", &["-c", &config, "-s", &style]);
+    }
 }
 
 fn set_bar(position: BarPosition, density: BarDensity) -> Result<(), String> {
@@ -676,7 +699,7 @@ mod tests {
         let text = "// top bar\n{\n    \"position\": \"top\",\n    \"height\": 30,\n    \"spacing\": 4,\n    \"margin-top\": 4,\n    \"tray\": { \"spacing\": 10 }\n}\n";
         let body = bar_body(text, BarPosition::Bottom, BarDensity::Compact);
         assert!(body.contains("\"position\": \"bottom\""));
-        assert!(body.contains("\"height\": 24"));
+        assert!(body.contains("\"height\": 29"));
         assert!(body.contains("\"spacing\": 2"));
         assert!(body.contains("\"margin-bottom\": 4"));
         assert!(body.contains("// top bar"));
@@ -689,5 +712,73 @@ mod tests {
     fn a_bar_without_effects_defaults_to_top_comfortable() {
         assert_eq!(bar_position_from("{}"), BarPosition::Top);
         assert_eq!(bar_density_from("{}"), BarDensity::Comfortable);
+    }
+
+    fn strip_jsonc(text: &str) -> String {
+        let mut out = String::new();
+        let mut chars = text.chars().peekable();
+        let mut in_string = false;
+        let mut escaped = false;
+        while let Some(ch) = chars.next() {
+            if in_string {
+                out.push(ch);
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '"' {
+                    in_string = false;
+                }
+                continue;
+            }
+            if ch == '"' {
+                in_string = true;
+                out.push(ch);
+                continue;
+            }
+            if ch == '/' && chars.peek() == Some(&'/') {
+                for next in chars.by_ref() {
+                    if next == '\n' {
+                        out.push('\n');
+                        break;
+                    }
+                }
+                continue;
+            }
+            out.push(ch);
+        }
+        let mut cleaned = String::new();
+        let bytes = out.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b',' {
+                let mut j = i + 1;
+                while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                    j += 1;
+                }
+                if j < bytes.len() && (bytes[j] == b'}' || bytes[j] == b']') {
+                    i += 1;
+                    continue;
+                }
+            }
+            cleaned.push(bytes[i] as char);
+            i += 1;
+        }
+        cleaned
+    }
+
+    #[test]
+    fn every_bar_combination_remains_valid_jsonc() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../uis/sway/files/home/.config/waybar/config.jsonc");
+        let text = std::fs::read_to_string(&path).unwrap();
+        for position in [BarPosition::Top, BarPosition::Bottom] {
+            for density in [BarDensity::Comfortable, BarDensity::Compact] {
+                let body = bar_body(&text, position, density);
+                let json = strip_jsonc(&body);
+                serde_json::from_str::<serde_json::Value>(&json)
+                    .unwrap_or_else(|error| panic!("{position:?}/{density:?}: {error}\n{body}"));
+            }
+        }
     }
 }
