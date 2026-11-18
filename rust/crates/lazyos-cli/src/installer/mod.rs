@@ -135,7 +135,7 @@ fn finish_apply(res: io::Result<()>) -> i32 {
     match res {
         Ok(()) => {
             if let Some(st) = worker::load_state() {
-                if st.status == "failed" {
+                if st.status == worker::WorkerPhase::Failed {
                     if let Some(err) = st.error {
                         eprintln!("installer worker failed: {err}");
                     }

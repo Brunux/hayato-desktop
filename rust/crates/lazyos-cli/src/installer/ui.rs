@@ -25,8 +25,8 @@ use super::config::{
 use super::deviceinfo::BootType;
 use super::preflight::Preflight;
 use super::worker::{
-    PHASES, WorkerState, active_running_state, load_state, phase_label, resolve_state_dir,
-    run_worker, state_file_path_for,
+    PHASES, WorkerPhase, WorkerState, active_running_state, load_state, phase_label,
+    resolve_state_dir, run_worker, state_file_path_for,
 };
 
 fn fill_rect(buf: &mut ratatui::buffer::Buffer, area: Rect, style: Style) {
@@ -85,6 +85,20 @@ struct InstallerHits {
     complete_exit: Option<Rect>,
 }
 
+/// Whether a worker is attached, and whether this process owns its cancel
+/// token. An attached detached run is active but not cancellable from here.
+enum WorkerRun {
+    Idle,
+    Active { cancel: Option<Arc<AtomicBool>> },
+}
+
+/// Whether `swayidle` was paused by this screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Swayidle {
+    Running,
+    Paused,
+}
+
 pub struct InstallerScreen {
     pub step: WizardStep,
     pub preflight: Preflight,
@@ -114,11 +128,10 @@ pub struct InstallerScreen {
     pub disk_focus: usize, // 0: Cancel/Back, 1: Confirm Input, 2: Erase & Install, 3: Target selector
     // Step 4: Progress
     pub worker_state: WorkerState,
-    pub worker_running: bool,
-    pub cancel_worker: Option<Arc<AtomicBool>>,
+    worker_run: WorkerRun,
     pub spinner_idx: usize,
     pub show_log_full: bool,
-    swayidle_paused: bool,
+    swayidle: Swayidle,
     // Step 5: Complete
     pub complete_focus: usize,
     // Cursor blink & mouse hit regions
@@ -187,7 +200,7 @@ impl InstallerScreen {
         if !dry_run {
             if let Some((_dir, state)) = active_running_state() {
                 screen.worker_state = state;
-                screen.worker_running = true;
+                screen.worker_run = WorkerRun::Active { cancel: None };
                 screen.step = WizardStep::Progress;
                 screen.pause_swayidle();
                 screen.update_keybar();
@@ -278,11 +291,10 @@ impl InstallerScreen {
             disk_confirm_input: Input::new(),
             disk_focus: 0,
             worker_state: initial_state,
-            worker_running: false,
-            cancel_worker: None,
+            worker_run: WorkerRun::Idle,
             spinner_idx: 0,
             show_log_full: false,
-            swayidle_paused: false,
+            swayidle: Swayidle::Running,
             complete_focus: 0,
             cursor_blink_on: true,
             last_blink: Instant::now(),
@@ -343,7 +355,7 @@ impl InstallerScreen {
     }
 
     fn pause_swayidle(&mut self) {
-        if self.swayidle_paused {
+        if self.swayidle == Swayidle::Paused {
             return;
         }
         if Command::new("pkill")
@@ -351,16 +363,16 @@ impl InstallerScreen {
             .status()
             .is_ok_and(|s| s.success())
         {
-            self.swayidle_paused = true;
+            self.swayidle = Swayidle::Paused;
         }
     }
 
     fn resume_swayidle(&mut self) {
-        if self.swayidle_paused {
+        if self.swayidle == Swayidle::Paused {
             let _ = Command::new("pkill")
                 .args(["-CONT", "-x", "swayidle"])
                 .status();
-            self.swayidle_paused = false;
+            self.swayidle = Swayidle::Running;
         }
     }
 
@@ -425,7 +437,7 @@ impl InstallerScreen {
                 hints
             }
             WizardStep::Progress => {
-                if self.worker_state.status == "failed" {
+                if self.worker_state.status == WorkerPhase::Failed {
                     vec![KeyHint::new("Esc / Enter", "exit")]
                 } else if self.worker_state.first_write || !self.worker_state.cancellable {
                     vec![
@@ -449,8 +461,9 @@ impl InstallerScreen {
     pub fn start_worker(&mut self) {
         self.pause_swayidle();
         let cancel = Arc::new(AtomicBool::new(false));
-        self.cancel_worker = Some(cancel.clone());
-        self.worker_running = true;
+        self.worker_run = WorkerRun::Active {
+            cancel: Some(cancel.clone()),
+        };
 
         let mut conf = self.config.clone();
 
@@ -531,11 +544,11 @@ impl InstallerScreen {
     }
 
     fn mark_spawn_failure(&mut self, msg: &str) {
-        self.worker_state.status = "failed".to_string();
+        self.worker_state.status = WorkerPhase::Failed;
         self.worker_state.cancellable = false;
         self.worker_state.error = Some(msg.to_string());
         self.worker_state.log_lines.push(format!("ERROR: {msg}"));
-        self.worker_running = false;
+        self.worker_run = WorkerRun::Idle;
         self.update_keybar();
     }
 }
@@ -563,19 +576,19 @@ impl Screen for InstallerScreen {
         if self.step == WizardStep::Progress {
             self.spinner_idx = (self.spinner_idx + 1) % BRAILLE_SPINNER.len();
             let prev_first = self.worker_state.first_write;
-            let prev_status = self.worker_state.status.clone();
+            let prev_status = self.worker_state.status;
             if let Some(state) = load_state() {
                 self.worker_state = state;
-                if self.worker_state.status == "success" {
-                    self.worker_running = false;
+                if self.worker_state.status == WorkerPhase::Success {
+                    self.worker_run = WorkerRun::Idle;
                     self.resume_swayidle();
                     self.step = WizardStep::Complete;
                     self.update_keybar();
                 } else if self.worker_state.first_write != prev_first
                     || self.worker_state.status != prev_status
                 {
-                    if self.worker_state.status == "failed" {
-                        self.worker_running = false;
+                    if self.worker_state.status == WorkerPhase::Failed {
+                        self.worker_run = WorkerRun::Idle;
                         self.resume_swayidle();
                     }
                     self.update_keybar();
@@ -824,14 +837,17 @@ impl Screen for InstallerScreen {
                     self.show_log_full = !self.show_log_full;
                     Outcome::Consumed
                 }
-                KeyCode::Enter if self.worker_state.status == "failed" => {
+                KeyCode::Enter if self.worker_state.status == WorkerPhase::Failed => {
                     Outcome::Done(lazyos_ui::app::exit::FAILED)
                 }
                 KeyCode::Esc => {
-                    if !self.worker_state.first_write && self.worker_state.cancellable {
-                        if let Some(ref cancel) = self.cancel_worker {
-                            cancel.store(true, Ordering::SeqCst);
-                        }
+                    if !self.worker_state.first_write
+                        && self.worker_state.cancellable
+                        && let WorkerRun::Active {
+                            cancel: Some(cancel),
+                        } = &self.worker_run
+                    {
+                        cancel.store(true, Ordering::SeqCst);
                     }
                     self.resume_swayidle();
                     Outcome::Done(lazyos_ui::app::exit::ESCAPE)
@@ -2381,9 +2397,9 @@ impl InstallerScreen {
                 let (icon, style) = if idx < self.worker_state.phase_index {
                     ("✓", Style::default().fg(design.color(ColorRole::Accent)))
                 } else if idx == self.worker_state.phase_index {
-                    if self.worker_state.status == "failed" {
+                    if self.worker_state.status == WorkerPhase::Failed {
                         ("✗", Style::default().fg(design.color(ColorRole::Danger)))
-                    } else if self.worker_state.status == "success" {
+                    } else if self.worker_state.status == WorkerPhase::Success {
                         ("✓", Style::default().fg(design.color(ColorRole::Accent)))
                     } else {
                         (current_spinner, design.style(TextStyle::Key))
