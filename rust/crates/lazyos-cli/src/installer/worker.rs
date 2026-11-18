@@ -48,13 +48,24 @@ pub fn phase_label(idx: usize, boot_type: BootType) -> &'static str {
     }
 }
 
+/// What the worker is doing. It is written to `state.json` as the same
+/// lowercase words the old string used, so a detached run can still be read
+/// after an upgrade.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkerPhase {
+    Running,
+    Success,
+    Failed,
+}
+
 /// Progress state written atomically by worker to `state.json`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkerState {
     pub phase_index: usize,
     pub phase_name: String,
     pub percent: u8,
-    pub status: String, // "running", "success", "failed"
+    pub status: WorkerPhase,
     pub error: Option<String>,
     pub log_lines: Vec<String>,
     pub started_at: u64,
@@ -77,7 +88,7 @@ impl Default for WorkerState {
             phase_index: 0,
             phase_name: PHASES[0].to_string(),
             percent: 0,
-            status: "running".to_string(),
+            status: WorkerPhase::Running,
             error: None,
             log_lines: Vec::new(),
             started_at: current_epoch_secs(),
@@ -169,7 +180,7 @@ pub fn load_state() -> Option<WorkerState> {
 pub fn active_running_state() -> Option<(PathBuf, WorkerState)> {
     let shared = shared_state_file_path();
     let state = load_state_from(&shared)?;
-    if state.status != "running" {
+    if state.status != WorkerPhase::Running {
         return None;
     }
     let proc_dir = PathBuf::from(format!("/proc/{}", state.pid));
@@ -231,7 +242,7 @@ pub fn run_worker_with_secret(
         phase_index: 0,
         phase_name: phase_label(0, device_info.boot_type).to_string(),
         percent: 0,
-        status: "running".to_string(),
+        status: WorkerPhase::Running,
         error: None,
         log_lines: Vec::new(),
         started_at: current_epoch_secs(),
@@ -472,7 +483,7 @@ fn run_real_install(
             state.phase_index = 5;
             state.phase_name = phase_label(5, info.boot_type).to_string();
             state.percent = 100;
-            state.status = "success".to_string();
+            state.status = WorkerPhase::Success;
             state.finished_at = Some(current_epoch_secs());
             log_line(
                 state_path,
@@ -624,7 +635,7 @@ fn run_dry_run_simulation(
     state.phase_index = 5;
     state.phase_name = phase_label(5, info.boot_type).to_string();
     state.percent = 100;
-    state.status = "success".to_string();
+    state.status = WorkerPhase::Success;
     state.finished_at = Some(current_epoch_secs());
     log_line(
         state_path,
@@ -656,7 +667,7 @@ fn fail_state(
     log_file: &mut fs::File,
     err: &str,
 ) -> io::Result<()> {
-    state.status = "failed".to_string();
+    state.status = WorkerPhase::Failed;
     state.cancellable = false;
     state.error = Some(err.to_string());
     state.finished_at = Some(current_epoch_secs());
@@ -674,7 +685,7 @@ mod tests {
             phase_index: 2,
             phase_name: PHASES[2].to_string(),
             percent: 50,
-            status: "running".to_string(),
+            status: WorkerPhase::Running,
             error: None,
             log_lines: vec!["line 1".into(), "line 2".into()],
             started_at: 1000,
@@ -686,8 +697,19 @@ mod tests {
         };
 
         let json = serde_json::to_string(&state).unwrap();
+        assert!(
+            json.contains("\"status\":\"running\""),
+            "the on-disk word stays lowercase: {json}"
+        );
         let parsed: WorkerState = serde_json::from_str(&json).unwrap();
         assert_eq!(state, parsed);
+
+        let mut finished = state.clone();
+        finished.status = WorkerPhase::Success;
+        let json = serde_json::to_string(&finished).unwrap();
+        assert!(json.contains("\"status\":\"success\""));
+        let parsed: WorkerState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.status, WorkerPhase::Success);
     }
 
     #[test]
