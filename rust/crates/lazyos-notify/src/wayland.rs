@@ -1,5 +1,7 @@
 use std::os::fd::AsFd;
 use std::os::unix::fs::FileExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::mpsc::Sender;
 use std::time::Instant;
 
@@ -17,6 +19,32 @@ use crate::render::Renderer;
 pub enum UiEvent {
     ActionInvoked(u32, String),
     NotificationClosed(u32, u32), // id, reason (1 = expired, 2 = user dismissed)
+}
+
+/// The folder Files should show: the file's parent, or the directory itself.
+fn files_dir(path: &Path) -> Option<PathBuf> {
+    if path.is_dir() {
+        return Some(path.to_path_buf());
+    }
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+}
+
+/// Open Files at the folder holding `path`. `lazyos-files` has no terminal of
+/// its own here, so it opens its `foot` window and returns; the daemon is not
+/// blocked while the person browses.
+fn open_in_files(path: &Path) {
+    let Some(dir) = files_dir(path) else {
+        return;
+    };
+    let _ = Command::new("lazyos-files")
+        .arg(&dir)
+        .env_remove("LAZYOS_UI")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
 }
 
 pub struct WaylandState {
@@ -285,13 +313,17 @@ impl WaylandState {
                         self.paint_surface(qh);
                     }
                 } else {
-                    // Click on card body: invoke "default" action if present, or dismiss
+                    // Click on card body: show the file in Files when the card
+                    // names one, otherwise invoke "default" if present, or
+                    // dismiss.
                     let id = self.notifications[idx].id;
-                    let has_default = self.notifications[idx]
+                    if let Some(path) = self.notifications[idx].open_path.clone() {
+                        open_in_files(&path);
+                    } else if self.notifications[idx]
                         .actions
                         .iter()
-                        .any(|a| a.key == "default");
-                    if has_default {
+                        .any(|a| a.key == "default")
+                    {
                         let _ = self
                             .event_tx
                             .send(UiEvent::ActionInvoked(id, "default".to_string()));
@@ -620,5 +652,20 @@ impl Dispatch<zwlr_layer_surface_v1::ZwlrLayerSurfaceV1, ()> for WaylandState {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_opens_its_folder_and_a_folder_opens_itself() {
+        let dir = std::env::temp_dir().join(format!("lazyos-files-dir-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(files_dir(&dir), Some(dir.clone()));
+        assert_eq!(files_dir(&dir.join("a.png")), Some(dir.clone()));
+        assert_eq!(files_dir(Path::new("a.png")), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

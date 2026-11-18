@@ -324,7 +324,7 @@ ends before the list closes again:
 
 | Row | What it does |
 |---|---|
-| **Screenshot** · the whole screen / an area / a window | `grimshot`, through `~/.config/bin/screenshot`, saves it to `~/Pictures/Screenshots/<today>/` and names the file in a notification, which also carries the image |
+| **Screenshot** · the whole screen / an area / a window | `grimshot`, through `~/.config/bin/screenshot`, saves it to `~/Pictures/Screenshots/<today>/` and names the file in a notification, which also carries the image; click the card to open that folder in Files |
 | **Screenshot · an area, to the clipboard** | the same, straight to the clipboard (what **Alt+Ctrl+S** also does) |
 | **Annotate an area** | `grimshot` saves it and **swappy** opens it: arrows, rectangles, text, blur, crop. Enter saves back over the same file |
 | **Text from an area** | `slurp` picks the region, `tesseract` reads it, and the text lands in the clipboard, with the first line in the notification. English is what the image ships (`tesseract-ocr-eng`); other languages are one `apt install` away |
@@ -332,7 +332,7 @@ ends before the list closes again:
 | **Make a QR code** | the Wi-Fi network's password (read from the saved profile, so it is not typed again) or any text, drawn in a floating terminal by `qrencode`; nothing is left on disk |
 | **Recording audio** | cycles **no audio** → **microphone** → **system audio (line out)**; the choice is saved for the next recording |
 | **Webcam overlay** | on/off; on starts an mpv camera preview in the bottom-right corner, and `wf-recorder` records it as part of the screen |
-| **Record** · the whole screen / an area | `wf-recorder` starts writing an `.mp4` into `~/Videos` with the chosen audio and camera, and the same menu row turns into **Stop recording** |
+| **Record** · the whole screen / an area | `wf-recorder` starts writing an `.mp4` into `~/Videos` with the chosen audio and camera, and the same menu row turns into **Stop recording**; the saved card opens that folder in Files |
 
 The recording is the one thing that outlives the list, so it says so on the bar:
 the spinner carries `Recording` until it is stopped. **No card is drawn while a

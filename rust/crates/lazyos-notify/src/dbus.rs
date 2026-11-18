@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
@@ -42,6 +43,28 @@ impl NotificationServer {
             }
         }
     }
+}
+
+/// The file a click should show: the explicit hint first, then grimshot's
+/// absolute `image-path` (it sends the saved picture there and predates the
+/// hint; `notify-send -i` puts the path in that hint, not in `app_icon`).
+fn open_path_for(
+    hint: Option<&str>,
+    image_path: Option<&str>,
+    app_name: &str,
+    app_icon: &str,
+) -> Option<PathBuf> {
+    if let Some(path) = hint.filter(|path| !path.is_empty()) {
+        return Some(PathBuf::from(path));
+    }
+    if app_name != "grimshot" {
+        return None;
+    }
+    image_path
+        .filter(|path| path.starts_with('/'))
+        .or_else(|| app_icon.starts_with('/').then_some(app_icon))
+        .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
 }
 
 #[zbus::interface(name = "org.freedesktop.Notifications")]
@@ -100,6 +123,26 @@ impl NotificationServer {
                 _ => None,
             });
 
+        // A card can name a file whose folder a click opens. grimshot predates
+        // the hint and passes the saved picture as its icon path, so that is
+        // read too - only for grimshot, where an absolute icon is the file.
+        let open_hint = hints
+            .get(lazyos_ui::card::OPEN_PATH_HINT)
+            .and_then(|value| match value {
+                Value::Str(text) => Some(text.to_string()),
+                _ => None,
+            });
+        let image_path = hints.get("image-path").and_then(|value| match value {
+            Value::Str(text) => Some(text.to_string()),
+            _ => None,
+        });
+        let open_path = open_path_for(
+            open_hint.as_deref(),
+            image_path.as_deref(),
+            &app_name,
+            &app_icon,
+        );
+
         // Parse action items: pair of [id, label, id, label, ...]
         let mut action_items = Vec::new();
         let mut iter = actions.into_iter();
@@ -127,6 +170,7 @@ impl NotificationServer {
             category,
             progress,
             sync_tag,
+            open_path,
             created_at: std::time::Instant::now(),
             timeout: Duration::from_millis(timeout_ms),
             anim_state: AnimState::Opening {
@@ -181,4 +225,35 @@ impl NotificationServer {
         id: u32,
         reason: u32,
     ) -> zbus::Result<()>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_open_path_hint_wins_and_grimshot_falls_back_to_its_picture() {
+        assert_eq!(
+            open_path_for(
+                Some("/home/b/out/a.png"),
+                Some("/home/b/other.png"),
+                "LazyOS",
+                "camera-web"
+            ),
+            Some(PathBuf::from("/home/b/out/a.png"))
+        );
+        assert_eq!(
+            open_path_for(None, Some("/home/b/Pictures/a.png"), "grimshot", ""),
+            Some(PathBuf::from("/home/b/Pictures/a.png"))
+        );
+        assert_eq!(
+            open_path_for(None, None, "grimshot", "/home/b/icon.png"),
+            Some(PathBuf::from("/home/b/icon.png"))
+        );
+        assert_eq!(
+            open_path_for(None, Some("/home/b/icon.png"), "LazyOS", ""),
+            None
+        );
+        assert_eq!(open_path_for(Some(""), None, "LazyOS", "camera-web"), None);
+    }
 }

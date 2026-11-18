@@ -138,6 +138,7 @@ pub mod vnc;
 pub mod window;
 
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use lazyos_ui::{Card, Glyph, Icon, Urgency};
@@ -222,6 +223,17 @@ pub fn say(title: &str, body: impl Into<String>, urgency: Urgency, glyph: Glyph)
         .send();
 }
 
+/// [`say`] for a file that was written: a click on the card opens its folder
+/// in Files.
+pub fn say_open(title: &str, body: impl Into<String>, urgency: Urgency, glyph: Glyph, path: &Path) {
+    let _ = Card::new(title.to_string())
+        .body(body.into())
+        .icon(Icon::Glyph(glyph))
+        .urgency(urgency)
+        .open_path(path.to_string_lossy())
+        .send();
+}
+
 /// The same line on stdout and in the card, so a `--status` read by
 /// `check-system.sh` and the row a person reads cannot disagree.
 pub fn print(line: &str) {
@@ -255,24 +267,34 @@ pub fn busy(tag: &str, title: &str, message: &str, icon: &str) {
         .status();
 }
 
-/// End a busy card with success.
-pub fn busy_end(tag: &str, _title: &str, message: &str) {
-    let _ = std::process::Command::new(busy_bin())
+/// End a busy card with success. `open_path` names the file the result is
+/// about, so a click on the card shows its folder in Files.
+pub fn busy_end(tag: &str, _title: &str, message: &str, open_path: Option<&Path>) {
+    let mut command = std::process::Command::new(busy_bin());
+    command
         .args(["end", tag, message])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
+        .stderr(std::process::Stdio::null());
+    if let Some(path) = open_path {
+        command.env("BUSY_OPEN", path);
+    }
+    let _ = command.status();
 }
 
-/// End a busy card with failure.
-pub fn busy_fail(tag: &str, _title: &str, message: &str, icon: &str) {
-    let _ = std::process::Command::new(busy_bin())
+/// End a busy card with failure. `open_path` is the file that may still be
+/// worth showing, when there is one.
+pub fn busy_fail(tag: &str, _title: &str, message: &str, icon: &str, open_path: Option<&Path>) {
+    let mut command = std::process::Command::new(busy_bin());
+    command
         .args(["fail", tag, message, icon])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
+        .stderr(std::process::Stdio::null());
+    if let Some(path) = open_path {
+        command.env("BUSY_OPEN", path);
+    }
+    let _ = command.status();
 }
 
 /// Is the session's `busy` helper installed? Without it a caller falls back to
