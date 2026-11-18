@@ -106,25 +106,6 @@ impl CaptureScreen {
             );
             keys.push("stop".to_string());
         } else {
-            let options = lazyos_ui::recording::load_options();
-            rows.push(
-                Row::new("Recording audio")
-                    .glyph(Glyph::Volume)
-                    .detail(options.audio.label())
-                    .value("Enter cycles"),
-            );
-            keys.push("record:audio".to_string());
-            rows.push(
-                Row::new("Webcam overlay")
-                    .glyph(Glyph::Camera)
-                    .detail(if options.webcam {
-                        "on · bottom-right corner"
-                    } else {
-                        "off"
-                    })
-                    .value("Enter toggles"),
-            );
-            keys.push("record:webcam".to_string());
             let shotdir = dirs::picture_dir()
                 .map(|p| p.join("Screenshots"))
                 .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Pictures"));
@@ -159,6 +140,25 @@ impl CaptureScreen {
                     .detail("arrows, text, crop (swappy)"),
             );
             keys.push("annotate".to_string());
+            let options = lazyos_ui::recording::load_options();
+            rows.push(
+                Row::new("Recording audio")
+                    .glyph(Glyph::Volume)
+                    .detail(options.audio.label())
+                    .value("Enter cycles"),
+            );
+            keys.push("record:audio".to_string());
+            rows.push(
+                Row::new("Webcam overlay")
+                    .glyph(Glyph::Camera)
+                    .detail(if options.webcam {
+                        "on · bottom-right corner"
+                    } else {
+                        "off"
+                    })
+                    .value("Enter toggles"),
+            );
+            keys.push("record:webcam".to_string());
             rows.push(
                 Row::new("Record · the whole screen")
                     .glyph(Glyph::Video)
