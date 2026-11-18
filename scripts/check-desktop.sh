@@ -433,6 +433,29 @@ else
 	fi
 fi
 
+# The click path, not just the files: `bar-busy stop` has to run the line the
+# producer registered and leave no card behind. A private runtime directory
+# keeps this probe away from a real task; the stop command only touches a
+# marker in the same temporary directory.
+_busy_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-busy-probe.XXXXXX" 2>/dev/null || true)
+if [ -n "$_busy_tmp" ] && [ -x "$HOME/.config/bin/bar-busy" ]; then
+	mkdir -p "$_busy_tmp/run"
+	_busy_marker="$_busy_tmp/stopped"
+	if BUSY_STOP="touch '$_busy_marker'" XDG_RUNTIME_DIR="$_busy_tmp/run" \
+		"$_busy_bin" start probe Probe 'probe' >/dev/null 2>&1 &&
+		XDG_RUNTIME_DIR="$_busy_tmp/run" "$HOME/.config/bin/bar-busy" stop >/dev/null 2>&1; then
+		if [ -f "$_busy_marker" ] &&
+			XDG_RUNTIME_DIR="$_busy_tmp/run" "$_busy_bin" cancelled probe >/dev/null 2>&1; then
+			ok "bar-busy stop runs the registered stop line and clears the card"
+		else
+			fail "bar-busy stop did not run the stop line or left the card behind (the spinner cannot stop its task)"
+		fi
+	else
+		warn "bar-busy stop could not be exercised in a private runtime directory"
+	fi
+	rm -rf "$_busy_tmp"
+fi
+
 # The idle screen is a foot window running ~/.config/bin/lazyos-screensaver: a
 # loop of tte effects over the LazyOS wordmark, started by swayidle at 150 s.
 # Each piece fails silently on its own: without tte or the art the static frame
@@ -681,6 +704,38 @@ if grep -qs '^exec .*wlsunset' /etc/sway/config; then
 fi
 if grep -q 'after-resume .*pkill -f org\.lazyos\.screensaver' "$_nl_cfg" 2>/dev/null; then
 	fail "idle chain uses an unbracketed pkill -f org.lazyos.screensaver (it matches its own sh -c and kills the chain before night-light resume)"
+fi
+
+# The status line is what the Settings switch and the bar read, and the four
+# answers are distinct: off, off schedule (the client died), on warm, off warm.
+# A fake pgrep makes the process half deterministic; the state file is the
+# other half, in a private runtime directory.
+_nl_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-night-light-probe.XXXXXX" 2>/dev/null || true)
+if [ -n "$_nl_tmp" ] && [ -x "$HOME/.config/bin/night-light" ]; then
+	mkdir -p "$_nl_tmp/run" "$_nl_tmp/bin"
+	printf '%s\n' '#!/bin/sh' 'exit "${FAKE_WLSUNSET:-1}"' >"$_nl_tmp/bin/pgrep"
+	printf '%s\n' '#!/bin/sh' 'exit 0' >"$_nl_tmp/bin/pkill"
+	chmod +x "$_nl_tmp/bin/pgrep" "$_nl_tmp/bin/pkill"
+	_nl_state="$_nl_tmp/run/lazyos-night-light"
+	_nl_off=$(XDG_RUNTIME_DIR="$_nl_tmp/run" PATH="$_nl_tmp/bin:$PATH" FAKE_WLSUNSET=1 \
+		"$HOME/.config/bin/night-light" status 2>/dev/null || true)
+	printf 'schedule\n' >"$_nl_state"
+	_nl_off_schedule=$(XDG_RUNTIME_DIR="$_nl_tmp/run" PATH="$_nl_tmp/bin:$PATH" FAKE_WLSUNSET=1 \
+		"$HOME/.config/bin/night-light" status 2>/dev/null || true)
+	printf 'warm\n' >"$_nl_state"
+	_nl_on=$(XDG_RUNTIME_DIR="$_nl_tmp/run" PATH="$_nl_tmp/bin:$PATH" FAKE_WLSUNSET=0 \
+		"$HOME/.config/bin/night-light" status 2>/dev/null || true)
+	_nl_off_warm=$(XDG_RUNTIME_DIR="$_nl_tmp/run" PATH="$_nl_tmp/bin:$PATH" FAKE_WLSUNSET=1 \
+		"$HOME/.config/bin/night-light" status 2>/dev/null || true)
+	if [ "$_nl_off" = off ] &&
+		[ "$_nl_off_schedule" = 'off schedule' ] &&
+		[ "$_nl_on" = 'on warm' ] &&
+		[ "$_nl_off_warm" = 'off warm' ]; then
+		ok "night-light status tells off, off schedule, on warm and off warm apart"
+	else
+		fail "night-light status states are wrong (off='$_nl_off' off-schedule='$_nl_off_schedule' on='$_nl_on' off-warm='$_nl_off_warm'): the switch and the bar cannot tell a dead client from a chosen mode"
+	fi
+	rm -rf "$_nl_tmp"
 fi
 
 # The bug the guard in lazyos-screensaver exists for: a saver left running under
@@ -2015,6 +2070,36 @@ case $_tablet_off in
 esac
 if grep -q -- '--alpha' "$HOME/.config/bin/tablet-mode" 2>/dev/null; then
 	warn "tablet-mode still passes --alpha to wvkbd (the keyboard is meant to be opaque: with transparency the window shows through the keys)"
+fi
+# The stale-session case exercised for real: no state directory, a focused
+# output from a fake swaymsg, and `off` still has to put the screen upright and
+# both inputs back. A private runtime directory keeps it away from the session.
+_tm_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-tablet-probe.XXXXXX" 2>/dev/null || true)
+if [ -n "$_tm_tmp" ] && [ -x "$HOME/.config/bin/tablet-mode" ]; then
+	mkdir -p "$_tm_tmp/run" "$_tm_tmp/bin"
+	printf '%s\n' \
+		'#!/bin/sh' \
+		'printf "%s\n" "$*" >>"$FAKE_SWAY_LOG"' \
+		'case "$*" in' \
+		'  "-t get_outputs -r") printf "[{\"name\":\"eDP-1\",\"focused\":true}]\n" ;;' \
+		'  "-t get_inputs -r") printf "[]\n" ;;' \
+		'esac' \
+		'exit 0' >"$_tm_tmp/bin/swaymsg"
+	printf '%s\n' '#!/bin/sh' 'exit 0' >"$_tm_tmp/bin/pkill"
+	chmod +x "$_tm_tmp/bin/swaymsg" "$_tm_tmp/bin/pkill"
+	_tm_log="$_tm_tmp/sway.log"
+	XDG_RUNTIME_DIR="$_tm_tmp/run" PATH="$_tm_tmp/bin:$PATH" FAKE_SWAY_LOG="$_tm_log" \
+		"$HOME/.config/bin/tablet-mode" off >/dev/null 2>&1 || true
+	if [ -f "$_tm_log" ] &&
+		grep -qx 'output eDP-1 transform normal' "$_tm_log" &&
+		grep -qx 'input type:touchpad events enabled' "$_tm_log" &&
+		grep -qx 'input type:keyboard events enabled' "$_tm_log" &&
+		[ ! -d "$_tm_tmp/run/lazyos-tablet" ]; then
+		ok "tablet-mode off repairs a missing state directory (rotation upright, both inputs back)"
+	else
+		fail "tablet-mode off did not restore the rotation or both inputs without a state directory (a killed session can leave the screen sideways and the keyboard off)"
+	fi
+	rm -rf "$_tm_tmp"
 fi
 # The rotation reference is optional - the built-in -Y table is the default - but a
 # file that does not parse is ignored in silence by orient(), which reads as "the

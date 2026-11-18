@@ -46,6 +46,16 @@
 # Nothing here is resident and nothing is written outside the target, the cache
 # staging directory and ~/.cache/lazyos/backups (the copy taken before a restore
 # overwrites anything).
+#
+# **The verbs are a small state machine, and the state is in files:**
+#
+#   export   editing --passphrase--> writing .partial --rename--> complete
+#   import   choosing --restore-----> backing up -----extract--> complete
+#   report   measuring --write------> complete
+#
+# A complete archive is only ever the renamed file; the cleanup trap removes a
+# `.partial` target and the staging directory on every exit path. The menu's
+# two rows are the same transitions as the terminal's typed `restore`.
 
 set -eu
 
