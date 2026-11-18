@@ -52,8 +52,6 @@ pub fn run_retro(game: &Game, libretro_dir: &Path) -> io::Result<ExitStatus> {
         .status()
 }
 
-/// Start the `--play` process detached from the library's process group, so
-/// quitting the library does not take the game with it.
 /// The GTK host that plays one game. The TUI library and the desktop entries
 /// start it by name; `LAZYOS_GAMES_HOST` is for a checkout.
 pub fn host_bin() -> PathBuf {
@@ -63,7 +61,8 @@ pub fn host_bin() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("lazyos-games"))
 }
 
-/// Start the GTK host on one game, detached from the TUI's process group.
+/// Start the `--play` process detached from the library's process group, so
+/// quitting the library does not take the game with it.
 pub fn spawn_play(id: &str) -> io::Result<()> {
     use std::os::unix::process::CommandExt;
     use std::process::Stdio;
@@ -92,16 +91,32 @@ pub fn web_uri(game: &Game) -> Option<String> {
     Some(format!("lazyos-game://{host}/{entry}"))
 }
 
-/// Hand the session back to the TUI library. The host exits, and the
-/// `lazyos menu games` screen starts fresh with the saved tab and position.
+/// Hand the session back to the TUI library in a new `foot` window, with the
+/// saved tab and position.
+///
+/// The host has no terminal of its own (it starts with null stdio), so running
+/// the TUI here would leave it nowhere to draw. `LAZYOS_UI=1` tells the child
+/// it *is* the UI, so it draws in this one window instead of asking the host
+/// for a second one.
 pub fn return_to_library() -> ! {
     if std::env::var_os("LAZYOS_GAMES_NO_RETURN").is_some() {
         std::process::exit(0);
     }
-    use std::os::unix::process::CommandExt;
-    let error = Command::new("lazyos").args(["menu", "games"]).exec();
-    eprintln!("lazyos-games: cannot return to the library: {error}");
-    std::process::exit(1);
+    use std::process::Stdio;
+    let spawned = Command::new("foot")
+        .args(["--app-id=lazyos-pick", "-e", "lazyos", "menu", "games"])
+        .env("LAZYOS_UI", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+    match spawned {
+        Ok(_) => std::process::exit(0),
+        Err(error) => {
+            eprintln!("lazyos-games: cannot return to the library: {error}");
+            std::process::exit(1);
+        }
+    }
 }
 
 /// Open the folder a game came from in Files, where the person can decide what

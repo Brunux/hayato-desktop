@@ -366,6 +366,13 @@ impl Screen for GamesScreen {
     fn phase(&self) -> Option<&'static str> {
         Some("games")
     }
+
+    /// The Pick shape's window. A library opened by the game host comes back
+    /// through `foot` with no size of its own, so the screen asks for the same
+    /// 900×600 the framework's host would have given it.
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        Some((900, 600))
+    }
 }
 
 /// The `--rows` answer `check-desktop.sh` reads: one game per line, no window.
