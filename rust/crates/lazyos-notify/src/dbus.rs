@@ -17,14 +17,16 @@ pub struct NotificationServer {
     next_id: AtomicU32,
     tx: Sender<DbusCommand>,
     wake_fd: i32,
+    default_timeout: Duration,
 }
 
 impl NotificationServer {
-    pub fn new(tx: Sender<DbusCommand>, wake_fd: i32) -> Self {
+    pub fn new(tx: Sender<DbusCommand>, wake_fd: i32, default_timeout: Duration) -> Self {
         Self {
             next_id: AtomicU32::new(1),
             tx,
             wake_fd,
+            default_timeout,
         }
     }
 
@@ -107,9 +109,8 @@ impl NotificationServer {
 
         let timeout_ms = match expire_timeout {
             t if t < 0 => match urgency {
-                Urgency::Low => 3000,
-                Urgency::Normal => 5000,
                 Urgency::Critical => 0, // Critical doesn't auto-expire
+                _ => self.default_timeout.as_millis() as u64,
             },
             0 => 0,
             t => t as u64,

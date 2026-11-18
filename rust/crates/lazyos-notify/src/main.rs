@@ -2,6 +2,7 @@
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::chunks_exact_to_as_chunks)]
 
+mod config;
 mod dbus;
 mod font;
 mod history;
@@ -47,6 +48,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // urgency would be drawn right now, so the "no cards in a recording" rule
     // has an executable witness that needs no Wayland session.
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("--config") {
+        let config = config::load();
+        println!(
+            "default_timeout={} max_visible={} card_width={:.0} history_limit={}",
+            config.default_timeout.as_millis(),
+            config.max_visible,
+            config.card_width,
+            config.history_limit
+        );
+        return Ok(());
+    }
+
     if args.first().map(String::as_str) == Some("--would-draw") {
         let critical = args
             .iter()
@@ -66,6 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    let config = config::load();
     let (dbus_tx, dbus_rx) = channel::<DbusCommand>();
     let (ui_tx, ui_rx) = channel::<UiEvent>();
 
@@ -79,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // 1. Start D-Bus thread
-    let server = NotificationServer::new(dbus_tx, wake_fd);
+    let server = NotificationServer::new(dbus_tx, wake_fd, config.default_timeout);
 
     let _dbus_thread = thread::spawn(
         move || -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -141,7 +155,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut event_queue = conn.new_event_queue();
     let qh = event_queue.handle();
 
-    let mut state = WaylandState::new(ui_tx.clone());
+    let mut state = WaylandState::new(ui_tx.clone(), &config);
 
     let display = conn.display();
     let _ = display.get_registry(&qh, ());
@@ -173,7 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             match cmd {
                 DbusCommand::New(notif) => {
                     let notif = *notif;
-                    append_record(&record_from_notification(&notif));
+                    append_record(&record_from_notification(&notif), config.history_limit);
                     state.renderer.theme = CardTheme::from_active();
 
                     // A recorder is writing the screen to a file, so a card

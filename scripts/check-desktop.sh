@@ -753,14 +753,44 @@ if [ -n "$_nl_conf_tmp" ] && [ -x "$HOME/.config/bin/night-light" ]; then
 	rm -rf "$_nl_conf_tmp"
 fi
 
+# Notification and clipboard settings are read by the helpers, not by the
+# Settings window. Ask each helper to read a private config so a parser change
+# cannot silently ignore the value the menu writes.
+_nc_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-notify-clip-probe.XXXXXX" 2>/dev/null || true)
+if [ -n "$_nc_tmp" ]; then
+	mkdir -p "$_nc_tmp/notify/lazyos" "$_nc_tmp/clip/lazyos" "$_nc_tmp/bin"
+	printf 'default_timeout=8000\nmax_visible=3\ncard_width=380\nhistory_limit=500\n' \
+		>"$_nc_tmp/notify/lazyos/notify.conf"
+	_notify_cfg=$(XDG_CONFIG_HOME="$_nc_tmp/notify" lazyos-notify --config 2>/dev/null || true)
+	if [ "$_notify_cfg" = 'default_timeout=8000 max_visible=3 card_width=380 history_limit=500' ]; then
+		ok "lazyos-notify reads the settings file the Settings menu writes"
+	else
+		fail "lazyos-notify --config read '$_notify_cfg': the notification settings would be ignored"
+	fi
+	printf 'enabled=no\n' >"$_nc_tmp/clip/lazyos/clipboard.conf"
+	printf '%s\n' '#!/bin/sh' 'exit 1' >"$_nc_tmp/bin/pgrep"
+	chmod +x "$_nc_tmp/bin/pgrep"
+	_clip_status=$(XDG_CONFIG_HOME="$_nc_tmp/clip" PATH="$_nc_tmp/bin:$PATH" \
+		"$HOME/.config/bin/lazyos-clipboard" status 2>/dev/null || true)
+	_clip_conf=${DESKTOP_REPO:+$DESKTOP_REPO/uis/sway/files/etc/sway/config.d/27-clipboard.conf}
+	[ -r "$_clip_conf" ] || _clip_conf=/etc/sway/config.d/27-clipboard.conf
+	if [ "$_clip_status" = 'enabled=no running=no' ] &&
+		grep -qs 'lazyos-clipboard' "$_clip_conf"; then
+		ok "clipboard history can be paused and its watcher goes through the helper"
+	else
+		fail "clipboard helper/config is wrong (status='$_clip_status'): Settings cannot pause history"
+	fi
+	rm -rf "$_nc_tmp"
+fi
+
 # The Settings rows that open the existing system pickers. A lost row is a
 # feature nobody can find from the menu, even though the helper is installed.
 _settings_missing=""
-for _settings_row in lazyos-dns lazyos-ssh lazyos-tz lazyos-pkg lazyos-clean touchpad.conf reduced-motion.conf localectl hostnamectl xdg-mime chpasswd; do
+for _settings_row in lazyos-dns lazyos-ssh lazyos-tz lazyos-pkg lazyos-clean touchpad.conf reduced-motion.conf localectl hostnamectl xdg-mime chpasswd notify.conf clipboard.conf; do
 	settings_runs "$_settings_row" || _settings_missing="$_settings_missing $_settings_row"
 done
 if [ -z "$_settings_missing" ]; then
-	ok "Settings exposes DNS, SSH, date & time, updates, storage, touchpad, reduced motion, language, hostname, default apps and password"
+	ok "Settings exposes DNS, SSH, date & time, updates, storage, touchpad, reduced motion, language, hostname, default apps, password, notifications and clipboard history"
 else
 	fail "Settings lost row(s):$_settings_missing (the helper is installed but the menu cannot reach it)"
 fi

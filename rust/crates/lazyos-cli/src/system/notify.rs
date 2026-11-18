@@ -64,6 +64,15 @@ fn dnd_path() -> PathBuf {
         .join("dnd")
 }
 
+/// Remove the notification history. The caller confirms first.
+pub fn clear_history() -> std::io::Result<()> {
+    match std::fs::remove_file(history_path()) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
 impl NotifyScreen {
     pub fn new() -> Self {
         let mut screen = Self {

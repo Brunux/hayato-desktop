@@ -118,6 +118,7 @@ pub mod media;
 pub mod net;
 pub mod night_light;
 pub mod notify;
+pub mod notify_settings;
 pub mod pick;
 pub mod pkg;
 pub mod places;
