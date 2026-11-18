@@ -67,7 +67,8 @@ Put a ROM in a platform folder, then press **s** (or reopen the library):
 The folder name does not matter; the extension selects the platform. A file is
 ignored when it is smaller than the smallest real ROM for that platform, which
 is what keeps a `README.md` out of the Genesis shelf (`.md` is also a Mega Drive
-extension).
+extension). The one exception is Neo Geo, whose romsets stay zipped: a `.zip` is
+a game only inside `~/Games/neogeo/` (or `mvs/`, `aes/`, `fbneo/`).
 
 | Platform | Extensions | Core | Firmware |
 |---|---|---|---|
@@ -82,15 +83,32 @@ extension).
 | Virtual Boy | `vb` | mednafen_vb | — |
 | WonderSwan | `ws`, `wsc` | mednafen_wswan | — |
 | Nintendo 64 | `n64`, `z64`, `v64` | mupen64plus_next | — |
+| Neo Geo | `zip` in `neogeo/`, `mvs/`, `aes/`, `fbneo/` | fbneo_neogeo | `neogeo.zip` (MVS BIOS) |
 
 Firmware goes in `~/Games/bios/`. It is not shipped: a BIOS is copyrighted, and
 a PS1 game without one simply does not start. A zipped ROM is not unpacked by
-the library; unzip it first.
+the library; unzip it first — except a Neo Geo romset, which the core reads as
+it is.
 
 **Nintendo 64 is experimental.** Debian has no N64 core, so the image builds
 Mupen64Plus-Next with the AArch64 dynarec and GLideN64 on GLES3 for the
 Mali-G57. Many games run at 640×480; some do not reach full speed. The library
 marks an N64 row whose core is missing instead of pretending it can start.
+
+**Neo Geo is arcade, not a console file.** Debian has no Neo Geo or arcade core
+either, so the image builds FBNeo's Neo Geo subset (`tools/fbneo/`,
+`SUBSET=neogeo`, about 2 MB). A game is the usual MAME/FBNeo romset — `mslug.zip`,
+`kof98.zip`, `2020bb.zip` — and the library lists its file name as the title:
+
+```
+~/Games/neogeo/mslug.zip
+~/Games/bios/neogeo.zip          # the MVS BIOS set, not the game
+```
+
+The BIOS `neogeo.zip` must be the BIOS archive from the same MAME set, in
+`~/Games/bios/`. The romset must match the core's driver names: a set renamed to
+`Metal Slug.zip` is not found by the core, so keep the short name. Saves are the
+core's NVRAM and states, in the same two folders as every other platform.
 
 RetroArch is the **slim** build in `tools/retroarch/`: Wayland, GLES, no Qt, no
 assets, no FFmpeg, no Vulkan, no online updater. The host passes

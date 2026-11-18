@@ -94,7 +94,11 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    binary `lazyos-games` plays one HTML game and has no library mode. The scan, ids and launch
    rules live in `lazyos-games-core`, so neither UI owns them. The host gets a game id from the
    library's scan, never a path or a command; `lazyos-game://` serves only inside that game's
-   directory (canonicalise + prefix), and no ROM, BIOS or copyrighted art ships. The library
+   directory (canonicalise + prefix), and no ROM, BIOS or copyrighted art ships. The platform
+   table is the only place a platform is declared: the scan (`platform::detect`), the manual's
+   table and the launch core all read `platform::PLATFORMS`. A row with `folders` is claimed only
+   inside those folder names — Neo Geo is the case, because a `.zip` is a romset in `neogeo/`,
+   `mvs/`, `aes/` or `fbneo/`, and a zipped SNES ROM must stay invisible. The library
    **exits before a game starts**; the host returns to a new `lazyos menu games` window, so the
    TUI and the game window are never alive together on a 4 GB machine. Web games are trusted
    local data; the sandbox and per-origin storage are the boundary, not a second shell.
@@ -111,10 +115,12 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    (the browser Gamepad API and udev), so a press never moves two things. It is the one resident
    input helper; a pid lock keeps it single. The game stack itself is built, not installed from
    Debian: `tools/retroarch/` builds the slim emulator (no Qt, assets, FFmpeg, Vulkan or updater)
-   and `tools/mupen64plus-next/` builds the N64 core Debian does not have. The cores in
-   `packages/games.list` Depends on `retroarch`, so `install-retroarch.sh` installs the LazyOS
-   package **first** and the cores after it; installing the session list first would pull
-   Debian's retroarch, its 547 MB assets and Qt5.
+   and `tools/mupen64plus-next/` builds the N64 core Debian does not have; `tools/fbneo/`
+   builds the **Neo Geo subset** of FBNeo (`SUBSET=neogeo REGEN_HEADERS=1`, the libretro fork),
+   because Debian has no arcade core either. The cores in `packages/games.list` Depends on
+   `retroarch`, so `install-retroarch.sh` installs the LazyOS package **first** and the cores
+   after it; installing the session list first would pull Debian's retroarch, its 547 MB assets
+   and Qt5.
 15. **The game stack is built, not installed from Debian**: `tools/retroarch/` builds the slim
    emulator (no Qt, assets, FFmpeg, Vulkan or updater) and `tools/mupen64plus-next/` builds the
    N64 core Debian does not have. The cores in `packages/games.list` Depends on `retroarch`, so

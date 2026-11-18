@@ -625,8 +625,12 @@ fn manual_blocks(roots: &[PathBuf], core_present: &dyn Fn(&str) -> bool) -> Vec<
              Somewhere else: LAZYOS_GAMES_ROM_DIRS=/media/usb/games:~/MoreGames"
         )),
         Block::Text(
-            "A .zip is not unpacked — unzip it first. For a multi-disc PlayStation \
-             game, list the .cue files in an .m3u and select that."
+            "A .zip is not unpacked: unzip it first — except Neo Geo, whose \
+             romsets stay zipped and are read as they are. Put those in \
+             ~/Games/neogeo/ (mvs/, aes/ and fbneo/ work too) with the BIOS \
+             neogeo.zip in ~/Games/bios/. A .zip anywhere else is not a game. \
+             For a multi-disc PlayStation game, list the .cue files in an .m3u \
+             and select that."
                 .to_string(),
         ),
         Block::Section("Platforms"),
@@ -646,12 +650,11 @@ fn manual_blocks(roots: &[PathBuf], core_present: &dyn Fn(&str) -> bool) -> Vec<
         ),
         Block::Section("Firmware"),
         Block::Text(
-            "Firmware goes in ~/Games/bios/ with the exact name the core expects: \
-             scph5501.bin (PlayStation US), scph5502.bin (EU), scph5500.bin (JP), \
-             disksys.rom (Famicom Disk System), syscard3.pce (PC Engine CD). LazyOS \
-             ships none of them: a BIOS is copyrighted."
+            "Firmware goes in ~/Games/bios/ with the exact name the core expects. \
+             LazyOS ships none of it: a BIOS is copyrighted."
                 .to_string(),
         ),
+        Block::Code(bios_rows().join("\n")),
         Block::Section("Play a game"),
         Block::Text(
             "1. Copy the ROM into ~/Games, unzipped.\n\
@@ -692,6 +695,7 @@ fn manual_blocks(roots: &[PathBuf], core_present: &dyn Fn(&str) -> bool) -> Vec<
             "Core not installed — sudo apt install libretro-<core>\n\
              RetroArch is missing — scripts/build-retroarch.sh, then core/scripts/install-retroarch.sh\n\
              PS1 asks for a BIOS — put scph5501.bin in ~/Games/bios/\n\
+             Neo Geo asks for BIOS — put neogeo.zip (the MVS set) in ~/Games/bios/\n\
              N64 is slow — lower the core resolution in F1 (experimental)\n\
              Blank window, bad GPU — LAZYOS_GAMES_NO_ACCEL=1\n\
              No sound — RetroArch uses the ALSA default PCM; check pactl info\n\
@@ -725,13 +729,25 @@ fn platform_rows(core_present: &dyn Fn(&str) -> bool) -> Vec<String> {
             } else {
                 row.title.to_string()
             };
-            let extensions = row.extensions.join(", ");
+            let mut extensions = row.extensions.join(", ");
+            if let Some(folders) = row.folders {
+                extensions.push_str(&format!(" (in {}/)", folders[0]));
+            }
             let mut line = format!("{title} — {extensions} — {}", row.core);
             if !core_present(row.core) {
                 line.push_str("   (core missing)");
             }
             line
         })
+        .collect()
+}
+
+/// The firmware line per platform, from the same table: a platform that needs
+/// a BIOS names it once, in `Platform::bios`.
+fn bios_rows() -> Vec<String> {
+    PLATFORMS
+        .iter()
+        .filter_map(|row| row.bios.map(|bios| format!("{} — {bios}", row.title)))
         .collect()
 }
 
@@ -871,6 +887,8 @@ mod tests {
         assert!(text.contains("/home/x/Games"), "the scan root is not shown");
         assert!(text.contains("~/Games/bios/"));
         assert!(text.contains("scph5501.bin"));
+        assert!(text.contains("neogeo.zip"));
+        assert!(text.contains("~/Games/neogeo/"));
         assert!(text.contains("Press s here to rescan"));
         assert!(text.contains("Enter plays it"));
         assert!(text.contains("~/.local/share/lazyos/games/saves"));

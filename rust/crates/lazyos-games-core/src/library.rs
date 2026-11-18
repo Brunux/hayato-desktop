@@ -319,10 +319,9 @@ fn walk_roms(
             walk_roms(&path, options, state, games, seen, visited);
             continue;
         }
-        let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
-            continue;
-        };
-        let Some(platform) = platform::by_extension(extension) else {
+        // `detect`, not `by_extension`: a `.zip` is a Neo Geo romset only
+        // inside `neogeo/`, `mvs/`, `aes/` or `fbneo/`.
+        let Some(platform) = platform::detect(&path) else {
             continue;
         };
         // `.md` is a Mega Drive extension and a Markdown one; a README is not a
