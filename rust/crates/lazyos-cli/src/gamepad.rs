@@ -5,6 +5,12 @@
 //! are `foot` surfaces with an app id starting `lazyos-`. They already read
 //! arrows, Enter and Escape; this process reads `/dev/input` through evdev and
 //! injects exactly those keys with `wtype` when one of those windows has focus.
+//!
+//! Three buttons carry the Games library's own actions — X opens the options,
+//! Y the manual, L1 the game's folder in Files — as **Alt+letter**. A bare
+//! letter would type into another screen's filter (the root menu types to
+//! filter, the files list too), while Alt+O, Alt+M and Alt+R are unbound in
+//! every other framework window, so a press still cannot move two things.
 //! The Games library reads the pad itself (`lazyos-games`), RetroArch and the
 //! HTML games keep their own input, and a plain `foot` shell or any other app is
 //! left alone, so the same D-pad cannot move two things at once.
@@ -86,6 +92,8 @@ pub fn run() -> i32 {
                         if active {
                             if let Some(name) = key_name(key) {
                                 send_key(name);
+                            } else if let Some(letter) = alt_name(key) {
+                                send_alt(letter);
                             }
                         }
                         match key {
@@ -164,6 +172,26 @@ fn key_name(key: evdev::KeyCode) -> Option<&'static str> {
     }
 }
 
+/// The Games library's own buttons. They are Alt+letter for the reason in the
+/// module comment: the letters alone would reach another screen's filter.
+fn alt_name(key: evdev::KeyCode) -> Option<&'static str> {
+    match key {
+        evdev::KeyCode::BTN_WEST => Some("o"),
+        evdev::KeyCode::BTN_NORTH => Some("m"),
+        evdev::KeyCode::BTN_TL => Some("r"),
+        _ => None,
+    }
+}
+
+fn send_alt(letter: &str) {
+    let _ = Command::new("wtype")
+        .args(["-M", "alt", "-k", letter, "-m", "alt"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
 fn send_key(name: &str) {
     let _ = Command::new("wtype")
         .arg("-k")
@@ -228,4 +256,22 @@ fn already_running(lock: &PathBuf) -> bool {
     cmdline
         .split(|byte| *byte == 0)
         .any(|part| part == b"gamepad")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_face_buttons_carry_the_library_actions() {
+        assert_eq!(alt_name(evdev::KeyCode::BTN_WEST), Some("o"));
+        assert_eq!(alt_name(evdev::KeyCode::BTN_NORTH), Some("m"));
+        assert_eq!(alt_name(evdev::KeyCode::BTN_TL), Some("r"));
+        // A, B, Start and the d-pad stay the keys every screen reads.
+        assert_eq!(alt_name(evdev::KeyCode::BTN_SOUTH), None);
+        assert_eq!(alt_name(evdev::KeyCode::BTN_EAST), None);
+        assert_eq!(alt_name(evdev::KeyCode::BTN_DPAD_UP), None);
+        assert_eq!(key_name(evdev::KeyCode::BTN_SOUTH), Some("Return"));
+        assert_eq!(key_name(evdev::KeyCode::BTN_EAST), Some("Escape"));
+    }
 }

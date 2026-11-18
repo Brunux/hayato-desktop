@@ -21,6 +21,7 @@ use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use crate::system::manual::{self, DocSpan};
 use lazyos_games_core::launch;
 use lazyos_games_core::library::{
     self, Game, GameKind, Layout, Library, Options, PublicPlatform, ScanOptions, Sort, State,
@@ -89,43 +90,20 @@ struct Flash {
     last: Instant,
 }
 
-/// The manual's own state: the text as written, the same text wrapped for the
-/// current window width, and where the person has scrolled to.
+/// The manual's own state: the markdown as written, the same document rendered
+/// by glow for the current width, and where the person has scrolled to.
 struct Manual {
-    blocks: Vec<Block>,
-    lines: Vec<ManualLine>,
+    markdown: String,
+    lines: Vec<Vec<DocSpan>>,
     width: u16,
     height: u16,
     scroll: u16,
 }
 
-/// One unwrapped piece of the manual. Wrapping depends on the window, so the
-/// text is kept as blocks and re-flowed only when the width changes.
-enum Block {
-    Section(&'static str),
-    Text(String),
-    Code(String),
-}
-
-impl Block {
-    fn text(&self) -> &str {
-        match self {
-            Block::Section(title) => title,
-            Block::Text(text) | Block::Code(text) => text,
-        }
-    }
-}
-
-/// One drawn line of the manual: the text and the design token it asks for.
-struct ManualLine {
-    text: String,
-    style: TextStyle,
-}
-
 impl Manual {
-    fn new(blocks: Vec<Block>) -> Self {
+    fn new(markdown: String) -> Self {
         Self {
-            blocks,
+            markdown,
             lines: Vec::new(),
             width: 0,
             height: 0,
@@ -133,29 +111,11 @@ impl Manual {
         }
     }
 
-    /// Wrap for this width. Called from `draw`, so a resize or fullscreen
-    /// re-flows instead of clipping, and the cost is paid once per width.
+    /// Render for this width. Called from `draw`, so a resize or fullscreen
+    /// re-flows instead of clipping, and glow is run once per width.
     fn reflow(&mut self, width: u16) {
         self.width = width;
-        let width = usize::from(width);
-        let mut lines = Vec::new();
-        for (index, block) in self.blocks.iter().enumerate() {
-            if index > 0 {
-                lines.push(ManualLine {
-                    text: String::new(),
-                    style: TextStyle::Body,
-                });
-            }
-            let style = match block {
-                Block::Section(_) => TextStyle::Title,
-                Block::Text(_) => TextStyle::Body,
-                Block::Code(_) => TextStyle::Code,
-            };
-            for text in wrap(block.text(), width) {
-                lines.push(ManualLine { text, style });
-            }
-        }
-        self.lines = lines;
+        self.lines = manual::render(&self.markdown, width);
         self.clamp();
     }
 
@@ -206,6 +166,7 @@ impl GamesScreen {
                 KeyHint::new("←/→", "platform"),
                 KeyHint::new("o", "options"),
                 KeyHint::new("m", "manual"),
+                KeyHint::new("r", "folder"),
                 KeyHint::new("f", "favourite"),
                 KeyHint::new("s", "rescan"),
                 KeyHint::new("Esc", "close"),
@@ -393,8 +354,9 @@ impl GamesScreen {
     }
 
     fn open_manual(&mut self) {
-        let blocks = manual_blocks(&self.options.roots, &|core| self.library.core_present(core));
-        self.mode = Mode::Manual(Manual::new(blocks));
+        let markdown =
+            manual_markdown(&self.options.roots, &|core| self.library.core_present(core));
+        self.mode = Mode::Manual(Manual::new(markdown));
     }
 
     fn open_options(&mut self) {
@@ -720,7 +682,7 @@ impl GamesScreen {
         }
         if let Some(description) = game.description.as_deref() {
             y += 1;
-            for wrapped in wrap(description, text_width).into_iter().take(3) {
+            for wrapped in manual::wrap(description, text_width).into_iter().take(3) {
                 line(buf, &wrapped, TextStyle::Body, y);
                 y += 1;
             }
@@ -788,6 +750,42 @@ impl GamesScreen {
         if let Some(hero) = hero {
             let game = self.selected_game().cloned();
             self.draw_hero(ctx.buf, hero, ctx.design, game.as_ref());
+        }
+    }
+
+    /// The gamepad's three extra buttons arrive as **Alt+O**, **Alt+M** and
+    /// **Alt+R** (see `gamepad.rs`): a bare letter would type into another
+    /// screen's filter. O and M toggle their surface, so the same button that
+    /// opened it closes it; R opens the selected game's folder from anywhere.
+    fn alt_key(&mut self, key: KeyEvent) -> Option<Outcome> {
+        if !key.modifiers.contains(KeyModifiers::ALT) {
+            return None;
+        }
+        let KeyCode::Char(letter) = key.code else {
+            return None;
+        };
+        match letter.to_ascii_lowercase() {
+            'o' => {
+                if matches!(self.mode, Mode::Options(_)) {
+                    self.mode = Mode::Library;
+                } else {
+                    self.open_options();
+                }
+                Some(Outcome::Consumed)
+            }
+            'm' => {
+                if matches!(self.mode, Mode::Manual(_)) {
+                    self.mode = Mode::Library;
+                } else {
+                    self.open_manual();
+                }
+                Some(Outcome::Consumed)
+            }
+            'r' => {
+                self.reveal();
+                Some(Outcome::Consumed)
+            }
+            _ => None,
         }
     }
 
@@ -1132,19 +1130,29 @@ fn draw_manual(ctx: &mut BodyCtx, manual: &mut Manual) {
         manual.reflow(text_width);
     }
     manual.clamp();
-    for (offset, line) in manual
+    let max_x = inner.right().saturating_sub(2);
+    for (offset, spans) in manual
         .lines
         .iter()
         .skip(usize::from(manual.scroll))
         .take(usize::from(inner.height))
         .enumerate()
     {
-        if line.text.is_empty() {
-            continue;
+        let y = inner.y + offset as u16;
+        let mut x = inner.x;
+        for span in spans {
+            let style = ctx.design.style(span.style);
+            for character in span.text.chars() {
+                let cell = UnicodeWidthChar::width(character).unwrap_or(1) as u16;
+                if x.saturating_add(cell) > max_x {
+                    break;
+                }
+                let mut buffer = [0u8; 4];
+                ctx.buf
+                    .set_string(x, y, character.encode_utf8(&mut buffer), style);
+                x = x.saturating_add(cell);
+            }
         }
-        let style = ctx.design.style(line.style);
-        ctx.buf
-            .set_string(inner.x, inner.y + offset as u16, &line.text, style);
     }
     draw_scrollbar(
         ctx.buf,
@@ -1174,6 +1182,9 @@ impl Screen for GamesScreen {
     fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
+        }
+        if let Some(outcome) = self.alt_key(key) {
+            return outcome;
         }
         match self.mode {
             Mode::Options(_) => return self.options_key(key),
@@ -1318,217 +1329,127 @@ impl Screen for GamesScreen {
     }
 }
 
-/// The manual's text. It is written as blocks, not lines, because the window
-/// decides where a line ends; the platform table is generated so it can never
-/// disagree with the scan.
-fn manual_blocks(roots: &[PathBuf], core_present: &dyn Fn(&str) -> bool) -> Vec<Block> {
+/// The manual as markdown. glow renders it, so the platform and key tables are
+/// real tables instead of text with dashes in it; the table is generated from
+/// `platform::PLATFORMS`, so it cannot drift from the scan.
+fn manual_markdown(roots: &[PathBuf], core_present: &dyn Fn(&str) -> bool) -> String {
     let scanned = if roots.is_empty() {
         "~/Games".to_string()
     } else {
         roots
             .iter()
-            .map(|root| pretty_root(root))
+            .map(|root| pretty_path(root))
             .collect::<Vec<_>>()
             .join(", ")
     };
-    let mut blocks = vec![
-        Block::Section("Where ROMs go"),
-        Block::Text(
-            "Put a ROM in the folder for its platform: the file extension chooses \
-             the platform, not the folder name. The library creates one folder per \
-             platform (and bios/) the first time it opens, and writes a README in \
-             ~/Games. Hidden folders and art, bios, covers, saves, states, system \
-             and web are skipped, and a file smaller than the platform's floor is \
-             not a ROM — that is what keeps a README.md off the Genesis shelf."
-                .to_string(),
-        ),
-        Block::Text(format!(
-            "This session scans: {scanned}\n\
-             Somewhere else: LAZYOS_GAMES_ROM_DIRS=/media/usb/games:~/MoreGames"
-        )),
-        Block::Text(
-            "A .zip is not unpacked: unzip it first — except arcade and Neo Geo, \
-             whose romsets stay zipped and are read as they are. Put those in \
-             ~/Games/neogeo/, cps1/, cps2/, cps3/, pgm/ or arcade/, with the BIOS \
-             zips in ~/Games/bios/. A .zip anywhere else is not a game. For a \
-             multi-disc PlayStation game, list the .cue files in an .m3u."
-                .to_string(),
-        ),
-        Block::Section("Platforms"),
-        Block::Text(
-            "The extension picks the row; a romset is claimed by the folder it is \
-             in, and the core named beside it must be installed."
-                .to_string(),
-        ),
-    ];
-    for row in platform_rows(core_present) {
-        blocks.push(Block::Code(row));
+    let mut text = String::from(
+        "# Manual\n\n\
+         ## Where ROMs go\n\n\
+         Put a ROM in the folder for its platform: the file extension chooses the\n\
+         platform, not the folder name. The library creates one folder per platform\n\
+         (and `bios/`) the first time it opens, and writes a README in `~/Games`.\n\
+         Hidden folders and `art`, `bios`, `covers`, `saves`, `states`, `system` and\n\
+         `web` are skipped, and a file smaller than the platform's floor is not a\n\
+         ROM — that is what keeps a `README.md` off the Genesis shelf.\n\n",
+    );
+    text.push_str(&format!(
+        "This session scans: `{scanned}`. Somewhere else:\n\
+         `LAZYOS_GAMES_ROM_DIRS=/media/usb/games:~/MoreGames`\n\n"
+    ));
+    text.push_str(
+        "A `.zip` is not unpacked: unzip it first — except arcade and Neo Geo, whose\n\
+         romsets stay zipped and are read as they are. Put those in `neogeo/`, `cps1/`,\n\
+         `cps2/`, `cps3/`, `pgm/` or `arcade/`, with the BIOS zips in `bios/`. A `.zip`\n\
+         anywhere else is not a game. For a multi-disc PlayStation game, list the\n\
+         `.cue` files in an `.m3u`.\n\n",
+    );
+    text.push_str(
+        "## Platforms\n\n\
+         The extension picks the row; an arcade romset is claimed by the folder it is\n\
+         in. A core marked **(missing)** is not installed.\n\n\
+         | Platform | Files | Core |\n|---|---|---|\n",
+    );
+    for row in PLATFORMS {
+        let title = if row.id == "n64" {
+            format!("{} (experimental)", row.title)
+        } else {
+            row.title.to_string()
+        };
+        let files = match row.folders {
+            Some(folders) => format!("`zip` in `{}/`", folders[0]),
+            None => row
+                .extensions
+                .iter()
+                .map(|extension| format!("`{extension}`"))
+                .collect::<Vec<_>>()
+                .join(", "),
+        };
+        let core = if core_present(row.core) {
+            row.core.to_string()
+        } else {
+            format!("{} **(missing)**", row.core)
+        };
+        text.push_str(&format!("| {title} | {files} | {core} |\n"));
     }
-    blocks.extend([
-        Block::Text(
-            "Nintendo 64 is experimental: it runs at 640×480 and some games do not \
-             reach full speed. A row whose core is missing says so here, and Enter on \
-             the game explains it again."
-                .to_string(),
-        ),
-        Block::Section("Firmware"),
-        Block::Text(
-            "Firmware goes in ~/Games/bios/ with the exact name the core expects. \
-             LazyOS ships none of it: a BIOS is copyrighted."
-                .to_string(),
-        ),
-        Block::Code(bios_rows().join("\n")),
-        Block::Section("Play a game"),
-        Block::Text(
-            "1. Copy the ROM into its folder (an arcade romset stays zipped).\n\
-             2. Press s here to rescan, or reopen the library.\n\
-             3. ← / → choose a platform, ↑ / ↓ a game, Enter plays it.\n\
-             4. Esc in the game comes back here; F1 opens RetroArch's menu."
-                .to_string(),
-        ),
-        Block::Section("Keys"),
-        Block::Code(
-            "← / → — previous / next platform\n\
-             ↑ / ↓ — move through the games\n\
-             Enter — play the selected game\n\
-             type — filter the platform by title or platform\n\
-             o — options: sort, layout, covers, hide missing cores\n\
-             m — this manual\n\
-             r — open the game's folder in Files\n\
-             f — favourite / unfavourite\n\
-             s — rescan ~/Games\n\
-             Esc — clear the filter, then close the library\n\
-             Alt+F — fullscreen on or off\n\
-             F1 — RetroArch's menu, inside a game\n\
-             Esc — leave a game and come back here"
-                .to_string(),
-        ),
-        Block::Text(
-            "A gamepad is optional: lazyos gamepad maps a USB or Bluetooth pad to the \
-             same arrows, Enter and Escape in every LazyOS window, this one included."
-                .to_string(),
-        ),
-        Block::Section("Saves"),
-        Block::Text(
-            "Battery saves live in ~/.local/share/lazyos/games/saves and save states in \
-             ~/.local/state/lazyos/games/states. Both load and save automatically, so a \
-             game continues where you left it, and a row with a save says so."
-                .to_string(),
-        ),
-        Block::Section("When something does not work"),
-        Block::Code(
-            "Core not installed — sudo apt install libretro-<core>\n\
-             RetroArch is missing — scripts/build-retroarch.sh, then core/scripts/install-retroarch.sh\n\
-             PS1 asks for a BIOS — put scph5501.bin in ~/Games/bios/\n\
-             Neo Geo asks for BIOS — put neogeo.zip (the MVS set) in ~/Games/bios/\n\
-             N64 is slow — lower the core resolution in F1 (experimental)\n\
-             Blank window, bad GPU — LAZYOS_GAMES_NO_ACCEL=1\n\
-             No sound — RetroArch uses the ALSA default PCM; check pactl info\n\
-             A ROM does not appear — check its folder and extension, then press s"
-                .to_string(),
-        ),
-        Block::Section("LazyOS HTML games"),
-        Block::Text(
-            "A LazyOS game is a folder with game.toml and index.html in \
-             ~/.local/share/lazyos/games/web/<name>/. It plays in the GTK + WebKitGTK \
-             host, fullscreen; Ctrl+Q or Select+Start leaves it. Snake is the sample."
-                .to_string(),
-        ),
-    ]);
-    blocks
-}
-
-/// One line per platform, from the same table the scan uses. The core column
-/// says "(core missing)" when the .so is not installed.
-///
-/// Columns are separated by an em dash rather than padded with spaces: the
-/// manual wraps to the window, and wrapping collapses runs of spaces.
-fn platform_rows(core_present: &dyn Fn(&str) -> bool) -> Vec<String> {
-    PLATFORMS
-        .iter()
-        .map(|row| {
-            let title = if row.id == "n64" {
-                format!("{} (experimental)", row.title)
-            } else {
-                row.title.to_string()
-            };
-            let mut extensions = row.extensions.join(", ");
-            if let Some(folders) = row.folders {
-                extensions.push_str(&format!(" (in {}/)", folders[0]));
-            }
-            let mut line = format!("{title} — {extensions} — {}", row.core);
-            if !core_present(row.core) {
-                line.push_str("   (core missing)");
-            }
-            line
-        })
-        .collect()
-}
-
-/// The firmware line per platform, from the same table: a platform that needs
-/// a BIOS names it once, in `Platform::bios`.
-fn bios_rows() -> Vec<String> {
-    PLATFORMS
-        .iter()
-        .filter_map(|row| row.bios.map(|bios| format!("{} — {bios}", row.title)))
-        .collect()
-}
-
-/// `~/Games` for a path under the home directory, the absolute path otherwise.
-fn pretty_root(path: &Path) -> String {
-    pretty_path(path)
-}
-
-/// Word-wrap `text` to `width` display columns, keeping the explicit newlines
-/// (the steps and the key table rely on them). A word wider than the line is
-/// hard-broken rather than drawn past the card.
-fn wrap(text: &str, width: usize) -> Vec<String> {
-    let width = width.max(8);
-    let mut out = Vec::new();
-    for paragraph in text.split('\n') {
-        if paragraph.trim().is_empty() {
-            out.push(String::new());
-            continue;
+    text.push_str(
+        "\nNintendo 64 is experimental: it runs at 640×480 and some games do not\n\
+         reach full speed. A row whose core is missing says so here, and Enter on the\n\
+         game explains it again.\n\n\
+         ## Firmware\n\n\
+         Firmware goes in `bios/` with the exact name the core expects. LazyOS ships\n\
+         none of it: a BIOS is copyrighted.\n\n",
+    );
+    for row in PLATFORMS.iter().filter(|row| row.bios.is_some()) {
+        if let Some(bios) = row.bios {
+            text.push_str(&format!("- **{}** — {bios}\n", row.title));
         }
-        let mut line = String::new();
-        let mut used = 0usize;
-        for word in paragraph.split_whitespace() {
-            let word_width = UnicodeWidthStr::width(word);
-            if used > 0 && used + 1 + word_width <= width {
-                line.push(' ');
-                line.push_str(word);
-                used += 1 + word_width;
-                continue;
-            }
-            if used > 0 {
-                out.push(std::mem::take(&mut line));
-            }
-            if word_width <= width {
-                line.push_str(word);
-                used = word_width;
-                continue;
-            }
-            // A word longer than the line: break it by display width.
-            let mut chunk = String::new();
-            let mut chunk_width = 0usize;
-            for character in word.chars() {
-                let character_width = UnicodeWidthChar::width(character).unwrap_or(1);
-                if chunk_width + character_width > width {
-                    out.push(std::mem::take(&mut chunk));
-                    chunk_width = 0;
-                }
-                chunk.push(character);
-                chunk_width += character_width;
-            }
-            line = chunk;
-            used = chunk_width;
-        }
-        out.push(line);
     }
-    if out.is_empty() {
-        out.push(String::new());
-    }
-    out
+    text.push_str(
+        "\n## Play a game\n\n\
+         1. Copy the ROM into its folder (an arcade romset stays zipped).\n\
+         2. Press `s` here to rescan, or reopen the library.\n\
+         3. `←` / `→` choose a platform, `↑` / `↓` a game, `Enter` plays it.\n\
+         4. `Esc` in the game comes back here; `F1` opens RetroArch's menu.\n\n\
+         ## Keys\n\n\
+         | Keys | Does |\n|---|---|\n\
+         | `←` / `→` | previous / next platform |\n\
+         | `↑` / `↓` | move through the games |\n\
+         | `Enter` | play the selected game |\n\
+         | type | filter the platform by title or platform |\n\
+         | `o` | options: sort, layout, covers, hide missing cores |\n\
+         | `m` | this manual |\n\
+         | `r` | open the game's folder in Files |\n\
+         | `f` | favourite / unfavourite |\n\
+         | `s` | rescan `~/Games` |\n\
+         | `Esc` | clear the filter, then close the library |\n\
+         | `Alt+F` | fullscreen on or off |\n\
+         | `F1` | RetroArch's menu, inside a game |\n\
+         | `Esc` | leave a game and come back here |\n\n\
+         A gamepad is optional: `lazyos gamepad` maps a USB or Bluetooth pad to the\n\
+         same arrows, Enter and Escape in every LazyOS window, this one included. On\n\
+         this screen **X** opens the options, **Y** the manual and **L1** the game's\n\
+         folder in Files; those three are Alt+O, Alt+M and Alt+R, because a bare\n\
+         letter would type into another screen's filter.\n\n\
+         ## Saves\n\n\
+         Battery saves live in `~/.local/share/lazyos/games/saves` and save states in\n\
+         `~/.local/state/lazyos/games/states`. Both load and save automatically, so a\n\
+         game continues where you left it, and a row with a save says so.\n\n\
+         ## When something does not work\n\n\
+         - **Core not installed** — `sudo apt install libretro-<core>`\n\
+         - **RetroArch is missing** — `scripts/build-retroarch.sh`, then\n\
+           `core/scripts/install-retroarch.sh`\n\
+         - **PS1 asks for a BIOS** — put `scph5501.bin` in `~/Games/bios/`\n\
+         - **Neo Geo asks for a BIOS** — put `neogeo.zip` (the MVS set) in `bios/`\n\
+         - **N64 is slow** — lower the core resolution in `F1` (experimental)\n\
+         - **Blank window, bad GPU** — `LAZYOS_GAMES_NO_ACCEL=1`\n\
+         - **No sound** — RetroArch uses the ALSA default PCM; check `pactl info`\n\
+         - **A ROM does not appear** — check its folder and extension, then press `s`\n\n\
+         ## LazyOS HTML games\n\n\
+         A LazyOS game is a folder with `game.toml` and `index.html` in\n\
+         `~/.local/share/lazyos/games/web/<name>/`. It plays in the GTK + WebKitGTK\n\
+         host, fullscreen; `Ctrl+Q` or Select+Start leaves it. Snake is the sample.\n",
+    );
+    text
 }
 
 /// The `--rows` answer `check-desktop.sh` reads: one game per line, no window.
@@ -1571,11 +1492,7 @@ mod tests {
     use super::*;
 
     fn manual_text(present: &dyn Fn(&str) -> bool) -> String {
-        manual_blocks(&[PathBuf::from("/home/x/Games")], present)
-            .iter()
-            .map(Block::text)
-            .collect::<Vec<_>>()
-            .join("\n")
+        manual_markdown(&[PathBuf::from("/home/x/Games")], present)
     }
 
     #[test]
@@ -1599,10 +1516,12 @@ mod tests {
     #[test]
     fn a_missing_core_is_named_in_the_table() {
         let text = manual_text(&|_| false);
-        assert_eq!(
-            text.matches("(core missing)").count(),
-            platform::PLATFORMS.len()
-        );
+        // The legend line names the marker too; only the table rows count.
+        let rows = text
+            .lines()
+            .filter(|line| line.starts_with('|') && line.contains("**(missing)**"))
+            .count();
+        assert_eq!(rows, platform::PLATFORMS.len());
     }
 
     #[test]
@@ -1613,19 +1532,40 @@ mod tests {
         assert!(text.contains("scph5501.bin"));
         assert!(text.contains("neogeo.zip"));
         assert!(text.contains("cps1/"));
-        assert!(text.contains("Press s here to rescan"));
-        assert!(text.contains("Enter plays it"));
+        assert!(text.contains("here to rescan"));
+        assert!(text.contains("plays it"));
         assert!(text.contains("~/.local/share/lazyos/games/saves"));
-        assert!(text.contains("r — open the game's folder in Files"));
-        assert!(text.contains("o — options"));
+        assert!(text.contains("open the game's folder in Files"));
+        assert!(text.contains("options: sort"));
     }
 
     #[test]
     fn a_paragraph_wraps_at_the_width() {
-        assert_eq!(wrap("one two three", 7), vec!["one two", "three"]);
-        assert_eq!(wrap("one\ntwo", 20), vec!["one", "two"]);
-        assert_eq!(wrap("", 20), vec![""]);
-        assert_eq!(wrap("abcdefghij", 8), vec!["abcdefgh", "ij"]);
+        assert_eq!(manual::wrap("one two three", 7), vec!["one two", "three"]);
+        assert_eq!(manual::wrap("one\ntwo", 20), vec!["one", "two"]);
+        assert_eq!(manual::wrap("", 20), vec![""]);
+        assert_eq!(manual::wrap("abcdefghij", 8), vec!["abcdefgh", "ij"]);
+    }
+
+    #[test]
+    fn the_manual_renders_as_a_document() {
+        let markdown = manual_text(&|_| true);
+        let lines = manual::render(&markdown, 100);
+        assert!(!lines.is_empty(), "the manual rendered nothing");
+        let text: String = lines
+            .iter()
+            .map(|spans| {
+                spans
+                    .iter()
+                    .map(|span| span.text.as_str())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("nestopia"), "the platform table is missing");
+        assert!(text.contains("Where ROMs go"));
+        // glow draws a table with borders; the fallback joins the cells.
+        assert!(text.contains("│") || text.contains(" · "));
     }
 
     #[test]
@@ -1648,6 +1588,35 @@ mod tests {
         screen.key(key(KeyCode::Esc), &design);
         assert!(matches!(screen.mode, Mode::Library));
         assert_eq!(screen.phase(), Some("list"));
+    }
+
+    #[test]
+    fn the_pad_alt_combinations_toggle_the_surfaces() {
+        let mut screen = GamesScreen::new();
+        let design = Design::for_session(None);
+        let alt = |letter| KeyEvent::new(KeyCode::Char(letter), KeyModifiers::ALT);
+
+        // X (Alt+O) opens the options, and X again closes them.
+        screen.key(alt('o'), &design);
+        assert!(matches!(screen.mode, Mode::Options(_)));
+        screen.key(alt('o'), &design);
+        assert!(matches!(screen.mode, Mode::Library));
+
+        // Y (Alt+M) opens the manual, and Y again closes it.
+        screen.key(alt('m'), &design);
+        assert!(matches!(screen.mode, Mode::Manual(_)));
+        screen.key(alt('m'), &design);
+        assert!(matches!(screen.mode, Mode::Library));
+
+        // Without Alt a letter is not the pad's action: it types into the
+        // filter (or is the library's own key), which is why the pad never
+        // sends a bare letter.
+        screen.key(
+            KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE),
+            &design,
+        );
+        assert!(matches!(screen.mode, Mode::Library));
+        assert_eq!(screen.list.filter(), "z");
     }
 
     #[test]
@@ -1797,9 +1766,6 @@ mod tests {
         screen.state.options.layout = Layout::List;
         screen.rebuild_keep_selection();
         let text = render(&mut screen, 100, 30);
-        if std::env::var_os("LAZYOS_GAMES_SHOW").is_some() {
-            println!("{text}");
-        }
         assert!(text.contains("Games"));
         if let Some(game) = screen.selected_game() {
             assert!(text.contains(&game.title));

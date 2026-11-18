@@ -113,14 +113,19 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    The shelf is a master-detail surface: the rail is the platform, the shelf (or the dense list)
    is the game, the hero is the selected one. `o` opens the four options — sort, layout, covers,
    hide missing cores — stored in `State::options` so they survive the next game; `r` opens the
-   game's folder in Files. The cartridge and the hero's monogram are generated from the title
-   (`system/games/art.rs`), never an asset, so a library with no covers still looks like a shelf.
+   game's folder in Files. The manual is markdown rendered by **glow** through the shared
+   `system::manual` module (Learn uses the same renderer and ANSI parser), so its tables are real
+   tables; it re-renders at the window width. The cartridge and the hero's monogram are generated
+   from the title (`system/games/art.rs`), never an asset, so a library with no covers still looks
+   like a shelf.
 15. **A controller is the session's input helper**: `lazyos gamepad` reads `/dev/input` through
    evdev and injects arrows, Enter and Escape with `wtype` into the focused `lazyos-*` window
    (the root menu, Settings, Files, the Games TUI). The library is one of those windows; its tabs
-   are Left/Right and its list Up/Down. The HTML game host and RetroArch keep their own input
-   (the browser Gamepad API and udev), so a press never moves two things. It is the one resident
-   input helper; a pid lock keeps it single. The game stack itself is built, not installed from
+   are Left/Right and its list Up/Down. Its own surfaces get three buttons — X options, Y manual,
+   L1 the folder in Files — sent as **Alt+O / Alt+M / Alt+R**, never bare letters, because a bare
+   letter would type into another screen's filter; the Alt combinations are unbound elsewhere.
+   The HTML game host and RetroArch keep their own input (the browser Gamepad API and udev), so a
+   press never moves two things. It is the one resident input helper; a pid lock keeps it single. The game stack itself is built, not installed from
    Debian: `tools/retroarch/` builds the slim emulator (no Qt, assets, FFmpeg, Vulkan or updater)
    and `tools/mupen64plus-next/` builds the N64 core Debian does not have; `tools/fbneo/`
    builds **FBNeo** (`REGEN_HEADERS=1`, the libretro fork) for every arcade board, because Debian

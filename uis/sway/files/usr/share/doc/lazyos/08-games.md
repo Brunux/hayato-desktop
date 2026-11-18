@@ -48,6 +48,14 @@ navigated by **`lazyos gamepad`**: it reads a USB or Bluetooth pad from
 Escape. The same pad therefore moves the root menu, Settings, Files and this
 library without a separate mode.
 
+In the Games library three more buttons carry its own actions: **X** opens the
+options, **Y** the manual and **L1** the game's folder in Files. They are sent
+as **Alt+O**, **Alt+M** and **Alt+R**, not as bare letters, because a bare
+letter would type into another screen's filter (the root menu and the files
+list type to filter); Alt+O/M/R are unbound everywhere else, so a press still
+cannot move two things at once. `f` (favourite) and `s` (rescan) are keyboard
+keys.
+
 The Games library does **not** use the browser's Gamepad API; the HTML game
 does. RetroArch reads the pad through udev and its own autoconfig, so a pad
 never moves two things at once.
@@ -77,6 +85,11 @@ the save locations and the fixes for the common failures. ↑/↓ scroll a line,
 **PgUp/PgDn** a page, **Home/End** the ends, and **Esc** (or `m`) goes back to
 the list. It is the same information as this page, short enough to read without
 leaving the window.
+
+The manual is **markdown rendered by glow** — the same renderer and the same
+`dark` style the Learn pages use — so the platform and key tables are real
+tables with borders and aligned columns, and inline code is styled. The page
+re-renders at the window width, so fullscreen re-flows it.
 
 The table is not a copy: it is built from `platform::PLATFORMS`, the table the
 scan itself uses, and each row asks the library whether that core is installed

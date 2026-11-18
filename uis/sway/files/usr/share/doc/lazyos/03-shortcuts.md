@@ -19,11 +19,17 @@ replacement for the keyboard.
 | A / Start | Enter: open / play |
 | B | Escape: back or close |
 | Select + Start | Escape |
+| X | options, in the Games library |
+| Y | manual, in the Games library |
+| L1 | the game's folder in Files, in the Games library |
 
 `lazyos gamepad` starts at login and reads the pad from `/dev/input`; it types
 the arrows, Enter and Escape into the focused `lazyos-*` window with `wtype`.
 The game library is one of those windows, so its tabs are **← / →**, its list
-is **↑ / ↓**, and the manual it opens with **m** scrolls with the same arrows.
+is **↑ / ↓**, and the manual it opens with **m** (or **Y**) scrolls with the
+same arrows. X, Y and L1 are sent as Alt+O, Alt+M and Alt+R: a bare letter would
+type into another screen's filter, and those three combinations are unbound
+everywhere else.
 The HTML game host and RetroArch keep their own input (the browser Gamepad API
 and udev), and a plain `foot` shell and other applications are deliberately not
 mapped. `06-troubleshooting.md` has the checks when a pad does nothing.

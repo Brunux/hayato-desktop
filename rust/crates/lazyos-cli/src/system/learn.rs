@@ -20,6 +20,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 use unicode_width::UnicodeWidthChar;
 
+use crate::system::manual::{DocSpan, parse_ansi};
 use crate::system::{have, missing};
 
 const DOCS_DIR: &str = "/usr/share/doc/lazyos";
@@ -32,13 +33,6 @@ pub struct ManualPage {
     pub path: PathBuf,
     pub title: String,
     pub summary: String,
-}
-
-/// A pre-styled span in a rendered document line (zero allocations during draw).
-#[derive(Clone, Debug)]
-struct DocSpan {
-    text: String,
-    style: TextStyle,
 }
 
 /// The learn state.
@@ -384,7 +378,7 @@ impl LearnScreen {
                 {
                     if output.status.success() {
                         let stdout = String::from_utf8_lossy(&output.stdout);
-                        let parsed = Self::parse_glow_ansi(&stdout);
+                        let parsed = parse_ansi(&stdout);
                         if !parsed.is_empty() {
                             return parsed;
                         }
@@ -406,62 +400,6 @@ impl LearnScreen {
                 vec![DocSpan { text: l, style }]
             })
             .collect()
-    }
-
-    fn parse_glow_ansi(ansi: &str) -> Vec<Vec<DocSpan>> {
-        let mut lines = Vec::new();
-        for raw_line in ansi.lines() {
-            let mut spans: Vec<DocSpan> = Vec::new();
-            let mut current_style = TextStyle::Body;
-            let mut current_text = String::new();
-            let mut chars = raw_line.chars().peekable();
-            while let Some(ch) = chars.next() {
-                if ch == '\x1b' && chars.peek() == Some(&'[') {
-                    let _ = chars.next();
-                    let mut seq = String::new();
-                    while let Some(&c) = chars.peek() {
-                        let _ = chars.next();
-                        if c.is_ascii_alphabetic() {
-                            break;
-                        }
-                        seq.push(c);
-                    }
-                    if !current_text.is_empty() {
-                        spans.push(DocSpan {
-                            text: std::mem::take(&mut current_text),
-                            style: current_style,
-                        });
-                    }
-                    if seq == "0" || seq.is_empty() {
-                        current_style = TextStyle::Body;
-                    } else if seq.split(';').any(|p| p == "1") {
-                        current_style = TextStyle::Title;
-                    } else if seq == ";" {
-                        current_style = TextStyle::Code;
-                    }
-                } else {
-                    current_text.push(ch);
-                }
-            }
-            if !current_text.is_empty() {
-                spans.push(DocSpan {
-                    text: current_text,
-                    style: current_style,
-                });
-            }
-            // Trim trailing spaces padded by glow from the last span(s).
-            while let Some(last) = spans.last_mut() {
-                let trimmed = last.text.trim_end_matches(' ');
-                if trimmed.is_empty() {
-                    spans.pop();
-                } else {
-                    last.text.truncate(trimmed.len());
-                    break;
-                }
-            }
-            lines.push(spans);
-        }
-        lines
     }
 
     fn wrap_plain_line(line: &str, max_width: usize) -> Vec<String> {

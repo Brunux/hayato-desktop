@@ -926,7 +926,8 @@ where it fails.
   …)**: those are `lazyos-*` windows, and `lazyos gamepad` types the keys into
   them. Check that it is running (`pgrep -f 'lazyos gamepad'`), that `wtype` is
   installed (`command -v wtype`), and that the focused window really is a
-  `lazyos-*` one. The library's tabs are **← / →**, its list **↑ / ↓**. A plain
+  `lazyos-*` one. The library's tabs are **← / →**, its list **↑ / ↓**, and its
+  options/manual are **X** and **Y** (sent as Alt+O and Alt+M). A plain
   `foot` shell, Firefox and other applications are deliberately not mapped,
   because they may handle a pad themselves.
 - **In the HTML game window only**: the game uses the browser Gamepad API,

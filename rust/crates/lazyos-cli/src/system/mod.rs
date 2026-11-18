@@ -115,6 +115,7 @@ pub mod kill;
 pub mod layout;
 pub mod learn;
 pub mod locale;
+pub mod manual;
 pub mod media;
 pub mod net;
 pub mod night_light;
