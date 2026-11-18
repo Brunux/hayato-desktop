@@ -50,6 +50,7 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("touchpad", "Touchpad", "touchpad.conf"),
         ("rotation", "Rotation", "swaymsg output transform"),
         ("display", "Display arrangement", "lazyos-display"),
+        ("workspaces", "Workspaces per monitor", "35-workspaces.conf"),
         ("theme", "Theme", "lazyos-theme-picker"),
         ("wallpaper", "Wallpaper", "lazyos menu files ~/Pictures"),
         (
@@ -71,6 +72,11 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
             "bar-density",
             "Bar density",
             "~/.config/waybar/config.jsonc",
+        ),
+        (
+            "bar-modules",
+            "Bar modules",
+            "modules-right in config.jsonc",
         ),
         ("corners", "Window corners", "swaymsg corner_radius"),
         ("shadows", "Window shadows", "swaymsg shadows"),
@@ -498,7 +504,15 @@ fn section_keys(section: Section) -> &'static [&'static str] {
             "vnc",
             "ssh",
         ],
-        Section::DisplaySound => &["night", "rotation", "display", "audio", "mixer", "media"],
+        Section::DisplaySound => &[
+            "night",
+            "rotation",
+            "display",
+            "workspaces",
+            "audio",
+            "mixer",
+            "media",
+        ],
         Section::Appearance => &[
             "theme",
             "wallpaper",
@@ -506,6 +520,7 @@ fn section_keys(section: Section) -> &'static [&'static str] {
             "wallpaper-theme",
             "bar-position",
             "bar-density",
+            "bar-modules",
             "corners",
             "shadows",
             "blur",
@@ -616,6 +631,13 @@ fn build_rows(section: Section) -> (Vec<lazyos_ui::Row>, Vec<String>) {
             ));
             keys.push("display".to_string());
 
+            rows.push(row(
+                "Workspaces per monitor",
+                super::workspaces::status(),
+                Glyph::Window,
+            ));
+            keys.push("workspaces".to_string());
+
             rows.push(row("Audio output", audio_detail(), Glyph::Volume));
             keys.push("audio".to_string());
 
@@ -665,6 +687,13 @@ fn build_rows(section: Section) -> (Vec<lazyos_ui::Row>, Vec<String>) {
                 Glyph::Display,
             ));
             keys.push("bar-density".to_string());
+
+            rows.push(row(
+                "Bar modules",
+                super::appearance::bar_modules_label(),
+                Glyph::Display,
+            ));
+            keys.push("bar-modules".to_string());
 
             rows.push(row(
                 "Window corners",
@@ -1699,6 +1728,11 @@ pub fn menu(
             "display" => {
                 let _ = super::display::menu(terminal, design)?;
             }
+            "workspaces" => {
+                if let Some(message) = super::workspaces::choose(terminal, design)? {
+                    banner = Some(message);
+                }
+            }
             "theme" => {
                 let _ = super::theme_picker::menu(terminal, design)?;
             }
@@ -1720,6 +1754,10 @@ pub fn menu(
                 Err(reason) => banner = Some(reason),
             },
             "bar-density" => match super::appearance::toggle_bar_density() {
+                Ok(message) => banner = Some(message),
+                Err(reason) => banner = Some(reason),
+            },
+            "bar-modules" => match super::appearance::toggle_bar_modules() {
                 Ok(message) => banner = Some(message),
                 Err(reason) => banner = Some(reason),
             },

@@ -138,6 +138,7 @@ pub mod translate;
 pub mod tz;
 pub mod vnc;
 pub mod window;
+pub mod workspaces;
 
 use std::io::Write;
 use std::path::Path;

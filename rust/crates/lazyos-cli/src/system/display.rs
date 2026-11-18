@@ -123,6 +123,31 @@ fn parse_outputs(json: &str) -> Vec<Output> {
     outputs
 }
 
+/// The active outputs, internal panel first, for the workspace picker.
+pub fn active_outputs() -> Vec<String> {
+    let mut names: Vec<String> = read_outputs()
+        .into_iter()
+        .filter(|output| output.active)
+        .map(|output| output.name)
+        .collect();
+    names.sort_by_key(|name| {
+        let internal = name.starts_with("eDP-") || name.starts_with("DSI-");
+        (!internal, name.clone())
+    });
+    names
+}
+
+/// The output that currently has focus, when sway reports one.
+pub fn focused_output() -> Option<String> {
+    let text = out(&["swaymsg", "-t", "get_outputs", "-r"])?;
+    let outputs = serde_json::from_str::<Vec<serde_json::Value>>(&text).ok()?;
+    outputs
+        .iter()
+        .find(|output| output["focused"].as_bool().unwrap_or(false))
+        .and_then(|output| output["name"].as_str())
+        .map(str::to_string)
+}
+
 /// Read all outputs from sway.
 fn read_outputs() -> Vec<Output> {
     let output = out(&["swaymsg", "-t", "get_outputs", "-r"]).unwrap_or_default();

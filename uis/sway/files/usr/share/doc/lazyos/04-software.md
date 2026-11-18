@@ -304,6 +304,14 @@ and the menu offers it even with no monitor plugged in. Over ssh,
 `swaymsg output eDP-1 enable` (or `DSI-1` on MT8183 tablets) is the same command, and a reboot clears it too,
 because the choice is never written to the saved arrangement.
 
+**Workspaces per monitor** assigns the ten workspaces to the outputs you have.
+**Split 1–5 / 6–10** puts the first five on the internal panel and the next five
+on the external monitor; **All workspaces on …** puts all ten on one output. The
+choice is written to `~/.config/sway/config.d/35-workspaces.conf` and applied
+live with `swaymsg workspace N output NAME`, so existing windows move with their
+workspace. **Clear assignments** removes the file and returns the ten
+workspaces to the focused monitor.
+
 **The night light does not reach it.** `wlsunset` asks the compositor for a
 gamma table per output, and this kernel has one only for the internal panel's
 CRTC: `modetest -M mediatek -p` shows `GAMMA_LUT` on the 1366x912 CRTC and
@@ -479,8 +487,8 @@ list below says why.
 The **Settings** menu (Alt+Ctrl+O, and the root menu) is grouped into seven sections:
 
 - **Network** - Wi-Fi radio and networks (with a sign-in row when the network asks for one), Bluetooth radio and devices, DNS, Remote login (SSH), Share this screen.
-- **Display & Sound** - Night light, Display arrangement, Rotation, Audio output, Volume per application (pavucontrol), Media.
-- **Appearance** - Theme, Wallpaper, Bar position, Bar density, Window corners, Window shadows, Window blur, Animations.
+- **Display & Sound** - Night light, Display arrangement, Workspaces per monitor, Rotation, Audio output, Volume per application (pavucontrol), Media.
+- **Appearance** - Theme, Wallpaper, Bar position, Bar density, Bar modules, Window corners, Window shadows, Window blur, Animations.
 - **Input** - Touchpad, Keyboard layout, Tablet mode (with Calibrate rotation when on).
 - **Power & Idle** - Battery, the power menu, and **Idle & lock** (screen-off, lock and panel-off timeouts, with a "Never" choice).
 - **System** - Date & time (time zone and network time), Language & region, Hostname, Default apps, Change password, Clipboard history, Notifications, Do not disturb, System updates, Free space, Auto-mount USB drives, Login screen (Greeter), Translate.
@@ -488,7 +496,7 @@ The **Settings** menu (Alt+Ctrl+O, and the root menu) is grouped into seven sect
 
 Each row shows the real state from the same probe as today and delegates to the existing pickers/panels (bar-net, bar-bt, bar-audio, bar-power, lazyos-display, lazyos-vnc, lazyos-dns, lazyos-ssh, lazyos-tz, lazyos-pkg, lazyos-clean) instead of duplicating them. Escape inside a section returns to the section list; Escape there closes Settings.
 
-**Appearance → Theme** opens the existing theme picker. **Wallpaper** opens the Files list at `~/Pictures` so you can choose any PNG, JPEG, WebP, GIF, BMP or TIFF; the image is copied to `~/.local/share/lazyos/wallpapers/` and a `36-custom-wallpaper.conf` drop-in points Sway at it. **Next preset** cycles the active theme's bundled wallpapers (and clears a custom one), while **Use theme wallpaper** appears when a custom image is set and returns to the preset. **Bar position** and **Bar density** edit `~/.config/waybar/config.jsonc` and signal Waybar, so the bar moves or tightens without a logout. **Window corners**, **Window shadows**, **Window blur** and **Animations** write `~/.config/lazyos/appearance.conf`, render it into `~/.config/sway/config.d/41-appearance.conf` for the next login, and apply the same SwayFX commands through `swaymsg` now. **Accessibility → Reduced motion** stays the separate switch for the TUI windows; the compositor's animation duration is its own setting.
+**Appearance → Theme** opens the existing theme picker. **Wallpaper** opens the Files list at `~/Pictures` so you can choose any PNG, JPEG, WebP, GIF, BMP or TIFF; the image is copied to `~/.local/share/lazyos/wallpapers/` and a `36-custom-wallpaper.conf` drop-in points Sway at it. **Next preset** cycles the active theme's bundled wallpapers (and clears a custom one), while **Use theme wallpaper** appears when a custom image is set and returns to the preset. **Bar position** and **Bar density** edit `~/.config/waybar/config.jsonc` and signal Waybar, so the bar moves or tightens without a logout. **Bar modules** cycles Full → Compact → Minimal, rewriting only the `modules-right` list so the tray, updates, layout, Bluetooth and VNC indicators can be hidden without losing the rest of the bar. **Window corners**, **Window shadows**, **Window blur** and **Animations** write `~/.config/lazyos/appearance.conf`, render it into `~/.config/sway/config.d/41-appearance.conf` for the next login, and apply the same SwayFX commands through `swaymsg` now. **Accessibility → Reduced motion** stays the separate switch for the TUI windows; the compositor's animation duration is its own setting.
 
 **Input → Touchpad** writes `~/.config/sway/config.d/36-touchpad.conf` and applies the same values with `swaymsg input type:touchpad` immediately. It covers tap-to-click, natural scrolling, disable-while-typing and pointer speed; the file is the user override read after `/etc/sway/config`, so it wins over the system tap/natural-scroll defaults at the next login.
 

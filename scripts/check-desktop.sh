@@ -830,11 +830,11 @@ fi
 # The Settings rows that open the existing system pickers. A lost row is a
 # feature nobody can find from the menu, even though the helper is installed.
 _settings_missing=""
-for _settings_row in lazyos-dns lazyos-ssh lazyos-tz lazyos-pkg lazyos-clean touchpad.conf reduced-motion.conf localectl hostnamectl xdg-mime chpasswd notify.conf clipboard.conf; do
+for _settings_row in lazyos-dns lazyos-ssh lazyos-tz lazyos-pkg lazyos-clean touchpad.conf reduced-motion.conf localectl hostnamectl xdg-mime chpasswd notify.conf clipboard.conf 35-workspaces.conf; do
 	settings_runs "$_settings_row" || _settings_missing="$_settings_missing $_settings_row"
 done
 if [ -z "$_settings_missing" ]; then
-	ok "Settings exposes DNS, SSH, date & time, updates, storage, touchpad, reduced motion, language, hostname, default apps, password, notifications and clipboard history"
+	ok "Settings exposes DNS, SSH, date & time, updates, storage, touchpad, reduced motion, language, hostname, default apps, password, notifications, clipboard history and per-monitor workspaces"
 else
 	fail "Settings lost row(s):$_settings_missing (the helper is installed but the menu cannot reach it)"
 fi
@@ -853,7 +853,7 @@ fi
 # its status must read the same file the menu writes.
 _settings_rows="$(lazyos menu settings --rows 2>/dev/null || true)"
 _settings_appearance_missing=""
-for _appearance_row in wallpaper wallpaper-next wallpaper-theme bar-position bar-density corners shadows blur animations; do
+for _appearance_row in wallpaper wallpaper-next wallpaper-theme bar-position bar-density bar-modules corners shadows blur animations; do
 	awk -F'\t' -v want="$_appearance_row" '$1 == want { found = 1 } END { exit !found }' \
 		<<<"$_settings_rows" || _settings_appearance_missing="$_settings_appearance_missing $_appearance_row"
 done
