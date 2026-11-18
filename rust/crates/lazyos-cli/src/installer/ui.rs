@@ -99,6 +99,128 @@ enum Swayidle {
     Paused,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocFocus {
+    TimezoneInput,
+    TimezoneList,
+    Locale,
+    Keymap,
+    KeymapTest,
+    Back,
+    Next,
+}
+
+impl LocFocus {
+    fn next(self) -> Self {
+        match self {
+            Self::TimezoneInput => Self::TimezoneList,
+            Self::TimezoneList => Self::Locale,
+            Self::Locale => Self::Keymap,
+            Self::Keymap => Self::KeymapTest,
+            Self::KeymapTest => Self::Back,
+            Self::Back => Self::Next,
+            Self::Next => Self::TimezoneInput,
+        }
+    }
+
+    fn prev(self) -> Self {
+        match self {
+            Self::TimezoneInput => Self::Next,
+            Self::TimezoneList => Self::TimezoneInput,
+            Self::Locale => Self::TimezoneList,
+            Self::Keymap => Self::Locale,
+            Self::KeymapTest => Self::Keymap,
+            Self::Back => Self::KeymapTest,
+            Self::Next => Self::Back,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UserFocus {
+    FullName,
+    Username,
+    Password,
+    Confirm,
+    Hostname,
+    Ssh,
+    Back,
+    Next,
+}
+
+impl UserFocus {
+    fn next(self) -> Self {
+        match self {
+            Self::FullName => Self::Username,
+            Self::Username => Self::Password,
+            Self::Password => Self::Confirm,
+            Self::Confirm => Self::Hostname,
+            Self::Hostname => Self::Ssh,
+            Self::Ssh => Self::Back,
+            Self::Back => Self::Next,
+            Self::Next => Self::FullName,
+        }
+    }
+
+    fn prev(self) -> Self {
+        match self {
+            Self::FullName => Self::Next,
+            Self::Username => Self::FullName,
+            Self::Password => Self::Username,
+            Self::Confirm => Self::Password,
+            Self::Hostname => Self::Confirm,
+            Self::Ssh => Self::Hostname,
+            Self::Back => Self::Ssh,
+            Self::Next => Self::Back,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiskFocus {
+    Cancel,
+    Confirm,
+    Erase,
+    Target,
+}
+
+impl DiskFocus {
+    fn next(self, multi: bool) -> Self {
+        match self {
+            Self::Cancel => Self::Confirm,
+            Self::Confirm => Self::Erase,
+            Self::Erase if multi => Self::Target,
+            Self::Erase => Self::Cancel,
+            Self::Target => Self::Cancel,
+        }
+    }
+
+    fn prev(self, multi: bool) -> Self {
+        match self {
+            Self::Cancel if multi => Self::Target,
+            Self::Cancel => Self::Erase,
+            Self::Confirm => Self::Cancel,
+            Self::Erase => Self::Confirm,
+            Self::Target => Self::Erase,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CompleteFocus {
+    Reboot,
+    Exit,
+}
+
+impl CompleteFocus {
+    fn toggle(self) -> Self {
+        match self {
+            Self::Reboot => Self::Exit,
+            Self::Exit => Self::Reboot,
+        }
+    }
+}
+
 pub struct InstallerScreen {
     pub step: WizardStep,
     pub preflight: Preflight,
@@ -112,7 +234,7 @@ pub struct InstallerScreen {
     pub keymaps: Vec<&'static str>,
     pub keymap_idx: usize,
     pub keymap_test: Input,
-    pub loc_focus: usize,
+    pub loc_focus: LocFocus,
     // Step 2: User Account
     pub fullname_input: Input,
     pub username_input: Input,
@@ -120,12 +242,12 @@ pub struct InstallerScreen {
     pub confirm_input: Input,
     pub hostname_input: Input,
     pub regen_ssh: bool,
-    pub user_focus: usize,
+    pub user_focus: UserFocus,
     pub user_error: Option<&'static str>,
     // Step 3: Disk Review & Gated Confirmation
     pub disk_idx: usize,
     pub disk_confirm_input: Input,
-    pub disk_focus: usize, // 0: Cancel/Back, 1: Confirm Input, 2: Erase & Install, 3: Target selector
+    pub disk_focus: DiskFocus,
     // Step 4: Progress
     pub worker_state: WorkerState,
     worker_run: WorkerRun,
@@ -133,7 +255,7 @@ pub struct InstallerScreen {
     pub show_log_full: bool,
     swayidle: Swayidle,
     // Step 5: Complete
-    pub complete_focus: usize,
+    pub complete_focus: CompleteFocus,
     // Cursor blink & mouse hit regions
     cursor_blink_on: bool,
     last_blink: Instant,
@@ -278,24 +400,24 @@ impl InstallerScreen {
             keymaps: KEYMAPS.to_vec(),
             keymap_idx,
             keymap_test: Input::new(),
-            loc_focus: 0,
+            loc_focus: LocFocus::TimezoneInput,
             fullname_input: Input::with_text(&live_full),
             username_input: Input::with_text(&live_user),
             password_input: Input::new().with_masked(true),
             confirm_input: Input::new().with_masked(true),
             hostname_input: Input::with_text(&live_host),
             regen_ssh: true,
-            user_focus: 0,
+            user_focus: UserFocus::FullName,
             user_error: None,
             disk_idx,
             disk_confirm_input: Input::new(),
-            disk_focus: 0,
+            disk_focus: DiskFocus::Cancel,
             worker_state: initial_state,
             worker_run: WorkerRun::Idle,
             spinner_idx: 0,
             show_log_full: false,
             swayidle: Swayidle::Running,
-            complete_focus: 0,
+            complete_focus: CompleteFocus::Reboot,
             cursor_blink_on: true,
             last_blink: Instant::now(),
             hits: RefCell::new(InstallerHits::default()),
@@ -313,9 +435,21 @@ impl InstallerScreen {
     fn focused_input_active(&self) -> bool {
         matches!(
             (self.step, self.loc_focus, self.user_focus, self.disk_focus),
-            (WizardStep::Localization, 0 | 4, _, _)
-                | (WizardStep::UserAccount, _, 0..=4, _)
-                | (WizardStep::DiskReview, _, _, 1)
+            (
+                WizardStep::Localization,
+                LocFocus::TimezoneInput | LocFocus::KeymapTest,
+                _,
+                _
+            ) | (
+                WizardStep::UserAccount,
+                _,
+                UserFocus::FullName
+                    | UserFocus::Username
+                    | UserFocus::Password
+                    | UserFocus::Confirm
+                    | UserFocus::Hostname,
+                _
+            ) | (WizardStep::DiskReview, _, _, DiskFocus::Confirm)
         )
     }
 
@@ -331,24 +465,24 @@ impl InstallerScreen {
             self.user_error = Some(err);
             // Move cursor focus directly to the field that failed validation.
             if validate_username(&self.config.username).is_err() {
-                self.user_focus = 1;
+                self.user_focus = UserFocus::Username;
             } else if validate_password(&self.config.password, &self.config.password_confirm)
                 .is_err()
             {
                 self.user_focus = if self.config.password.is_empty() {
-                    2
+                    UserFocus::Password
                 } else {
-                    3
+                    UserFocus::Confirm
                 };
             } else if validate_hostname(&self.config.hostname).is_err() {
-                self.user_focus = 4;
+                self.user_focus = UserFocus::Hostname;
             }
             self.reset_blink();
             return Outcome::Consumed;
         }
         self.user_error = None;
         self.step = WizardStep::DiskReview;
-        self.disk_focus = 0; // Always start on Cancel!
+        self.disk_focus = DiskFocus::Cancel;
         self.reset_blink();
         self.update_keybar();
         Outcome::Consumed
@@ -692,7 +826,7 @@ impl Screen for InstallerScreen {
         if id >= 1000 && self.step == WizardStep::Localization {
             let row = id - 1000;
             self.tz_list.set_cursor(row);
-            self.loc_focus = 1;
+            self.loc_focus = LocFocus::TimezoneList;
             if let Some(selected) = self.tz_list.selected() {
                 self.selected_tz = selected.label.clone();
                 self.config.timezone = selected.label.clone();
@@ -710,27 +844,27 @@ impl Screen for InstallerScreen {
                 }
             }
             10 => {
-                self.loc_focus = 0;
+                self.loc_focus = LocFocus::TimezoneInput;
                 Outcome::Consumed
             }
             11 => {
-                self.loc_focus = 1;
+                self.loc_focus = LocFocus::TimezoneList;
                 Outcome::Consumed
             }
             12 => {
-                self.loc_focus = 2;
+                self.loc_focus = LocFocus::Locale;
                 self.locale_idx = (self.locale_idx + 1) % self.locales.len().max(1);
                 self.config.locale = self.locales[self.locale_idx].to_string();
                 Outcome::Consumed
             }
             13 => {
-                self.loc_focus = 3;
+                self.loc_focus = LocFocus::Keymap;
                 self.keymap_idx = (self.keymap_idx + 1) % self.keymaps.len().max(1);
                 self.config.keymap = self.keymaps[self.keymap_idx].to_string();
                 Outcome::Consumed
             }
             14 => {
-                self.loc_focus = 4;
+                self.loc_focus = LocFocus::KeymapTest;
                 Outcome::Consumed
             }
             15 => {
@@ -747,11 +881,17 @@ impl Screen for InstallerScreen {
                 Outcome::Consumed
             }
             20..=24 => {
-                self.user_focus = id - 20;
+                self.user_focus = match id {
+                    20 => UserFocus::FullName,
+                    21 => UserFocus::Username,
+                    22 => UserFocus::Password,
+                    23 => UserFocus::Confirm,
+                    _ => UserFocus::Hostname,
+                };
                 Outcome::Consumed
             }
             25 => {
-                self.user_focus = 5;
+                self.user_focus = UserFocus::Ssh;
                 self.regen_ssh = !self.regen_ssh;
                 self.config.regenerate_ssh_keys = self.regen_ssh;
                 Outcome::Consumed
@@ -763,12 +903,12 @@ impl Screen for InstallerScreen {
             }
             27 => self.try_advance_user_account(),
             30 => {
-                self.disk_focus = 3;
+                self.disk_focus = DiskFocus::Target;
                 self.cycle_target(1);
                 Outcome::Consumed
             }
             31 => {
-                self.disk_focus = 1;
+                self.disk_focus = DiskFocus::Confirm;
                 Outcome::Consumed
             }
             32 => {
@@ -777,14 +917,14 @@ impl Screen for InstallerScreen {
                 Outcome::Consumed
             }
             33 => {
-                self.disk_focus = 2;
+                self.disk_focus = DiskFocus::Erase;
                 let token = self.target_short().to_string();
                 if validate_confirmation(self.disk_confirm_input.text(), &token) {
                     self.step = WizardStep::Progress;
                     self.update_keybar();
                     self.start_worker();
                 } else {
-                    self.disk_focus = 1;
+                    self.disk_focus = DiskFocus::Confirm;
                 }
                 Outcome::Consumed
             }
@@ -793,14 +933,14 @@ impl Screen for InstallerScreen {
                 Outcome::Consumed
             }
             50 if self.step == WizardStep::Complete => {
-                self.complete_focus = 0;
+                self.complete_focus = CompleteFocus::Reboot;
                 if !self.config.dry_run {
                     let _ = Command::new("systemctl").arg("reboot").spawn();
                 }
                 Outcome::Done(lazyos_ui::app::exit::OK)
             }
             51 if self.step == WizardStep::Complete => {
-                self.complete_focus = 1;
+                self.complete_focus = CompleteFocus::Exit;
                 Outcome::Done(lazyos_ui::app::exit::OK)
             }
             _ => Outcome::Continue,
@@ -857,11 +997,11 @@ impl Screen for InstallerScreen {
 
             WizardStep::Complete => match key.code {
                 KeyCode::Tab | KeyCode::Left | KeyCode::Right => {
-                    self.complete_focus = 1 - self.complete_focus;
+                    self.complete_focus = self.complete_focus.toggle();
                     Outcome::Consumed
                 }
                 KeyCode::Enter => {
-                    if self.complete_focus == 0 && !self.config.dry_run {
+                    if self.complete_focus == CompleteFocus::Reboot && !self.config.dry_run {
                         let _ = Command::new("systemctl").arg("reboot").spawn();
                     }
                     Outcome::Done(lazyos_ui::app::exit::OK)
@@ -979,31 +1119,23 @@ impl InstallerScreen {
             KeyCode::Tab => {
                 let shift = key.modifiers.contains(KeyModifiers::SHIFT);
                 self.loc_focus = if shift {
-                    if self.loc_focus == 0 {
-                        6
-                    } else {
-                        self.loc_focus - 1
-                    }
+                    self.loc_focus.prev()
                 } else {
-                    (self.loc_focus + 1) % 7
+                    self.loc_focus.next()
                 };
                 return Outcome::Consumed;
             }
             KeyCode::BackTab => {
-                self.loc_focus = if self.loc_focus == 0 {
-                    6
-                } else {
-                    self.loc_focus - 1
-                };
+                self.loc_focus = self.loc_focus.prev();
                 return Outcome::Consumed;
             }
             _ => {}
         }
 
         match self.loc_focus {
-            0 => {
+            LocFocus::TimezoneInput => {
                 if key.code == KeyCode::Down {
-                    self.loc_focus = 1;
+                    self.loc_focus = LocFocus::TimezoneList;
                     return Outcome::Consumed;
                 }
                 if key.code == KeyCode::Enter {
@@ -1011,16 +1143,16 @@ impl InstallerScreen {
                         self.selected_tz = row.label.clone();
                         self.config.timezone = row.label.clone();
                     }
-                    self.loc_focus = 2;
+                    self.loc_focus = LocFocus::Locale;
                     return Outcome::Consumed;
                 }
                 self.tz_input.handle(key);
                 self.tz_list.set_filter(self.tz_input.text());
                 Outcome::Consumed
             }
-            1 => {
+            LocFocus::TimezoneList => {
                 if key.code == KeyCode::Up && self.tz_list.cursor() == 0 {
-                    self.loc_focus = 0;
+                    self.loc_focus = LocFocus::TimezoneInput;
                     return Outcome::Consumed;
                 }
                 match self.tz_list.handle(key, 15, design) {
@@ -1029,17 +1161,17 @@ impl InstallerScreen {
                             self.selected_tz = row.label.clone();
                             self.config.timezone = row.label.clone();
                         }
-                        self.loc_focus = 2;
+                        self.loc_focus = LocFocus::Locale;
                         Outcome::Consumed
                     }
                     ListAction::Ignored if key.code == KeyCode::Esc => {
-                        self.loc_focus = 0;
+                        self.loc_focus = LocFocus::TimezoneInput;
                         Outcome::Consumed
                     }
                     _ => Outcome::Consumed,
                 }
             }
-            2 => {
+            LocFocus::Locale => {
                 match key.code {
                     KeyCode::Left => {
                         self.locale_idx = self.locale_idx.saturating_sub(1);
@@ -1050,13 +1182,13 @@ impl InstallerScreen {
                             (self.locale_idx + 1).min(self.locales.len().saturating_sub(1));
                         self.config.locale = self.locales[self.locale_idx].to_string();
                     }
-                    KeyCode::Up => self.loc_focus = 1,
-                    KeyCode::Down | KeyCode::Enter => self.loc_focus = 3,
+                    KeyCode::Up => self.loc_focus = LocFocus::TimezoneList,
+                    KeyCode::Down | KeyCode::Enter => self.loc_focus = LocFocus::Keymap,
                     _ => {}
                 }
                 Outcome::Consumed
             }
-            3 => {
+            LocFocus::Keymap => {
                 match key.code {
                     KeyCode::Left => {
                         self.keymap_idx = self.keymap_idx.saturating_sub(1);
@@ -1067,19 +1199,19 @@ impl InstallerScreen {
                             (self.keymap_idx + 1).min(self.keymaps.len().saturating_sub(1));
                         self.config.keymap = self.keymaps[self.keymap_idx].to_string();
                     }
-                    KeyCode::Up => self.loc_focus = 2,
-                    KeyCode::Down | KeyCode::Enter => self.loc_focus = 4,
+                    KeyCode::Up => self.loc_focus = LocFocus::Locale,
+                    KeyCode::Down | KeyCode::Enter => self.loc_focus = LocFocus::KeymapTest,
                     _ => {}
                 }
                 Outcome::Consumed
             }
-            4 => match key.code {
+            LocFocus::KeymapTest => match key.code {
                 KeyCode::Up => {
-                    self.loc_focus = 3;
+                    self.loc_focus = LocFocus::Keymap;
                     Outcome::Consumed
                 }
                 KeyCode::Down | KeyCode::Enter => {
-                    self.loc_focus = 6;
+                    self.loc_focus = LocFocus::Next;
                     Outcome::Consumed
                 }
                 _ => {
@@ -1087,10 +1219,10 @@ impl InstallerScreen {
                     Outcome::Consumed
                 }
             },
-            5 => {
+            LocFocus::Back => {
                 match key.code {
-                    KeyCode::Right => self.loc_focus = 6,
-                    KeyCode::Up => self.loc_focus = 4,
+                    KeyCode::Right => self.loc_focus = LocFocus::Next,
+                    KeyCode::Up => self.loc_focus = LocFocus::KeymapTest,
                     KeyCode::Enter => {
                         self.step = WizardStep::Welcome;
                         self.update_keybar();
@@ -1099,10 +1231,10 @@ impl InstallerScreen {
                 }
                 Outcome::Consumed
             }
-            6 => {
+            LocFocus::Next => {
                 match key.code {
-                    KeyCode::Left => self.loc_focus = 5,
-                    KeyCode::Up => self.loc_focus = 4,
+                    KeyCode::Left => self.loc_focus = LocFocus::Back,
+                    KeyCode::Up => self.loc_focus = LocFocus::KeymapTest,
                     KeyCode::Enter => {
                         self.config.timezone = self.selected_tz.clone();
                         self.config.locale = self.locales[self.locale_idx].to_string();
@@ -1114,7 +1246,6 @@ impl InstallerScreen {
                 }
                 Outcome::Consumed
             }
-            _ => Outcome::Continue,
         }
     }
 
@@ -1128,39 +1259,40 @@ impl InstallerScreen {
             KeyCode::Tab => {
                 let shift = key.modifiers.contains(KeyModifiers::SHIFT);
                 self.user_focus = if shift {
-                    if self.user_focus == 0 {
-                        7
-                    } else {
-                        self.user_focus - 1
-                    }
+                    self.user_focus.prev()
                 } else {
-                    (self.user_focus + 1) % 8
+                    self.user_focus.next()
                 };
                 return Outcome::Consumed;
             }
             KeyCode::BackTab => {
-                self.user_focus = if self.user_focus == 0 {
-                    7
-                } else {
-                    self.user_focus - 1
-                };
+                self.user_focus = self.user_focus.prev();
                 return Outcome::Consumed;
             }
             _ => {}
         }
 
-        if (0..=4).contains(&self.user_focus) {
+        if matches!(
+            self.user_focus,
+            UserFocus::FullName
+                | UserFocus::Username
+                | UserFocus::Password
+                | UserFocus::Confirm
+                | UserFocus::Hostname
+        ) {
             match key.code {
                 KeyCode::Down | KeyCode::Enter => {
-                    self.user_focus = if self.user_focus < 4 {
-                        self.user_focus + 1
-                    } else {
-                        5
+                    self.user_focus = match self.user_focus {
+                        UserFocus::Hostname => UserFocus::Ssh,
+                        focus => focus.next(),
                     };
                     return Outcome::Consumed;
                 }
                 KeyCode::Up => {
-                    self.user_focus = self.user_focus.saturating_sub(1);
+                    self.user_focus = match self.user_focus {
+                        UserFocus::FullName => UserFocus::FullName,
+                        focus => focus.prev(),
+                    };
                     return Outcome::Consumed;
                 }
                 _ => {}
@@ -1168,41 +1300,41 @@ impl InstallerScreen {
         }
 
         match self.user_focus {
-            0 => {
+            UserFocus::FullName => {
                 self.fullname_input.handle(key);
                 self.config.fullname = self.fullname_input.text().to_string();
                 Outcome::Consumed
             }
-            1 => {
+            UserFocus::Username => {
                 self.username_input.handle(key);
                 self.config.username = self.username_input.text().to_string();
                 self.user_error = validate_username(&self.config.username).err();
                 Outcome::Consumed
             }
-            2 => {
+            UserFocus::Password => {
                 self.password_input.handle(key);
                 self.config.password = self.password_input.text().to_string();
                 self.user_error =
                     validate_password(&self.config.password, &self.config.password_confirm).err();
                 Outcome::Consumed
             }
-            3 => {
+            UserFocus::Confirm => {
                 self.confirm_input.handle(key);
                 self.config.password_confirm = self.confirm_input.text().to_string();
                 self.user_error =
                     validate_password(&self.config.password, &self.config.password_confirm).err();
                 Outcome::Consumed
             }
-            4 => {
+            UserFocus::Hostname => {
                 self.hostname_input.handle(key);
                 self.config.hostname = self.hostname_input.text().to_string();
                 self.user_error = validate_hostname(&self.config.hostname).err();
                 Outcome::Consumed
             }
-            5 => {
+            UserFocus::Ssh => {
                 match key.code {
-                    KeyCode::Up => self.user_focus = 4,
-                    KeyCode::Down => self.user_focus = 7,
+                    KeyCode::Up => self.user_focus = UserFocus::Hostname,
+                    KeyCode::Down => self.user_focus = UserFocus::Next,
                     KeyCode::Char(' ') | KeyCode::Enter => {
                         self.regen_ssh = !self.regen_ssh;
                         self.config.regenerate_ssh_keys = self.regen_ssh;
@@ -1211,10 +1343,10 @@ impl InstallerScreen {
                 }
                 Outcome::Consumed
             }
-            6 => {
+            UserFocus::Back => {
                 match key.code {
-                    KeyCode::Right => self.user_focus = 7,
-                    KeyCode::Up => self.user_focus = 5,
+                    KeyCode::Right => self.user_focus = UserFocus::Next,
+                    KeyCode::Up => self.user_focus = UserFocus::Ssh,
                     KeyCode::Enter => {
                         self.step = WizardStep::Localization;
                         self.update_keybar();
@@ -1223,22 +1355,20 @@ impl InstallerScreen {
                 }
                 Outcome::Consumed
             }
-            7 => {
+            UserFocus::Next => {
                 match key.code {
-                    KeyCode::Left => self.user_focus = 6,
-                    KeyCode::Up => self.user_focus = 5,
+                    KeyCode::Left => self.user_focus = UserFocus::Back,
+                    KeyCode::Up => self.user_focus = UserFocus::Ssh,
                     KeyCode::Enter => return self.try_advance_user_account(),
                     _ => {}
                 }
                 Outcome::Consumed
             }
-            _ => Outcome::Continue,
         }
     }
 
     fn handle_disk_review_key(&mut self, key: KeyEvent) -> Outcome {
         let multi = self.preflight.candidates.len() > 1;
-        let max_focus = if multi { 4 } else { 3 };
         match key.code {
             KeyCode::Esc => {
                 self.step = WizardStep::UserAccount;
@@ -1248,32 +1378,24 @@ impl InstallerScreen {
             KeyCode::Tab => {
                 let shift = key.modifiers.contains(KeyModifiers::SHIFT);
                 self.disk_focus = if shift {
-                    if self.disk_focus == 0 {
-                        max_focus - 1
-                    } else {
-                        self.disk_focus - 1
-                    }
+                    self.disk_focus.prev(multi)
                 } else {
-                    (self.disk_focus + 1) % max_focus
+                    self.disk_focus.next(multi)
                 };
                 return Outcome::Consumed;
             }
             KeyCode::BackTab => {
-                self.disk_focus = if self.disk_focus == 0 {
-                    max_focus - 1
-                } else {
-                    self.disk_focus - 1
-                };
+                self.disk_focus = self.disk_focus.prev(multi);
                 return Outcome::Consumed;
             }
             _ => {}
         }
 
         match self.disk_focus {
-            0 => {
+            DiskFocus::Cancel => {
                 match key.code {
-                    KeyCode::Right => self.disk_focus = 2,
-                    KeyCode::Up => self.disk_focus = 1,
+                    KeyCode::Right => self.disk_focus = DiskFocus::Erase,
+                    KeyCode::Up => self.disk_focus = DiskFocus::Confirm,
                     KeyCode::Enter => {
                         self.step = WizardStep::UserAccount;
                         self.update_keybar();
@@ -1282,20 +1404,20 @@ impl InstallerScreen {
                 }
                 Outcome::Consumed
             }
-            1 => {
+            DiskFocus::Confirm => {
                 match key.code {
                     KeyCode::Up if multi => {
-                        self.disk_focus = 3;
+                        self.disk_focus = DiskFocus::Target;
                         return Outcome::Consumed;
                     }
                     KeyCode::Down => {
-                        self.disk_focus = 0;
+                        self.disk_focus = DiskFocus::Cancel;
                         return Outcome::Consumed;
                     }
                     KeyCode::Enter => {
                         let token = self.target_short().to_string();
                         if validate_confirmation(self.disk_confirm_input.text(), &token) {
-                            self.disk_focus = 2;
+                            self.disk_focus = DiskFocus::Erase;
                         }
                         return Outcome::Consumed;
                     }
@@ -1304,10 +1426,10 @@ impl InstallerScreen {
                 self.disk_confirm_input.handle(key);
                 Outcome::Consumed
             }
-            2 => {
+            DiskFocus::Erase => {
                 match key.code {
-                    KeyCode::Left => self.disk_focus = 0,
-                    KeyCode::Up => self.disk_focus = 1,
+                    KeyCode::Left => self.disk_focus = DiskFocus::Cancel,
+                    KeyCode::Up => self.disk_focus = DiskFocus::Confirm,
                     KeyCode::Enter => {
                         let token = self.target_short().to_string();
                         if validate_confirmation(self.disk_confirm_input.text(), &token) {
@@ -1315,23 +1437,22 @@ impl InstallerScreen {
                             self.update_keybar();
                             self.start_worker();
                         } else {
-                            self.disk_focus = 1;
+                            self.disk_focus = DiskFocus::Confirm;
                         }
                     }
                     _ => {}
                 }
                 Outcome::Consumed
             }
-            3 => {
+            DiskFocus::Target => {
                 match key.code {
                     KeyCode::Left => self.cycle_target(-1),
                     KeyCode::Right | KeyCode::Enter => self.cycle_target(1),
-                    KeyCode::Down => self.disk_focus = 1,
+                    KeyCode::Down => self.disk_focus = DiskFocus::Confirm,
                     _ => {}
                 }
                 Outcome::Consumed
             }
-            _ => Outcome::Continue,
         }
     }
 
@@ -1586,10 +1707,13 @@ impl InstallerScreen {
             },
             design,
             Some("Timezone Selection"),
-            self.loc_focus == 0 || self.loc_focus == 1,
+            matches!(
+                self.loc_focus,
+                LocFocus::TimezoneInput | LocFocus::TimezoneList
+            ),
         );
 
-        let filter_label_style = if self.loc_focus == 0 {
+        let filter_label_style = if self.loc_focus == LocFocus::TimezoneInput {
             Style::default()
                 .fg(design.color(ColorRole::Accent))
                 .add_modifier(Modifier::BOLD)
@@ -1615,7 +1739,7 @@ impl InstallerScreen {
             buf,
             design,
             "Type to filter (e.g. America, Europe)...",
-            self.loc_focus == 0,
+            self.loc_focus == LocFocus::TimezoneInput,
             self.cursor_blink_on,
             ColorRole::Surface,
             TextStyle::Body,
@@ -1628,8 +1752,12 @@ impl InstallerScreen {
             width: tz_card.width.saturating_sub(2),
             height: tz_card.height.saturating_sub(4),
         };
-        self.tz_list
-            .render(tz_list_rect, buf, design, self.loc_focus == 1);
+        self.tz_list.render(
+            tz_list_rect,
+            buf,
+            design,
+            self.loc_focus == LocFocus::TimezoneList,
+        );
         hits.tz_list = Some(tz_list_rect);
 
         let right_card = draw_card(
@@ -1642,7 +1770,14 @@ impl InstallerScreen {
             },
             design,
             Some("Locale & Keyboard Setup"),
-            self.loc_focus >= 2,
+            matches!(
+                self.loc_focus,
+                LocFocus::Locale
+                    | LocFocus::Keymap
+                    | LocFocus::KeymapTest
+                    | LocFocus::Back
+                    | LocFocus::Next
+            ),
         );
 
         let compact = right_card.height < 18;
@@ -1657,7 +1792,7 @@ impl InstallerScreen {
         );
         y += 2;
 
-        let loc_style = if self.loc_focus == 2 {
+        let loc_style = if self.loc_focus == LocFocus::Locale {
             design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
         } else {
             design.style(TextStyle::Body)
@@ -1686,7 +1821,7 @@ impl InstallerScreen {
             y += 2;
         }
 
-        let kbd_style = if self.loc_focus == 3 {
+        let kbd_style = if self.loc_focus == LocFocus::Keymap {
             design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
         } else {
             design.style(TextStyle::Body)
@@ -1715,7 +1850,7 @@ impl InstallerScreen {
             y += 2;
         }
 
-        let test_label_style = if self.loc_focus == 4 {
+        let test_label_style = if self.loc_focus == LocFocus::KeymapTest {
             Style::default()
                 .fg(design.color(ColorRole::Accent))
                 .add_modifier(Modifier::BOLD)
@@ -1742,7 +1877,7 @@ impl InstallerScreen {
             buf,
             design,
             "Type test keys: @ # $ % & / ( ) = ? ~",
-            self.loc_focus == 4,
+            self.loc_focus == LocFocus::KeymapTest,
             self.cursor_blink_on,
             ColorRole::Surface,
             TextStyle::Body,
@@ -1751,12 +1886,12 @@ impl InstallerScreen {
         y += if compact { 2 } else { 3 };
         let btn_y = y.min(right_card.bottom().saturating_sub(1));
 
-        let back_style = if self.loc_focus == 5 {
+        let back_style = if self.loc_focus == LocFocus::Back {
             design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
         } else {
             design.style(TextStyle::Body)
         };
-        let next_style = if self.loc_focus == 6 {
+        let next_style = if self.loc_focus == LocFocus::Next {
             design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
         } else {
             design.style(TextStyle::Body)
@@ -1821,36 +1956,44 @@ impl InstallerScreen {
                 "Full Name (Display Name):",
                 "Full Name:",
                 "Your full name (e.g. Bruno)",
-                0usize,
+                UserFocus::FullName,
             ),
             (
                 "POSIX Username (Login & Sudo User):",
                 "POSIX Username:",
                 "lowercase login name (e.g. brunux)",
-                1,
+                UserFocus::Username,
             ),
             (
                 "Account Password:",
                 "Account Password:",
                 "enter password",
-                2,
+                UserFocus::Password,
             ),
             (
                 "Confirm Password:",
                 "Confirm Password:",
                 "re-type password",
-                3,
+                UserFocus::Confirm,
             ),
             (
                 "System Hostname:",
                 "System Hostname:",
                 "network hostname (default lazyos)",
-                4,
+                UserFocus::Hostname,
             ),
         ];
 
-        for (wide_label, short_label, ph, idx) in fields {
-            let focused = self.user_focus == idx;
+        for (wide_label, short_label, ph, focus) in fields {
+            let focused = self.user_focus == focus;
+            let idx = match focus {
+                UserFocus::FullName => 0,
+                UserFocus::Username => 1,
+                UserFocus::Password => 2,
+                UserFocus::Confirm => 3,
+                UserFocus::Hostname => 4,
+                UserFocus::Ssh | UserFocus::Back | UserFocus::Next => continue,
+            };
             let label_style = if focused {
                 Style::default()
                     .fg(design.color(ColorRole::Accent))
@@ -1865,7 +2008,7 @@ impl InstallerScreen {
                 let ix = lx + lw + 1;
                 let iw = card.width.saturating_sub(lw + 5);
                 let r = Rect::new(ix, y, iw, 1);
-                if idx == 3 && pw_typed && card.height >= 16 {
+                if focus == UserFocus::Confirm && pw_typed && card.height >= 16 {
                     let (badge, role) = if pw_match {
                         ("✓ Passwords match", ColorRole::Ok)
                     } else {
@@ -1888,7 +2031,7 @@ impl InstallerScreen {
                 let lx = card.x + 4;
                 let lw = card.width.saturating_sub(8);
                 put_trunc(buf, lx, y, wide_label, lw, label_style);
-                if idx == 3 && pw_typed {
+                if focus == UserFocus::Confirm && pw_typed {
                     let (badge, role) = if pw_match {
                         ("✓ Passwords match", ColorRole::Ok)
                     } else {
@@ -1962,7 +2105,7 @@ impl InstallerScreen {
             card.width.saturating_sub(8)
         };
         let check_mark = if self.regen_ssh { "[X]" } else { "[ ]" };
-        let ssh_style = if self.user_focus == 5 {
+        let ssh_style = if self.user_focus == UserFocus::Ssh {
             design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
         } else {
             design.style(TextStyle::Body)
@@ -1994,12 +2137,12 @@ impl InstallerScreen {
             y.min(card.bottom().saturating_sub(1))
         };
         if btn_y < card.bottom() {
-            let back_style = if self.user_focus == 6 {
+            let back_style = if self.user_focus == UserFocus::Back {
                 design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
             } else {
                 design.style(TextStyle::Body)
             };
-            let next_style = if self.user_focus == 7 {
+            let next_style = if self.user_focus == UserFocus::Next {
                 design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
             } else {
                 design.style(TextStyle::Body)
@@ -2047,7 +2190,7 @@ impl InstallerScreen {
         } else {
             ""
         };
-        let target_style = if self.disk_focus == 3 {
+        let target_style = if self.disk_focus == DiskFocus::Target {
             design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
         } else {
             design.style(TextStyle::Body).add_modifier(Modifier::BOLD)
@@ -2131,7 +2274,7 @@ impl InstallerScreen {
 
         let short = self.target_short().to_string();
         let confirmed = validate_confirmation(self.disk_confirm_input.text(), &short);
-        let confirm_focused = self.disk_focus == 1;
+        let confirm_focused = self.disk_focus == DiskFocus::Confirm;
         let prompt_label = format!("Type \"{short}\" to confirm disk erasure:");
         let prompt_style = if confirm_focused {
             Style::default()
@@ -2183,14 +2326,14 @@ impl InstallerScreen {
         y += 2;
         let btn_y = y.min(card.bottom().saturating_sub(1));
 
-        let cancel_style = if self.disk_focus == 0 {
+        let cancel_style = if self.disk_focus == DiskFocus::Cancel {
             design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
         } else {
             design.style(TextStyle::Body)
         };
         let erase_style = if !confirmed {
             design.style(TextStyle::Dim)
-        } else if self.disk_focus == 2 {
+        } else if self.disk_focus == DiskFocus::Erase {
             Style::default()
                 .bg(design.color(ColorRole::Danger))
                 .fg(design.color(ColorRole::Bg))
@@ -2592,12 +2735,12 @@ impl InstallerScreen {
         y += if compact { 1 } else { 3 };
         let btn_y = y.min(card.bottom().saturating_sub(1));
 
-        let reboot_style = if self.complete_focus == 0 {
+        let reboot_style = if self.complete_focus == CompleteFocus::Reboot {
             design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
         } else {
             design.style(TextStyle::Body)
         };
-        let exit_style = if self.complete_focus == 1 {
+        let exit_style = if self.complete_focus == CompleteFocus::Exit {
             design.style(TextStyle::Key).add_modifier(Modifier::BOLD)
         } else {
             design.style(TextStyle::Body)
@@ -2677,6 +2820,18 @@ mod tests {
     use crate::installer::preflight::TargetCandidate;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+
+    #[test]
+    fn focus_enums_keep_the_tab_order() {
+        assert_eq!(LocFocus::Next.next(), LocFocus::TimezoneInput);
+        assert_eq!(LocFocus::TimezoneInput.prev(), LocFocus::Next);
+        assert_eq!(UserFocus::Next.next(), UserFocus::FullName);
+        assert_eq!(UserFocus::FullName.prev(), UserFocus::Next);
+        assert_eq!(DiskFocus::Erase.next(false), DiskFocus::Cancel);
+        assert_eq!(DiskFocus::Erase.next(true), DiskFocus::Target);
+        assert_eq!(DiskFocus::Cancel.prev(true), DiskFocus::Target);
+        assert_eq!(CompleteFocus::Reboot.toggle(), CompleteFocus::Exit);
+    }
 
     fn mock_preflight(boot_type: BootType) -> Preflight {
         let (target, name, model) = match boot_type {
@@ -2795,7 +2950,7 @@ mod tests {
         let mut scr =
             InstallerScreen::from_preflight_isolated(mock_preflight(BootType::Depthcharge), true);
         scr.step = WizardStep::UserAccount;
-        scr.user_focus = 0;
+        scr.user_focus = UserFocus::FullName;
 
         let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
         terminal
@@ -2834,7 +2989,7 @@ mod tests {
         // Key press resets blink phase to solid-on and Enter advances to next field.
         scr.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &design);
         assert!(scr.cursor_blink_on);
-        assert_eq!(scr.user_focus, 1);
+        assert_eq!(scr.user_focus, UserFocus::Username);
     }
 
     #[test]
@@ -2900,7 +3055,7 @@ mod tests {
         let mut scr =
             InstallerScreen::from_preflight_isolated(mock_preflight(BootType::Depthcharge), true);
         scr.step = WizardStep::DiskReview;
-        scr.disk_focus = 1;
+        scr.disk_focus = DiskFocus::Confirm;
         for ch in "mmcblk0".chars() {
             scr.key(
                 KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE),
@@ -2910,7 +3065,7 @@ mod tests {
         // Pressing Enter inside confirmed input moves focus to Erase button without auto-starting.
         scr.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &design);
         assert_eq!(scr.step, WizardStep::DiskReview);
-        assert_eq!(scr.disk_focus, 2);
+        assert_eq!(scr.disk_focus, DiskFocus::Erase);
 
         // Pre-selected timezone list cursor matches detected timezone row.
         if let Some(sel) = scr.tz_list.selected() {
