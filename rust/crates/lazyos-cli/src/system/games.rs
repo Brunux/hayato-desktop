@@ -683,17 +683,16 @@ impl GamesScreen {
                 buf.set_string(inner.x, y, &art::fit(text, text_width), design.style(style));
             }
         };
-        let kind = match game.kind {
-            GameKind::Web => "LazyOS game",
-            GameKind::Retro if !game.platform.is_empty() && is_arcade(&game.platform) => "arcade",
-            GameKind::Retro => "console",
+        // A web game's platform title is "LazyOS" and its kind is "LazyOS
+        // game"; saying both reads like a stutter.
+        let heading = match game.kind {
+            GameKind::Web => "LazyOS game".to_string(),
+            GameKind::Retro if is_arcade(&game.platform) => {
+                format!("{} · arcade", game.platform_title)
+            }
+            GameKind::Retro => format!("{} · console", game.platform_title),
         };
-        line(
-            buf,
-            &format!("{} · {kind}", game.platform_title),
-            TextStyle::Title,
-            y,
-        );
+        line(buf, &heading, TextStyle::Title, y);
         y += 1;
         let core = game.core.as_deref().unwrap_or("WebKitGTK");
         let size = if game.size > 0 {
@@ -713,11 +712,11 @@ impl GamesScreen {
         badges.push(art::ago(game.last, library::now()));
         line(buf, &badges.join(" · "), TextStyle::Dim, y);
         y += 2;
+        // The path is one line with an ellipsis: a path broken mid-name reads
+        // as two paths, and `r` opens the folder when the rest matters.
         if let Some(path) = game_path(game) {
-            for wrapped in wrap(&path, text_width).into_iter().take(2) {
-                line(buf, &wrapped, TextStyle::Dim, y);
-                y += 1;
-            }
+            line(buf, &path, TextStyle::Dim, y);
+            y += 1;
         }
         if let Some(description) = game.description.as_deref() {
             y += 1;
@@ -1733,6 +1732,9 @@ mod tests {
     /// must not depend on the state file of the machine running them.
     fn all_tab() -> GamesScreen {
         let mut screen = GamesScreen::new();
+        // The layout tests must not inherit the options of the machine running
+        // them: this developer's library is on the list right now.
+        screen.state.options = Options::default();
         screen.tab = 0;
         screen.state.filter = "all".to_string();
         screen.list.set_filter("");
