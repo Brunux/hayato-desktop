@@ -3754,6 +3754,11 @@ if grep -qs 'x-lazyos-open-path' "$HOME/.config/bin/busy"; then
 else
 	fail "busy does not pass the open-path hint: a saved-file result is not clickable"
 fi
+if grep -qs 'x-lazyos-open-path' "$HOME/.config/bin/lazyos-profile"; then
+	ok "a saved profile or diagnostics card names its file for a click"
+else
+	fail "lazyos-profile does not pass the open-path hint: its saved card is not clickable"
+fi
 if have lazyos-notify; then
 	ok "lazyos-notify resolves /usr/share/icons/LazyOS and Nerd Font glyphs natively"
 elif grep -qsE '^icon-path=([^ ]*:)?/usr/share/icons/LazyOS(:|$)' "$HOME/.config/mako/config"; then

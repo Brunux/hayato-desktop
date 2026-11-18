@@ -147,13 +147,23 @@ in_session() {
 	[ -n "${WAYLAND_DISPLAY:-}" ]
 }
 
-# say TITLE BODY [URGENCY] [ICON]: the card, and also the terminal's stderr when
-# this runs over ssh - a notification nobody can see is not an answer.
+# say TITLE BODY [URGENCY] [ICON] [OPEN_PATH]: the card, and also the terminal's
+# stderr when this runs over ssh - a notification nobody can see is not an
+# answer. OPEN_PATH makes a click on the card show that file's folder in Files.
 say() {
+	_title=${1:-LazyOS}
+	_body=${2:-}
+	_urgency=${3:-normal}
+	_icon=${4:-dialog-information}
+	_open=${5:-}
 	if on_terminal; then
-		printf '%s: %s\n' "${1:-LazyOS}" "${2:-}" >&2
+		printf '%s: %s\n' "$_title" "$_body" >&2
 	fi
-	notify-send -a LazyOS -i "${4:-dialog-information}" -u "${3:-normal}" "${1:-LazyOS}" "${2:-}" 2>/dev/null || true
+	set -- -a LazyOS -i "$_icon" -u "$_urgency"
+	if [ -n "$_open" ]; then
+		set -- "$@" -h "string:x-lazyos-open-path:$_open"
+	fi
+	notify-send "$@" "$_title" "$_body" 2>/dev/null || true
 }
 
 die() {
@@ -683,8 +693,8 @@ cmd_export() {
 	chmod 600 "$_manifest" 2>/dev/null || :
 
 	_size=$(du -h "$_archive" 2>/dev/null | awk '{ print $1 }' || printf '?')
-	"$UI_BIN/busy" end dev "Profile saved ($_size): $(basename "$_archive")" 2>/dev/null || :
-	say 'Profile saved' "$_archive ($_size)"
+	BUSY_OPEN=$_archive "$UI_BIN/busy" end dev "Profile saved ($_size): $(basename "$_archive")" 2>/dev/null || :
+	say 'Profile saved' "$_archive ($_size)" normal dialog-information "$_archive"
 	printf '%s\n' "$_archive"
 }
 
@@ -973,8 +983,8 @@ cmd_report() {
 	}
 	chmod 600 "$_out"
 	_size=$(du -h "$_out" 2>/dev/null | awk '{ print $1 }' || printf '?')
-	"$UI_BIN/busy" end dev "Diagnostics saved ($_size): $(basename "$_out")" 2>/dev/null || :
-	say 'Diagnostics saved' "$_out"
+	BUSY_OPEN=$_out "$UI_BIN/busy" end dev "Diagnostics saved ($_size): $(basename "$_out")" 2>/dev/null || :
+	say 'Diagnostics saved' "$_out" normal dialog-information "$_out"
 	printf '%s\n' "$_out"
 }
 
