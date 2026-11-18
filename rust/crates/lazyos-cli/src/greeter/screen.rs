@@ -173,9 +173,44 @@ struct AuthAttemptResult {
     session_name: String,
 }
 
+/// Which user the login form is for.
+///
+/// The old field used `users.len()` as the "Other…" sentinel, so an empty
+/// `/etc/passwd` list and the extra pill were the same number. The variant
+/// says which it is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UserChoice {
+    Existing(usize),
+    Other,
+}
+
+/// Which PAM exchange the password field is answering.
+///
+/// `challenge_open` was a bool beside a `prompt_label` string, so the prompt
+/// and the field could disagree. `Challenge` owns the label; `Password` is the
+/// first attempt.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum AuthPrompt {
+    Password,
+    Challenge { label: String },
+}
+
+impl AuthPrompt {
+    fn is_challenge(&self) -> bool {
+        matches!(self, Self::Challenge { .. })
+    }
+
+    fn label(&self) -> &str {
+        match self {
+            Self::Password => "Password",
+            Self::Challenge { label } => label,
+        }
+    }
+}
+
 pub struct GreeterScreen {
     users: Vec<UserEntry>,
-    selected_user: usize, // `users.len()` means "Other…"
+    selected_user: UserChoice,
     sessions: Vec<SessionEntry>,
     selected_session: usize,
     state: GreeterState,
@@ -205,8 +240,7 @@ pub struct GreeterScreen {
 
     username_input: Input,
     secret_input: Input,
-    prompt_label: String,
-    challenge_open: bool,
+    auth_prompt: AuthPrompt,
     caps_lock: bool,
     cursor_blink_on: bool,
     last_blink: Instant,
@@ -241,13 +275,17 @@ impl GreeterScreen {
         let follow_user_theme = cfg.follow_user_theme;
         let show_power_actions = cfg.show_power_actions;
 
-        let mut selected_user = 0;
+        let mut selected_user = if setup.users.is_empty() {
+            UserChoice::Other
+        } else {
+            UserChoice::Existing(0)
+        };
         let mut username_input = Input::new();
         if remember_user && let Some(last) = setup.state.last_user.as_deref() {
             if show_user_pills
                 && let Some(idx) = setup.users.iter().position(|u| u.username == last)
             {
-                selected_user = idx;
+                selected_user = UserChoice::Existing(idx);
             } else if !show_user_pills || setup.users.is_empty() {
                 username_input.set(last);
             }
@@ -255,7 +293,7 @@ impl GreeterScreen {
 
         // When pills are hidden or no users were found in /etc/passwd, use the manual username field.
         let focus = if !show_user_pills || setup.users.is_empty() {
-            selected_user = setup.users.len();
+            selected_user = UserChoice::Other;
             if username_input.text().is_empty() {
                 Focus::Username
             } else {
@@ -363,8 +401,7 @@ impl GreeterScreen {
             open_settings: false,
             username_input,
             secret_input: Input::new().with_masked(true),
-            prompt_label: "Password".into(),
-            challenge_open: false,
+            auth_prompt: AuthPrompt::Password,
             caps_lock: false,
             cursor_blink_on: true,
             last_blink: Instant::now(),
@@ -439,14 +476,17 @@ impl GreeterScreen {
     }
 
     fn using_other_user(&self) -> bool {
-        !self.show_user_pills || self.selected_user >= self.users.len()
+        !self.show_user_pills || matches!(self.selected_user, UserChoice::Other)
     }
 
     fn active_username(&self) -> String {
-        if let Some(u) = self.users.get(self.selected_user) {
-            u.username.clone()
-        } else {
-            self.username_input.text().trim().to_string()
+        match self.selected_user {
+            UserChoice::Existing(idx) => self
+                .users
+                .get(idx)
+                .map(|user| user.username.clone())
+                .unwrap_or_default(),
+            UserChoice::Other => self.username_input.text().trim().to_string(),
         }
     }
 
@@ -512,14 +552,16 @@ impl GreeterScreen {
         if let Some(backend) = self.backend.as_mut() {
             backend.cancel();
         }
-        self.challenge_open = false;
-        self.prompt_label = "Password".into();
+        self.auth_prompt = AuthPrompt::Password;
         self.secret_input = Input::new().with_masked(true);
     }
 
     fn select_user(&mut self, idx: usize) {
-        let max = self.users.len();
-        self.selected_user = idx.min(max);
+        self.selected_user = if idx >= self.users.len() {
+            UserChoice::Other
+        } else {
+            UserChoice::Existing(idx)
+        };
         self.reset_pam_state();
         self.status = None;
         self.focus = if self.using_other_user() {
@@ -554,7 +596,7 @@ impl GreeterScreen {
             session_name: session.name.clone(),
         };
         let secret = self.secret_input.text().to_string();
-        let reply_only = self.challenge_open;
+        let reply_only = self.auth_prompt.is_challenge();
 
         self.status = None;
         self.runner.spawn("Authenticating", move || {
@@ -861,7 +903,7 @@ impl Screen for GreeterScreen {
             self.backend = Some(res.backend);
             match res.outcome {
                 AuthOutcome::Started { preview_note } => {
-                    self.challenge_open = false;
+                    self.auth_prompt = AuthPrompt::Password;
                     self.secret_input = Input::new().with_masked(true);
                     if let Some(note) = preview_note {
                         self.status = Some((StatusKind::Ok, note));
@@ -875,12 +917,13 @@ impl Screen for GreeterScreen {
                     prompt,
                     notice,
                 } => {
-                    self.challenge_open = true;
                     let cleaned = prompt.trim_end_matches(':').trim().to_string();
-                    self.prompt_label = if cleaned.is_empty() {
-                        "Response".into()
-                    } else {
-                        cleaned
+                    self.auth_prompt = AuthPrompt::Challenge {
+                        label: if cleaned.is_empty() {
+                            "Response".into()
+                        } else {
+                            cleaned
+                        },
                     };
                     self.secret_input =
                         Input::new().with_masked(prompt_type == AuthMessageType::Secret);
@@ -1089,7 +1132,7 @@ impl Screen for GreeterScreen {
                 let selected = if is_other {
                     self.using_other_user()
                 } else {
-                    self.selected_user == idx
+                    self.selected_user == UserChoice::Existing(idx)
                 };
                 let focused = self.focus == Focus::Users && selected;
                 let pill_style = if focused {
@@ -1189,7 +1232,7 @@ impl Screen for GreeterScreen {
                 ctx.buf,
                 inner.x + 3,
                 y,
-                &self.prompt_label,
+                self.auth_prompt.label(),
                 label_w,
                 label_style,
             );
@@ -1202,7 +1245,7 @@ impl Screen for GreeterScreen {
                     pass_rect,
                     ctx.buf,
                     ctx.design,
-                    if self.challenge_open {
+                    if self.auth_prompt.is_challenge() {
                         "type PAM response"
                     } else {
                         "type password"
@@ -1662,7 +1705,9 @@ impl Screen for GreeterScreen {
 
         // Escape inside real greetd never closes the VT7 greeter; only clears state.
         if key.code == KeyCode::Esc {
-            if !self.secret_input.text().is_empty() || self.challenge_open || self.status.is_some()
+            if !self.secret_input.text().is_empty()
+                || self.auth_prompt.is_challenge()
+                || self.status.is_some()
             {
                 self.reset_pam_state();
                 self.status = None;
@@ -1719,22 +1764,22 @@ impl Screen for GreeterScreen {
             Focus::Users => match key.code {
                 KeyCode::Left => {
                     let max = self.users.len();
-                    let next = if self.selected_user == 0 {
-                        max
-                    } else {
-                        self.selected_user - 1
+                    let current = match self.selected_user {
+                        UserChoice::Existing(idx) => idx,
+                        UserChoice::Other => max,
                     };
+                    let next = if current == 0 { max } else { current - 1 };
                     self.select_user(next);
                     self.focus = Focus::Users;
                     Outcome::Consumed
                 }
                 KeyCode::Right => {
                     let max = self.users.len();
-                    let next = if self.selected_user >= max {
-                        0
-                    } else {
-                        self.selected_user + 1
+                    let current = match self.selected_user {
+                        UserChoice::Existing(idx) => idx,
+                        UserChoice::Other => max,
                     };
+                    let next = if current >= max { 0 } else { current + 1 };
                     self.select_user(next);
                     self.focus = Focus::Users;
                     Outcome::Consumed
@@ -1834,6 +1879,21 @@ mod tests {
     use lazyos_ui::App;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+
+    #[test]
+    fn user_choice_and_auth_prompt_name_their_states() {
+        assert_ne!(UserChoice::Existing(0), UserChoice::Other);
+        assert_eq!(UserChoice::Other, UserChoice::Other);
+
+        assert!(!AuthPrompt::Password.is_challenge());
+        assert_eq!(AuthPrompt::Password.label(), "Password");
+
+        let challenge = AuthPrompt::Challenge {
+            label: "One-time code".into(),
+        };
+        assert!(challenge.is_challenge());
+        assert_eq!(challenge.label(), "One-time code");
+    }
 
     fn test_screen_with_config(preview: bool, config: GreeterConfig) -> GreeterScreen {
         let theme = load_theme_by_slug("solarized").unwrap();
