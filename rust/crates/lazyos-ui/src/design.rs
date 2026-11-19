@@ -169,6 +169,9 @@ pub struct Design {
     reduced_motion: bool,
     muted: Rgb,
     border: Rgb,
+    ok: Rgb,
+    warn: Rgb,
+    danger: Rgb,
     selection: Rgb,
     selection_text: Rgb,
     selection_dim: Rgb,
@@ -226,6 +229,9 @@ fn readable(from: Rgb, toward: Rgb, against: Rgb, floor: f32) -> Rgb {
 struct Derived {
     muted: Rgb,
     border: Rgb,
+    ok: Rgb,
+    warn: Rgb,
+    danger: Rgb,
     selection: Rgb,
     selection_text: Rgb,
     selection_dim: Rgb,
@@ -236,6 +242,14 @@ impl Derived {
     fn of(palette: &Palette) -> Self {
         let muted = readable(palette.dim, palette.text, palette.bg, 4.5);
         let border = readable(palette.surface_alt, palette.text, palette.bg, 3.0);
+        // Status text is the one string a person must read: an error summary,
+        // "Stopped", "connected". Solarized's own red is 3.25:1 on its
+        // background and Nord's 3.05, so a theme that states a quiet status
+        // colour still gets a readable one. These are foreground roles only;
+        // a tinted fill is `danger_bg`, which is not derived.
+        let ok = readable(palette.ok, palette.text, palette.bg, 4.5);
+        let warn = readable(palette.warn, palette.text, palette.bg, 4.5);
+        let danger = readable(palette.danger, palette.text, palette.bg, 4.5);
         // The fill stays the theme's: lifting it to 3:1 against the background
         // would make the theme's own text unreadable on it (solarized's text
         // fell to 1.9:1). The 3:1 cue is the accent bar and the bold label;
@@ -244,6 +258,9 @@ impl Derived {
         Self {
             muted,
             border,
+            ok,
+            warn,
+            danger,
             selection,
             selection_text: readable(palette.text, extreme(selection), selection, 4.5),
             selection_dim: readable(muted, palette.text, selection, 4.5),
@@ -282,6 +299,9 @@ impl Design {
             reduced_motion,
             muted: derived.muted,
             border: derived.border,
+            ok: derived.ok,
+            warn: derived.warn,
+            danger: derived.danger,
             selection: derived.selection,
             selection_text: derived.selection_text,
             selection_dim: derived.selection_dim,
@@ -311,6 +331,9 @@ impl Design {
         self.palette = palette;
         self.muted = derived.muted;
         self.border = derived.border;
+        self.ok = derived.ok;
+        self.warn = derived.warn;
+        self.danger = derived.danger;
         self.selection = derived.selection;
         self.selection_text = derived.selection_text;
         self.selection_dim = derived.selection_dim;
@@ -364,9 +387,9 @@ impl Design {
             ColorRole::Muted => self.muted,
             ColorRole::Accent => p.accent,
             ColorRole::AccentAlt => p.accent_alt,
-            ColorRole::Ok => p.ok,
-            ColorRole::Warn => p.warn,
-            ColorRole::Danger => p.danger,
+            ColorRole::Ok => self.ok,
+            ColorRole::Warn => self.warn,
+            ColorRole::Danger => self.danger,
             ColorRole::Selection => self.selection,
             ColorRole::SelectionText => self.selection_text,
             ColorRole::SelectionDim => self.selection_dim,
@@ -559,6 +582,9 @@ mod tests {
             for (role, against, floor) in [
                 (ColorRole::Muted, ColorRole::Bg, 4.5),
                 (ColorRole::Border, ColorRole::Bg, 3.0),
+                (ColorRole::Ok, ColorRole::Bg, 4.5),
+                (ColorRole::Warn, ColorRole::Bg, 4.5),
+                (ColorRole::Danger, ColorRole::Bg, 4.5),
                 (ColorRole::Accent, ColorRole::Bg, 3.0),
                 (ColorRole::SelectionText, ColorRole::Selection, 4.5),
                 (ColorRole::SelectionDim, ColorRole::Selection, 4.5),

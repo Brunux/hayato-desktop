@@ -216,8 +216,10 @@ still shows what happened. While a task runs, **s** stops it if it is stoppable
 `Stopped`, never `Failed`); **Esc** or **q** closes the window without cancelling
 the task. The bar's spinner is the same busy state the old menus use, so a click
 on it stops a stoppable task the same way **s** does. The outcome is a card in
-its own colour - green **Done**, red **Failed**, amber **Stopped** - and a
-failure keeps its error there: **c** copies that error, **l** focuses the log.
+its own colour - green **Done**, red **Failed**, amber **Stopped** - and the word
+is always there, so the colour is never the only signal. A failure keeps its
+error in that card, in a colour that clears 4.5:1 on every built-in theme:
+**c** copies that error, **l** focuses the log.
 The log carries a scrollbar; **Up/Down** and PageUp/PageDown move it, **End**
 follows the tail again.
 
