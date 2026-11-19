@@ -51,6 +51,14 @@ fn do_scan(secs: u32) {
 /// An unbonded entry is not a pairing, and `pair` refuses it ("remove it
 /// first"), so the empty entry is dropped and paired again. The bond is read
 /// back from `info`: success is "Bonded: yes", not the word "successful".
+///
+/// A discovery runs before the request. Without one, BlueZ pairs against the
+/// cached entry and can answer "Pairing successful" while storing no key at
+/// all, because the pad only accepts the request in its own pairing mode and a
+/// cached entry looks reachable enough to try. The scan is also what the
+/// person's "hold PS + Share" produces: a pad that is not advertising is not
+/// in pairing mode, and saying so is better than a pairing that did not
+/// happen.
 fn pair_and_connect(mac: &str, name: &str) -> (bool, String) {
     let info = out(&["bluetoothctl", "info", mac]).unwrap_or_default();
     if info.lines().any(|line| line.trim() == "Bonded: yes") {
@@ -69,6 +77,13 @@ fn pair_and_connect(mac: &str, name: &str) -> (bool, String) {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
+    }
+
+    if !discover(mac) {
+        return (
+            false,
+            format!("{name} is not in pairing mode: put it in pairing mode and try again"),
+        );
     }
 
     let pair = Command::new("bluetoothctl")
@@ -99,6 +114,35 @@ fn pair_and_connect(mac: &str, name: &str) -> (bool, String) {
             format!("{name} paired but not bonded: put it in pairing mode and try again"),
         )
     }
+}
+
+/// Whether the address is in BlueZ's device list.
+fn listed(mac: &str) -> bool {
+    out(&["bluetoothctl", "devices"]).is_some_and(|list| list.contains(mac))
+}
+
+/// Discover for a few seconds, and say whether the address showed up.
+///
+/// A scan already running (the picker starts one when it opens) makes `scan on`
+/// return at once with "In Progress", which is not a failure: the list is
+/// checked again after a short wait either way.
+fn discover(mac: &str) -> bool {
+    for _ in 0..3 {
+        if listed(mac) {
+            return true;
+        }
+        let _ = Command::new("bluetoothctl")
+            .args(["--timeout", "4", "scan", "on"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        std::thread::sleep(Duration::from_secs(1));
+        if listed(mac) {
+            return true;
+        }
+    }
+    false
 }
 
 fn trust(mac: &str) {
@@ -247,7 +291,7 @@ impl BluetoothScreen {
         let label = if d.connected {
             format!("Disconnecting {}\u{2026}", d.name)
         } else {
-            format!("Connecting to {}\u{2026}", d.name)
+            format!("Pairing with {}\u{2026}", d.name)
         };
         self.runner.spawn(label, move || {
             let (ok, message) = if d.connected {
