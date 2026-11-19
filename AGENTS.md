@@ -130,7 +130,9 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    needs no restart and works with no pad connected. The defaults are the console layout and cover
    a DualShock 4 (Cross confirm, Circle cancel), which pairs over Bluetooth (PS + Share) like any
    other pad; a DualShock 3 is the USB exception (BlueZ's sixaxis plugin writes the host address),
-   never a scan. The HTML game host and RetroArch keep their own input (the browser Gamepad API and
+   never a scan. The screen shows the charge `hid-playstation` publishes
+   (`ps-controller-battery-<address>`) and says to charge a pad below 15 %, because a flat DualShock
+   4 connects, lights up and hangs up within seconds and otherwise reads as a pairing failure. The HTML game host and RetroArch keep their own input (the browser Gamepad API and
    udev), so a press never moves two things. It is the one resident input helper; a pid lock keeps
    it single. The game stack itself is built, not installed from
    Debian: `tools/retroarch/` builds the slim emulator (no Qt, assets, FFmpeg, Vulkan or updater)

@@ -201,6 +201,10 @@ pub struct PadInfo {
     pub bus: evdev::BusType,
     pub vendor: u16,
     pub product: u16,
+    /// The pad's own charge, when the kernel reports one. It is worth showing:
+    /// a DualShock 4 at a few percent connects, lights up and switches itself
+    /// off a few seconds later, which looks exactly like a broken pairing.
+    pub battery: Option<u8>,
 }
 
 impl PadInfo {
@@ -214,7 +218,53 @@ impl PadInfo {
     }
 
     pub fn summary(&self) -> String {
-        format!("{} · {}", self.name, self.bus)
+        match self.battery {
+            Some(percent) => format!("{} · {} · {}%", self.name, self.bus, percent),
+            None => format!("{} · {}", self.name, self.bus),
+        }
+    }
+
+    /// Below this a DualShock 4 pairs, lights up and then switches itself off
+    /// within seconds, so the screen says so rather than letting it look like a
+    /// pairing failure.
+    pub fn is_low(&self) -> bool {
+        self.battery.is_some_and(|percent| percent < 15)
+    }
+}
+
+/// The charge `hid-playstation` publishes for a pad, when it publishes one.
+///
+/// The node is `ps-controller-battery-<address>`, and the address is the input
+/// device's `phys` over Bluetooth. Over USB the node is named after the pad's
+/// serial instead, so a single Sony pad's node is used: with two pads the
+/// charge is left off rather than shown against the wrong one.
+fn battery(phys: Option<&str>, vendor: u16) -> Option<u8> {
+    let base = std::path::Path::new("/sys/class/power_supply");
+    let percent = |name: &str| -> Option<u8> {
+        std::fs::read_to_string(base.join(name).join("capacity"))
+            .ok()?
+            .trim()
+            .parse()
+            .ok()
+    };
+    if let Some(phys) = phys {
+        if let Some(percent) = percent(&format!("ps-controller-battery-{phys}")) {
+            return Some(percent);
+        }
+    }
+    if vendor != 0x054c {
+        return None;
+    }
+    let mut found: Vec<String> = std::fs::read_dir(base)
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name.starts_with("ps-controller-battery-"))
+        .collect();
+    found.sort();
+    match found.as_slice() {
+        [only] => percent(only),
+        _ => None,
     }
 }
 
@@ -237,6 +287,7 @@ pub fn pads() -> Vec<PadInfo> {
             bus: id.bus_type(),
             vendor: id.vendor(),
             product: id.product(),
+            battery: battery(device.physical_path(), id.vendor()),
         });
     }
     found
@@ -390,6 +441,28 @@ mod tests {
 
     fn temp_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("lazyos-pad-{}-{name}.json", std::process::id()))
+    }
+
+    #[test]
+    fn a_charge_is_shown_and_a_low_one_is_flagged() {
+        let mut pad = PadInfo {
+            name: "Wireless Controller".to_string(),
+            bus: evdev::BusType::BUS_BLUETOOTH,
+            vendor: 0x054c,
+            product: 0x09cc,
+            battery: Some(5),
+        };
+        assert_eq!(
+            pad.summary(),
+            "Wireless Controller \u{b7} Bluetooth \u{b7} 5%"
+        );
+        assert!(pad.is_low(), "5% is the case that switches itself off");
+        pad.battery = Some(60);
+        assert!(!pad.is_low());
+        assert!(pad.summary().ends_with("60%"));
+        pad.battery = None;
+        assert_eq!(pad.summary(), "Wireless Controller \u{b7} Bluetooth");
+        assert!(!pad.is_low());
     }
 
     #[test]

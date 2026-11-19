@@ -74,6 +74,11 @@ A **DualShock 3** is the exception: it has no pairing mode, so it pairs once
 over USB — plug it in, press **PS**, unplug it and press **PS** again. BlueZ's
 sixaxis support writes this machine's address into it.
 
+A pad that connects, lights up and then goes dark within seconds is nearly
+flat, not mis-paired: **Settings → Input → Controller** shows its charge, and
+below about 15 % a DualShock 4 hangs up. Plug it in by USB — it works wired
+while it charges.
+
 The Games library does **not** use the browser's Gamepad API; the HTML game
 does. RetroArch reads the pad through udev and its own autoconfig, so a pad
 never moves two things at once.

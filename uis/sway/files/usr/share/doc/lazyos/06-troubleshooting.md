@@ -935,6 +935,11 @@ where it fails.
   console — hold the pair buttons again), then choose **Wireless Controller**
   in Settings → Network → Bluetooth. The mapper picks it up within two seconds.
   `bluetoothctl info <MAC>` shows the link once paired.
+- **A pad connects, lights up, then switches itself off**: that is the charge,
+  not the pairing. The kernel publishes `ps-controller-battery-<address>`, the
+  Controller screen shows it, and below about 15 % a DualShock 4 hangs up
+  within seconds of connecting. Charge it, or plug it in by USB, where it also
+  works while it charges.
 - **A DualShock 3 does not appear**: it has no pairing mode, so it pairs once
   over USB. Plug it in, press **PS** (BlueZ's sixaxis support writes this
   machine's address into it), unplug it and press **PS** again; it then

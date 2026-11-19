@@ -138,6 +138,22 @@ impl Screen for ControllerScreen {
         );
         y += 1;
 
+        if let Some(pad) = self.pads.iter().find(|pad| pad.is_low()) {
+            let hint = format!(
+                "{}% \u{b7} charge it: a pad this low connects, lights up and switches itself off within seconds",
+                pad.battery.unwrap_or_default()
+            );
+            put_trunc(
+                ctx.buf,
+                inner.x,
+                y,
+                &hint,
+                inner.width,
+                ctx.design.style(TextStyle::Dim),
+            );
+            y += 1;
+        }
+
         if let Some(pad) = self.pads.iter().find(|pad| pad.is_playstation_on_usb()) {
             let hint = format!(
                 "{} on USB · press the PS button, then unplug and press PS again",
@@ -420,6 +436,7 @@ mod tests {
             bus: evdev::BusType::BUS_BLUETOOTH,
             vendor: 0x045e,
             product: 0x0b13,
+            battery: None,
         };
         assert!(pairing_note(&[xbox]).is_some());
         let ps4 = PadInfo {
@@ -427,6 +444,7 @@ mod tests {
             bus: evdev::BusType::BUS_BLUETOOTH,
             vendor: 0x054c,
             product: 0x09cc,
+            battery: None,
         };
         assert!(pairing_note(&[ps4]).is_none());
     }
