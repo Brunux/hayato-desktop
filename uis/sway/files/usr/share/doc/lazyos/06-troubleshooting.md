@@ -947,6 +947,16 @@ where it fails.
 - **The pad works but the buttons do the wrong thing**: open **Settings →
   Input → Controller** (or **`o` → Controller** in the game library). Every
   button's action is there, and the table can be edited with no pad connected.
+  That table is for the framework windows only; inside a game the pad is
+  RetroArch's, which reads it through udev from
+  `~/.config/retroarch/autoconfig/udev/`. `retroarch --verbose` says
+  `Autoconfig: … configured in port 1` when a profile matches and
+  `not configured` when the pad is on the fallback mapping. In RetroArch's own
+  menu **Circle** confirms (its **A**); **Settings → Input → Swap OK/Cancel
+  Buttons** flips that. A change for one game is a remap: **F1 → Quick Menu →
+  Controls → Save Game Remap**.
+- **The pad rumbles in nothing**: over Bluetooth a DualShock 4 reports zero
+  force-feedback effects here; plug it in by USB and it rumbles.
 - **A zipped game does not appear, or plays the wrong game**: a `.zip` belongs
   to the platform folder it sits in (`~/Games/nes/Mario.zip`), because its
   extension names no platform, and a zip outside those folders is not a game.

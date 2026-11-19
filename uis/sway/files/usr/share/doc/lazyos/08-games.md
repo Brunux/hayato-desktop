@@ -74,6 +74,18 @@ A **DualShock 3** is the exception: it has no pairing mode, so it pairs once
 over USB — plug it in, press **PS**, unplug it and press **PS** again. BlueZ's
 sixaxis support writes this machine's address into it.
 
+**Inside a game the pad is RetroArch's own.** `lazyos gamepad` stops at the
+framework windows, so RetroArch reads the pad through udev and maps it from its
+own profile: the image ships one for the DualShock 4 in
+`~/.config/retroarch/autoconfig/udev/`, so **Cross** is the first arcade
+button, **Circle** the second, **Square** the third and **Triangle** the fourth,
+with both sticks, both triggers, Share, Options and PS mapped. RetroArch's own
+menu still confirms with **A** — Circle — because that is its layout; **Settings
+→ Input → Swap OK/Cancel Buttons** makes Cross confirm there. A change for one
+game belongs in a remap (**F1 → Quick Menu → Controls → Save Game Remap**), not
+in the profile. Rumble needs the cable: over Bluetooth the pad reports no
+force-feedback effects.
+
 A pad that connects, lights up and then goes dark within seconds is nearly
 flat, not mis-paired: **Settings → Input → Controller** shows its charge, and
 below about 15 % a DualShock 4 hangs up. Plug it in by USB — it works wired
