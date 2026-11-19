@@ -132,7 +132,9 @@ fn smoke(name: &str, mut make: impl FnMut() -> Box<dyn Screen>) {
 
 #[test]
 fn capture_is_a_list_of_actions() {
-    golden("capture", || Box::new(CaptureScreen::new()));
+    // The rows name the folder they save to; a smoke render checks the layout
+    // without pinning the runner's temp path into a golden file.
+    smoke("capture", || Box::new(CaptureScreen::new()));
 }
 
 #[test]
