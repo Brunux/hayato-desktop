@@ -194,6 +194,18 @@ pub fn rows() -> Vec<(String, String, String)> {
         .collect()
 }
 
+/// The one question of `lazyos menu places`, built from data so a snapshot can
+/// draw it without a mounted disk. `menu` passes what `collect_places` found.
+pub fn questions(places: &[PlaceEntry], note: &str) -> Vec<Question> {
+    let mut rows = Vec::new();
+    let mut keys = Vec::new();
+    for p in places {
+        rows.push(row(&p.label, &p.target, p.glyph));
+        keys.push(p.key.clone());
+    }
+    vec![Question::choose("Places", note, rows, keys)]
+}
+
 /// Interactive `lazyos menu places`.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
@@ -203,19 +215,11 @@ pub fn menu(
 
     loop {
         let places = collect_places();
-        let mut rows = Vec::new();
-        let mut keys = Vec::new();
-
-        for p in &places {
-            rows.push(row(&p.label, &p.target, p.glyph));
-            keys.push(p.key.clone());
-        }
-
         let note = status_note
             .clone()
             .unwrap_or_else(|| "Enter opens · type to filter · Escape closes".to_string());
 
-        let mut picker = Picker::new("Places", vec![Question::choose("Places", note, rows, keys)]);
+        let mut picker = Picker::new("Places", questions(&places, &note));
 
         let code = crate::run_screen(terminal, design, "Places", &mut picker)?;
         if code != 0 {

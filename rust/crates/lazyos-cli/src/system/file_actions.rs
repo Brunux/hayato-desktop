@@ -83,6 +83,114 @@ pub fn detect_kind(path: &Path) -> FileKind {
     }
 }
 
+/// The question of `lazyos menu file-actions`, built from data so a snapshot
+/// can draw it without a file on disk.
+pub fn questions(
+    base: &str,
+    target: &Path,
+    parent: &Path,
+    kind: FileKind,
+    cached_du: Option<&str>,
+    note: &str,
+) -> Vec<Question> {
+    let mut rows = Vec::new();
+    let mut keys = Vec::new();
+
+    if kind == FileKind::Directory {
+        let du_detail = cached_du
+            .as_ref()
+            .map(|s| format!("calculated size: {s}"))
+            .unwrap_or_else(|| "du -sh: calculate directory size".to_string());
+        let mut r = row("Disk usage", du_detail, Glyph::Disk);
+        if let Some(s) = cached_du {
+            r = r.value(s.to_string());
+        }
+        rows.push(r);
+        keys.push("du".to_string());
+    }
+
+    rows.push(row("Compress", format!("→ {base}.tar.xz"), Glyph::Box));
+    keys.push("pack".to_string());
+
+    if matches!(kind, FileKind::ArchiveZip | FileKind::ArchiveTar) {
+        rows.push(row(
+            "Extract here",
+            "→ folder named after archive",
+            Glyph::Box,
+        ));
+        keys.push("unpack".to_string());
+    }
+
+    if kind == FileKind::DiskImage {
+        rows.push(row(
+            "Mount the image",
+            "udisksctl loop-setup then open",
+            Glyph::Disk,
+        ));
+        keys.push("mount".to_string());
+    }
+
+    if matches!(kind, FileKind::Video | FileKind::Audio) {
+        rows.push(row(
+            "Convert",
+            "ffmpeg: MP4 video or MP3 audio",
+            Glyph::Video,
+        ));
+        keys.push("convert".to_string());
+    }
+
+    match kind {
+        FileKind::Pdf => {
+            rows.push(row(
+                "Annotate or sign (xournalpp)",
+                "export the signed copy beside the original",
+                Glyph::Brush,
+            ));
+            keys.push("annotate".to_string());
+        }
+        FileKind::Epub => {
+            rows.push(row("Read (foliate)", "EPUB reader", Glyph::Book));
+            keys.push("read-epub".to_string());
+        }
+        FileKind::Ink => {
+            rows.push(row("Open in xournalpp", "ink note", Glyph::Brush));
+            keys.push("open-ink".to_string());
+            rows.push(row(
+                "Export to PDF (xournalpp)",
+                "writes <name>-signed.pdf beside it",
+                Glyph::Download,
+            ));
+            keys.push("export-ink".to_string());
+        }
+        FileKind::Text => {
+            rows.push(row(
+                "Edit (nvim)",
+                "opens in a foot window",
+                Glyph::Terminal,
+            ));
+            keys.push("edit-text".to_string());
+        }
+        _ => {}
+    }
+
+    rows.push(row(
+        "Copy the path",
+        target.display().to_string(),
+        Glyph::Clipboard,
+    ));
+    keys.push("copy".to_string());
+
+    rows.push(row(
+        "A terminal here",
+        parent.display().to_string(),
+        Glyph::Terminal,
+    ));
+    keys.push("term".to_string());
+
+    let title = format!("File actions · {base}");
+    vec![Question::choose(title, note, rows, keys)]
+}
+
 /// Interactive `lazyos menu file-actions <path>`.
 pub fn menu_for_path(
     path_str: &str,
@@ -111,112 +219,13 @@ pub fn menu_for_path(
     let mut status_note: Option<String> = None;
 
     loop {
-        let mut rows = Vec::new();
-        let mut keys = Vec::new();
-
-        if kind == FileKind::Directory {
-            let du_detail = cached_du
-                .as_ref()
-                .map(|s| format!("calculated size: {s}"))
-                .unwrap_or_else(|| "du -sh: calculate directory size".to_string());
-            let mut r = row("Disk usage", du_detail, Glyph::Disk);
-            if let Some(s) = &cached_du {
-                r = r.value(s.clone());
-            }
-            rows.push(r);
-            keys.push("du".to_string());
-        }
-
-        rows.push(row("Compress", format!("→ {base}.tar.xz"), Glyph::Box));
-        keys.push("pack".to_string());
-
-        if matches!(kind, FileKind::ArchiveZip | FileKind::ArchiveTar) {
-            rows.push(row(
-                "Extract here",
-                "→ folder named after archive",
-                Glyph::Box,
-            ));
-            keys.push("unpack".to_string());
-        }
-
-        if kind == FileKind::DiskImage {
-            rows.push(row(
-                "Mount the image",
-                "udisksctl loop-setup then open",
-                Glyph::Disk,
-            ));
-            keys.push("mount".to_string());
-        }
-
-        if matches!(kind, FileKind::Video | FileKind::Audio) {
-            rows.push(row(
-                "Convert",
-                "ffmpeg: MP4 video or MP3 audio",
-                Glyph::Video,
-            ));
-            keys.push("convert".to_string());
-        }
-
-        match kind {
-            FileKind::Pdf => {
-                rows.push(row(
-                    "Annotate or sign (xournalpp)",
-                    "export the signed copy beside the original",
-                    Glyph::Brush,
-                ));
-                keys.push("annotate".to_string());
-            }
-            FileKind::Epub => {
-                rows.push(row("Read (foliate)", "EPUB reader", Glyph::Book));
-                keys.push("read-epub".to_string());
-            }
-            FileKind::Ink => {
-                rows.push(row("Open in xournalpp", "ink note", Glyph::Brush));
-                keys.push("open-ink".to_string());
-                rows.push(row(
-                    "Export to PDF (xournalpp)",
-                    "writes <name>-signed.pdf beside it",
-                    Glyph::Download,
-                ));
-                keys.push("export-ink".to_string());
-            }
-            FileKind::Text => {
-                rows.push(row(
-                    "Edit (nvim)",
-                    "opens in a foot window",
-                    Glyph::Terminal,
-                ));
-                keys.push("edit-text".to_string());
-            }
-            _ => {}
-        }
-
-        rows.push(row(
-            "Copy the path",
-            target.display().to_string(),
-            Glyph::Clipboard,
-        ));
-        keys.push("copy".to_string());
-
-        rows.push(row(
-            "A terminal here",
-            parent.display().to_string(),
-            Glyph::Terminal,
-        ));
-        keys.push("term".to_string());
-
         let note = status_note
             .clone()
             .unwrap_or_else(|| target.display().to_string());
 
         let mut picker = Picker::new(
             &format!("File actions · {base}"),
-            vec![Question::choose(
-                format!("File actions · {base}"),
-                note,
-                rows,
-                keys,
-            )],
+            questions(&base, target, &parent, kind, cached_du.as_deref(), &note),
         );
 
         let code = crate::run_screen(

@@ -1,0 +1,24 @@
+LazyOS · Agents                                  Enter picks · Escape goes back
+────────────────────────────────────────────────────────────────────────────────
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Enter launches or configures · Escape closes                                 │
+│                                                                              │
+│ ▍   Claude Code  launch session                                 ● default   │
+│     Claude Code accounts…  active account: work                             │
+│     Codex  install @openai/codex                                            │
+│     OpenCode  install @opencode/cli                                         │
+│     Gemini CLI  install @google/gemini-cli                                  │
+│     GitHub Copilot  install @github/copilot                                 │
+│     Set the default agent…  choose active default agent                     │
+│     Agent console  drop down from the top · Alt+`                           │
+│     Open a terminal in ~/Work  ~/Work                                       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  pick   [Esc]  back

@@ -1,0 +1,24 @@
+LazyOS · Download                                Enter picks · Escape goes back
+────────────────────────────────────────────────────────────────────────────────
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Enter downloads in this window · Escape closes                               │
+│                                                                              │
+│ ▍   The link in the clipboard  https://www.youtube.com/watch?v=dQw4w9WgXcQ  │
+│     Paste or type a link  YouTube, Vimeo, SoundCloud, or a direct file URL  │
+│     The Downloads folder  3 files · ~/Downloads                             │
+│     Stop active background download  stops yt-dlp; partial .part file stay… │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  pick   [Esc]  back

@@ -205,7 +205,11 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    selected row is an accent bar plus a bold label, never the fill alone. Motion that carries state
    (the progress spinner) is exempt from reduced motion because it is essential progress; the text
    cursor and every decorative animation honour it. The mechanical half of the rule is the derived
-   floors: a status colour that cannot be read fails `cargo test`.
+   floors: a status colour that cannot be read fails `cargo test`. A picker whose rows come from
+   the machine builds them in a `questions(...)` function that takes that data as arguments
+   (`places::questions(&places, note)`, `agents::questions(&installed, &accounts, default, note)`),
+   so `tests/pickers.rs` draws the real screen at both grids without a mounted disk, a clipboard
+   or an agent on `PATH`; `menu()` calls the same function and nothing else builds rows.
 
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single
