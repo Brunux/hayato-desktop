@@ -15,10 +15,11 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use lazyos_cli::system::{
-    apps::AppsScreen, calc::CalcScreen, capture::CaptureScreen, clip::ClipScreen,
+    about::AboutScreen, apps::AppsScreen, audio::AudioScreen, bluetooth::BluetoothScreen,
+    calc::CalcScreen, capture::CaptureScreen, clean::CleanScreen, clip::ClipScreen,
     colour::ColourScreen, dev::DevScreen, emoji::EmojiScreen, games::GamesScreen, keys::KeysScreen,
-    learn::LearnScreen, media::MediaScreen, notify::NotifyScreen, qr::QrScreen,
-    remind::RemindScreen,
+    kill::KillScreen, learn::LearnScreen, media::MediaScreen, net::NetScreen, notify::NotifyScreen,
+    qr::QrScreen, remind::RemindScreen, run::RunScreen, window::WindowScreen,
 };
 use lazyos_ui::{App, Design, Header, Screen};
 use ratatui::Terminal;
@@ -195,4 +196,44 @@ fn learn_with_the_manual_missing_still_renders() {
 #[test]
 fn games_with_an_empty_library_still_renders() {
     smoke("games", || Box::new(GamesScreen::new()));
+}
+
+#[test]
+fn about_with_the_machines_own_facts_still_renders() {
+    smoke("about", || Box::new(AboutScreen::new()));
+}
+
+#[test]
+fn free_space_while_calculating_still_renders() {
+    smoke("clean", || Box::new(CleanScreen::new()));
+}
+
+#[test]
+fn audio_with_no_sink_still_renders() {
+    smoke("audio", || Box::new(AudioScreen::new()));
+}
+
+#[test]
+fn bluetooth_with_no_adapter_still_renders() {
+    smoke("bluetooth", || Box::new(BluetoothScreen::new()));
+}
+
+#[test]
+fn network_with_no_radio_still_renders() {
+    smoke("net", || Box::new(NetScreen::new()));
+}
+
+#[test]
+fn window_switcher_with_no_windows_still_renders() {
+    smoke("window", || Box::new(WindowScreen::new()));
+}
+
+#[test]
+fn run_with_the_path_still_renders() {
+    smoke("run", || Box::new(RunScreen::new()));
+}
+
+#[test]
+fn kill_with_the_process_table_still_renders() {
+    smoke("kill", || Box::new(KillScreen::new()));
 }
