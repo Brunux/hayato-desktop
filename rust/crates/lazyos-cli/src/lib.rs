@@ -863,9 +863,11 @@ fn open_path(resolved: &Resolved) -> i32 {
                 files::image_hint(&home);
             }
             use std::os::unix::process::CommandExt;
-            let error = std::process::Command::new(&plan.argv[0])
-                .args(&plan.argv[1..])
-                .exec();
+            let mut command = std::process::Command::new(&plan.argv[0]);
+            if let Some((key, value)) = system::doc_tools::dark_env(&plan.argv[0]) {
+                command.env(key, value);
+            }
+            let error = command.args(&plan.argv[1..]).exec();
             files::refuse(&path, &format!("Could not start {}: {error}", plan.argv[0]));
             EXIT_FAILED
         }

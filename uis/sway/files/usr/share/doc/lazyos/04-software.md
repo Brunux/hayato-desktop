@@ -190,6 +190,7 @@ tool that owns it:
 | **New ink note** | a blank xournalpp document; save it in this folder (Ctrl+S) and it joins the list |
 | **Annotate or sign a PDF** | picks a PDF from Documents or Downloads and opens it in xournalpp; save the `.xopp`, then export the signed PDF |
 | **Export an ink note to PDF** | `xournalpp --create-pdf` writes `<name>.pdf` into `~/Documents/Signed` |
+| **Search inside the notes** | ripgrep over the folder; Enter opens the note at the matching line |
 | **Open the notes folder** | the folder in Files |
 
 The folder is the state: there is no index and no daemon. The first open creates
@@ -202,6 +203,9 @@ opens in papers for reading. Files' **Alt+1** actions add the document rows for
 the file under the cursor: **Annotate or sign (xournalpp)** for a PDF, **Read
 (foliate)** for an EPUB, **Open in xournalpp** and **Export to PDF** for a
 `.xopp`, and **Edit (nvim)** for text.
+
+Both tools start with GTK's dark theme (`GTK_THEME=Adwaita:dark`), so their
+chrome matches the session while a document page stays white.
 
 `xournalpp` (8.8 MB, GTK3) and `foliate` (12.4 MB, GTK4/WebKit) are in
 `uis/sway/packages.list`. The rootfs installs with `--no-install-recommends`, so

@@ -50,6 +50,7 @@ This file is the only one the menu writes by itself.
 enum Pending {
     Annotate,
     Export,
+    Search,
     Trash(PathBuf),
 }
 
@@ -184,6 +185,12 @@ impl NotesScreen {
         ));
         keys.push("export".to_string());
         rows.push(row(
+            "Search inside the notes",
+            "ripgrep over the folder · Enter opens at the line",
+            Glyph::Search,
+        ));
+        keys.push("search".to_string());
+        rows.push(row(
             "Open the notes folder",
             notes_dir().display().to_string(),
             Glyph::Folder,
@@ -261,6 +268,10 @@ impl NotesScreen {
             }
             "export" => {
                 self.pending = Some(Pending::Export);
+                Outcome::Done(lazyos_ui::app::exit::OK)
+            }
+            "search" => {
+                self.pending = Some(Pending::Search);
                 Outcome::Done(lazyos_ui::app::exit::OK)
             }
             "folder" => {
@@ -667,6 +678,13 @@ fn editor() -> Option<String> {
 /// argument to `sh -c`, never part of the script, so a space or quote in a note
 /// name stays a name.
 fn open_editor(path: &Path) -> Result<(), String> {
+    open_editor_at(path, None)
+}
+
+/// Edit in foot and reopen the list afterwards. A search result passes its
+/// line, which nvim and vim take as `+N` before the path; an editor without
+/// that convention opens the note at the start instead.
+fn open_editor_at(path: &Path, line: Option<u32>) -> Result<(), String> {
     let editor = editor().ok_or("No editor found: install nvim or set EDITOR")?;
     if !have("foot") {
         return Err("foot is missing, so the editor has no window".to_string());
@@ -680,21 +698,29 @@ fn open_editor(path: &Path) -> Result<(), String> {
             .map(|name| name.to_string_lossy().to_string())
             .unwrap_or_else(|| "Note".to_string())
     );
-    let script = r#""$0" "$1"; exec env LAZYOS_UI=1 "$2" menu notes"#;
-    crate::system::spawn_detached_argv(
-        "foot",
-        &[
-            "--app-id=popup",
-            &title,
-            "-e",
-            "sh",
-            "-c",
-            script,
-            &editor,
-            &path.display().to_string(),
-            &exe,
-        ],
-    );
+    let line = line.filter(|_| matches!(editor.as_str(), "nvim" | "vim" | "vi"));
+    let line_arg = line.map(|line| line.to_string());
+    let path_arg = path.display().to_string();
+    let script = if line_arg.is_some() {
+        r#""$0" +"$1" "$2"; exec env LAZYOS_UI=1 "$3" menu notes"#
+    } else {
+        r#""$0" "$1"; exec env LAZYOS_UI=1 "$2" menu notes"#
+    };
+    let mut args = vec![
+        "--app-id=popup",
+        title.as_str(),
+        "-e",
+        "sh",
+        "-c",
+        script,
+        editor.as_str(),
+    ];
+    if let Some(line_arg) = &line_arg {
+        args.push(line_arg.as_str());
+    }
+    args.push(path_arg.as_str());
+    args.push(exe.as_str());
+    crate::system::spawn_detached_argv("foot", &args);
     Ok(())
 }
 
@@ -735,7 +761,7 @@ fn open_ink(path: &Path) -> Result<(), String> {
     if !have("xournalpp") {
         return Err("xournalpp is not installed (package xournalpp)".to_string());
     }
-    crate::system::spawn_detached_argv("xournalpp", &[&path.display().to_string()]);
+    super::doc_tools::spawn("xournalpp", &[&path.display().to_string()]);
     Ok(())
 }
 
@@ -747,7 +773,7 @@ fn new_ink(dir: &Path) -> Result<(), String> {
     // A new ink note is xournalpp's own unsaved document. Creating the `.xopp`
     // here would mean writing a format xournalpp owns; instead its save dialog
     // starts in the notes folder, and the list picks the file up once saved.
-    spawn_in(dir, "xournalpp", &[]);
+    super::doc_tools::spawn_in(Some(dir), "xournalpp", &[]);
     crate::system::say(
         "New ink note",
         format!(
@@ -758,28 +784,6 @@ fn new_ink(dir: &Path) -> Result<(), String> {
         Glyph::Brush,
     );
     Ok(())
-}
-
-/// Start a GUI program with `dir` as its working directory, in its own
-/// session: the menu closes and the window must not go with it.
-fn spawn_in(dir: &Path, program: &str, args: &[&str]) {
-    use std::os::unix::process::CommandExt;
-    let mut command = Command::new(program);
-    command
-        .args(args)
-        .current_dir(dir)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setsid() < 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-    let _ = command.spawn();
 }
 
 fn spawn_self(args: &[String]) {
@@ -915,7 +919,7 @@ fn annotate_pdf(
     else {
         return Ok(());
     };
-    crate::system::spawn_detached_argv("xournalpp", &[&path.display().to_string()]);
+    super::doc_tools::spawn("xournalpp", &[&path.display().to_string()]);
     Ok(())
 }
 
@@ -1056,6 +1060,141 @@ fn trash_note(
     Ok(())
 }
 
+/// One `rg` hit: the note, the line and the line's text.
+#[derive(Debug, PartialEq, Eq)]
+struct Hit {
+    path: PathBuf,
+    line: u32,
+    text: String,
+}
+
+/// `rg --null --line-number` writes `path\0line:text`, one match per line.
+/// The NUL is what keeps a path with a colon in it a path.
+fn parse_matches(text: &str) -> Vec<Hit> {
+    let mut hits = Vec::new();
+    for record in text.lines() {
+        let Some((path, rest)) = record.split_once('\0') else {
+            continue;
+        };
+        let Some((line, text)) = rest.split_once(':') else {
+            continue;
+        };
+        let Ok(line) = line.parse::<u32>() else {
+            continue;
+        };
+        hits.push(Hit {
+            path: PathBuf::from(path),
+            line,
+            text: text.trim_end().to_string(),
+        });
+    }
+    hits
+}
+
+/// Search the notes' contents with ripgrep, then open the chosen hit at its
+/// line. The title filter on the list stays a title filter: a full-text search
+/// is one row, so typing never walks every note.
+fn search_notes(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    design: &Design,
+) -> Result<bool, crate::Failure> {
+    let mut picker = Picker::new(
+        "Search the notes",
+        vec![Question::input(
+            "Search the notes",
+            "ripgrep over ~/Documents/Notes · Enter searches",
+            "a word or phrase",
+            false,
+        )],
+    );
+    let code = crate::run_screen(terminal, design, "Search the notes", &mut picker)?;
+    if code != 0 {
+        return Ok(false);
+    }
+    let Some(query) = picker
+        .answers()
+        .first()
+        .map(|answer| answer.trim().to_string())
+        .filter(|query| !query.is_empty())
+    else {
+        return Ok(false);
+    };
+    let dir = notes_dir();
+    let dir_text = dir.display().to_string();
+    let argv = [
+        "rg",
+        "--line-number",
+        "--no-heading",
+        "--color",
+        "never",
+        "--with-filename",
+        "--null",
+        "--max-count",
+        "20",
+        "--glob",
+        "!README.md",
+        "--",
+        query.as_str(),
+        dir_text.as_str(),
+    ];
+    let hits = super::out(&argv)
+        .map(|text| parse_matches(&text))
+        .unwrap_or_default();
+    if hits.is_empty() {
+        crate::system::say(
+            "Notes",
+            format!("No note contains “{query}”"),
+            Urgency::Normal,
+            Glyph::Search,
+        );
+        return Ok(false);
+    }
+    let rows: Vec<Row> = hits
+        .iter()
+        .map(|hit| {
+            let name = hit
+                .path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| hit.path.display().to_string());
+            row(
+                format!("{name}:{}", hit.line),
+                hit.text.as_str(),
+                Glyph::File,
+            )
+        })
+        .collect();
+    let keys: Vec<String> = (0..hits.len()).map(|index| index.to_string()).collect();
+    let mut picker = Picker::new(
+        "Matches",
+        vec![Question::choose(
+            "Matches",
+            format!(
+                "{} match(es) · Enter opens the note at the line",
+                hits.len()
+            ),
+            rows,
+            keys,
+        )],
+    );
+    let code = crate::run_screen(terminal, design, "Matches", &mut picker)?;
+    if code != 0 {
+        return Ok(false);
+    }
+    let Some(index) = picker
+        .answers()
+        .first()
+        .and_then(|answer| answer.parse::<usize>().ok())
+        .filter(|index| *index < hits.len())
+    else {
+        return Ok(false);
+    };
+    let hit = &hits[index];
+    open_editor_at(&hit.path, Some(hit.line))
+        .map(|()| true)
+        .map_err(|reason| crate::Failure::new("Notes", reason))
+}
+
 /// The rows `lazyos menu notes --rows` prints for the checks: the same actions
 /// the window draws, without opening it.
 pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
@@ -1076,6 +1215,11 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
             "export",
             "Export an ink note to PDF",
             "xournalpp --create-pdf · Documents/Signed",
+        ),
+        (
+            "search",
+            "Search inside the notes",
+            "ripgrep · open at the line",
         ),
         ("folder", "Open the notes folder", "Documents/Notes"),
     ]
@@ -1098,6 +1242,13 @@ pub fn menu(
         match screen.pending.take() {
             Some(Pending::Annotate) => annotate_pdf(terminal, design)?,
             Some(Pending::Export) => export_ink(terminal, design)?,
+            Some(Pending::Search) => {
+                // A hit opens the editor, whose own chain reopens the list in
+                // its window; reopening it here too would leave two menus.
+                if search_notes(terminal, design)? {
+                    return Ok(0);
+                }
+            }
             Some(Pending::Trash(path)) => trash_note(terminal, design, &path)?,
             None => return Ok(code),
         }
@@ -1182,6 +1333,18 @@ mod tests {
         assert_eq!(human_size(12), "12 B");
         assert_eq!(human_size(2048), "2 KB");
         assert_eq!(human_size(3 * 1_048_576), "3 MB");
+    }
+
+    #[test]
+    fn rg_hits_keep_the_path_line_and_text() {
+        let text = "2026-11-18-ideas.md\x0012:first line\n2026-11-18-ink.xopp\x003:ink\n";
+        let hits = parse_matches(text);
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].path, PathBuf::from("2026-11-18-ideas.md"));
+        assert_eq!(hits[0].line, 12);
+        assert_eq!(hits[0].text, "first line");
+        assert_eq!(hits[1].line, 3);
+        assert!(parse_matches("not a record").is_empty());
     }
 
     #[test]

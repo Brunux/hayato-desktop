@@ -354,10 +354,7 @@ pub fn menu_for_path(
             }
             "annotate" => {
                 if crate::system::have("xournalpp") {
-                    crate::system::spawn_detached_argv(
-                        "xournalpp",
-                        &[&target.display().to_string()],
-                    );
+                    crate::system::doc_tools::spawn("xournalpp", &[&target.display().to_string()]);
                 } else {
                     crate::system::say(
                         "Annotate or sign",
@@ -370,7 +367,7 @@ pub fn menu_for_path(
             }
             "read-epub" => {
                 if crate::system::have("foliate") {
-                    crate::system::spawn_detached_argv("foliate", &[&target.display().to_string()]);
+                    crate::system::doc_tools::spawn("foliate", &[&target.display().to_string()]);
                 } else {
                     crate::system::say(
                         "Read an e-book",
@@ -383,10 +380,7 @@ pub fn menu_for_path(
             }
             "open-ink" => {
                 if crate::system::have("xournalpp") {
-                    crate::system::spawn_detached_argv(
-                        "xournalpp",
-                        &[&target.display().to_string()],
-                    );
+                    crate::system::doc_tools::spawn("xournalpp", &[&target.display().to_string()]);
                 } else {
                     crate::system::say(
                         "Open an ink note",

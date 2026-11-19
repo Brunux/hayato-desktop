@@ -1187,7 +1187,7 @@ fi
 if [ -x "$HOME/.config/bin/lazyos-notes" ]; then
 	ok "notes menu (lazyos-notes) is executable"
 	_notes_rows=$(lazyos menu notes --rows 2>/dev/null || :)
-	for _want in new daily ink annotate export folder; do
+	for _want in new daily ink annotate export search folder; do
 		printf '%s\n' "$_notes_rows" | cut -f1 | grep -qx "$_want" &&
 			ok "Notes offers the $_want row" ||
 			fail "lazyos menu notes --rows has no $_want row: the window would lose it"

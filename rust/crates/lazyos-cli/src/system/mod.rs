@@ -103,6 +103,7 @@ pub mod dictate;
 pub mod disk;
 pub mod display;
 pub mod dns;
+pub mod doc_tools;
 pub mod download;
 pub mod emoji;
 pub mod file_actions;
