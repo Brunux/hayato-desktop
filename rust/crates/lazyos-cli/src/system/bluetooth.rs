@@ -39,6 +39,88 @@ fn do_scan(secs: u32) {
         .status();
 }
 
+/// Pair, trust and connect, in that order.
+///
+/// A bare `connect` comes first in the naive flow, and it can bring up the ACL
+/// link without a bond: BlueZ then refuses the HID profile
+/// (`hidp_add_connection() Rejected connection from !bonded device`) and a
+/// DualShock 4 sits there "Paired: yes, Bonded: no" with no input device. The
+/// explicit agent matters for the same reason a non-interactive `bluetoothctl`
+/// has none: a "just works" controller can pair without a key being stored.
+///
+/// An unbonded entry is not a pairing, and `pair` refuses it ("remove it
+/// first"), so the empty entry is dropped and paired again. The bond is read
+/// back from `info`: success is "Bonded: yes", not the word "successful".
+fn pair_and_connect(mac: &str, name: &str) -> (bool, String) {
+    let info = out(&["bluetoothctl", "info", mac]).unwrap_or_default();
+    if info.lines().any(|line| line.trim() == "Bonded: yes") {
+        trust(mac);
+        return if connect(mac) {
+            (true, format!("Connected to {name}"))
+        } else {
+            (false, format!("Could not connect to {name}"))
+        };
+    }
+
+    if info.contains("Paired: yes") {
+        let _ = Command::new("bluetoothctl")
+            .args(["remove", mac])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+
+    let pair = Command::new("bluetoothctl")
+        .args(["--agent", "NoInputNoOutput", "pair", mac])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+    let text = pair
+        .as_ref()
+        .map(|output| String::from_utf8_lossy(&output.stdout))
+        .unwrap_or_default();
+    if !text.contains("Pairing successful") {
+        return (
+            false,
+            format!("Could not pair with {name}: put it in pairing mode first"),
+        );
+    }
+
+    trust(mac);
+    let _ = connect(mac);
+    let info = out(&["bluetoothctl", "info", mac]).unwrap_or_default();
+    if info.lines().any(|line| line.trim() == "Bonded: yes") {
+        (true, format!("Paired and connected to {name}"))
+    } else {
+        (
+            false,
+            format!("{name} paired but not bonded: put it in pairing mode and try again"),
+        )
+    }
+}
+
+fn trust(mac: &str) {
+    let _ = Command::new("bluetoothctl")
+        .args(["trust", mac])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+fn connect(mac: &str) -> bool {
+    Command::new("bluetoothctl")
+        .args(["connect", mac])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).contains("Connection successful"))
+        .unwrap_or(false)
+}
+
 #[derive(Clone, Debug)]
 struct Device {
     mac: String,
@@ -187,47 +269,7 @@ impl BluetoothScreen {
                     (false, format!("Could not disconnect {}", d.name))
                 }
             } else {
-                let out = Command::new("bluetoothctl")
-                    .args(["connect", &d.mac])
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .output();
-                let text = out
-                    .as_ref()
-                    .map(|o| String::from_utf8_lossy(&o.stdout))
-                    .unwrap_or_default();
-                if text.contains("Connection successful") {
-                    (true, format!("Connected to {}", d.name))
-                } else {
-                    let pair_out = Command::new("bluetoothctl")
-                        .args(["pair", &d.mac])
-                        .stdin(Stdio::null())
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::piped())
-                        .output();
-                    let pair_text = pair_out
-                        .as_ref()
-                        .map(|o| String::from_utf8_lossy(&o.stdout))
-                        .unwrap_or_default();
-                    if pair_text.contains("Pairing successful") {
-                        let _ = Command::new("bluetoothctl")
-                            .args(["trust", &d.mac])
-                            .stdin(Stdio::null())
-                            .stdout(Stdio::null())
-                            .stderr(Stdio::null())
-                            .status();
-                        let _ = Command::new("bluetoothctl")
-                            .args(["connect", &d.mac])
-                            .stdin(Stdio::null())
-                            .stdout(Stdio::null())
-                            .stderr(Stdio::null())
-                            .status();
-                        (true, format!("Paired and connected to {}", d.name))
-                    } else {
-                        (false, format!("Could not connect to {}", d.name))
-                    }
-                }
+                pair_and_connect(&d.mac, &d.name)
             };
             let powered = BluetoothScreen::get_powered();
             let devices = if powered {
