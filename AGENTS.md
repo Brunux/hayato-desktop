@@ -134,12 +134,16 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    needs no restart and works with no pad connected. The defaults are the console layout and cover
    a DualShock 4 (Cross confirm, Circle cancel), which pairs over Bluetooth (PS + Share) like any
    other pad; a DualShock 3 is the USB exception (BlueZ's sixaxis plugin writes the host address),
-   never a scan. The screen shows the charge `hid-playstation` publishes
+   never a scan. The mapper never touches RetroArch or the HTML host: they read the pad themselves
+   (udev and the browser Gamepad API), so a press cannot move two things. RetroArch's own mapping
+   ships as a udev autoconfig profile in the home tree
+   (`~/.config/retroarch/autoconfig/udev/`), which is the directory `joypad_autoconfig_dir`
+   already names; without it RetroArch logs `Autoconfig: … not configured` and falls back to the
+   kernel's button order. The screen shows the charge `hid-playstation` publishes
    (`ps-controller-battery-<address>`) and says to charge a pad below 15 %, because a flat DualShock
-   4 connects, lights up and hangs up within seconds and otherwise reads as a pairing failure. The HTML game host and RetroArch keep their own input (the browser Gamepad API and
-   udev), so a press never moves two things. It is the one resident input helper; a pid lock keeps
-   it single. The game stack itself is built, not installed from
-   Debian: `tools/retroarch/` builds the slim emulator (no Qt, assets, FFmpeg, Vulkan or updater)
+   4 connects, lights up and hangs up within seconds and otherwise reads as a pairing failure. It is
+   the one resident input helper; a pid lock keeps it single. The game stack itself is built, not
+   installed from Debian: `tools/retroarch/` builds the slim emulator (no Qt, assets, FFmpeg, Vulkan or updater)
    and `tools/mupen64plus-next/` builds the N64 core Debian does not have; `tools/fbneo/`
    builds **FBNeo** (`REGEN_HEADERS=1`, the libretro fork) for every arcade board, because Debian
    has no arcade core either. The cores in `packages/games.list` Depends on

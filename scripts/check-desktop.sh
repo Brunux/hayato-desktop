@@ -4045,6 +4045,32 @@ if have lazyos-games; then
 		[ -z "$_cores_missing" ] &&
 			ok "every libretro core the library lists is installed" ||
 			fail "missing libretro cores:$_cores_missing"
+		# RetroArch reads a pad itself; without a profile it falls back to the
+		# kernel's button order and says so ("not configured"). The image ships
+		# one for the DualShock 4 in the home tree, which is the directory
+		# `joypad_autoconfig_dir` already names.
+		_pad_profile=
+		for _candidate in \
+			"$HOME/.config/retroarch/autoconfig/udev/Sony DualShock 4.cfg" \
+			"/usr/share/libretro/autoconfig/udev/Sony DualShock 4.cfg"; do
+			[ -f "$_candidate" ] && _pad_profile="$_candidate"
+		done
+		if [ -n "$_pad_profile" ]; then
+			ok "the DualShock 4 profile is installed"
+		else
+			fail "no DualShock 4 profile: RetroArch keeps the pad on its fallback mapping"
+		fi
+		if [ -n "$_pad_profile" ] && grep -q 'Name="Wireless Controller"' /proc/bus/input/devices 2>/dev/null; then
+			_ra_cfg=$(mktemp)
+			printf 'video_driver = "null"\naudio_driver = "null"\n' >"$_ra_cfg"
+			_ra_log=$(timeout 30 retroarch --verbose --appendconfig "$_ra_cfg" 2>&1 || true)
+			rm -f "$_ra_cfg"
+			if printf '%s' "$_ra_log" | grep -q "Autoconf.*Wireless Controller configured"; then
+				ok "RetroArch recognises the DualShock 4 in port 1"
+			else
+				fail "RetroArch leaves the DualShock 4 on its fallback mapping (the profile does not match)"
+			fi
+		fi
 		if [ -n "$_libretro_dir" ] && [ -f "$_libretro_dir/mupen64plus_next_libretro.so" ]; then
 			ok "the experimental N64 core is installed"
 		else
