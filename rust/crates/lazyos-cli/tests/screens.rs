@@ -14,12 +14,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use lazyos_cli::padmap::Bindings;
 use lazyos_cli::system::{
     about::AboutScreen, apps::AppsScreen, audio::AudioScreen, bluetooth::BluetoothScreen,
     calc::CalcScreen, capture::CaptureScreen, clean::CleanScreen, clip::ClipScreen,
     colour::ColourScreen, dev::DevScreen, emoji::EmojiScreen, games::GamesScreen, keys::KeysScreen,
     kill::KillScreen, learn::LearnScreen, media::MediaScreen, net::NetScreen, notify::NotifyScreen,
-    qr::QrScreen, remind::RemindScreen, run::RunScreen, window::WindowScreen,
+    pad::ControllerScreen, pkg::PkgScreen, qr::QrScreen, remind::RemindScreen, run::RunScreen,
+    window::WindowScreen,
 };
 use lazyos_ui::{App, Design, Header, Screen};
 use ratatui::Terminal;
@@ -236,4 +238,16 @@ fn run_with_the_path_still_renders() {
 #[test]
 fn kill_with_the_process_table_still_renders() {
     smoke("kill", || Box::new(KillScreen::new()));
+}
+
+#[test]
+fn controller_with_no_pad_still_renders() {
+    smoke("controller", || {
+        Box::new(ControllerScreen::new(Bindings::default(), None, Vec::new()))
+    });
+}
+
+#[test]
+fn packages_before_a_search_still_renders() {
+    smoke("packages", || Box::new(PkgScreen::new()));
 }
