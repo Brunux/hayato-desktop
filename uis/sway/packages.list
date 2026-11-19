@@ -253,6 +253,12 @@ libgl1-mesa-dri
 mesa-utils
 xdg-desktop-portal-wlr
 xdg-user-dirs
+# The games library and the HTML games (lazyos-games, from rust/): WebKitGTK
+# 6.0 draws them. 124 MB installed and six new packages, because GTK4,
+# GStreamer, libsoup and bubblewrap are already here; libmanette (the Gamepad
+# API) comes with it. Deliberately no -dev package: the image runs it, it does
+# not build it.
+libwebkitgtk-6.0-4
 
 # fonts / input
 fonts-dejavu-core

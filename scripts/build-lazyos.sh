@@ -34,15 +34,27 @@ BIN="$DESKTOP_DIR/rust/target/release/lazyos"
 [ -x "$BIN" ] || die "cargo finished but $BIN is missing"
 NOTIFY_BIN="$DESKTOP_DIR/rust/target/release/lazyos-notify"
 [ -x "$NOTIFY_BIN" ] || die "cargo finished but $NOTIFY_BIN is missing"
+GAMES_BIN="$DESKTOP_DIR/rust/target/release/lazyos-games"
+[ -x "$GAMES_BIN" ] || die "cargo finished but $GAMES_BIN is missing"
 # A binary that cannot report its version is not the one the image should
 # carry: the check is one process and it catches a broken include_str!.
 VERSION="$(cat "$DESKTOP_DIR/VERSION")"
 REPORTED="$("$BIN" --version)"
 [ "$REPORTED" = "$VERSION" ] ||
 	die "lazyos reports '$REPORTED' but VERSION is '$VERSION'"
+GAMES_REPORTED="$("$GAMES_BIN" --version)"
+[ "$GAMES_REPORTED" = "$VERSION" ] ||
+	die "lazyos-games reports '$GAMES_REPORTED' but VERSION is '$VERSION'"
 
 mkdir -p "$LAZYOS_STAGE"
 install -m 0755 "$BIN" "$LAZYOS_STAGE/lazyos"
 install -m 0755 "$NOTIFY_BIN" "$LAZYOS_STAGE/lazyos-notify"
+install -m 0755 "$GAMES_BIN" "$LAZYOS_STAGE/lazyos-games"
+# The library page and the sample game are data, not a binary: they travel
+# beside the executable so install-lazyos.sh can copy one directory.
+install -d "$LAZYOS_STAGE/share/lazyos/games"
+cp -a "$DESKTOP_DIR/rust/crates/lazyos-games/data/." "$LAZYOS_STAGE/share/lazyos/games/"
 log "lazyos $REPORTED -> $LAZYOS_STAGE/lazyos"
 log "lazyos-notify -> $LAZYOS_STAGE/lazyos-notify"
+log "lazyos-games $GAMES_REPORTED -> $LAZYOS_STAGE/lazyos-games"
+log "games data -> $LAZYOS_STAGE/share/lazyos/games"

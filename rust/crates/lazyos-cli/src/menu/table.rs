@@ -226,6 +226,17 @@ pub const ROOT: &[MenuItem] = &[
         session("lazyos-camera"),
     ),
     item(
+        "games",
+        "Games",
+        "retro and LazyOS games",
+        Glyph::Play,
+        Open,
+        Action::Run {
+            program: Program::Lazyos,
+            args: &[Arg::Lit("menu"), Arg::Lit("games")],
+        },
+    ),
+    item(
         "download",
         "Download",
         "a link, into ~/Downloads",

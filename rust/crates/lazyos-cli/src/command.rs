@@ -97,6 +97,16 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &["lazyos-menu", "bar-menu"],
     },
     CommandSpec {
+        // The session's controller mapper: a USB or Bluetooth pad as arrows,
+        // Enter and Escape for the framework's own `lazyos-*` windows. The
+        // Games library reads the pad itself; games keep their own input.
+        path: "gamepad",
+        summary: "translate a gamepad to arrows, Enter and Escape for the framework windows",
+        shape: Shape::Direct,
+        symlinks: &[],
+        installed: &[],
+    },
+    CommandSpec {
         // `lazyos-power`: lock, suspend, hibernate, log out, reboot, shut down.
         // The first three act at once and the last three ask with Cancel
         // first, which is the confirm `--power ACTION` also opens (spec 010).
@@ -304,6 +314,24 @@ pub const COMMANDS: &[CommandSpec] = &[
         shape: Shape::Task,
         symlinks: &["lazyos-task"],
         installed: &["lazyos-task"],
+    },
+    CommandSpec {
+        // The game library: a Ratatui list over ~/Games and the LazyOS HTML
+        // games. `lazyos-games` is only the GTK + WebKit host for one web game.
+        path: "menu games",
+        summary: "the game library: retro ROMs and LazyOS HTML games",
+        shape: Shape::Pick,
+        symlinks: &[],
+        installed: &[],
+    },
+    CommandSpec {
+        // The controller: what each pad button does, saved where the mapper
+        // reads it. The row is also reachable from Settings → Input.
+        path: "menu controller",
+        summary: "the gamepad: what each button does, and the PS3 pairing",
+        shape: Shape::Pick,
+        symlinks: &[],
+        installed: &[],
     },
     CommandSpec {
         // Media: player state and transport (spec 011).

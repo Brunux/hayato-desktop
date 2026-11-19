@@ -1667,7 +1667,7 @@ fi
 # nothing - Colour was the one that had neither the row nor the `case` arm.
 if [ -n "$MENU_ROWS" ]; then
 	_root_missing=
-	for _m in lazyos-dns lazyos-pkg lazyos-color lazyos-about lazyos-remind lazyos-swap lazyos-format lazyos-display lazyos-tz lazyos-vnc lazyos-settings lazyos-ssh; do
+	for _m in lazyos-dns lazyos-pkg lazyos-color lazyos-about lazyos-remind lazyos-swap lazyos-format lazyos-display lazyos-tz lazyos-vnc lazyos-settings lazyos-ssh 'lazyos menu games'; do
 		menu_runs "$_m" || menu_runs "lazyos menu ${_m#lazyos-}" || menu_runs "lazyos menu colour" || _root_missing="$_root_missing ${_m#lazyos-}"
 	done
 	[ -z "$_root_missing" ] &&
@@ -3921,6 +3921,123 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+section "Games"
+# ---------------------------------------------------------------------------
+# The library is data plus a WebKit window: the binary, the page, the sample
+# game and a scan that answers. The emulator stack (RetroArch and the cores) is
+# the next phase; this section does not pretend it is installed.
+if have lazyos-games; then
+	ok "the game library is installed"
+	_games_json="$(lazyos-games --scan 2>/dev/null || true)"
+	if [ -z "$_games_json" ]; then
+		fail "lazyos-games --scan printed nothing (the library cannot list its games)"
+	elif ! printf '%s' "$_games_json" | jq -e . >/dev/null 2>&1; then
+		fail "lazyos-games --scan did not print JSON"
+	else
+		_games_count=$(printf '%s' "$_games_json" | jq -r '.games | length' 2>/dev/null || echo 0)
+		ok "the library scan answers ($_games_count games)"
+		printf '%s' "$_games_json" | jq -e '.games | any(.kind == "web")' >/dev/null 2>&1 &&
+			ok "the sample LazyOS game is listed" ||
+			fail "no web game is installed under /usr/share/lazyos/games/web"
+		printf '%s' "$_games_json" | jq -e '[.games[] | select(.kind == "retro" and (.core == null))] | length == 0' >/dev/null 2>&1 &&
+			ok "every retro row names a core" ||
+			fail "a retro row has no core (the library would not know what to run)"
+		printf '%s' "$_games_json" | jq -e '.roots | length > 0' >/dev/null 2>&1 &&
+			ok "the ROM scan roots are reported" ||
+			fail "the library reports no ROM scan root"
+	fi
+	_games_missing=
+	for _games_file in \
+		/usr/share/lazyos/games/theme-default.css \
+		/usr/share/lazyos/games/web/snake/game.toml \
+		/usr/share/lazyos/games/web/snake/index.html
+	do
+		[ -r "$_games_file" ] || _games_missing="$_games_missing $_games_file"
+	done
+	[ -z "$_games_missing" ] &&
+		ok "the game theme and the sample game are installed" ||
+		fail "the games data is incomplete:$_games_missing"
+	if lazyos menu games --rows >/dev/null 2>&1; then
+		ok "the TUI library answers --rows"
+	else
+		fail "lazyos menu games --rows failed (the library screen is not reachable)"
+	fi
+	if lazyos menu controller --rows >/dev/null 2>&1; then
+		ok "the Controller screen answers --rows"
+	else
+		fail "lazyos menu controller --rows failed (the pad table is not reachable)"
+	fi
+	_controller_rows=$(lazyos menu controller --rows 2>/dev/null | wc -l)
+	if [ "${_controller_rows:-0}" -eq 16 ]; then
+		ok "the pad table has sixteen buttons"
+	else
+		fail "the pad table has ${_controller_rows:-0} rows, expected 16"
+	fi
+	_hid_sony=
+	if have modinfo && modinfo -F filename hid_sony >/dev/null 2>&1; then
+		_hid_sony=1
+	else
+		for _hid_module in /lib/modules/"$(uname -r)"/kernel/drivers/hid/hid-sony.ko*; do
+			[ -e "$_hid_module" ] && _hid_sony=1
+		done
+	fi
+	if [ -n "$_hid_sony" ]; then
+		ok "the kernel has the PlayStation HID driver (hid_sony)"
+	else
+		warn "no hid_sony module: a PS3 pad may not appear"
+	fi
+	if [ -x /usr/libexec/bluetooth/bluetoothd ] &&
+		grep -aq sixaxis /usr/libexec/bluetooth/bluetoothd; then
+		ok "BlueZ can cable-pair a PS3 pad (sixaxis is built in)"
+	else
+		warn "BlueZ has no sixaxis support: a PS3 pad needs an external pairing tool"
+	fi
+	if have retroarch; then
+		_ra_version="$(retroarch --version 2>/dev/null | sed -n 's/^Version: //p' | head -n 1)"
+		ok "RetroArch is installed (${_ra_version:-version unknown})"
+		if [ -r /etc/lazyos/retroarch.cfg ] &&
+			grep -q '^video_driver = "wayland"' /etc/lazyos/retroarch.cfg; then
+			ok "the kiosk RetroArch overlay is the Wayland one"
+		else
+			fail "/etc/lazyos/retroarch.cfg is missing or is not the Wayland overlay"
+		fi
+		_libretro_dir="$(ls -d /usr/lib/*/libretro 2>/dev/null | head -n 1)"
+		_cores_missing=
+		for _core in nestopia snes9x gambatte mgba genesis_plus_gx mednafen_psx mednafen_pce_fast mednafen_vb mednafen_wswan fbneo; do
+			[ -n "$_libretro_dir" ] && [ -f "$_libretro_dir/${_core}_libretro.so" ] ||
+				_cores_missing="$_cores_missing $_core"
+		done
+		[ -z "$_cores_missing" ] &&
+			ok "every libretro core the library lists is installed" ||
+			fail "missing libretro cores:$_cores_missing"
+		if [ -n "$_libretro_dir" ] && [ -f "$_libretro_dir/mupen64plus_next_libretro.so" ]; then
+			ok "the experimental N64 core is installed"
+		else
+			warn "no N64 core: N64 rows will say the core is missing (tools/mupen64plus-next/)"
+		fi
+		if [ -n "$_libretro_dir" ] && [ -f "$_libretro_dir/fbneo_libretro.so" ]; then
+			ok "the arcade core is installed (FBNeo)"
+		else
+			fail "no arcade core: run scripts/build-fbneo.sh (tools/fbneo/)"
+		fi
+		if have wtype; then
+			ok "wtype is installed (the controller mapper's key injector)"
+		else
+			fail "wtype is missing: the framework menus cannot be navigated with a gamepad"
+		fi
+		if pgrep -f 'lazyos gamepad' >/dev/null 2>&1; then
+			ok "the gamepad mapper is running"
+		else
+			fail "lazyos gamepad is not running: the framework menus cannot be navigated with a gamepad"
+		fi
+	else
+		fail "retroarch is not installed (run scripts/build-retroarch.sh && core/scripts/install-retroarch.sh)"
+	fi
+else
+	fail "lazyos-games is not installed (run scripts/build-lazyos.sh && scripts/install-lazyos.sh)"
+fi
+
+# ---------------------------------------------------------------------------
 section "The theme engine"
 # ---------------------------------------------------------------------------
 # The palette lives in theme.toml and every surface is generated from it (spec
@@ -3945,6 +4062,7 @@ if command -v lazyos >/dev/null 2>&1; then
 			.config/starship.toml \
 			.config/btop/themes/lazyos.theme .config/lazygit/config.yml \
 			.config/nvim/colors/lazyos.vim .config/lazyos/fzf.env \
+			.config/lazyos/games.css \
 			.config/swaylock/config .config/sway/config.d/35-theme.conf
 		do
 			if [ ! -r "$HOME/$_theme_file" ]; then

@@ -34,6 +34,28 @@ The image is built from four package lists across the LazyOS submodules
 Editing a list does not change the running machine; it changes the next image
 that is built. For the machine in front of you, `apt install` is the answer.
 
+## Games
+
+The **Games** row opens the library (see `08-games.md`). It is one window over
+two backends: RetroArch for ROMs in `~/Games`, and WebKitGTK for the HTML games
+that ship with the image or that you write. The session packages are
+`libwebkitgtk-6.0-4` (124 MB installed, six new packages, because GTK4 and
+GStreamer are already here) and the libretro cores in
+`desktop/packages/games.list` (about 43 MB). RetroArch itself is **not** Debian's
+package: that one is 547 MB installed because `retroarch-assets` hard-depends on
+`fonts-noto-extra` and it links Qt5. `desktop/tools/retroarch/` builds the same
+emulator without Qt, assets, FFmpeg, Vulkan or the online updater, and
+`desktop/tools/mupen64plus-next/` builds the N64 core Debian does not have.
+Nothing in the image is a ROM or a BIOS.
+
+The library itself is the Ratatui screen `lazyos menu games`; the GTK +
+WebKitGTK binary `lazyos-games` is only the host that plays one HTML game
+fullscreen. A USB or Bluetooth gamepad is handled by `lazyos gamepad`, a
+session helper started at login: it reads `/dev/input` and uses `wtype` (already
+in `packages/tools.list` for dictation) to type arrows, Enter and Escape into
+the framework's `lazyos-*` windows, the Games library included. RetroArch and
+the HTML games keep their own input. See `03-shortcuts.md`.
+
 ## The terminal
 
 **foot**, themed in the active session palette, JetBrains Mono with a Nerd Font

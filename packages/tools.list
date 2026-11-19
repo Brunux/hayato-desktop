@@ -122,7 +122,8 @@ gnupg
 # default tiny.en) is fetched on first use by ~/.config/bin/dictate-model and
 # verified against a pinned SHA256.
 whisper.cpp-tools
-# wtype: types the transcription into the focused window. It is also what an
+# wtype: types the transcription into the focused window, and is what
+# `lazyos gamepad` uses to inject arrows/Enter/Escape for a controller. It is also what an
 # emoji picker needs to insert its glyph, so it is not dictation-only.
 wtype
 

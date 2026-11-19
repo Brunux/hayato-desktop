@@ -526,7 +526,13 @@ fn section_keys(section: Section) -> &'static [&'static str] {
             "blur",
             "animations",
         ],
-        Section::Input => &["touchpad", "layout", "tablet", "tablet-calibrate"],
+        Section::Input => &[
+            "touchpad",
+            "layout",
+            "controller",
+            "tablet",
+            "tablet-calibrate",
+        ],
         Section::PowerIdle => &["power", "idle"],
         Section::System => &[
             "tz",
@@ -741,6 +747,9 @@ fn build_rows(section: Section) -> (Vec<lazyos_ui::Row>, Vec<String>) {
                 .unwrap_or_else(|| "unknown".to_string());
             rows.push(row("Keyboard layout", layout, Glyph::Keyboard));
             keys.push("layout".to_string());
+
+            rows.push(row("Controller", crate::padmap::status(), Glyph::Sliders));
+            keys.push("controller".to_string());
 
             let tm = tablet_mode_detail();
             rows.push(row("Tablet mode", tm.clone(), Glyph::Keyboard));
@@ -1815,6 +1824,9 @@ pub fn menu(
             }
             "layout" => {
                 let _ = super::layout::menu(terminal, design)?;
+            }
+            "controller" => {
+                let _ = super::pad::menu(terminal, design)?;
             }
             "translate" => {
                 let _ = super::translate::menu(&["config".to_string()], terminal, design)?;

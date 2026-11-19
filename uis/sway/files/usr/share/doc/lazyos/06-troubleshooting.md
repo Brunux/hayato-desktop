@@ -895,3 +895,58 @@ cat /proc/pressure/memory
 
 `Alt+Shift+E` (exit the session) or a VT (Ctrl+Alt+top row with keyd) is the way
 out when the session itself is stuck.
+
+## A game does not start
+
+The **Games** row lists what it found; the badge on a row says which part is
+missing. `08-games.md` has the full list of platforms and firmware.
+
+- **core** on a retro row: the platform's libretro core is not installed. The
+  image installs them from `desktop/packages/games.list`; on a checkout,
+  `sudo apt install libretro-snes9x` (or the core named in the row).
+- **RetroArch is not installed** at the top of the library: the slim package is
+  missing. Build it with `scripts/build-retroarch.sh` and install it with
+  `core/scripts/install-retroarch.sh`.
+- A PS1 game that asks for firmware needs `scph5501.bin` (US) in
+  `~/Games/bios/`; a PC Engine CD needs `syscard3.pce`; an N64 game needs
+  nothing.
+- A ROM that does not appear is ignored by extension or by the size floor (a
+  `README.md` is not a Genesis ROM). Put it under `~/Games`, then press **S**.
+- N64 is experimental: the core is built for the Mali-G57 and 640×480, and some
+  games do not reach full speed. The F1 menu has the resolution option.
+- If the library itself is blank or the GPU misbehaves, start it with
+  `LAZYOS_GAMES_NO_ACCEL=1`; 2D canvas games still work.
+
+## The gamepad does nothing
+
+A USB or Bluetooth pad is read twice in different places, so first decide
+where it fails.
+
+- **In the Games library or any framework menu (root menu, Settings, Files,
+  …)**: those are `lazyos-*` windows, and `lazyos gamepad` types the keys into
+  them. Check that it is running (`pgrep -f 'lazyos gamepad'`), that `wtype` is
+  installed (`command -v wtype`), and that the focused window really is a
+  `lazyos-*` one. The library's tabs are **← / →**, its list **↑ / ↓**, and its
+  options/manual are **X** and **Y** (sent as Alt+O and Alt+M). A plain
+  `foot` shell, Firefox and other applications are deliberately not mapped,
+  because they may handle a pad themselves.
+- **A PlayStation 3 pad does not appear**: it pairs over USB, not by scanning.
+  Plug it in, press **PS** (BlueZ's sixaxis support writes this machine's
+  address into the pad), unplug it and press **PS** again. It then connects by
+  Bluetooth and appears within two seconds; `bluetoothctl info <MAC>` or
+  Settings → Network → Bluetooth shows the link. If it connects but the buttons
+  do the wrong thing, open **Settings → Input → Controller**: every button's
+  action is there, and the table can be edited with no pad connected.
+- **In the HTML game window only**: the game uses the browser Gamepad API,
+  which is separate from the mapper; check that the game calls
+  `navigator.getGamepads()` and that the pad is a standard-mapping one.
+- **Start the mapper by hand** with `lazyos gamepad` (it is single-instance
+  through `$XDG_RUNTIME_DIR/lazyos-gamepad.pid`), or restart the session so
+  `config.d/40-gamepad.conf` runs it.
+- **In a retro game**: RetroArch reads the pad through udev and its own
+  autoconfig, not through the mapper; check the F1 menu's input settings. An
+  HTML game uses the browser's Gamepad API, which is separate again.
+- **The pad is connected but the arrows are not**: `evtest /dev/input/eventX`
+  shows the kernel events; if `BTN_DPAD_*`/`ABS_HAT0*` never appear, the pad's
+  mode switch (XInput vs DirectInput, or a Bluetooth profile) is the problem,
+  not LazyOS.

@@ -10,7 +10,7 @@ symlinks to `/usr/bin/lazyos`.
 
 | You press | What opens | What it lists |
 |---|---|---|
-| **Alt+D** | `lazyos menu apps` (`lazyos-apps`) | the applications: the `.desktop` entries, including this image's own (LazyOS Menu, Settings, Wi-Fi, Bluetooth, audio, media, notifications, power, Files, Camera, Learn, Keys, Dictate, Agents…) |
+| **Alt+D** | `lazyos menu apps` (`lazyos-apps`) | the applications: the `.desktop` entries, including this image's own (LazyOS Menu, Settings, Wi-Fi, Bluetooth, audio, media, notifications, power, Files, Camera, Games, Learn, Keys, Dictate, Agents…) |
 | **Alt+Tab** | `lazyos menu window` (`lazyos-window`) | the open windows (sway has no switcher of its own; this uses wlroots' foreign-toplevel protocol) |
 | **Alt+Shift+D** | `lazyos menu run` (`lazyos-run`) | every executable in `$PATH`. **Enter** runs it, **Shift+Enter** runs it in foot |
 | **Alt+Space** | `lazyos menu` (`bar-menu`) | the root menu: what opens something, the AI rows (Ask among them), the system panels, and the session actions - type to narrow it |
@@ -96,7 +96,8 @@ never candidates - and Format asks twice with Cancel as the first answer, and
 writes exFAT (no 4 GB file limit, and Windows, macOS and Linux all read it) or
 ext4),
 **Media** (what is
-playing, play/pause/next/previous), **Time zone** (with network time),
+playing, play/pause/next/previous), **Games** (the library: retro ROMs from
+`~/Games` and LazyOS HTML games; see `08-games.md`), **Time zone** (with network time),
 **Free space** (what is using the disk, one action per row), **End a process**
 (the heaviest twenty), **Calculator**, **Password** (32 random characters from
 the kernel's generator, straight into the clipboard: hex, so there is no shift key and no `+`,
@@ -556,6 +557,13 @@ application that brings its own icon still shows it in colour.
   image or add a line to `desktop/scripts/make-icons.sh` and run it on the build host.
 * **A menu or tool**: implement a native subcommand in `lazyos` using `lazyos-ui` design
   system components (`List`, `Picker`, `Task`, `Card`).
+
+The menus are also browsable with a USB or Bluetooth gamepad. `lazyos gamepad`
+maps the pad to arrows, Enter and Escape in every `lazyos-*` window, including
+the Games library (a Ratatui screen: **← / →** tabs, **↑ / ↓** list, Enter
+plays). The GTK + WebKit host and RetroArch keep their own input. The pad table
+is in `03-shortcuts.md`; every button can be reassigned in Settings → Input →
+Controller, and a PS3 pad pairs once over USB.
 
 ## The retirement of rofi (Spec 014)
 

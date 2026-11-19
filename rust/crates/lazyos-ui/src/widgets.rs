@@ -817,6 +817,17 @@ impl ListState {
         self.cursor
     }
 
+    /// The row index behind a visible position. The cursor counts visible rows,
+    /// so a screen that draws its own cards needs this to find the row.
+    pub fn visible_index(&self, position: usize) -> Option<usize> {
+        self.visible.get(position).copied()
+    }
+
+    /// The visible position of a row index, for a click that arrives as a row.
+    pub fn position_of(&self, row: usize) -> Option<usize> {
+        self.visible.iter().position(|visible| *visible == row)
+    }
+
     pub fn set_cursor(&mut self, cursor: usize) {
         if !self.visible.is_empty() {
             self.cursor = cursor.min(self.visible.len() - 1);

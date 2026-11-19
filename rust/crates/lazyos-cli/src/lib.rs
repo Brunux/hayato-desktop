@@ -40,12 +40,14 @@
 pub mod ask;
 pub mod command;
 pub mod files;
+pub mod gamepad;
 pub mod greeter;
 pub mod host;
 pub mod installer;
 pub mod mcp;
 pub mod menu;
 mod notify;
+pub mod padmap;
 pub mod paths;
 pub mod system;
 pub mod task_cmd;
@@ -285,6 +287,18 @@ fn query(resolved: &Resolved) -> Option<i32> {
             }
             Some(EXIT_OK)
         }
+        ("menu games", ["--rows"]) => {
+            for row in system::games::rows() {
+                println!("{row}");
+            }
+            Some(EXIT_OK)
+        }
+        ("menu controller", ["--rows"]) => {
+            for row in system::pad::rows() {
+                println!("{row}");
+            }
+            Some(EXIT_OK)
+        }
         ("menu display", ["--status"] | ["status"]) => {
             println!("{}", system::display::status());
             Some(EXIT_OK)
@@ -485,6 +499,20 @@ fn print_commands(out: &mut impl Write) {
 /// runs where it was called - a `foot` window for a `mv` would steal the focus.
 fn run_direct(resolved: &Resolved) -> i32 {
     match resolved.spec.path {
+        "gamepad" => {
+            if resolved
+                .args
+                .iter()
+                .any(|arg| arg == "--help" || arg == "-h")
+            {
+                println!(
+                    "lazyos gamepad: a USB or Bluetooth pad as arrows, Enter and Escape for the framework windows"
+                );
+                EXIT_OK
+            } else {
+                gamepad::run()
+            }
+        }
         "theme" => theme::run(resolved),
         "notify" => notify::run(resolved),
         "quake" => system::quake::run(&resolved.args),
@@ -556,6 +584,8 @@ fn execute(
         "menu files" => files_menu(resolved, terminal, design),
         "menu find" => find_menu(resolved, terminal, design),
         "menu grep" => grep_menu(resolved, terminal, design),
+        "menu games" => system::games::menu(terminal, design),
+        "menu controller" => system::pad::menu(terminal, design),
         "menu media" => system::media::menu(terminal, design),
         "menu notify" => system::notify::menu(terminal, design),
         "menu clip" => system::clip::menu(terminal, design),

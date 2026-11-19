@@ -18,9 +18,12 @@ Rootfs assembly, bootloaders, image creation, and eMMC installers belong in `laz
   - `lazyos-ui`: Ratatui shell (`App` + `Screen` + `BodyCtx`), design tokens (`design.rs`), Nerd Font
     `Glyph` table (`glyphs/`), `ActionStrip` / `TaskView` / `ActionRunner`, `Card` notification &
     in-window panels, terminal raw-mode cleanup (`Drop` + panic hook + signal handlers).
-  - `lazyos-theme`: `theme.toml` palette compiler generating 13 surface configs idempotently.
+  - `lazyos-theme`: `theme.toml` palette compiler generating 14 surface configs idempotently.
   - `lazyos-mcp`: Read/propose-only MCP server (`never` add destructive apply tools).
   - `lazyos-notify`: Layer-shell desktop notification card daemon (`lazyos-notify`).
+  - `lazyos-games-core`: the game scan, ids and launch rules, with no UI toolkit; shared by the
+    Ratatui library and the GTK host.
+  - `lazyos-games`: the GTK4 + WebKitGTK host that plays one HTML game fullscreen (`lazyos-games`).
   - `spike-sixel`: Sixel image preview probe.
 
 ## Enforced Architecture & Design-System Invariants
@@ -31,9 +34,12 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `ratatui::Frame` or `&mut Frame` inside `lazyos-cli/src/` fails `tests/frame.rs`.
 3. **Zero allocations per steady-state frame**: `lazyos-ui/tests/no_alloc.rs` asserts `0` frame
    allocations when redrawing cached rows. Pre-format widget state on events/state changes, not per tick.
-4. **No resident daemons except `cliphist` and `workstyle`**: Never add polling daemons or background
-   units in `uis/sway/`. Tool discovery runs async in-window on open; progress lives in `TaskView` or
-   in-window `ActionRunner` banners (`lazyos-notify` is strictly for headless events).
+4. **No resident daemons except `cliphist`, `workstyle` and `lazyos gamepad`**: Never add polling
+   daemons or background units in `uis/sway/`. Tool discovery runs async in-window on open; progress
+   lives in `TaskView` or in-window `ActionRunner` banners (`lazyos-notify` is strictly for headless
+   events). `lazyos gamepad` is the one input helper: it reads `/dev/input` and injects
+   arrows/Enter/Escape into the focused `lazyos-*` window, because a USB or Bluetooth pad must
+   navigate every framework menu, not only the Games library; its pid lock keeps it single.
 5. **Dual density support**: `Screen::key` and `Screen::hit` receive `&Design` (`$XDG_RUNTIME_DIR/lazyos-tablet`)
    rather than caching hit boxes across normal vs tablet row spacing.
 6. **Generated glyph & icon tables**:
@@ -83,6 +89,61 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    busy result). A left click on the card body runs `lazyos-files <parent>`; grimshot predates the
    hint, so its absolute `app_icon` (the saved picture) is the fallback. The daemon never opens
    the file itself: Files is where the person decides what to do with it.
+14. **The library is a TUI screen; GTK is only the game host**: the Games row runs
+   `lazyos menu games`, a Ratatui screen in `lazyos-cli` (`system/games.rs`); the GTK + WebKit
+   binary `lazyos-games` plays one HTML game and has no library mode. The scan, ids and launch
+   rules live in `lazyos-games-core`, so neither UI owns them. The host gets a game id from the
+   library's scan, never a path or a command; `lazyos-game://` serves only inside that game's
+   directory (canonicalise + prefix), and no ROM, BIOS or copyrighted art ships. The platform
+   table is the only place a platform is declared: the scan (`platform::detect`), the manual's
+   table and the launch core all read `platform::PLATFORMS`. A row with `folders` is claimed only
+   inside those folder names — the six arcade boards are the case, because a `.zip` is a romset in
+   `neogeo/`, `cps1/`, `cps2/`, `cps3/`, `pgm/` or `arcade/`, and a zipped SNES ROM must stay
+   invisible. The first time the library opens it creates one folder per platform plus `bios/`
+   and a generated `LAZYOS-GAMES.txt`, so a new person only drops files in. The library
+   **exits before a game starts**; the host returns to a new `lazyos menu games` window, so the
+   TUI and the game window are never alive together on a 4 GB machine. Web games are trusted
+   local data; the sandbox and per-origin storage are the boundary, not a second shell.
+   **`m` opens the library's manual in the same screen** (`Mode::Manual`): where a ROM goes, the
+   firmware names, the keys, the saves and the common failures, wrapped to the window and
+   scrollable. Its platform table is generated from `platform::PLATFORMS` and asks
+   `Library::core_present` per row, so the manual cannot drift from the scan or from Enter;
+   never write a second copy of that table by hand. The prose is a short form of
+   `08-games.md`, which stays the long reference.
+   The shelf is a master-detail surface: the rail is the platform, the shelf (or the dense list)
+   is the game, the hero is the selected one. `o` opens the four options — sort, layout, covers,
+   hide missing cores — stored in `State::options` so they survive the next game; `r` opens the
+   game's folder in Files. The manual is markdown rendered by **glow** through the shared
+   `system::manual` module (Learn uses the same renderer and ANSI parser), so its tables are real
+   tables; it re-renders at the window width. The cartridge and the hero's monogram are generated
+   from the title (`system/games/art.rs`), never an asset, so a library with no covers still looks
+   like a shelf.
+15. **A controller is the session's input helper**: `lazyos gamepad` reads `/dev/input` through
+   evdev and injects arrows, Enter and Escape with `wtype` into the focused `lazyos-*` window
+   (the root menu, Settings, Files, the Games TUI). The library is one of those windows; its tabs
+   are Left/Right and its list Up/Down. Its own surfaces get three buttons — X options, Y manual,
+   L1 the folder in Files — sent as **Alt+O / Alt+M / Alt+R**, never bare letters, because a bare
+   letter would type into another screen's filter; the Alt combinations are unbound elsewhere.
+   The table lives in `crate::padmap`, not in the mapper: the Controller screen (`menu controller`,
+   Settings → Input, and the library's `o` row) edits it and writes
+   `~/.config/lazyos/pad.json`, and the mapper reloads the file when its mtime changes, so a remap
+   needs no restart and works with no pad connected. The defaults are the console layout and cover
+   a PS3 pad (Cross confirm, Circle cancel); PS3 pairing is BlueZ's sixaxis plugin over USB, never
+   a scan. The HTML game host and RetroArch keep their own input (the browser Gamepad API and
+   udev), so a press never moves two things. It is the one resident input helper; a pid lock keeps
+   it single. The game stack itself is built, not installed from
+   Debian: `tools/retroarch/` builds the slim emulator (no Qt, assets, FFmpeg, Vulkan or updater)
+   and `tools/mupen64plus-next/` builds the N64 core Debian does not have; `tools/fbneo/`
+   builds **FBNeo** (`REGEN_HEADERS=1`, the libretro fork) for every arcade board, because Debian
+   has no arcade core either. The cores in `packages/games.list` Depends on
+   `retroarch`, so `install-retroarch.sh` installs the LazyOS package **first** and the cores
+   after it; installing the session list first would pull Debian's retroarch, its 547 MB assets
+   and Qt5.
+15. **The game stack is built, not installed from Debian**: `tools/retroarch/` builds the slim
+   emulator (no Qt, assets, FFmpeg, Vulkan or updater) and `tools/mupen64plus-next/` builds the
+   N64 core Debian does not have. The cores in `packages/games.list` Depends on `retroarch`, so
+   `install-retroarch.sh` installs the LazyOS package **first** and the cores after it; installing
+   the session list first would pull Debian's retroarch, its 547 MB assets and Qt5.
 
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single
