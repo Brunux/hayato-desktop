@@ -33,9 +33,23 @@ use std::time::{Duration, Instant, SystemTime};
 use crate::padmap::{Action, Bindings};
 
 struct Pad {
+    path: PathBuf,
     device: evdev::Device,
     x: (i32, i32),
     y: (i32, i32),
+}
+
+/// The scan forgets what is no longer there.
+///
+/// A pad that is switched off, or whose Bluetooth link drops, leaves a dead
+/// node behind. The kernel hands the next device the lowest free number, so a
+/// DualShock 4 that reconnects very often lands on the *same* `event10` it had
+/// before. Remembering that node as already examined would leave the mapper
+/// reading a dead handle: the pad connects, the light is on, and no button
+/// does anything until the session is restarted. Forgetting it is what makes
+/// the reconnect work.
+fn forget_gone(known: &mut BTreeSet<PathBuf>, present: &BTreeSet<PathBuf>) {
+    known.retain(|path| present.contains(path));
 }
 
 pub fn run() -> i32 {
@@ -71,8 +85,12 @@ pub fn run() -> i32 {
                 config_mtime = mtime;
                 bindings = Bindings::load();
             }
-            for (path, device) in evdev::enumerate() {
-                if !known.insert(path) {
+            let devices: Vec<(PathBuf, evdev::Device)> = evdev::enumerate().collect();
+            let present: BTreeSet<PathBuf> = devices.iter().map(|(path, _)| path.clone()).collect();
+            forget_gone(&mut known, &present);
+            pads.retain(|pad| present.contains(&pad.path));
+            for (path, device) in devices {
+                if !known.insert(path.clone()) {
                     continue;
                 }
                 let gamepad = device
@@ -93,13 +111,17 @@ pub fn run() -> i32 {
                         }
                     }
                 }
-                pads.push(Pad { device, x, y });
+                pads.push(Pad { path, device, x, y });
             }
         }
 
         let active = focused.starts_with("lazyos-");
-        for pad in &mut pads {
+        let mut dead: Vec<usize> = Vec::new();
+        for (index, pad) in pads.iter_mut().enumerate() {
             let Ok(events) = pad.device.fetch_events() else {
+                // The node is gone: forget the handle too, so the scan above
+                // opens it again when the pad comes back on the same number.
+                dead.push(index);
                 continue;
             };
             for event in events {
@@ -141,6 +163,11 @@ pub fn run() -> i32 {
                     _ => {}
                 }
             }
+        }
+
+        for index in dead.into_iter().rev() {
+            let pad = pads.remove(index);
+            known.remove(&pad.path);
         }
 
         if active {
@@ -276,4 +303,37 @@ fn already_running(lock: &PathBuf) -> bool {
     cmdline
         .split(|byte| *byte == 0)
         .any(|part| part == b"gamepad")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_pad_that_reconnects_on_the_same_node_is_examined_again() {
+        let node = PathBuf::from("/dev/input/event10");
+        let mut known = BTreeSet::from([node.clone()]);
+        // The pad goes away: the node is gone, so nothing is remembered.
+        forget_gone(&mut known, &BTreeSet::new());
+        assert!(known.is_empty(), "a vanished node must be forgotten");
+        // It comes back on the very same number, as a DualShock 4 often does.
+        let present = BTreeSet::from([node.clone()]);
+        forget_gone(&mut known, &present);
+        assert!(
+            known.insert(node),
+            "the node must be opened again, not skipped as known"
+        );
+    }
+
+    #[test]
+    fn a_node_that_stays_is_not_opened_twice() {
+        let node = PathBuf::from("/dev/input/event3");
+        let present = BTreeSet::from([node.clone()]);
+        let mut known = BTreeSet::from([node.clone()]);
+        forget_gone(&mut known, &present);
+        assert!(
+            !known.insert(node),
+            "a node still open must not be reopened"
+        );
+    }
 }
