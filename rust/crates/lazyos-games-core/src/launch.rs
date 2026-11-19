@@ -72,10 +72,24 @@ pub fn spawn_play(id: &str) -> io::Result<()> {
     // The TUI's foot PTY is not the host's terminal: if the host inherited it,
     // returning would draw a second TUI into the old window. A host with no
     // terminal always comes back through `foot` (below).
+    //
+    // Its stderr goes to a file, not to nothing. The library closes the moment
+    // the host is spawned, so a host that dies before a game appears leaves the
+    // person with a window that vanished and no explanation: a stale
+    // `lazyos-games` earlier in PATH once answered "no game with id" into
+    // /dev/null and the launch looked like a crash. The file is overwritten on
+    // each launch, so it always describes the last one.
+    let log = paths::state_dir().join("host.log");
+    if let Some(parent) = log.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let stderr = std::fs::File::create(&log)
+        .map(Stdio::from)
+        .unwrap_or_else(|_| Stdio::null());
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(stderr);
     command.process_group(0);
     command.spawn()?;
     Ok(())

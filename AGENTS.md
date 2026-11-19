@@ -93,10 +93,15 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `lazyos menu games`, a Ratatui screen in `lazyos-cli` (`system/games.rs`); the GTK + WebKit
    binary `lazyos-games` plays one HTML game and has no library mode. The scan, ids and launch
    rules live in `lazyos-games-core`, so neither UI owns them. The host gets a game id from the
-   library's scan, never a path or a command; `lazyos-game://` serves only inside that game's
-   directory (canonicalise + prefix), and no ROM, BIOS or copyrighted art ships. The platform
-   table is the only place a platform is declared: the scan (`platform::detect`), the manual's
-   table and the launch core all read `platform::PLATFORMS`. A row with `folders` is claimed only
+   library's scan, never a path or a command; the library spawns it by name, so the first
+   `lazyos-games` in `PATH` is the one that runs — a stale copy in `/usr/local/bin` shadows
+   `/usr/bin/lazyos-games`, and `check-desktop.sh` fails when it does. The host's stderr goes to
+   `~/.local/state/lazyos/games/host.log` (overwritten per launch) because the library closes as
+   soon as the host is spawned: without that file a host that dies says nothing at all.
+   `lazyos-game://` serves only inside that game's directory (canonicalise + prefix), and no ROM,
+   BIOS or copyrighted art ships. The platform table is the only place a platform is declared:
+   the scan (`platform::detect`), the manual's table and the launch core all read
+   `platform::PLATFORMS`. A row with `folders` is claimed only
    inside those folder names — the six arcade boards are the case, because a `.zip` is a romset in
    `neogeo/`, `cps1/`, `cps2/`, `cps3/`, `pgm/` or `arcade/`. A row with `archive` is claimed by a
    `.zip` **only inside its own folder** (`nes/Mario.zip`): a zip's extension names no platform, so
