@@ -4306,11 +4306,75 @@ fi
 # file pins the manifest it describes, so a binary with other tools makes this
 # line fail instead of the agent being told about tools that are not there.
 _mcp_conf="$HOME/.config/opencode/opencode.json"
+# OpenCode accepts JSONC, and a registration that documents itself carries a
+# comment or a trailing comma that strict jq rejects. Read plain JSON with jq,
+# and strip the JSONC extras first when it is not, so a working registration is
+# not reported as missing on every machine that annotates its config.
+_mcp_reg=""
+if [ -r "$_mcp_conf" ] && have jq; then
+	_mcp_reg=$(jq -c '.mcp.lazyos | [.type, .command, (.enabled // true)]' "$_mcp_conf" 2>/dev/null) || _mcp_reg=""
+	if [ -z "$_mcp_reg" ] && have python3; then
+		_mcp_reg=$(python3 - "$_mcp_conf" 2>/dev/null <<'PY'
+import json
+import sys
+
+
+def jsonc(text):
+    """JSON with `//` and `/* */` comments and trailing commas removed."""
+    out, i, n = [], 0, len(text)
+    in_string = False
+    while i < n:
+        c = text[i]
+        if in_string:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if c == '"':
+                in_string = False
+            i += 1
+            continue
+        if c == '"':
+            in_string = True
+            out.append(c)
+            i += 1
+            continue
+        if text.startswith("//", i):
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        if text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            i = n if end < 0 else end + 2
+            continue
+        if c == ",":
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j < n and text[j] in "}]":
+                i += 1
+                continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+doc = json.loads(jsonc(open(sys.argv[1]).read()))
+entry = (doc.get("mcp") or {}).get("lazyos") or {}
+print(json.dumps(
+    [entry.get("type"), entry.get("command"), entry.get("enabled", True)],
+    separators=(",", ":"),
+))
+PY
+		)
+	fi
+fi
 if [ ! -r "$_mcp_conf" ]; then
 	fail "~/.config/opencode/opencode.json is missing: OpenCode does not start lazyos mcp"
 elif ! have jq; then
 	skip "no jq: cannot read the OpenCode registration"
-elif [ "$(jq -c '.mcp.lazyos | [.type, .command, (.enabled // true)]' "$_mcp_conf" 2>/dev/null)" = '["local",["lazyos","mcp"],true]' ]; then
+elif [ "$_mcp_reg" = '["local",["lazyos","mcp"],true]' ]; then
 	ok "OpenCode registers lazyos mcp as a local server"
 else
 	fail "opencode.json has no enabled local mcp.lazyos running [\"lazyos\",\"mcp\"]"
