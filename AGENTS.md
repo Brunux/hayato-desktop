@@ -58,8 +58,11 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `reduced_motion`), and inputs inside `ColorRole::Surface` cards use `ColorRole::Bg` to preserve
    palette contrast across Solarized Dark (`Surface == Selection`) and light themes.
    Widgets never draw the raw `Dim`: `TextStyle::Dim` is `ColorRole::Muted` (4.5:1 on `Bg`), a
-   card's border is `ColorRole::Border` (3:1), and a selected row uses `SelectionText`/`SelectionDim`
-   (4.5:1 on `Selection`). `Design` derives them once from the palette, never per frame, so a theme
+   card's border is `ColorRole::Border` (3:1), a selected row uses `SelectionText`/`SelectionDim`
+   (4.5:1 on `Selection`), and the three status roles `Ok`/`Warn`/`Danger` are lifted to 4.5:1 on
+   `Bg` because a status is text (“Done”, “Stopped”, an error summary); a tinted fill stays the
+   palette's `danger_bg`, which is not derived.
+   `Design` derives them once from the palette, never per frame, so a theme
    keeps writing `dim`/`selection` while the window draws what is readable on it;
    `every_builtin_theme_clears_the_derived_floors` fails a palette that cannot. The key bar draws a
    hint whole or not at all: it drops the middle to `…` and keeps the last hint (the way out) on
@@ -193,6 +196,16 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `lazyos menu pkg --search <package>` in a new window; the key bar drops the hints that cannot
    work (`open`, `copy path`) while the tool is missing. `tests/files.rs` proves the hand-off and
    the task snapshots prove the card.
+
+20. **One legend per input device, and no state by colour alone**: an `ActionStrip` is the
+   pointer/touch path and a key bar is the keyboard legend; a screen may carry both when each is a
+   different path (About, Learn), but a screen with no pointer path draws no strip. Neither cuts a
+   label — the strip drops a whole pill that does not fit, the key bar drops a whole hint. A state
+   is always also a word (`Done`, `Failed`, `Stopped`, `connected`) or a number (`42%`); the
+   selected row is an accent bar plus a bold label, never the fill alone. Motion that carries state
+   (the progress spinner) is exempt from reduced motion because it is essential progress; the text
+   cursor and every decorative animation honour it. The mechanical half of the rule is the derived
+   floors: a status colour that cannot be read fails `cargo test`.
 
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single

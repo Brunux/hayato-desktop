@@ -247,7 +247,6 @@ impl CleanScreen {
             .spawn("Calculating reclaimable disk space\u{2026}", || {
                 CleanOp::Measured(calculate_reclaimable())
             });
-        self.sync_chrome();
     }
 
     fn start_clean(&mut self, target: CleanTarget) {
@@ -319,7 +318,6 @@ impl CleanScreen {
             };
             CleanOp::Cleaned { message, ok, rec }
         });
-        self.sync_chrome();
     }
 
     fn rebuild_rows(&mut self, preserve: bool) {
@@ -436,28 +434,6 @@ impl CleanScreen {
         } else {
             self.list.set_rows(rows);
         }
-    }
-
-    fn sync_chrome(&mut self) {
-        let status = if self.runner.is_running() {
-            format!(
-                "{} {}",
-                self.runner.spinner(),
-                self.runner.label().unwrap_or("Scanning\u{2026}")
-            )
-        } else if let Some(notice) = self.runner.notice() {
-            notice.text.clone()
-        } else if let Some(rec) = &self.rec {
-            format!(
-                "{} free of {} \u{00b7} {} reclaimable",
-                rec.free_str,
-                rec.total_str,
-                format_bytes(rec.safe_reclaimable_bytes())
-            )
-        } else {
-            "Calculating reclaimable space\u{2026}".to_string()
-        };
-        self.header = Header::new("LazyOS").subtitle("Free space").status(status);
     }
 
     fn layout(area: Rect) -> (Rect, Rect, Rect, Rect) {
@@ -663,10 +639,8 @@ impl Screen for CleanScreen {
                     }
                 }
             }
-            self.sync_chrome();
             return Outcome::Continue;
         }
-        self.sync_chrome();
         Outcome::Continue
     }
 
