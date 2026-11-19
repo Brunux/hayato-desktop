@@ -88,6 +88,10 @@ tesseract-ocr-eng
 # `crontab -e` all open whatever $EDITOR names, and etc/profile.d/90-cli-tools.sh
 # now points it here.
 #
+# The Notes editor is editxr, which is not a Debian package: tools/editxr/ pins
+# the static aarch64 release and core's build-rootfs.sh installs it. It is kept
+# out of $EDITOR on purpose, so the shell keeps nvim.
+#
 # neovim: 9.7 MB plus neovim-runtime (27 MB), /usr/bin/nvim. It is Omarchy's
 # editor, brings its own LuaJIT and tree-sitter library (which is why the
 # standalone tree-sitter-cli and lua5.4 below stay out), starts with no

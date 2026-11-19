@@ -155,11 +155,21 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `retroarch`, so `install-retroarch.sh` installs the LazyOS package **first** and the cores
    after it; installing the session list first would pull Debian's retroarch, its 547 MB assets
    and Qt5.
-15. **The game stack is built, not installed from Debian**: `tools/retroarch/` builds the slim
+16. **The game stack is built, not installed from Debian**: `tools/retroarch/` builds the slim
    emulator (no Qt, assets, FFmpeg, Vulkan or updater) and `tools/mupen64plus-next/` builds the
    N64 core Debian does not have. The cores in `packages/games.list` Depends on `retroarch`, so
    `install-retroarch.sh` installs the LazyOS package **first** and the cores after it; installing
    the session list first would pull Debian's retroarch, its 547 MB assets and Qt5.
+17. **Notes is a shelf beside a page, and the folder is still the state**: `system/notes.rs` reads
+   the selected note once when the selection changes (`refresh_preview`) and caches the wrapped
+   Markdown (`wrap`), so the draw loop copies strings and does no IO or allocation per frame. The
+   page sits beside the shelf at 100 columns and wider and becomes a two-line strip on the 80×24
+   window; the title prompt owns the shelf and swaps the key bar, so a key never means two things.
+   Typing filters the list and the counter shows `visible / total`; Escape clears the filter before
+   the shell sees it. Quick notes open in **editxr** (`tools/editxr/` pins the static aarch64
+   release; core's rootfs setup installs it), with the notes folder as its vault; a search hit opens
+   at the top because editxr has no line argument. `tests/notes.rs` snapshots both grids and is the
+   layout's witness.
 
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single
@@ -188,6 +198,7 @@ that file as the contract; never add a second one.
 | `lazyos-clipboard` | `~/.config/lazyos/clipboard.conf` | `enabled=yes\|no`; the helper starts/stops `wl-paste --watch cliphist store`. |
 | `lazyos-capture` | `~/.config/lazyos/record.conf` + `$XDG_RUNTIME_DIR/lazyos-capture/camera.pid` | `audio=off\|mic\|system`, `webcam=on\|off`; the camera pid is the mpv overlay, signalled with the recorder. |
 | `lazyos-vnc` | `$XDG_RUNTIME_DIR/lazyos-vnc/{pid,wayvnc.log}` | the mode is the process, not a file: `status` and the bar read `/proc/<pid>/cmdline`, where `--disable-input` means read-only and its absence means remote control. Both bind 127.0.0.1 and are reached through the ssh tunnel; remote input is the explicit second start. |
+| `notes` | `~/Documents/Notes` + `~/Documents/Signed` | `*.md` quick notes edited in `$EDITOR` (nvim), `*.xopp` ink notes opened in xournalpp, `README.md` generated once and skipped by the list; exported PDFs in `Signed`. No state file: the folder is the list. EPUB is Files/`open` → foliate, never the Notes menu. |
 | `tablet-mode` | `$XDG_RUNTIME_DIR/lazyos-tablet/` | `kbd.pid`, `poller.pid`, `out` while on; absent while off. `off` repairs a missing directory. |
 | `busy` / `bar-busy` | `$XDG_RUNTIME_DIR/lazyos-busy/<tag>.{label,id,icon,stop}` | `.stop` is the line the bar runs; `busy cancelled` says whether the card is gone. |
 | `lazyos-profile` | target archive + `$XDG_CACHE_HOME/lazyos` | export writes `.partial` then renames; import backs up then extracts; `report` is one file. |

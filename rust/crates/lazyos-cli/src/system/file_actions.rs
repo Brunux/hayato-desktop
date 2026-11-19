@@ -14,7 +14,7 @@ use ratatui::backend::CrosstermBackend;
 use super::out;
 use super::pick::{Picker, Question, row};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileKind {
     Directory,
     ArchiveZip,
@@ -22,6 +22,10 @@ pub enum FileKind {
     DiskImage,
     Video,
     Audio,
+    Pdf,
+    Epub,
+    Ink,
+    Text,
     Other,
 }
 
@@ -66,6 +70,14 @@ pub fn detect_kind(path: &Path) -> FileKind {
         || lower.ends_with(".aac")
     {
         FileKind::Audio
+    } else if lower.ends_with(".pdf") {
+        FileKind::Pdf
+    } else if lower.ends_with(".epub") {
+        FileKind::Epub
+    } else if lower.ends_with(".xopp") {
+        FileKind::Ink
+    } else if lower.ends_with(".md") || lower.ends_with(".markdown") || lower.ends_with(".txt") {
+        FileKind::Text
     } else {
         FileKind::Other
     }
@@ -143,6 +155,40 @@ pub fn menu_for_path(
                 Glyph::Video,
             ));
             keys.push("convert".to_string());
+        }
+
+        match kind {
+            FileKind::Pdf => {
+                rows.push(row(
+                    "Annotate or sign (xournalpp)",
+                    "export the signed copy beside the original",
+                    Glyph::Brush,
+                ));
+                keys.push("annotate".to_string());
+            }
+            FileKind::Epub => {
+                rows.push(row("Read (foliate)", "EPUB reader", Glyph::Book));
+                keys.push("read-epub".to_string());
+            }
+            FileKind::Ink => {
+                rows.push(row("Open in xournalpp", "ink note", Glyph::Brush));
+                keys.push("open-ink".to_string());
+                rows.push(row(
+                    "Export to PDF (xournalpp)",
+                    "writes <name>-signed.pdf beside it",
+                    Glyph::Download,
+                ));
+                keys.push("export-ink".to_string());
+            }
+            FileKind::Text => {
+                rows.push(row(
+                    "Edit (nvim)",
+                    "opens in a foot window",
+                    Glyph::Terminal,
+                ));
+                keys.push("edit-text".to_string());
+            }
+            _ => {}
         }
 
         rows.push(row(
@@ -306,6 +352,111 @@ pub fn menu_for_path(
                 }
                 status_note = Some(format!("Could not mount disk image {base}"));
             }
+            "annotate" => {
+                if crate::system::have("xournalpp") {
+                    crate::system::doc_tools::spawn("xournalpp", &[&target.display().to_string()]);
+                } else {
+                    crate::system::say(
+                        "Annotate or sign",
+                        "xournalpp is not installed (apt install xournalpp)",
+                        Urgency::Critical,
+                        Glyph::Warning,
+                    );
+                }
+                return Ok(0);
+            }
+            "read-epub" => {
+                if crate::system::have("foliate") {
+                    crate::system::doc_tools::spawn("foliate", &[&target.display().to_string()]);
+                } else {
+                    crate::system::say(
+                        "Read an e-book",
+                        "foliate is not installed (apt install foliate)",
+                        Urgency::Critical,
+                        Glyph::Warning,
+                    );
+                }
+                return Ok(0);
+            }
+            "open-ink" => {
+                if crate::system::have("xournalpp") {
+                    crate::system::doc_tools::spawn("xournalpp", &[&target.display().to_string()]);
+                } else {
+                    crate::system::say(
+                        "Open an ink note",
+                        "xournalpp is not installed (apt install xournalpp)",
+                        Urgency::Critical,
+                        Glyph::Warning,
+                    );
+                }
+                return Ok(0);
+            }
+            "export-ink" => {
+                let stem = target
+                    .file_stem()
+                    .map(|stem| stem.to_string_lossy().to_string())
+                    .unwrap_or_else(|| base.clone());
+                let out = parent.join(format!("{stem}-signed.pdf"));
+                if crate::system::have("xournalpp") {
+                    match Command::new("xournalpp")
+                        .arg(format!("--create-pdf={}", out.display()))
+                        .arg(&target)
+                        .status()
+                    {
+                        Ok(status) if status.success() && out.exists() => {
+                            crate::system::say_open(
+                                "Signed PDF",
+                                format!("Exported {}", out.display()),
+                                Urgency::Normal,
+                                Glyph::Pdf,
+                                &out,
+                            );
+                        }
+                        Ok(status) => {
+                            status_note = Some(format!(
+                                "xournalpp exited {status} without writing {}",
+                                out.display()
+                            ));
+                        }
+                        Err(error) => {
+                            status_note = Some(format!("Cannot run xournalpp: {error}"));
+                        }
+                    }
+                } else {
+                    status_note =
+                        Some("xournalpp is not installed (apt install xournalpp)".to_string());
+                }
+            }
+            "edit-text" => {
+                let editor = std::env::var("EDITOR")
+                    .ok()
+                    .and_then(|value| value.split_whitespace().next().map(str::to_string))
+                    .filter(|value| !value.is_empty())
+                    .or_else(|| {
+                        ["nvim", "vi"]
+                            .into_iter()
+                            .find(|program| crate::system::have(program))
+                            .map(str::to_string)
+                    });
+                match editor {
+                    Some(editor) => {
+                        crate::system::spawn_detached_argv(
+                            "foot",
+                            &[
+                                "--app-id=popup",
+                                "-e",
+                                &editor,
+                                &target.display().to_string(),
+                            ],
+                        );
+                        return Ok(0);
+                    }
+                    None => {
+                        status_note =
+                            Some("No editor found: install nvim or set EDITOR".to_string());
+                    }
+                }
+            }
             "convert" => {
                 let out_file = parent.join(format!("{}-converted.mp4", base));
                 let cmd = vec![
@@ -369,6 +520,10 @@ mod tests {
         assert_eq!(detect_kind(Path::new("os.iso")), FileKind::DiskImage);
         assert_eq!(detect_kind(Path::new("song.mp3")), FileKind::Audio);
         assert_eq!(detect_kind(Path::new("clip.mp4")), FileKind::Video);
-        assert_eq!(detect_kind(Path::new("doc.pdf")), FileKind::Other);
+        assert_eq!(detect_kind(Path::new("doc.pdf")), FileKind::Pdf);
+        assert_eq!(detect_kind(Path::new("book.epub")), FileKind::Epub);
+        assert_eq!(detect_kind(Path::new("take.xopp")), FileKind::Ink);
+        assert_eq!(detect_kind(Path::new("notes.md")), FileKind::Text);
+        assert_eq!(detect_kind(Path::new("README")), FileKind::Other);
     }
 }

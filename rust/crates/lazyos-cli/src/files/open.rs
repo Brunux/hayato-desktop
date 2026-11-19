@@ -41,6 +41,10 @@ pub enum Family {
     Pdf,
     /// The other formats papers reads, with no decoder for a thumbnail.
     Paper,
+    /// EPUB: foliate reads it, papers does not.
+    Ebook,
+    /// xournalpp's own note: ink, not text.
+    Ink,
     Html,
     Office,
     Program,
@@ -77,6 +81,14 @@ pub const RULES: &[Rule] = &[
         exts: &["pdf"],
     },
     Rule {
+        family: Family::Ebook,
+        exts: &["epub"],
+    },
+    Rule {
+        family: Family::Ink,
+        exts: &["xopp"],
+    },
+    Rule {
         family: Family::Paper,
         exts: &["djvu", "djv", "cbz", "cbr", "cb7", "cbt", "ai"],
     },
@@ -87,7 +99,7 @@ pub const RULES: &[Rule] = &[
     Rule {
         family: Family::Office,
         exts: &[
-            "odt", "ods", "odp", "odg", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf", "epub",
+            "odt", "ods", "odp", "odg", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf",
         ],
     },
     Rule {
@@ -145,6 +157,8 @@ impl Family {
             Family::Pdf | Family::Paper => Glyph::Pdf,
             Family::Html => Glyph::Html,
             Family::Office => Glyph::Document,
+            Family::Ebook => Glyph::Book,
+            Family::Ink => Glyph::Brush,
             Family::Program | Family::Unknown => Glyph::Executable,
             Family::Archive => Glyph::Archive,
             Family::Audio => Glyph::Music,
@@ -161,7 +175,7 @@ impl Family {
             Family::Video => "video-x-generic",
             Family::Pdf | Family::Paper => "application-pdf",
             Family::Html => "text-html",
-            Family::Office => "x-office-document",
+            Family::Office | Family::Ebook | Family::Ink => "x-office-document",
             Family::Program | Family::Unknown => "application-x-executable",
             Family::Archive => "package-x-generic",
             Family::Audio => "audio-x-generic",
@@ -182,6 +196,8 @@ impl Family {
             Family::Pdf | Family::Paper => "document",
             Family::Html => "web page",
             Family::Office => "office document",
+            Family::Ebook => "e-book",
+            Family::Ink => "ink note",
             Family::Program => "program",
             Family::Archive => "archive",
             Family::Audio => "audio",
@@ -355,6 +371,20 @@ pub fn plan(path: &Path, text: bool, tools: &dyn Tools) -> Result<Plan, Refusal>
                 browser()
             };
         }
+        Family::Ebook => {
+            return if tools.has("foliate") {
+                Ok(run(&["foliate", &shown]))
+            } else {
+                Err(Refusal::NoProgram)
+            };
+        }
+        Family::Ink => {
+            return if tools.has("xournalpp") {
+                Ok(run(&["xournalpp", &shown]))
+            } else {
+                Err(Refusal::NoProgram)
+            };
+        }
         Family::Picture | Family::Vector => {
             if tools.has("imv") {
                 let mut plan = run(&["imv", "--", &shown]);
@@ -501,6 +531,8 @@ mod tests {
                 "bat",
                 "mpv",
                 "firefox-esr",
+                "foliate",
+                "xournalpp",
             ],
         }
     }
@@ -530,7 +562,7 @@ mod tests {
         // draws without a picture.
         for name in [
             "a.jpg", "a.MKV", "a.pdf", "a.djvu", "a.html", "a.docx", "a.sh", "a.tar", "a.flac",
-            "a.svg", "a.heic", "a.rs", "README", "a.weird", ".bashrc", "noext",
+            "a.svg", "a.heic", "a.rs", "README", "a.weird", ".bashrc", "noext", "a.epub", "a.xopp",
         ] {
             let family = family(name, false);
             assert!(!family.icon().is_empty());
@@ -588,6 +620,24 @@ mod tests {
         let path = dir.join("mark.svg");
         std::fs::write(&path, "<svg/>").unwrap();
         assert_eq!(plan(&path, true, &every()).unwrap().argv[0], "imv");
+    }
+
+    #[test]
+    fn an_epub_goes_to_foliate_not_the_browser() {
+        let dir = tree("epub");
+        let path = dir.join("book.epub");
+        std::fs::write(&path, b"PK\x03\x04\0").unwrap();
+        assert_eq!(family("book.epub", false), Family::Ebook);
+        assert_eq!(plan(&path, false, &every()).unwrap().argv[0], "foliate");
+    }
+
+    #[test]
+    fn an_ink_note_goes_to_xournalpp() {
+        let dir = tree("ink");
+        let path = dir.join("take.xopp");
+        std::fs::write(&path, b"\x00").unwrap();
+        assert_eq!(family("take.xopp", false), Family::Ink);
+        assert_eq!(plan(&path, false, &every()).unwrap().argv[0], "xournalpp");
     }
 
     #[test]

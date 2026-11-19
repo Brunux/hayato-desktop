@@ -202,6 +202,14 @@ pub const ROOT: &[MenuItem] = &[
         },
     ),
     item(
+        "notes",
+        "Notes",
+        "quick notes, ink notes, sign a PDF",
+        Glyph::File,
+        Open,
+        session("lazyos-notes"),
+    ),
+    item(
         "grep",
         "Search inside files",
         "the text in them, with ripgrep",

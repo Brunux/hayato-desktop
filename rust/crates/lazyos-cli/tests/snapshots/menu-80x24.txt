@@ -1,4 +1,4 @@
-LazyOS · Menu                                                           51 rows
+LazyOS · Menu                                                           52 rows
 ────────────────────────────────────────────────────────────────────────────────
 ╭ Menu ────────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                          │
@@ -6,8 +6,9 @@ LazyOS · Menu                                                           51 rows
 │ ▍   Terminal  foot                                                   open █ │
 │     Files  browse the filesystem                                     open █ │
 │     Files (window)  favnyr: folders, drag and drop, trash            open █ │
+│     Notes  quick notes, ink notes, sign a PDF                        open █ │
 │     Search inside files  the text in them, with ripgrep              open █ │
-│     Places  home, disks, the configuration                           open █ │
+│     Places  home, disks, the configuration                           open │ │
 │     Camera  look through the webcam, take a photo                    open │ │
 │     Games  retro and LazyOS games                                    open │ │
 │     Download  a link, into ~/Downloads                               open │ │
@@ -19,6 +20,5 @@ LazyOS · Menu                                                           51 rows
 │     Run command  PATH completion, Shift+Enter in foot                open │ │
 │     Calculator  type it, Enter copies the result                     open │ │
 │     Emoji  type a name, insert the glyph                             open │ │
-│     Clipboard  what was copied, back in one pick                     open │ │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close

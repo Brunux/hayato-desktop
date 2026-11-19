@@ -1,0 +1,45 @@
+LazyOS · Notes
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+╭ Notes ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  type to filter · Enter opens                          10 / 10    Reading list                                                                 MD   │
+│                                                                    72 words · edited 2026-11-18 11:11                                                │
+│ ▍   Reading list  11-18 11:11 · 360 B                      md     ───────────────────────────────────────────────────────────────────────────────   │
+│     sketch  11-18 11:10 · 16 B                           xopp    │ Some bold notes about the books I want to read this winter, with a line long     │
+│     Morning pages  11-18 11:08 · 31 B                      md    │ enough that it has to wrap across the page margin twice before it is done.       │
+│     New quick note  name it, write it                            │                                                                                  │
+│     Today's note  open or create today's                         │ • The Left Hand of Darkness                                                      │
+│     New ink note  save it with Ctrl+S                            │ • Piranesi                                                                       │
+│     Sign or annotate a PDF  xournalpp · export to Signed         │ • A Wizard of Earthsea                                                           │
+│     Export ink to PDF  into Documents/Signed                     │                                                                                  │
+│     Search the notes  rg over the folder                         │ │ Ursula K. Le Guin wrote more than she is given credit for.                     │
+│     Open folder  ~/Documents/Notes                               │                                                                                  │
+│                                                                   │ Next                                                                             │
+│                                                                   │                                                                                  │
+│                                                                   │ Finish the essay on the train and add the citations.                             │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│                                                                   │                                                                                  │
+│ 2 notes · 1 ink · edited 11-18 11:11                                                                                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  open   [Ctrl+P]  read   [Del]  trash   [Esc]  close

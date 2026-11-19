@@ -1180,6 +1180,40 @@ else
 	fail "file actions incomplete:$_missing_actions (Alt+1 offers rows that cannot run)"
 fi
 
+# Notes and documents: quick notes are Markdown in ~/Documents/Notes, ink notes
+# and PDF signing are xournalpp, and EPUB is foliate (papers does not read it).
+# `--rows` and `--dir` are read-only, so the check can read the same table the
+# window draws without creating a note.
+if [ -x "$HOME/.config/bin/lazyos-notes" ]; then
+	ok "notes menu (lazyos-notes) is executable"
+	_notes_rows=$(lazyos menu notes --rows 2>/dev/null || :)
+	for _want in new daily ink annotate export search folder; do
+		printf '%s\n' "$_notes_rows" | cut -f1 | grep -qx "$_want" &&
+			ok "Notes offers the $_want row" ||
+			fail "lazyos menu notes --rows has no $_want row: the window would lose it"
+	done
+	_notes_dir=$(lazyos menu notes --dir 2>/dev/null || :)
+	case "$_notes_dir" in
+	*/Documents/Notes) ok "notes live in $_notes_dir" ;;
+	*) fail "lazyos menu notes --dir does not name Documents/Notes ($_notes_dir)" ;;
+	esac
+else
+	fail "bin/lazyos-notes is missing: the Notes row does nothing"
+fi
+if have editxr; then
+	_editxr_version=$(editxr --version 2>/dev/null | head -n1 || :)
+	case "$_editxr_version" in
+	"editxr "*) ok "Notes opens quick notes in $_editxr_version" ;;
+	*) fail "editxr --version did not answer: $_editxr_version" ;;
+	esac
+else
+	fail "editxr is missing: Notes cannot edit a quick note"
+fi
+for _doc_tool in xournalpp foliate; do
+	have "$_doc_tool" && ok "document tool installed: $_doc_tool" ||
+		fail "document tool missing: $_doc_tool (Notes or EPUB would have no editor/reader)"
+done
+
 # The Developer menu (Alt+Ctrl+D, lazyos-dev, the root menu's Developer row and
 # org.lazyos.dev.desktop) exports ~/.ssh, ~/.gnupg and the dotfiles into an
 # encrypted archive, restores one, and writes a diagnostics bundle. Every piece
