@@ -9,6 +9,7 @@
 //! read the diff before committing it.
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -30,6 +31,19 @@ fn scratch(name: &str) -> PathBuf {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("Documents/Notes")).unwrap();
     fs::create_dir_all(dir.join(".config")).unwrap();
+    dir
+}
+
+/// The screen asks `have("xournalpp")` to choose between the action and the
+/// install hint, so a runner without the tool would render different rows. A
+/// fake executable first on PATH pins the image state instead.
+fn fake_bin(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("lazyos-notes-bin-{name}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let tool = dir.join("xournalpp");
+    fs::write(&tool, "#!/bin/sh\nexit 0\n").unwrap();
+    fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
     dir
 }
 
@@ -111,6 +125,10 @@ fn the_notes_screen_at_both_grids() {
     unsafe {
         std::env::set_var("TZ", "UTC");
     }
+    let bin = fake_bin("snap");
+    unsafe {
+        std::env::set_var("PATH", format!("{}:/usr/bin:/bin", bin.display()));
+    }
     let home = scratch("snap");
     note(
         &home,
@@ -173,4 +191,5 @@ fn the_notes_screen_at_both_grids() {
     }
     snapshot("notes-empty", &[], NotesScreen::new);
     let _ = fs::remove_dir_all(&empty);
+    let _ = fs::remove_dir_all(&bin);
 }
