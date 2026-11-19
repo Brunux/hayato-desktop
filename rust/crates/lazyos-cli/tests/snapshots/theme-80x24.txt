@@ -1,0 +1,24 @@
+LazyOS · Theme & Appearance                                                     
+────────────────────────────────────────────────────────────────────────────────
+╭ Themes ──────────────────╮╭ Preview: Solarized Dark ─────────────────────────╮
+│ ▍   ● Solari…           ││  Solarized Dark (solari[ ACTIVE SESSION THEME ]  │
+│     ○ Catppu…           ││  by Ethan Schoonover                             │
+│     ○ Tokyo …           ││                                                  │
+│     ○ Rose P…           ││  Desktop & Wallpaper Simulation                  │
+│     ○ Nord  n…          ││    LazyOS      main  │   LazyNet   80%      │
+│     ○ Gruvbo…           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
+│     ○ Everfo…           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
+│     ○ Kanaga…           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
+│     ○ Dracula           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
+│     ○ One Da…           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
+│     ○ Hacker…           ││  Wallpaper: solarized-nebula.jpg (3 bundled) —   │
+│     ○ Lumon  …          ││                                                  │
+│     ○ Matte …           ││  Terminal Palette (16 ANSI Swatches)             │
+│     ○ Omacon            ││   0    1    2    3    4    5    6    7           │
+│     ○ Catppu…           ││   8    9    10   11   12   13   14   15          │
+│     ○ Flexok…           ││                                                  │
+│                          ││  Semantic Roles                                  │
+│                          ││  ██ Accent: #2aa198  ██ Surface: #073642         │
+│                          ││  ██ Border: #2aa198  ██ Ok: #859900              │
+╰──────────────────────────╯╰──██ Warn: #b58900  ██ Danger: #dc322f  ──────────╯
+ [Enter]  apply   [↑↓]  preview   [w]  wallpaper   …               [Esc]  close 

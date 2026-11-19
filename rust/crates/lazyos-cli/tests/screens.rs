@@ -14,6 +14,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use lazyos_cli::greeter::ipc::Backend;
+use lazyos_cli::greeter::screen::{GreeterScreen, GreeterSetup};
+use lazyos_cli::greeter::{
+    GreeterConfig, GreeterState, SessionEntry, SessionKind, UserEntry, load_theme_by_slug,
+};
+use lazyos_cli::installer::deviceinfo::DeviceInfo;
+use lazyos_cli::installer::preflight::{Preflight, TargetCandidate, ToolStatus};
+use lazyos_cli::installer::ui::InstallerScreen;
 use lazyos_cli::padmap::Bindings;
 use lazyos_cli::system::{
     about::AboutScreen, apps::AppsScreen, audio::AudioScreen, bluetooth::BluetoothScreen,
@@ -21,9 +29,9 @@ use lazyos_cli::system::{
     colour::ColourScreen, dev::DevScreen, emoji::EmojiScreen, games::GamesScreen, keys::KeysScreen,
     kill::KillScreen, learn::LearnScreen, media::MediaScreen, net::NetScreen, notify::NotifyScreen,
     pad::ControllerScreen, pkg::PkgScreen, qr::QrScreen, remind::RemindScreen, run::RunScreen,
-    window::WindowScreen,
+    theme_picker::ThemePickerScreen, window::WindowScreen,
 };
-use lazyos_ui::{App, Design, Header, Screen};
+use lazyos_ui::{App, Density, Design, Header, Screen};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
@@ -253,4 +261,103 @@ fn controller_with_no_pad_still_renders() {
 #[test]
 fn packages_before_a_search_still_renders() {
     smoke("packages", || Box::new(PkgScreen::new()));
+}
+
+#[test]
+fn the_theme_picker_lists_the_builtins_without_touching_the_terminal() {
+    // `with_design_silent` is the same screen without the OSC preview, so the
+    // snapshot can draw it and the test run cannot repaint a real terminal.
+    golden("theme", || {
+        Box::new(ThemePickerScreen::with_design_silent(
+            &Design::solarized().with_reduced_motion(true),
+        ))
+    });
+}
+
+/// The installer's preflight, as the machine would report it: a board with a
+/// target disk and every tool present.
+fn preflight() -> Preflight {
+    Preflight {
+        device_info: DeviceInfo::default(),
+        soc_model: "MediaTek MT8192".into(),
+        total_ram: "4.0 GiB".into(),
+        power_source: "Mains (USB-C)".into(),
+        root_source: "/dev/mmcblk0p3".into(),
+        target_disk: "/dev/sda".into(),
+        target_size: "29.5 GB".into(),
+        candidates: vec![TargetCandidate {
+            path: "/dev/sda".into(),
+            short_name: "sda".into(),
+            size_human: "29.5 GB".into(),
+            model: "USB DISK 3.0".into(),
+            tran: Some("usb".into()),
+            removable: true,
+        }],
+        is_safe: true,
+        refusal_reason: None,
+        installed_notice: None,
+        tools: vec![ToolStatus {
+            name: "parted",
+            available: true,
+            description: "GPT table generator",
+        }],
+    }
+}
+
+#[test]
+fn the_installer_starts_on_its_first_step() {
+    // The wizard reads the live locale, keymap, user and hostname, so the rows
+    // are this machine's: the layout is checked, the exact words are not.
+    smoke("installer", || {
+        Box::new(InstallerScreen::from_preflight_isolated(preflight(), true))
+    });
+}
+
+fn greeter() -> Box<dyn Screen> {
+    let setup = GreeterSetup {
+        users: vec![UserEntry {
+            username: "brunux".into(),
+            display_name: "Bruno".into(),
+            home: "/home/brunux".into(),
+        }],
+        sessions: vec![
+            SessionEntry {
+                name: "Sway".into(),
+                exec: vec!["sway".into()],
+                kind: SessionKind::Wayland,
+                desktop_names: vec!["sway".into()],
+                comment: None,
+            },
+            SessionEntry {
+                name: "Bash".into(),
+                exec: vec!["/bin/bash".into()],
+                kind: SessionKind::X11,
+                desktop_names: vec![],
+                comment: None,
+            },
+        ],
+        state: GreeterState {
+            last_user: Some("brunux".into()),
+            ..Default::default()
+        },
+        state_path: None,
+        auth_marker: None,
+        theme_slug: "solarized".into(),
+        theme: load_theme_by_slug("solarized").unwrap(),
+        greeting: "LazyOS \u{00b7} lazy by design".into(),
+        backend: Backend::Preview,
+        preview: true,
+        density: Density::Normal,
+        reduced_motion: true,
+        config: GreeterConfig::default(),
+    };
+    let mut screen = GreeterScreen::new(setup);
+    // The clock is the one thing that would move between two runs.
+    screen.set_clock_for_test("18:30:00", "Sun, 15 Nov 2026", "hayato");
+    Box::new(screen)
+}
+
+#[test]
+fn the_greeter_preview_draws_a_login_at_both_grids() {
+    golden("greeter", greeter);
 }

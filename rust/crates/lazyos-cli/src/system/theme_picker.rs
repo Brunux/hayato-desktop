@@ -220,6 +220,10 @@ pub struct ThemePickerScreen {
     pub rows_height: Cell<u16>,
     pub status_msg: Option<String>,
     wallpaper_cache: RefCell<HashMap<String, Option<RgbImage>>>,
+    /// A preview writes the palette to the terminal with OSC sequences. A test
+    /// that only draws the screen asks for it silent, so a `cargo test` run
+    /// cannot repaint the terminal it happens to be attached to.
+    emit_osc: bool,
 }
 
 impl ThemePickerScreen {
@@ -228,6 +232,15 @@ impl ThemePickerScreen {
     }
 
     pub fn with_design(design: &Design) -> Self {
+        Self::with_design_and_osc(design, true)
+    }
+
+    /// The screen without the terminal side effect: used by the snapshot net.
+    pub fn with_design_silent(design: &Design) -> Self {
+        Self::with_design_and_osc(design, false)
+    }
+
+    fn with_design_and_osc(design: &Design, emit_osc: bool) -> Self {
         let p = paths();
         let active = store::active(&p).unwrap_or_else(|| "solarized".to_string());
         let original_slug = active.clone();
@@ -319,6 +332,7 @@ impl ThemePickerScreen {
             rows_height: Cell::new(20),
             status_msg: None,
             wallpaper_cache: RefCell::new(HashMap::new()),
+            emit_osc,
         };
 
         picker.sync_live_preview();
@@ -326,6 +340,13 @@ impl ThemePickerScreen {
     }
 
     fn sync_live_preview(&mut self) {
+        if !self.emit_osc {
+            let palette = self.selected_entry().map(|e| e.theme.palette());
+            if let Some(palette) = palette {
+                self.live_design = self.live_design.clone().with_palette(palette);
+            }
+            return;
+        }
         let update = self
             .selected_entry()
             .map(|e| (e.theme.palette(), e.theme.osc_sequences()));
@@ -339,6 +360,9 @@ impl ThemePickerScreen {
     }
 
     fn restore_original_terminal(&mut self) {
+        if !self.emit_osc {
+            return;
+        }
         use std::io::Write;
         let mut out = std::io::stdout();
         let _ = out.write_all(self.original_theme.osc_sequences().as_bytes());
@@ -940,6 +964,9 @@ impl Screen for ThemePickerScreen {
 
 impl Drop for ThemePickerScreen {
     fn drop(&mut self) {
+        if !self.emit_osc {
+            return;
+        }
         use std::io::Write;
         let mut out = std::io::stdout();
         if !self.phase.committed() {
