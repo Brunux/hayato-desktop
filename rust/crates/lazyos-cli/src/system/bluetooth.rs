@@ -223,7 +223,7 @@ impl BluetoothScreen {
             strip: ActionStrip::default(),
             runner: ActionRunner::new(),
             list: ListState::new(),
-            header: Header::new("Bluetooth").subtitle("Devices"),
+            header: Header::new("LazyOS").subtitle("Bluetooth"),
             keybar: Vec::new(),
             rows_height: Cell::new(16),
         };
@@ -434,7 +434,7 @@ impl BluetoothScreen {
                 self.devices.len()
             )
         };
-        self.header = Header::new("Bluetooth").subtitle("Devices").status(status);
+        self.header = Header::new("LazyOS").subtitle("Bluetooth").status(status);
         self.keybar = vec![
             KeyHint::new("Enter", if self.powered { "connect" } else { "turn on" }),
             KeyHint::new("Tab", "actions"),
@@ -668,7 +668,7 @@ impl Screen for BluetoothScreen {
     }
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Bluetooth"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("Devices"), true);
         let (hero, strip, filter, rows) = Self::layout(ctx.area);
         self.draw_hero(ctx.buf, hero, ctx.design);
         self.strip.render(strip, ctx.buf, ctx.design);

@@ -627,7 +627,7 @@ fn execute(
         "menu run" => system::run::menu(terminal, design),
         "menu learn" => system::learn::menu(terminal, design),
         "menu keys" => system::keys::menu(terminal, design),
-        "menu pkg" => system::pkg::menu(terminal, design),
+        "menu pkg" => system::pkg::menu_with_args(&resolved.args, terminal, design),
         "menu dev" => system::dev::menu(terminal, design),
         "menu about" => system::about::menu(terminal, design),
         "menu net" => system::net::menu(terminal, design),
@@ -921,7 +921,7 @@ pub(crate) fn run_screen(
     title: &str,
     screen: &mut dyn Screen,
 ) -> Result<i32, Failure> {
-    App::new(Header::new(title.to_string()))
+    App::new(Header::new("LazyOS").subtitle(title.to_string()))
         .design(design.clone())
         .screen(screen)
         .run(terminal)

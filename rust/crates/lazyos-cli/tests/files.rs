@@ -482,6 +482,34 @@ fn the_walk_is_a_snapshot_too() {
     });
 }
 
+#[test]
+fn a_missing_walker_offers_the_package_that_provides_it() {
+    let tree = Tree::new("install-fd");
+    let mut screen = FindScreen::new(tree.home.clone(), tree.home.clone(), None, None);
+    assert_eq!(drive(&mut screen, vec![ctrl('i')]), Outcome::Done(0));
+    let Some(Chosen::Run(argv)) = screen.chosen else {
+        panic!("expected the package search, got {:?}", screen.chosen);
+    };
+    assert_eq!(argv[1], "menu");
+    assert_eq!(argv[2], "pkg");
+    assert_eq!(argv[3], "--search");
+    assert_eq!(argv[4], "fd-find");
+}
+
+#[test]
+fn a_missing_ripgrep_offers_the_package_that_provides_it() {
+    let tree = Tree::new("install-rg");
+    let mut screen = GrepScreen::new(tree.home.clone(), tree.home.clone(), None, Some("x".into()));
+    assert_eq!(drive(&mut screen, vec![ctrl('i')]), Outcome::Done(0));
+    let Some(Chosen::Run(argv)) = screen.chosen else {
+        panic!("expected the package search, got {:?}", screen.chosen);
+    };
+    assert_eq!(argv[1], "menu");
+    assert_eq!(argv[2], "pkg");
+    assert_eq!(argv[3], "--search");
+    assert_eq!(argv[4], "ripgrep");
+}
+
 /// A fake `rg` that answers from a fixture: `-- QUERY ROOT` are its last
 /// two words, and a query of `(` is ripgrep's own parse error.
 fn fake_rg(dir: &Path, home: &Path) -> PathBuf {

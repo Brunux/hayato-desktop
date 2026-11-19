@@ -48,13 +48,16 @@ pub enum Item {
     Broken(PathBuf),
     /// The dotfile switch; `true` when they are shown now.
     Hidden(bool),
+    /// A folder (or a search) with nothing in it. Informational: Enter does
+    /// nothing, and it is what stops an empty window from looking broken.
+    Empty,
 }
 
 impl Item {
     pub fn path(&self) -> Option<&Path> {
         match self {
             Item::Parent(p) | Item::Dir(p) | Item::File(p) | Item::Broken(p) => Some(p),
-            Item::Hidden(_) => None,
+            Item::Hidden(_) | Item::Empty => None,
         }
     }
 }
@@ -132,12 +135,16 @@ pub fn list_dir(dir: &Path, hidden: bool) -> io::Result<Vec<Item>> {
     };
     dirs.sort_by_key(key);
     files.sort_by_key(key);
-    let mut items = Vec::with_capacity(dirs.len() + files.len() + 2);
+    let mut items = Vec::with_capacity(dirs.len() + files.len() + 3);
     if let Some(parent) = dir.parent() {
         items.push(Item::Parent(parent.to_path_buf()));
     }
+    let empty = dirs.is_empty() && files.is_empty();
     items.extend(dirs);
     items.extend(files);
+    if empty {
+        items.push(Item::Empty);
+    }
     items.push(Item::Hidden(hidden));
     Ok(items)
 }
@@ -192,6 +199,9 @@ pub fn search(home: &Path, hidden: bool, fd: &str) -> io::Result<Vec<Item>> {
     // Newest first: a search is usually for what was just written.
     found.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     let mut items: Vec<Item> = found.into_iter().map(|(_, p)| Item::File(p)).collect();
+    if items.is_empty() {
+        items.push(Item::Empty);
+    }
     items.push(Item::Hidden(hidden));
     Ok(items)
 }
@@ -233,6 +243,13 @@ pub fn row(item: &Item, mode: &Mode, home: &Path) -> Row {
             } else {
                 "hidden - Enter shows them"
             }),
+        Item::Empty => {
+            let (label, detail) = match mode {
+                Mode::Browse => ("This folder is empty", "Ctrl+H shows hidden files"),
+                Mode::Search => ("No files found", "type to narrow the search"),
+            };
+            Row::new(label).glyph(Glyph::Info).detail(detail)
+        }
     }
 }
 
@@ -267,7 +284,7 @@ impl FilesScreen {
             items: Vec::new(),
             list: ListState::new().with_empty("nothing matches - Enter opens it as a path"),
             previewer,
-            header: Header::new("Files"),
+            header: Header::new("LazyOS"),
             keybar,
             rows_height: Cell::new(10),
             chosen: None,
@@ -331,7 +348,9 @@ impl FilesScreen {
             Mode::Browse => shown(&self.setup.dir, &self.setup.home),
             Mode::Search => "Search".to_string(),
         };
-        self.header = Header::new("Files").subtitle(title).status(status.clone());
+        self.header = Header::new("LazyOS")
+            .subtitle(format!("Files \u{00b7} {title}"))
+            .status(status.clone());
         if items.is_empty() {
             self.list = ListState::new().with_empty(status);
         }
@@ -342,8 +361,12 @@ impl FilesScreen {
         self.items = items;
         self.list.set_filter("");
         self.list.set_rows(rows);
-        // The parent row is first, so the cursor starts on the first entry.
-        if matches!(self.items.first(), Some(Item::Parent(_))) && self.items.len() > 2 {
+        // The parent row is first, so the cursor starts on the first entry -
+        // not on the sentence that says the folder is empty.
+        if matches!(self.items.first(), Some(Item::Parent(_)))
+            && self.items.len() > 2
+            && !matches!(self.items.get(1), Some(Item::Empty))
+        {
             self.list.set_cursor(1);
         }
     }
@@ -373,6 +396,8 @@ impl FilesScreen {
                 self.load();
                 Outcome::Consumed
             }
+            // The empty state is a sentence, not a row that acts.
+            Item::Empty => Outcome::Consumed,
             Item::File(path) | Item::Broken(path) => self.open(path),
         }
     }
@@ -438,8 +463,8 @@ impl Screen for FilesScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         let selected = self.selected().and_then(Item::path).map(Path::to_path_buf);
         let title = match self.setup.mode {
-            Mode::Browse => "Files",
-            Mode::Search => "Search",
+            Mode::Browse => "This folder",
+            Mode::Search => "Results",
         };
         draw_split(
             ctx,
@@ -587,6 +612,20 @@ mod tests {
                 .iter()
                 .any(|i| i.path().is_some_and(|p| p.ends_with(".secret")))
         );
+    }
+
+    #[test]
+    fn an_empty_folder_says_so_and_keeps_the_switch() {
+        let dir = tree("empty");
+        let items = list_dir(&dir, false).unwrap();
+        assert!(matches!(items[1], Item::Empty), "{items:?}");
+        let empty = row(&items[1], &Mode::Browse, &dir);
+        assert_eq!(empty.label, "This folder is empty");
+        assert!(empty.detail.unwrap().contains("Ctrl+H"));
+        // A search with no hits is not a folder: it says what to try next.
+        let searched = row(&Item::Empty, &Mode::Search, &dir);
+        assert_eq!(searched.label, "No files found");
+        assert!(searched.detail.unwrap().contains("narrow"));
     }
 
     #[test]

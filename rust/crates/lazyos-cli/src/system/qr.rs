@@ -199,7 +199,7 @@ impl QrScreen {
         ]);
         let mut screen = Self {
             wifi_detail: "not connected".to_string(),
-            wifi_colour: ColorRole::Dim,
+            wifi_colour: ColorRole::Muted,
             list: ListState::new(),
             view_strip,
             header: Header::new("LazyOS").subtitle("QR code"),
@@ -273,7 +273,7 @@ impl QrScreen {
                 return (con.to_string(), ColorRole::Ok);
             }
         }
-        ("not connected".to_string(), ColorRole::Dim)
+        ("not connected".to_string(), ColorRole::Muted)
     }
 
     fn build_rows(&mut self) {
@@ -490,7 +490,7 @@ impl Screen for QrScreen {
                 draw_qr(ctx.buf, inner, ctx.design, qr);
             }
             QrMode::Typing(input) => {
-                draw_card(ctx.buf, ctx.area, ctx.design, Some("QR code"), true);
+                draw_card(ctx.buf, ctx.area, ctx.design, Some("The code"), true);
                 let (filter, rows) = super::pick::list_layout(ctx.area);
                 put_trunc(
                     ctx.buf,
@@ -507,7 +507,7 @@ impl Screen for QrScreen {
                 input.render(field, ctx.buf, ctx.design, "text or URL\u{2026}");
             }
             QrMode::Menu => {
-                draw_card(ctx.buf, ctx.area, ctx.design, Some("QR code"), true);
+                draw_card(ctx.buf, ctx.area, ctx.design, Some("The code"), true);
                 let (filter, rows) = super::pick::list_layout(ctx.area);
                 put_trunc(
                     ctx.buf,

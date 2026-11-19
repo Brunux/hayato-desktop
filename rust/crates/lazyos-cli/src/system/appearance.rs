@@ -600,7 +600,7 @@ pub fn pick_wallpaper(
             Ok(message) => message,
             Err(reason) => reason,
         })),
-        Some(crate::files::Chosen::Actions(_)) => Ok(None),
+        Some(crate::files::Chosen::Actions(_) | crate::files::Chosen::Run(_)) => Ok(None),
         None => Ok(None),
     }
 }

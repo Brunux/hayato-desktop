@@ -432,7 +432,7 @@ impl KeysScreen {
 
 impl Screen for KeysScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Keys"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("Bindings"), true);
         let (filter, rows) = Self::list_layout(ctx.area);
         let x = ctx.buf.set_string(
             filter.x,

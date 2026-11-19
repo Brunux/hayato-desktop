@@ -207,7 +207,7 @@ impl WindowScreen {
 
 impl Screen for WindowScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Windows"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("Open windows"), true);
         let (filter, rows) = Self::list_layout(ctx.area);
         draw_filter_bar(
             ctx.buf,

@@ -510,7 +510,7 @@ impl GamesScreen {
                 .fg(design.color(if selected {
                     ColorRole::Accent
                 } else {
-                    ColorRole::Dim
+                    ColorRole::Muted
                 }))
                 .bg(if selected {
                     design.color(ColorRole::Selection)
@@ -923,7 +923,7 @@ fn draw_game_card(
         .bg(background)
         .add_modifier(Modifier::BOLD);
     let dim = Style::default()
-        .fg(design.color(ColorRole::Dim))
+        .fg(design.color(ColorRole::Muted))
         .bg(background);
     let right = short_platform(&game.platform, &game.platform_title);
     let right_width = UnicodeWidthStr::width(right.as_str());

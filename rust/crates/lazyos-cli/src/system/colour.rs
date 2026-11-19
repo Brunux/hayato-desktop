@@ -222,7 +222,7 @@ notify-send -a LazyOS -i color-picker "Colour" "$hex copied to the clipboard (${
 
 impl Screen for ColourScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Colour"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("Swatches"), true);
         let (left_pane, strip_rect, filter, rows) = Self::layout(ctx.area);
 
         if let Some(lp) = left_pane {

@@ -324,7 +324,7 @@ impl RemindScreen {
 
 impl Screen for RemindScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Reminders"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("Waiting"), true);
 
         match &self.mode {
             RemindMode::List => {

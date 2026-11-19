@@ -522,7 +522,7 @@ impl LearnScreen {
 impl Screen for LearnScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         let card_title = match self.view_mode {
-            LearnMode::List => "Learn",
+            LearnMode::List => "Pages",
             LearnMode::Page => self.page_title.as_str(),
             LearnMode::Search => "Learn · Manual Search",
             LearnMode::Apropos => "Learn · System Man Pages (apropos)",

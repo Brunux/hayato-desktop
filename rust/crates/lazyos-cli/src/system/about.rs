@@ -623,7 +623,7 @@ impl AboutScreen {
 impl Screen for AboutScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         let title = match self.view_mode {
-            AboutMode::List => "About",
+            AboutMode::List => "This machine",
             AboutMode::Detail => self.detail_title.as_str(),
         };
         draw_card(ctx.buf, ctx.area, ctx.design, Some(title), true);
@@ -650,10 +650,12 @@ impl Screen for AboutScreen {
                     ctx.buf
                         .set_string(x, h.y, model, ctx.design.style(TextStyle::Title));
                     if h.height >= 2 {
+                        // `rev` is the whole revision fact (hash, board and
+                        // kernel), so it is the second line on its own.
                         ctx.buf.set_string(
                             h.x,
                             h.y + 1,
-                            format!("Revision: {rev}"),
+                            format!("Revision {rev}"),
                             ctx.design.style(TextStyle::Dim),
                         );
                     }
@@ -664,7 +666,7 @@ impl Screen for AboutScreen {
                 let note = self
                     .status_note
                     .as_deref()
-                    .unwrap_or("Enter inspects row · type to filter · Tab focuses actions");
+                    .unwrap_or("What this machine is doing right now");
                 draw_filter_bar(
                     ctx.buf,
                     filter,

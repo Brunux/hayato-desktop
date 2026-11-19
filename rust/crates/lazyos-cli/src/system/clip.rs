@@ -136,7 +136,7 @@ impl ClipScreen {
 
 impl Screen for ClipScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Clipboard"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("History"), true);
         let (strip, filter, rows) = Self::list_layout(ctx.area);
         self.strip.render(strip, ctx.buf, ctx.design);
         let msg = if let Some(note) = &self.status_note {

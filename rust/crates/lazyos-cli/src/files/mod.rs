@@ -36,6 +36,9 @@ pub enum Chosen {
     Open(PathBuf),
     /// The actions menu for this path (`lazyos-file-actions`).
     Actions(PathBuf),
+    /// A program to start after the window is gone (the package search for a
+    /// missing tool). The first word is this binary.
+    Run(Vec<String>),
 }
 
 /// Bytes as the list printed them: `512 B`, `4.2K`, `18M`.
@@ -276,6 +279,14 @@ pub fn image_hint(home: &str) {
         .status();
 }
 
+/// This binary, for a screen that offers to open another one of its surfaces
+/// (the package search for a missing tool).
+pub fn self_exe() -> String {
+    std::env::current_exe()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|_| "lazyos".to_string())
+}
+
 pub fn refuse(path: &Path, message: &str) {
     let name = path
         .file_name()
@@ -308,6 +319,16 @@ pub fn finish(chosen: Option<Chosen>, code: i32, home: &str) -> i32 {
     match chosen {
         Some(Chosen::Open(path)) => launch(&path, home),
         Some(Chosen::Actions(path)) => actions(&path, home),
+        Some(Chosen::Run(argv)) => match crate::menu::spawn_detached(&argv, home) {
+            Ok(()) => 0,
+            Err(error) => {
+                refuse(
+                    Path::new("Packages"),
+                    &format!("The package search did not start: {error}"),
+                );
+                3
+            }
+        },
         None => code,
     }
 }

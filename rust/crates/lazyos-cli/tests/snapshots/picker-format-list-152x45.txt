@@ -1,6 +1,6 @@
-Format a disk · Which disk?                                                                                  nothing is written until the last question
+LazyOS · Format a disk                                                                                       nothing is written until the last question
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-╭ Format a disk ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭ Which disk? ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Enter picks the filesystem · only disks with nothing mounted are listed                                                                              │
 │                                                                                                                                                      │
 │ ▍   /dev/sda  USB DISK 3.0 · 29.5G                                                                                                                  │

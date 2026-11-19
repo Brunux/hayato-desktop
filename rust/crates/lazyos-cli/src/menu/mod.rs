@@ -126,12 +126,16 @@ pub fn entries(surface: Surface, context: &Context) -> Vec<Entry> {
             entries.push(Entry {
                 key: format!("theme-{slug}"),
                 label: format!("Theme: {}", title(slug)),
-                detail: format!("lazyos theme set {slug}"),
+                detail: "the palette and its wallpaper".to_string(),
                 glyph: Glyph::Theme,
                 group: Group::System,
                 action: Choice::Theme(slug),
             });
         }
+        // The extras and themes are `System`; keep every group contiguous so
+        // the menu draws one heading per group, not a second `System` after
+        // `Session`.
+        entries.sort_by_key(|entry| entry.group.order());
     }
     entries
 }

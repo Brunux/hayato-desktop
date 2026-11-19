@@ -206,7 +206,7 @@ impl CaptureScreen {
 
 impl Screen for CaptureScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Capture"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("Actions"), true);
         let (filter, rows) = super::pick::list_layout(ctx.area);
         draw_filter_bar(
             ctx.buf,

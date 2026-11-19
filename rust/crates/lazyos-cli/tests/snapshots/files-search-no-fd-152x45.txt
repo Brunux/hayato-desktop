@@ -1,6 +1,6 @@
-Files · Search                                                                         fd is missing (package fd-find): there is nothing to search with
+LazyOS · Files · Search                                                                fd is missing (package fd-find): there is nothing to search with
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-╭ Search ─────────────────────────────────────────────────────────────────────────╮╭ preview ──────────────────────────────────────────────────────────╮
+╭ Results ────────────────────────────────────────────────────────────────────────╮╭ preview ──────────────────────────────────────────────────────────╮
 │ type to filter, or a path - Enter opens it                                     ││  nothing selected                                                 │
 │                                                                                 ││                                                                   │
 │ fd is missing (package fd-find): there is nothing to search with                ││                                                                   │

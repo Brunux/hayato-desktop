@@ -241,7 +241,7 @@ impl NotifyScreen {
 
 impl Screen for NotifyScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Notifications"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("History"), true);
         let (strip, filter, rows) = Self::layout(ctx.area);
         self.strip.render(strip, ctx.buf, ctx.design);
         let msg = if let Some(note) = &self.status_note {

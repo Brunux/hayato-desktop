@@ -157,7 +157,7 @@ impl EmojiScreen {
 
 impl Screen for EmojiScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Emoji"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("Pick one"), true);
         let (filter, rows) = super::pick::list_layout(ctx.area);
         let msg = if !self.font_ok {
             "The emoji font pin does not match · run make-emojis.sh"

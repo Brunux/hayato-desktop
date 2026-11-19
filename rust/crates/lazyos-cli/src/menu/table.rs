@@ -34,6 +34,28 @@ impl Group {
             Group::Session => "session",
         }
     }
+
+    /// The section heading above the group. The row's value column keeps the
+    /// lowercase word a person can type; the heading is the name a person reads.
+    pub fn heading(self) -> &'static str {
+        match self {
+            Group::Open => "Open",
+            Group::Ai => "AI",
+            Group::System => "System",
+            Group::Session => "Session",
+        }
+    }
+
+    /// The order the headings appear in, so a surface that appends rows can
+    /// keep each group contiguous (the palette appends themes to `System`).
+    pub fn order(self) -> u8 {
+        match self {
+            Group::Open => 0,
+            Group::Ai => 1,
+            Group::System => 2,
+            Group::Session => 3,
+        }
+    }
 }
 
 /// One argument of a program a row runs.

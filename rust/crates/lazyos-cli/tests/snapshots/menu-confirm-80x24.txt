@@ -5,7 +5,7 @@ LazyOS · Power                                               Cancel is selected
 
 
 
-            ╭ Power ───────────────────────────────────────────────╮
+            ╭ Confirm ─────────────────────────────────────────────╮
             │                 Reboot the machine?                  │
             │                                                      │
             │                                                      │

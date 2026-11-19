@@ -15,6 +15,8 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 use super::pick::{Picker, Question, row};
+use std::process::{Command, Stdio};
+
 use super::{checked, out, sudo};
 use crate::installer::config::validate_password;
 
@@ -280,6 +282,10 @@ fn rotation_name() -> String {
         .unwrap_or_else(|| "normal".to_string())
 }
 
+fn onscreen_keyboard_running() -> bool {
+    out(&["pgrep", "-x", "wvkbd-mobintl"]).is_some_and(|out| !out.trim().is_empty())
+}
+
 fn tablet_mode_detail() -> String {
     out(&[&bin_script("tablet-mode"), "status"]).unwrap_or_else(|| "off".to_string())
 }
@@ -475,7 +481,7 @@ impl Section {
             Self::Input => "Touchpad, keyboard, tablet mode",
             Self::PowerIdle => "Battery, idle & lock, power menu",
             Self::System => "Date & time, updates, storage, notifications, login",
-            Self::Accessibility => "Reduced motion",
+            Self::Accessibility => "Reduced motion, on-screen keyboard",
         }
     }
 
@@ -549,7 +555,7 @@ fn section_keys(section: Section) -> &'static [&'static str] {
             "greeter",
             "translate",
         ],
-        Section::Accessibility => &["reduced-motion"],
+        Section::Accessibility => &["reduced-motion", "onscreen-keyboard"],
     }
 }
 
@@ -864,6 +870,19 @@ fn build_rows(section: Section) -> (Vec<lazyos_ui::Row>, Vec<String>) {
                 Glyph::Eye,
             ));
             keys.push("reduced-motion".to_string());
+
+            if super::have("wvkbd-mobintl") {
+                rows.push(row(
+                    "On-screen keyboard",
+                    if onscreen_keyboard_running() {
+                        "running \u{00b7} the bar at the bottom of the screen"
+                    } else {
+                        "show it for typing without the keyboard"
+                    },
+                    Glyph::Keyboard,
+                ));
+                keys.push("onscreen-keyboard".to_string());
+            }
         }
     }
 
@@ -905,7 +924,14 @@ pub fn menu(
             }
         });
 
-        let mut picker = Picker::new(title, vec![Question::choose(title, note, rows, keys)]);
+        // The picker's name is the surface (Settings, Network, …); the question
+        // is the card's title, so it must not repeat the name.
+        let question = if section.is_none() {
+            "What do you want to change?"
+        } else {
+            "Choose a setting"
+        };
+        let mut picker = Picker::new(title, vec![Question::choose(question, note, rows, keys)]);
 
         let code = crate::run_screen(terminal, design, title, &mut picker)?;
         if code != 0 {
@@ -1817,6 +1843,18 @@ pub fn menu(
             "tablet" => {
                 let _ = out(&[&bin_script("tablet-mode"), "toggle"]);
                 banner = Some(format!("Tablet mode: {}", tablet_mode_detail()));
+            }
+            "onscreen-keyboard" => {
+                if onscreen_keyboard_running() {
+                    banner = Some("The on-screen keyboard is already up".to_string());
+                } else {
+                    let _ = Command::new("wvkbd-mobintl")
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn();
+                    banner = Some("On-screen keyboard: shown at the bottom".to_string());
+                }
             }
             "tablet-calibrate" => {
                 let _ = out(&[&bin_script("tablet-mode"), "calibrate"]);

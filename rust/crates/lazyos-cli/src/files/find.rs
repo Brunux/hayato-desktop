@@ -135,6 +135,9 @@ pub struct FindScreen {
     started: Instant,
     /// When the first rows arrived, for the header (and the 100 ms budget).
     first: Option<Duration>,
+    /// The package that provides the walker, when it is missing: the one
+    /// action this screen can offer instead of a dead end.
+    install: Option<&'static str>,
     pub chosen: Option<Chosen>,
 }
 
@@ -148,6 +151,7 @@ impl FindScreen {
         previewer: Option<Previewer>,
     ) -> Self {
         let mut list = ListState::new().with_empty("nothing matches yet").ranked();
+        let install = fd.is_none().then_some("fd-find");
         let (stage, status) = match fd {
             None => {
                 list = ListState::new()
@@ -165,8 +169,8 @@ impl FindScreen {
                 }
             },
         };
-        let header = Header::new("Find")
-            .subtitle(shown(&root, &home))
+        let header = Header::new("LazyOS")
+            .subtitle(format!("Find \u{00b7} {}", shown(&root, &home)))
             .status(status);
         Self {
             root,
@@ -175,14 +179,24 @@ impl FindScreen {
             stage,
             previewer,
             header,
-            keybar: vec![
-                KeyHint::new("Enter", "open"),
-                KeyHint::new("Ctrl+Y", "copy path"),
-                KeyHint::new("Esc", "stop and close"),
-            ],
+            keybar: if install.is_some() {
+                // With no walker there is no row to open and no path to copy:
+                // the one useful key is the package that provides `fd`.
+                vec![
+                    KeyHint::new("Ctrl+I", "install fd-find"),
+                    KeyHint::new("Esc", "stop and close"),
+                ]
+            } else {
+                vec![
+                    KeyHint::new("Enter", "open"),
+                    KeyHint::new("Ctrl+Y", "copy path"),
+                    KeyHint::new("Esc", "stop and close"),
+                ]
+            },
             rows_height: Cell::new(10),
             started: Instant::now(),
             first: None,
+            install,
             chosen: None,
         }
     }
@@ -270,7 +284,7 @@ impl Screen for FindScreen {
         let selected = self.selected_path();
         draw_split(
             ctx,
-            "Find",
+            "Matches",
             "type to narrow it while it walks",
             &self.list,
             &self.rows_height,
@@ -284,6 +298,19 @@ impl Screen for FindScreen {
             return Outcome::Continue;
         }
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
+        if control && key.code == KeyCode::Char('i') {
+            if let Some(pkg) = self.install {
+                let exe = super::self_exe();
+                self.chosen = Some(Chosen::Run(vec![
+                    exe,
+                    "menu".to_string(),
+                    "pkg".to_string(),
+                    "--search".to_string(),
+                    pkg.to_string(),
+                ]));
+                return Outcome::Done(lazyos_ui::app::exit::OK);
+            }
+        }
         if control && key.code == KeyCode::Char('y') {
             if let Some(path) = self.selected_path() {
                 let copied = lazyos_ui::card::copy_to_clipboard(&path.display().to_string());

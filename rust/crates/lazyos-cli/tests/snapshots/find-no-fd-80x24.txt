@@ -1,6 +1,6 @@
-Find · ~                                                          fd is missing
+LazyOS · Find · ~                                                 fd is missing
 ────────────────────────────────────────────────────────────────────────────────
-╭ Find ────────────────────────────────────────────────────────────────────────╮
+╭ Matches ─────────────────────────────────────────────────────────────────────╮
 │ type to narrow it while it walks                                            │
 │                                                                              │
 │ fd is missing (package fd-find): there is nothing to walk with               │
@@ -21,4 +21,4 @@ Find · ~                                                          fd is missing
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- [Enter]  open   [Ctrl+Y]  copy path   [Esc]  stop and close
+ [Ctrl+I]  install fd-find   [Esc]  stop and close

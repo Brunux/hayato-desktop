@@ -158,7 +158,7 @@ impl CalcScreen {
 
 impl Screen for CalcScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Calculator"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("History"), true);
         let (hero, rows) = Self::layout(ctx.area);
 
         let expr = self.input.text().trim();

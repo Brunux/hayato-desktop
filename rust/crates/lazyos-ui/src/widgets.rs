@@ -212,66 +212,69 @@ pub fn draw_keybar(buf: &mut Buffer, area: Rect, design: &Design, hints: &[KeyHi
         return;
     }
     fill(buf, area, design.style(TextStyle::Body));
+    // The width a hint occupies, without the separator that follows it.
+    fn width(hint: &KeyHint) -> u16 {
+        2 + UnicodeWidthStr::width(hint.key.as_str()) as u16
+            + 2
+            + UnicodeWidthStr::width(hint.label.as_str()) as u16
+    }
+    // Draw one hint whole; the caller has already proved that it fits.
+    fn draw(buf: &mut Buffer, right: u16, x: u16, y: u16, hint: &KeyHint, design: &Design) -> u16 {
+        let mut x = put(buf, x, y, "[", right - x, design.style(TextStyle::Key));
+        x = put(
+            buf,
+            x,
+            y,
+            &hint.key,
+            right - x,
+            design.style(TextStyle::Key),
+        );
+        x = put(buf, x, y, "]", right - x, design.style(TextStyle::Key));
+        x = put(buf, x, y, "  ", right - x, design.style(TextStyle::Dim));
+        x = put(
+            buf,
+            x,
+            y,
+            &hint.label,
+            right - x,
+            design.style(TextStyle::Dim),
+        );
+        put(buf, x, y, "   ", right - x, design.style(TextStyle::Dim))
+    }
+    let total = hints
+        .iter()
+        .fold(0u16, |sum, hint| sum.saturating_add(width(hint)))
+        .saturating_add(3 * hints.len().saturating_sub(1) as u16);
+    // When the bar overflows, the last hint is the way out and keeps its place
+    // on the right; the middle falls to an ellipsis. A label is never cut.
+    let reserve = hints
+        .last()
+        .filter(|_| hints.len() > 1 && area.x + 1 + total > area.right())
+        .map(width)
+        .filter(|width| width + 2 <= area.width);
+    let limit = reserve.map_or(area.right(), |width| area.right().saturating_sub(width + 1));
     let mut x = area.x + 1;
-    for hint in hints {
-        if x >= area.right() {
+    for (index, hint) in hints.iter().enumerate() {
+        if reserve.is_some() && index == hints.len() - 1 {
             break;
         }
-        x = put(
+        let hint_width = width(hint);
+        if x + hint_width > limit {
+            if limit.saturating_sub(x) >= 2 {
+                put(buf, x, area.y, "\u{2026}", 1, design.style(TextStyle::Dim));
+            }
+            break;
+        }
+        x = draw(buf, area.right(), x, area.y, hint, design);
+    }
+    if let (Some(last), Some(width)) = (hints.last(), reserve) {
+        draw(
             buf,
-            x,
+            area.right(),
+            area.right().saturating_sub(width + 1),
             area.y,
-            "[",
-            area.right() - x,
-            design.style(TextStyle::Key),
-        );
-        x = put(
-            buf,
-            x,
-            area.y,
-            &hint.key,
-            area.right() - x,
-            design.style(TextStyle::Key),
-        );
-        x = put(
-            buf,
-            x,
-            area.y,
-            "]",
-            area.right() - x,
-            design.style(TextStyle::Key),
-        );
-        x = put(
-            buf,
-            x,
-            area.y,
-            " ",
-            area.right() - x,
-            design.style(TextStyle::Dim),
-        );
-        x = put(
-            buf,
-            x,
-            area.y,
-            " ",
-            area.right() - x,
-            design.style(TextStyle::Dim),
-        );
-        x = put(
-            buf,
-            x,
-            area.y,
-            &hint.label,
-            area.right() - x,
-            design.style(TextStyle::Dim),
-        );
-        x = put(
-            buf,
-            x,
-            area.y,
-            "   ",
-            area.right() - x,
-            design.style(TextStyle::Dim),
+            last,
+            design,
         );
     }
 }
@@ -307,7 +310,7 @@ pub fn draw_card(
             area,
             design,
             title,
-            ColorRole::SurfaceAlt,
+            ColorRole::Border,
             design.style(TextStyle::Dim),
         )
     }
@@ -368,6 +371,9 @@ pub struct Row {
     /// ignores it, and so does a ranked list with an empty needle: the order a
     /// command gave its rows is the order a person reads them in.
     pub boost: u32,
+    /// A section label, not a row: it is drawn, never selected, and it leaves
+    /// the list as soon as the person types a filter.
+    pub heading: bool,
 }
 
 impl Row {
@@ -378,6 +384,15 @@ impl Row {
             detail: None,
             value: None,
             boost: 0,
+            heading: false,
+        }
+    }
+
+    /// A section label above a group of rows.
+    pub fn heading(label: impl Into<String>) -> Self {
+        Self {
+            heading: true,
+            ..Self::new(label)
         }
     }
 
@@ -412,6 +427,11 @@ impl Row {
     fn matches(&self, needle: &str) -> bool {
         if needle.is_empty() {
             return true;
+        }
+        // A section label is not an answer: it leaves as soon as the person
+        // types, and comes back when the filter is cleared.
+        if self.heading {
+            return false;
         }
         let ascii = needle.is_ascii();
         contains_fold(&self.label, needle, ascii)
@@ -495,6 +515,9 @@ impl Tier {
     pub fn of(row: &Row, needle_lower: &str) -> Option<Tier> {
         if needle_lower.is_empty() {
             return Some(Tier::Exact);
+        }
+        if row.heading {
+            return None;
         }
         let ascii = needle_lower.is_ascii();
         let label = if ascii {
@@ -828,19 +851,53 @@ impl ListState {
         self.visible.iter().position(|visible| *visible == row)
     }
 
+    /// Whether the visible position is a row the cursor may stand on.
+    fn selectable(&self, position: usize) -> bool {
+        self.visible
+            .get(position)
+            .is_some_and(|row| !self.rows[*row].heading)
+    }
+
+    /// The nearest selectable position from `target`, walking in `direction`
+    /// (`1` down, `-1` up). A section heading is a label, never a cursor stop.
+    fn snap(&self, target: usize, direction: isize) -> Option<usize> {
+        let len = self.visible.len();
+        if len == 0 {
+            return None;
+        }
+        let mut position = target.min(len - 1) as isize;
+        while position >= 0 && (position as usize) < len {
+            if self.selectable(position as usize) {
+                return Some(position as usize);
+            }
+            position += direction.signum();
+        }
+        None
+    }
+
     pub fn set_cursor(&mut self, cursor: usize) {
-        if !self.visible.is_empty() {
-            self.cursor = cursor.min(self.visible.len() - 1);
+        if self.visible.is_empty() {
+            return;
+        }
+        let cursor = cursor.min(self.visible.len() - 1);
+        if let Some(position) = self.snap(cursor, 1).or_else(|| self.snap(cursor, -1)) {
+            self.cursor = position;
         }
     }
 
     pub fn selected(&self) -> Option<&Row> {
+        if !self.selectable(self.cursor) {
+            return None;
+        }
         self.visible.get(self.cursor).map(|i| &self.rows[*i])
     }
 
     /// The selected row's index in the unfiltered set (what a command acts on:
     /// a filter must not change which file it opens).
     pub fn selected_index(&self) -> Option<usize> {
+        if !self.selectable(self.cursor) {
+            return None;
+        }
         self.visible.get(self.cursor).copied()
     }
 
@@ -896,10 +953,14 @@ impl ListState {
         if self.ranked {
             // The best match is the first row, and Enter must take it: a cursor
             // left on the third row by the previous needle would open the
-            // third-best answer to this one.
-            self.cursor = 0;
-        } else if self.cursor >= self.visible.len() {
-            self.cursor = self.visible.len().saturating_sub(1);
+            // third-best answer to this one. A heading is not an answer.
+            self.cursor = self.snap(0, 1).unwrap_or(0);
+        } else if !self.visible.is_empty() {
+            self.cursor = self.cursor.min(self.visible.len() - 1);
+            self.cursor = self
+                .snap(self.cursor, -1)
+                .or_else(|| self.snap(self.cursor, 1))
+                .unwrap_or(0);
         }
         self.offset = 0;
     }
@@ -920,36 +981,50 @@ impl ListState {
                 if len == 0 {
                     return ListAction::Ignored;
                 }
-                self.cursor = self.cursor.saturating_sub(1);
-                self.scroll_into_view(capacity);
+                if let Some(position) = self.snap(self.cursor.saturating_sub(1), -1) {
+                    self.cursor = position;
+                    self.scroll_into_view(capacity);
+                }
                 ListAction::Moved
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 if len == 0 {
                     return ListAction::Ignored;
                 }
-                self.cursor = (self.cursor + 1).min(len - 1);
-                self.scroll_into_view(capacity);
+                if let Some(position) = self.snap((self.cursor + 1).min(len - 1), 1) {
+                    self.cursor = position;
+                    self.scroll_into_view(capacity);
+                }
                 ListAction::Moved
             }
             KeyCode::PageUp => {
-                self.cursor = self.cursor.saturating_sub(capacity as usize);
-                self.scroll_into_view(capacity);
+                let target = self.cursor.saturating_sub(capacity as usize);
+                if let Some(position) = self.snap(target, 1) {
+                    self.cursor = position;
+                    self.scroll_into_view(capacity);
+                }
                 ListAction::Moved
             }
             KeyCode::PageDown => {
-                self.cursor = (self.cursor + capacity as usize).min(len.saturating_sub(1));
-                self.scroll_into_view(capacity);
+                let target = (self.cursor + capacity as usize).min(len.saturating_sub(1));
+                if let Some(position) = self.snap(target, -1) {
+                    self.cursor = position;
+                    self.scroll_into_view(capacity);
+                }
                 ListAction::Moved
             }
             KeyCode::Home => {
-                self.cursor = 0;
-                self.scroll_into_view(capacity);
+                if let Some(position) = self.snap(0, 1) {
+                    self.cursor = position;
+                    self.scroll_into_view(capacity);
+                }
                 ListAction::Moved
             }
             KeyCode::End => {
-                self.cursor = len.saturating_sub(1);
-                self.scroll_into_view(capacity);
+                if let Some(position) = self.snap(len.saturating_sub(1), -1) {
+                    self.cursor = position;
+                    self.scroll_into_view(capacity);
+                }
                 ListAction::Moved
             }
             KeyCode::Enter => match self.selected_index() {
@@ -1007,7 +1082,7 @@ impl ListState {
             return None;
         }
         let index = self.offset + line as usize;
-        if index < self.visible.len() {
+        if index < self.visible.len() && !self.rows[self.visible[index]].heading {
             Some(index)
         } else {
             None
@@ -1045,6 +1120,33 @@ impl ListState {
             };
             let row = &self.rows[*row_index];
             let y = area.y + line as u16 * stride;
+            if row.heading {
+                // A section label: drawn like a title with a rule to the right,
+                // never filled and never reached by the cursor or a click.
+                let mut x = put(
+                    buf,
+                    area.x + 1,
+                    y,
+                    &row.label,
+                    area.width.saturating_sub(1),
+                    design.style(TextStyle::Title),
+                );
+                x = put(
+                    buf,
+                    x,
+                    y,
+                    "  ",
+                    area.right().saturating_sub(x),
+                    design.style(TextStyle::Dim),
+                );
+                for rule_x in x..area.right().saturating_sub(2) {
+                    if let Some(cell) = buf.cell_mut((rule_x, y)) {
+                        cell.set_symbol("\u{2500}");
+                        cell.set_style(Style::default().fg(design.color(ColorRole::Border)));
+                    }
+                }
+                continue;
+            }
             let selected = focused && index == self.cursor;
             let row_bg = if selected {
                 design.color(ColorRole::Selection)
@@ -1079,7 +1181,13 @@ impl ListState {
                 );
             }
             if self.glyph_width > 0 {
-                let glyph_style = design.style(TextStyle::Body).bg(row_bg);
+                let glyph_style = design
+                    .style(if selected {
+                        TextStyle::Selected
+                    } else {
+                        TextStyle::Body
+                    })
+                    .bg(row_bg);
                 let mut room = self.glyph_width;
                 if let Some(glyph) = &row.glyph {
                     let width = UnicodeWidthStr::width(glyph.as_str()) as u16;
@@ -1102,9 +1210,14 @@ impl ListState {
                 .unwrap_or(0);
             let label_room = area.right().saturating_sub(x + value_width + 1);
             let style = if selected {
-                design.style(TextStyle::Title).bg(row_bg)
+                design.style(TextStyle::Selected).bg(row_bg)
             } else {
                 design.style(TextStyle::Body).bg(row_bg)
+            };
+            let detail_style = if selected {
+                design.style(TextStyle::SelectedDim).bg(row_bg)
+            } else {
+                design.style(TextStyle::Dim).bg(row_bg)
             };
             let mut label_end = put_trunc(buf, x, y, &row.label, label_room, style);
             if let Some(detail) = &row.detail {
@@ -1115,15 +1228,11 @@ impl ListState {
                     y,
                     detail,
                     area.right().saturating_sub(label_end + value_width),
-                    design.style(TextStyle::Dim).bg(row_bg),
+                    detail_style,
                 );
             }
             if let Some(value) = &row.value {
-                let value_style = if selected {
-                    design.style(TextStyle::Title).bg(row_bg)
-                } else {
-                    design.style(TextStyle::Dim).bg(row_bg)
-                };
+                let value_style = detail_style;
                 put_right(
                     buf,
                     Rect {
@@ -1191,11 +1300,11 @@ pub fn draw_scrollbar(
     let thumb_h = ((capacity * h) / total).max(1).min(h);
     let max_offset = total.saturating_sub(capacity).max(1);
     let thumb_top = (offset.min(max_offset) * (h - thumb_h)) / max_offset;
-    let track_style = Style::default().fg(design.color(ColorRole::SurfaceAlt));
+    let track_style = Style::default().fg(design.color(ColorRole::Border));
     let thumb_style = Style::default().fg(design.color(if focused {
         ColorRole::Accent
     } else {
-        ColorRole::Dim
+        ColorRole::Muted
     }));
     for row in 0..h {
         let y = area.y + row as u16;
@@ -1648,26 +1757,28 @@ impl LogPane {
         let height = area.height as usize;
         let end = self.lines.len().saturating_sub(self.offset);
         let start = end.saturating_sub(height);
+        let scrollable = self.lines.len() > height;
+        let width = if scrollable {
+            area.width.saturating_sub(1)
+        } else {
+            area.width
+        };
         for (line_no, line) in self.lines[start..end].iter().enumerate() {
             let y = area.y + line_no as u16;
-            put_trunc(
-                buf,
-                area.x,
-                y,
-                line,
-                area.width,
-                design.style(TextStyle::Dim),
-            );
+            put_trunc(buf, area.x, y, line, width, design.style(TextStyle::Dim));
         }
         if !self.follow && !self.lines.is_empty() {
             put_right(
                 buf,
-                area,
+                Rect { width, ..area },
                 area.bottom().saturating_sub(1),
                 "[paused]",
                 design.style(TextStyle::Danger),
                 area.left(),
             );
+        }
+        if scrollable {
+            draw_scrollbar(buf, area, design, start, height, self.lines.len(), false);
         }
     }
 }
@@ -2875,6 +2986,57 @@ mod tests {
                 .collect(),
         );
         list
+    }
+
+    #[test]
+    fn a_heading_is_drawn_but_never_selected() {
+        let design = Design::solarized();
+        let mut list = ListState::new();
+        list.set_rows(vec![
+            Row::heading("Open"),
+            Row::new("Terminal"),
+            Row::heading("AI"),
+            Row::new("Ask"),
+        ]);
+        list.set_cursor(0);
+        assert_eq!(list.selected().unwrap().label, "Terminal");
+        list.handle(key(KeyCode::Down), 10, &design);
+        assert_eq!(list.selected().unwrap().label, "Ask");
+        // A heading is not a row a click or Enter can land on.
+        let area = Rect::new(0, 0, 30, 4);
+        assert_eq!(list.hit_row(area, 2, 0, &design), None);
+        assert_eq!(list.hit_row(area, 2, 1, &design), Some(1));
+        // Typing hides the labels: a section heading is not an answer.
+        list.set_filter("ask");
+        assert_eq!(list.visible_len(), 1);
+        assert_eq!(list.selected().unwrap().label, "Ask");
+    }
+
+    #[test]
+    fn the_keybar_drops_a_hint_rather_than_cutting_its_label() {
+        let design = Design::solarized();
+        let area = Rect::new(0, 0, 34, 1);
+        let mut buf = Buffer::empty(area);
+        draw_keybar(
+            &mut buf,
+            area,
+            &design,
+            &[
+                KeyHint::new("Enter", "open"),
+                KeyHint::new("Ctrl+H", "dotfiles"),
+                KeyHint::new("Esc", "close"),
+            ],
+        );
+        let line: String = (0..area.width)
+            .map(|x| buf.cell((x, 0)).unwrap().symbol())
+            .collect();
+        assert!(line.contains('\u{2026}'), "no ellipsis: {line:?}");
+        assert!(!line.contains("dotf"), "a label was cut: {line:?}");
+        assert!(line.contains("[Enter]"), "{line:?}");
+        assert!(line.contains("open"), "{line:?}");
+        // The way out is the one hint the bar may not drop.
+        assert!(line.contains("[Esc]"), "{line:?}");
+        assert!(line.contains("close"), "{line:?}");
     }
 
     #[test]

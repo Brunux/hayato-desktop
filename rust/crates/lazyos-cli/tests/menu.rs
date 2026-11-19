@@ -301,6 +301,27 @@ fn snapshots_of_the_ask_strip() {
     });
 }
 
+/// With no agent, Enter is not a question nobody can answer: it opens the
+/// menu that installs one.
+#[test]
+fn ask_without_an_agent_opens_the_agents_menu() {
+    let home = Home::new("ask-no-agent-key");
+    let mut s = setup(&home, Surface::Root, None);
+    s.ask = Some(String::new());
+    let mut screen = MenuScreen::new(s);
+    assert_eq!(
+        drive(&mut screen, &[press(KeyCode::Enter)]),
+        Outcome::Done(0)
+    );
+    match screen.chosen {
+        Some(Picked::Run { argv, .. }) => {
+            assert_eq!(argv[1], "menu");
+            assert_eq!(argv[2], "agents");
+        }
+        other => panic!("expected the Agents menu, got {other:?}"),
+    }
+}
+
 /// The running state, drawn right after Enter and before the runner's first
 /// write: the question has been handed off and the window says who answers.
 #[test]
