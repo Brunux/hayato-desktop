@@ -94,9 +94,21 @@ mpv-mpris
 # the note spell check, libdjvulibre for DjVu). A reader with search, zoom,
 # printing and annotations, where a PDF used to be a 280 MB browser tab. It does
 # NOT open EPUB - papers 49's MimeType list has no application/epub+zip, whatever
-# docs/omarchy-gap.md said - so an EPUB still goes to the browser, and foliate
-# (12.4 MB, in forky) is the package that would fix that if it is wanted.
+# docs/omarchy-gap.md said - so foliate below is the reader for that format.
 papers
+# The EPUB reader: foliate 3.x (12.4 MB) plus gjs and the WebKitGTK 6
+# introspection the image already has for games/papers. `papers` does not read
+# EPUB, and Firefox cannot either; before this an .epub was a download that
+# opened as a page of binary. Files and `lazyos open` send it here.
+foliate
+# Ink notes and PDF signing: xournalpp 1.3.8 (8.8 MB, GTK3 like waybar) opens
+# `.xopp` notes, annotates a PDF and exports the signed copy. It depends on
+# qpdf (475 kB, already useful on its own) and libgtksourceview-4; its TeX Live
+# support is only a Recommends, and the rootfs installs with
+# --no-install-recommends, so the 285 MB TeX stack stays out and handwriting
+# plus PDF export still work. The Notes menu is the wrapper; nothing here is
+# resident.
+xournalpp
 # The camera application: guvcview 2.2 draws the preview, exposes the device's
 # own controls (exposure, gain, white balance - which is the difference between
 # a black rectangle and a face in a dim room) and keeps a photo or a clip.

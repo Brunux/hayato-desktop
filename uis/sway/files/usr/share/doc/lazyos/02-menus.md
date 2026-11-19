@@ -95,6 +95,9 @@ disk this system runs from, so the eMMC and the card this system boots from are
 never candidates - and Format asks twice with Cancel as the first answer, and
 writes exFAT (no 4 GB file limit, and Windows, macOS and Linux all read it) or
 ext4),
+**Notes** (quick Markdown notes in `~/Documents/Notes`, ink notes and PDF signing
+through xournalpp; EPUB opens in foliate from Files; `04-software.md` § *Notes
+and documents*),
 **Media** (what is
 playing, play/pause/next/previous), **Games** (the library: retro ROMs from
 `~/Games` and LazyOS HTML games; see `08-games.md`), **Time zone** (with network time),

@@ -464,6 +464,17 @@ fn query(resolved: &Resolved) -> Option<i32> {
             }
             Some(EXIT_OK)
         }
+        ("menu notes", ["--rows"] | ["rows"]) => {
+            let mut out = io::stdout();
+            for (key, label, detail) in system::notes::rows() {
+                let _ = writeln!(out, "{key}\t{label}\t{detail}");
+            }
+            Some(EXIT_OK)
+        }
+        ("menu notes", ["--dir"] | ["dir"]) => {
+            println!("{}", system::notes::notes_dir().display());
+            Some(EXIT_OK)
+        }
         ("menu agents", ["--default"]) => Some(system::agents::cli_default()),
         ("menu agents", ["--env", agent, account]) => Some(system::agents::cli_env(agent, account)),
         ("menu agents", ["--new", agent]) => Some(system::agents::cli_new(agent)),
@@ -620,6 +631,7 @@ fn execute(
         "menu dev" => system::dev::menu(terminal, design),
         "menu about" => system::about::menu(terminal, design),
         "menu net" => system::net::menu(terminal, design),
+        "menu notes" => system::notes::menu(terminal, design),
         "menu agents" => system::agents::menu(terminal, design),
         "menu places" => system::places::menu(terminal, design),
         "menu clean" => system::clean::menu(terminal, design),

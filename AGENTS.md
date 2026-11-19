@@ -183,6 +183,7 @@ that file as the contract; never add a second one.
 | `lazyos-clipboard` | `~/.config/lazyos/clipboard.conf` | `enabled=yes\|no`; the helper starts/stops `wl-paste --watch cliphist store`. |
 | `lazyos-capture` | `~/.config/lazyos/record.conf` + `$XDG_RUNTIME_DIR/lazyos-capture/camera.pid` | `audio=off\|mic\|system`, `webcam=on\|off`; the camera pid is the mpv overlay, signalled with the recorder. |
 | `lazyos-vnc` | `$XDG_RUNTIME_DIR/lazyos-vnc/{pid,wayvnc.log}` | the mode is the process, not a file: `status` and the bar read `/proc/<pid>/cmdline`, where `--disable-input` means read-only and its absence means remote control. Both bind 127.0.0.1 and are reached through the ssh tunnel; remote input is the explicit second start. |
+| `notes` | `~/Documents/Notes` + `~/Documents/Signed` | `*.md` quick notes edited in `$EDITOR` (nvim), `*.xopp` ink notes opened in xournalpp, `README.md` generated once and skipped by the list; exported PDFs in `Signed`. No state file: the folder is the list. EPUB is Files/`open` → foliate, never the Notes menu. |
 | `tablet-mode` | `$XDG_RUNTIME_DIR/lazyos-tablet/` | `kbd.pid`, `poller.pid`, `out` while on; absent while off. `off` repairs a missing directory. |
 | `busy` / `bar-busy` | `$XDG_RUNTIME_DIR/lazyos-busy/<tag>.{label,id,icon,stop}` | `.stop` is the line the bar runs; `busy cancelled` says whether the card is gone. |
 | `lazyos-profile` | target archive + `$XDG_CACHE_HOME/lazyos` | export writes `.partial` then renames; import backs up then extracts; `report` is one file. |

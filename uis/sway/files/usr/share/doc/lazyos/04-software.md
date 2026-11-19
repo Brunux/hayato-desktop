@@ -175,6 +175,39 @@ The variable comes from `/etc/profile.d/90-cli-tools.sh` (a login shell and this
 terminal read it) and only when nothing has set it already, so an `EDITOR` you
 export yourself wins.
 
+## Notes and documents
+
+**Alt+Space → Notes** (also the launcher entry **Notes**, and `lazyos-notes`)
+is one list for the three document shapes this image has, each opened by the
+tool that owns it:
+
+| Row | What it does |
+|---|---|
+| a note (`.md`, `.txt`) | Enter opens it in `$EDITOR` (nvim) in a foot window; quitting the editor returns to the list. **Ctrl+P** previews it with `glow`, **Del** moves it to the trash |
+| **New quick note** | asks for a title, writes `~/Documents/Notes/<date>-<title>.md`, and opens it |
+| **Today's note** | opens `~/Documents/Notes/<date>.md`, creating it with the date as its heading |
+| a `.xopp` ink note | Enter opens it in **xournalpp** |
+| **New ink note** | a blank xournalpp document; save it in this folder (Ctrl+S) and it joins the list |
+| **Annotate or sign a PDF** | picks a PDF from Documents or Downloads and opens it in xournalpp; save the `.xopp`, then export the signed PDF |
+| **Export an ink note to PDF** | `xournalpp --create-pdf` writes `<name>.pdf` into `~/Documents/Signed` |
+| **Open the notes folder** | the folder in Files |
+
+The folder is the state: there is no index and no daemon. The first open creates
+`~/Documents/Notes` with a `README.md` and `~/Documents/Signed` for exported
+PDFs; deleting a note elsewhere simply removes it from the list.
+
+**Reading is not note-taking.** `.epub` books open in **foliate** from Files or
+`lazyos open` (papers does not read EPUB, and Firefox cannot), and `.pdf` still
+opens in papers for reading. Files' **Alt+1** actions add the document rows for
+the file under the cursor: **Annotate or sign (xournalpp)** for a PDF, **Read
+(foliate)** for an EPUB, **Open in xournalpp** and **Export to PDF** for a
+`.xopp`, and **Edit (nvim)** for text.
+
+`xournalpp` (8.8 MB, GTK3) and `foliate` (12.4 MB, GTK4/WebKit) are in
+`uis/sway/packages.list`. The rootfs installs with `--no-install-recommends`, so
+xournalpp's TeX Live recommends stay out: handwriting, PDF annotation and PDF
+export work without the LaTeX tool.
+
 ## The browser
 
 The image ships **Firefox ESR** (`firefox-esr`), bound to **Alt+Shift+Return**

@@ -120,6 +120,7 @@ pub mod manual;
 pub mod media;
 pub mod net;
 pub mod night_light;
+pub mod notes;
 pub mod notify;
 pub mod notify_settings;
 pub mod pad;

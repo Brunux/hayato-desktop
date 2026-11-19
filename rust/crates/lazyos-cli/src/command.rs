@@ -253,6 +253,16 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &["lazyos-quake"],
     },
     CommandSpec {
+        // Notes and documents: quick Markdown notes in ~/Documents/Notes,
+        // ink notes and PDF signing through xournalpp. EPUB stays in Files
+        // (foliate), because reading is not note-taking.
+        path: "menu notes",
+        summary: "quick notes, ink notes and PDF signing (spec 017)",
+        shape: Shape::Pick,
+        symlinks: &["lazyos-notes"],
+        installed: &["lazyos-notes"],
+    },
+    CommandSpec {
         // The file list (spec 009). `lazyos-files` is a link to this binary in
         // the UI tree, so Alt+Ctrl+F, Alt+Search (`--search`), the launcher
         // entry and the scripts that open a folder did not change.
