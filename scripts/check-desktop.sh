@@ -3939,6 +3939,20 @@ section "Games"
 # the next phase; this section does not pretend it is installed.
 if have lazyos-games; then
 	ok "the game library is installed"
+	# The library spawns the host by name, so the first copy in PATH is the one
+	# that runs. A stale build left in /usr/local/bin once shadowed the
+	# installed one: its scan had no console zips, every launch answered "no
+	# game with id" into /dev/null, and the window just closed.
+	if [ -e /usr/local/bin/lazyos-games ]; then
+		fail "/usr/local/bin/lazyos-games exists: it comes before /usr/bin in PATH, shadows the installed host and swallows launches"
+	else
+		_games_host=$(command -v lazyos-games 2>/dev/null)
+		if [ "$_games_host" = "/usr/bin/lazyos-games" ]; then
+			ok "the game host is the installed one ($_games_host)"
+		else
+			warn "lazyos-games resolves to ${_games_host:-nothing}, not /usr/bin/lazyos-games (a checkout earlier in PATH?)"
+		fi
+	fi
 	_games_json="$(lazyos-games --scan 2>/dev/null || true)"
 	if [ -z "$_games_json" ]; then
 		fail "lazyos-games --scan printed nothing (the library cannot list its games)"

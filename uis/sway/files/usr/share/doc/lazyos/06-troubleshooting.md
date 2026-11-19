@@ -964,6 +964,14 @@ where it fails.
   a zip holding several ROMs shows one row and starts whichever file is first.
   PlayStation disc games are not zipped — a `.cue` inside an archive cannot find
   its `.bin` files — and firmware in `bios/` is never zipped either.
+- **A game does not start and the library window just closes**: the host that
+  runs a game is started by name, so the first `lazyos-games` in `PATH` is the
+  one that runs. An older copy in `/usr/local/bin` shadows the installed one,
+  and it answers "no game with id" for anything its own scan does not know —
+  a build from before zipped ROMs, for instance, does not know `nes/*.zip`.
+  Its words are kept in `~/.local/state/lazyos/games/host.log`, overwritten on
+  every launch; `command -v lazyos-games` should print
+  `/usr/bin/lazyos-games`.
 - **In the HTML game window only**: the game uses the browser Gamepad API,
   which is separate from the mapper; check that the game calls
   `navigator.getGamepads()` and that the pad is a standard-mapping one.
