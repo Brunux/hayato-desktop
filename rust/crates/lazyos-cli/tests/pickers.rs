@@ -10,9 +10,15 @@
 use std::fs;
 use std::path::Path;
 
+use lazyos_cli::system::agents;
 use lazyos_cli::system::disk::Disk;
+use lazyos_cli::system::download;
+use lazyos_cli::system::file_actions::{self, FileKind};
 use lazyos_cli::system::format;
+use lazyos_cli::system::layout::{self, LayoutEntry};
 use lazyos_cli::system::pick::Picker;
+use lazyos_cli::system::places::{self, PlaceEntry};
+use lazyos_cli::system::translate;
 use lazyos_ui::{App, Design, Header, Outcome, Screen};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -206,4 +212,120 @@ fn the_filesystem_question_is_asked_about_the_disk_just_chosen() {
         rendered.contains("/dev/mmcblk1 · everything on it is erased"),
         "the second question does not name the disk:\n{rendered}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The pickers that build their rows from the machine. Each one is drawn from
+// data, so the snapshot pins the layout without pinning this host.
+// ---------------------------------------------------------------------------
+
+fn places() -> Vec<PlaceEntry> {
+    vec![
+        PlaceEntry {
+            key: "home".into(),
+            label: "Home".into(),
+            target: "/home/brunux".into(),
+            glyph: lazyos_ui::Glyph::Home,
+        },
+        PlaceEntry {
+            key: "downloads".into(),
+            label: "Downloads".into(),
+            target: "/home/brunux/Downloads".into(),
+            glyph: lazyos_ui::Glyph::Folder,
+        },
+        PlaceEntry {
+            key: "mnt:lazyos".into(),
+            label: "LAZYOS".into(),
+            target: "/run/media/brunux/LAZYOS".into(),
+            glyph: lazyos_ui::Glyph::Disk,
+        },
+    ]
+}
+
+fn layouts() -> Vec<LayoutEntry> {
+    layout::parse_evdev_lst(
+        "! layout\n  us              English (US)\n  es              Spanish\n  fr              French\n",
+    )
+}
+
+#[test]
+fn places_lists_the_machine_s_places() {
+    snapshots("picker-places", &[], || {
+        Picker::new(
+            "Places",
+            places::questions(&places(), "Enter opens · type to filter · Escape closes"),
+        )
+    });
+}
+
+#[test]
+fn the_keyboard_layout_marks_the_current_one() {
+    snapshots("picker-layout", &[], || {
+        Picker::new(
+            "Keyboard layout",
+            layout::questions(
+                &layouts(),
+                "us",
+                "Current: us · Enter sets layout · Escape closes",
+            ),
+        )
+    });
+}
+
+#[test]
+fn translate_config_lists_the_target_languages() {
+    snapshots("picker-translate", &[], || {
+        Picker::new(
+            "Translate",
+            translate::config_questions("en", "Everything goes into English · Enter sets language"),
+        )
+    });
+}
+
+#[test]
+fn download_offers_the_clipboard_the_folder_and_the_stop_row() {
+    snapshots("picker-download", &[], || {
+        Picker::new(
+            "Download",
+            download::questions(
+                Some("https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
+                3,
+                true,
+                "Enter downloads in this window · Escape closes",
+            ),
+        )
+    });
+}
+
+#[test]
+fn file_actions_names_the_file_in_the_title() {
+    let path = Path::new("/home/brunux/Pictures/holiday.png");
+    snapshots("picker-file-actions", &[], || {
+        Picker::new(
+            "File actions · holiday.png",
+            file_actions::questions(
+                "holiday.png",
+                path,
+                Path::new("/home/brunux/Pictures"),
+                FileKind::Other,
+                None,
+                "/home/brunux/Pictures/holiday.png",
+            ),
+        )
+    });
+}
+
+#[test]
+fn agents_shows_an_installed_agent_and_one_to_install() {
+    snapshots("picker-agents", &[], || {
+        Picker::new(
+            "Agents",
+            agents::questions(
+                &["claude"],
+                &[("claude", "work".to_string())],
+                Some("claude"),
+                "Enter launches or configures · Escape closes",
+            ),
+        )
+    });
 }

@@ -71,6 +71,44 @@ pub fn build_download_argv(url: &str, dl_dir: &Path, audio_only: bool) -> Vec<St
     argv
 }
 
+/// The one question of `lazyos menu download`, built from data so a snapshot
+/// can draw it without a clipboard, a Downloads folder or a running yt-dlp.
+pub fn questions(clip: Option<&str>, count: usize, downloading: bool, note: &str) -> Vec<Question> {
+    let mut rows = Vec::new();
+    let mut keys = Vec::new();
+
+    if let Some(url) = clip {
+        rows.push(row("The link in the clipboard", url, Glyph::Clipboard));
+        keys.push(format!("clip:{url}"));
+    }
+
+    rows.push(row(
+        "Paste or type a link",
+        "YouTube, Vimeo, SoundCloud, or a direct file URL",
+        Glyph::Cloud,
+    ));
+    keys.push("link".to_string());
+
+    let s = if count == 1 { "" } else { "s" };
+    rows.push(row(
+        "The Downloads folder",
+        format!("{count} file{s} \u{00b7} ~/Downloads"),
+        Glyph::Folder,
+    ));
+    keys.push("folder".to_string());
+
+    if downloading {
+        rows.push(row(
+            "Stop active background download",
+            "stops yt-dlp; partial .part file stays in ~/Downloads",
+            Glyph::Warning,
+        ));
+        keys.push("stop".to_string());
+    }
+
+    vec![Question::choose("Download", note, rows, keys)]
+}
+
 /// Interactive `lazyos menu download`.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
@@ -88,38 +126,7 @@ pub fn menu(
     loop {
         let clip = clipboard_url();
         let count = downloads_count();
-
-        let mut rows = Vec::new();
-        let mut keys = Vec::new();
-
-        if let Some(ref url) = clip {
-            rows.push(row("The link in the clipboard", url, Glyph::Clipboard));
-            keys.push(format!("clip:{url}"));
-        }
-
-        rows.push(row(
-            "Paste or type a link",
-            "YouTube, Vimeo, SoundCloud, or a direct file URL",
-            Glyph::Cloud,
-        ));
-        keys.push("link".to_string());
-
-        let s = if count == 1 { "" } else { "s" };
-        rows.push(row(
-            "The Downloads folder",
-            format!("{count} file{s} \u{00b7} ~/Downloads"),
-            Glyph::Folder,
-        ));
-        keys.push("folder".to_string());
-
-        if is_downloading() {
-            rows.push(row(
-                "Stop active background download",
-                "stops yt-dlp; partial .part file stays in ~/Downloads",
-                Glyph::Warning,
-            ));
-            keys.push("stop".to_string());
-        }
+        let downloading = is_downloading();
 
         let note = banner
             .take()
@@ -127,7 +134,7 @@ pub fn menu(
 
         let mut picker = Picker::new(
             "Download",
-            vec![Question::choose("Download", note, rows, keys)],
+            questions(clip.as_deref(), count, downloading, &note),
         );
 
         let code = crate::run_screen(terminal, design, "Download", &mut picker)?;

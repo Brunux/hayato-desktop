@@ -1,0 +1,45 @@
+LazyOS · Translate                                                                                                       Enter picks · Escape goes back
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+╭ Translate Target Language ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Everything goes into English · Enter sets language                                                                                                   │
+│                                                                                                                                                      │
+│ ▍   English  en                                                                                                                         ● current   │
+│     Spanish  es                                                                                                                                     │
+│     French  fr                                                                                                                                      │
+│     German  de                                                                                                                                      │
+│     Portuguese  pt                                                                                                                                  │
+│     Italian  it                                                                                                                                     │
+│     Dutch  nl                                                                                                                                       │
+│     Russian  ru                                                                                                                                     │
+│     Ukrainian  uk                                                                                                                                   │
+│     Polish  pl                                                                                                                                      │
+│     Turkish  tr                                                                                                                                     │
+│     Arabic  ar                                                                                                                                      │
+│     Hebrew  he                                                                                                                                      │
+│     Hindi  hi                                                                                                                                       │
+│     Japanese  ja                                                                                                                                    │
+│     Korean  ko                                                                                                                                      │
+│     Chinese (simplified)  zh-CN                                                                                                                     │
+│     Chinese (traditional)  zh-TW                                                                                                                    │
+│     Vietnamese  vi                                                                                                                                  │
+│     Thai  th                                                                                                                                        │
+│     Indonesian  id                                                                                                                                  │
+│     Swedish  sv                                                                                                                                     │
+│     Czech  cs                                                                                                                                       │
+│     Greek  el                                                                                                                                       │
+│     Romanian  ro                                                                                                                                    │
+│     Persian  fa                                                                                                                                     │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  pick   [Esc]  back

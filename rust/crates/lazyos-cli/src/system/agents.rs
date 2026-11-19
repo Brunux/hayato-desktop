@@ -295,6 +295,71 @@ pub fn cli_new(agent_name: &str) -> i32 {
     0
 }
 
+/// The question of `lazyos menu agents`, built from data so a snapshot can
+/// draw it without an agent on `PATH` or an account file.
+pub fn questions(
+    installed: &[&str],
+    accounts: &[(&str, String)],
+    default: Option<&str>,
+    note: &str,
+) -> Vec<Question> {
+    let mut rows = Vec::new();
+    let mut keys = Vec::new();
+
+    for agent in AGENTS {
+        let is_installed = installed.contains(&agent.binary);
+        let is_default = default == Some(agent.binary);
+
+        if is_installed {
+            let mut r = row(agent.name, "launch session", Glyph::Code);
+            if is_default {
+                r = r.value("\u{25cf} default");
+            }
+            rows.push(r);
+            keys.push(format!("launch:{}", agent.binary));
+
+            if !agent.envvar.is_empty() {
+                let detail = match accounts.iter().find(|(bin, _)| *bin == agent.binary) {
+                    Some((_, account)) => format!("active account: {account}"),
+                    None => "switch or create accounts".to_string(),
+                };
+                rows.push(row(
+                    format!("{} accounts\u{2026}", agent.name),
+                    detail,
+                    Glyph::People,
+                ));
+                keys.push(format!("accounts:{}", agent.binary));
+            }
+        } else {
+            rows.push(row(
+                agent.name,
+                format!("install {}", agent.npm),
+                Glyph::Download,
+            ));
+            keys.push(format!("install:{}", agent.binary));
+        }
+    }
+
+    rows.push(row(
+        "Set the default agent\u{2026}",
+        "choose active default agent",
+        Glyph::Gear,
+    ));
+    keys.push("default".to_string());
+
+    rows.push(row(
+        "Agent console",
+        "drop down from the top \u{00b7} Alt+`",
+        Glyph::Terminal,
+    ));
+    keys.push("console".to_string());
+
+    rows.push(row("Open a terminal in ~/Work", "~/Work", Glyph::Terminal));
+    keys.push("shell".to_string());
+
+    vec![Question::choose("Agents", note, rows, keys)]
+}
+
 /// Interactive surface: `lazyos menu agents`.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
@@ -303,71 +368,29 @@ pub fn menu(
     let mut status_note: Option<String> = None;
 
     loop {
-        let def_agent = get_default_agent();
-        let mut rows = Vec::new();
-        let mut keys = Vec::new();
-
-        for agent in AGENTS {
-            let installed = is_installed(agent.binary);
-            let is_default = def_agent.is_some_and(|d| d.binary == agent.binary);
-
-            if installed {
-                let mut r = row(agent.name, "launch session", Glyph::Code);
-                if is_default {
-                    r = r.value("● default");
-                }
-                rows.push(r);
-                keys.push(format!("launch:{}", agent.binary));
-
-                if !agent.envvar.is_empty() {
-                    let def_acc = fs::read_to_string(data_dir().join(agent.binary).join("default"))
-                        .ok()
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty());
-                    let detail = match def_acc {
-                        Some(acc) => format!("active account: {acc}"),
-                        None => "switch or create accounts".to_string(),
-                    };
-                    rows.push(row(
-                        format!("{} accounts…", agent.name),
-                        detail,
-                        Glyph::People,
-                    ));
-                    keys.push(format!("accounts:{}", agent.binary));
-                }
-            } else {
-                rows.push(row(
-                    agent.name,
-                    format!("install {}", agent.npm),
-                    Glyph::Download,
-                ));
-                keys.push(format!("install:{}", agent.binary));
-            }
-        }
-
-        rows.push(row(
-            "Set the default agent…",
-            "choose active default agent",
-            Glyph::Gear,
-        ));
-        keys.push("default".to_string());
-
-        rows.push(row(
-            "Agent console",
-            "drop down from the top · Alt+`",
-            Glyph::Terminal,
-        ));
-        keys.push("console".to_string());
-
-        rows.push(row("Open a terminal in ~/Work", "~/Work", Glyph::Terminal));
-        keys.push("shell".to_string());
+        let installed: Vec<&str> = AGENTS
+            .iter()
+            .map(|a| a.binary)
+            .filter(|b| is_installed(b))
+            .collect();
+        let accounts: Vec<(&str, String)> = AGENTS
+            .iter()
+            .filter_map(|a| {
+                let account = fs::read_to_string(data_dir().join(a.binary).join("default"))
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())?;
+                Some((a.binary, account))
+            })
+            .collect();
+        let default = get_default_agent().map(|d| d.binary);
 
         let note = match &status_note {
             Some(msg) => format!("{msg} · Enter selects · Escape closes"),
             None => "Enter launches or configures · Escape closes".to_string(),
         };
 
-        let mut picker = Picker::new("Agents", vec![Question::choose("Agents", note, rows, keys)]);
+        let mut picker = Picker::new("Agents", questions(&installed, &accounts, default, &note));
 
         let code = crate::run_screen(terminal, design, "Agents", &mut picker)?;
         if code != 0 {

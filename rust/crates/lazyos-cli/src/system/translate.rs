@@ -215,6 +215,30 @@ pub fn menu(
     Ok(run_translate())
 }
 
+/// The one question of `lazyos menu translate config`, built from data so a
+/// snapshot can draw it without the saved target language.
+pub fn config_questions(current: &str, note: &str) -> Vec<Question> {
+    let mut rows = Vec::new();
+    let mut keys = Vec::new();
+
+    for (code, name) in LANGUAGES {
+        let is_cur = *code == current;
+        let mut r = row(*name, *code, Glyph::Globe);
+        if is_cur {
+            r = r.value("● current");
+        }
+        rows.push(r);
+        keys.push(code.to_string());
+    }
+
+    vec![Question::choose(
+        "Translate Target Language",
+        note,
+        rows,
+        keys,
+    )]
+}
+
 pub fn menu_config(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
@@ -225,32 +249,11 @@ pub fn menu_config(
         let cur = target_code();
         let cur_name = name_of(&cur);
 
-        let mut rows = Vec::new();
-        let mut keys = Vec::new();
-
-        for (code, name) in LANGUAGES {
-            let is_cur = *code == cur;
-            let mut r = row(*name, *code, Glyph::Globe);
-            if is_cur {
-                r = r.value("● current");
-            }
-            rows.push(r);
-            keys.push(code.to_string());
-        }
-
         let note = status_note
             .clone()
             .unwrap_or_else(|| format!("Everything goes into {cur_name} · Enter sets language"));
 
-        let mut picker = Picker::new(
-            "Translate",
-            vec![Question::choose(
-                "Translate Target Language",
-                note,
-                rows,
-                keys,
-            )],
-        );
+        let mut picker = Picker::new("Translate", config_questions(&cur, &note));
 
         let code = crate::run_screen(terminal, design, "Translate", &mut picker)?;
         if code != 0 {

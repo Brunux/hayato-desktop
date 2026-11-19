@@ -95,6 +95,25 @@ pub fn set_layout(code: &str) -> Result<(), String> {
 }
 
 /// Interactive `lazyos menu layout`.
+/// The one question of `lazyos menu layout`, built from data so a snapshot can
+/// draw it without reading `evdev.lst`.
+pub fn questions(layouts: &[LayoutEntry], active: &str, note: &str) -> Vec<Question> {
+    let mut rows = Vec::new();
+    let mut keys = Vec::new();
+
+    for l in layouts {
+        let is_active = l.name == active || l.code == active;
+        let mut r = row(&l.name, &l.code, Glyph::Keyboard);
+        if is_active {
+            r = r.value("● current");
+        }
+        rows.push(r);
+        keys.push(l.code.clone());
+    }
+
+    vec![Question::choose("Keyboard layout", note, rows, keys)]
+}
+
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
@@ -113,19 +132,6 @@ pub fn menu(
     loop {
         let active = active_layout().unwrap_or_default();
 
-        let mut rows = Vec::new();
-        let mut keys = Vec::new();
-
-        for l in &layouts {
-            let is_active = l.name == active || l.code == active;
-            let mut r = row(&l.name, &l.code, Glyph::Keyboard);
-            if is_active {
-                r = r.value("● current");
-            }
-            rows.push(r);
-            keys.push(l.code.clone());
-        }
-
         let note = status_note.clone().unwrap_or_else(|| {
             if active.is_empty() {
                 "Enter sets layout · type to filter · Escape closes".to_string()
@@ -134,10 +140,7 @@ pub fn menu(
             }
         });
 
-        let mut picker = Picker::new(
-            "Keyboard layout",
-            vec![Question::choose("Keyboard layout", note, rows, keys)],
-        );
+        let mut picker = Picker::new("Keyboard layout", questions(&layouts, &active, &note));
 
         let code = crate::run_screen(terminal, design, "Keyboard layout", &mut picker)?;
         if code != 0 {

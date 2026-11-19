@@ -1,0 +1,24 @@
+LazyOS · Places                                  Enter picks · Escape goes back
+────────────────────────────────────────────────────────────────────────────────
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Enter opens · type to filter · Escape closes                                 │
+│                                                                              │
+│ ▍   Home  /home/brunux                                                      │
+│     Downloads  /home/brunux/Downloads                                       │
+│     LAZYOS  /run/media/brunux/LAZYOS                                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  pick   [Esc]  back
