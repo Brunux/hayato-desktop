@@ -5,7 +5,7 @@ LazyOS · AI · Ask                                                      OpenCod
 
 
 
-     ╭ Ask · AI ──────────────────────────────────────────────────────────╮
+     ╭ Your question ─────────────────────────────────────────────────────╮
      │ One question to OpenCode; the answer appears here.                 │
      │ Sends the question only, from an empty private directory.          │
      │                                                                    │

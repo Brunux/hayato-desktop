@@ -83,7 +83,7 @@ impl KillScreen {
             list: ListState::new().with_empty("no matching processes"),
             mode: KillMode::List,
             status_note: None,
-            header: Header::new("End a process").subtitle("Process manager"),
+            header: Header::new("LazyOS").subtitle("Processes"),
             keybar: vec![
                 KeyHint::new("Enter", "send SIGTERM"),
                 KeyHint::new("Ctrl+R", "refresh"),
@@ -122,9 +122,7 @@ impl KillScreen {
                 self.list.len()
             )
         });
-        self.header = Header::new("End a process")
-            .subtitle("Process manager")
-            .status(status);
+        self.header = Header::new("LazyOS").subtitle("Processes").status(status);
     }
 
     fn layout(area: Rect) -> (Rect, Rect, Rect) {
@@ -202,7 +200,7 @@ impl Screen for KillScreen {
                 confirm.render(ctx.area, ctx.buf, ctx.design);
             }
             KillMode::List => {
-                draw_card(ctx.buf, ctx.area, ctx.design, Some("End a process"), true);
+                draw_card(ctx.buf, ctx.area, ctx.design, Some("By memory"), true);
                 let (strip, filter, rows) = Self::layout(ctx.area);
                 self.strip.render(strip, ctx.buf, ctx.design);
                 let hint = self.status_note.as_deref().unwrap_or(

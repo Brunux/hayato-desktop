@@ -1,28 +1,28 @@
 ===== 80x24 =====
-==> step 16: copying
-==> step 17: syncing
-==> step 18: installing the kernel
-==> step 19: done
-==> step 20: copying
-==> step 21: syncing
-==> step 22: installing the kernel
-==> step 23: done
-==> step 24: copying
-==> step 25: syncing
-==> step 26: installing the kernel
-==> step 27: done
-==> step 28: copying
-==> step 29: syncing
-==> step 30: installing the kernel
-==> step 31: done
-==> step 32: copying
-==> step 33: syncing
-==> step 34: installing the kernel
-==> step 35: done
-==> step 36: copying
-==> step 37: syncing
-==> step 38: installing the kernel
-==> step 39: done
+==> step 16: copying                                                           │
+==> step 17: syncing                                                           │
+==> step 18: installing the kernel                                             │
+==> step 19: done                                                              │
+==> step 20: copying                                                           │
+==> step 21: syncing                                                           │
+==> step 22: installing the kernel                                             │
+==> step 23: done                                                              │
+==> step 24: copying                                                           │
+==> step 25: syncing                                                           │
+==> step 26: installing the kernel                                             █
+==> step 27: done                                                              █
+==> step 28: copying                                                           █
+==> step 29: syncing                                                           █
+==> step 30: installing the kernel                                             █
+==> step 31: done                                                              █
+==> step 32: copying                                                           █
+==> step 33: syncing                                                           █
+==> step 34: installing the kernel                                             █
+==> step 35: done                                                              █
+==> step 36: copying                                                           █
+==> step 37: syncing                                                           █
+==> step 38: installing the kernel                                             █
+==> step 39: done                                                              █
 ===== 152x45 =====
 ==> step 00: copying
 ==> step 01: syncing

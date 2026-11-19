@@ -42,7 +42,11 @@ window.
 link to `lazyos`, so **Alt+Space**, the bar's button and the launcher entry open
 the framework's menu: the same rows in the same four groups (*open*, *ai*,
 *system*, *session*, the group's name dim on the right of each row), a glyph per
-row, and a filter line at the top. **Type to narrow it** - case does not matter -
+row, and a filter line at the top. Each group starts with a heading (*Open*,
+*AI*, *System*, *Session*) and a rule: the heading is a label, not a row, so the
+arrows and a click pass over it. The top right counts what is there (`52
+commands`); once you type, the headings leave and the count becomes matches (`3
+matches`). **Type to narrow it** - case does not matter -
 and the best match moves to the top and is selected, so `wifi` Enter opens the
 Wi-Fi list and `lock` Enter locks: a name that starts with what you typed beats
 one where a word of it does, which beats one that only contains the letters in
@@ -60,8 +64,11 @@ question to the list, from the list to the menu) before it closes anything.
 
 **The command palette** (`lazyos menu palette`) is the same window over every
 row the menu has, plus the commands that need no question: one row per theme
-(*Theme: Nord* sets it), *Next theme* and *Next wallpaper*. Typing ranks it the
-same way. The applications join it later, with their icons.
+(*Theme: Nord* sets it), *Next theme* and *Next wallpaper*. Its prompt says so
+(*type a command, theme or setting*), and it uses the same headings, so the
+themes sit under *System* instead of after it. The top right counts entries
+rather than commands (`72 entries`). Typing ranks it the same way. The
+applications join it later, with their icons.
 
 **Ask** (the *ai* group, or the **Ask** launcher entry, or `lazyos ask` in a
 terminal) is one question to an AI, answered in the same window. The header
@@ -208,7 +215,11 @@ still shows what happened. While a task runs, **s** stops it if it is stoppable
 (SIGINT first, SIGTERM after two seconds, and the final state is always
 `Stopped`, never `Failed`); **Esc** or **q** closes the window without cancelling
 the task. The bar's spinner is the same busy state the old menus use, so a click
-on it stops a stoppable task the same way **s** does.
+on it stops a stoppable task the same way **s** does. The outcome is a card in
+its own colour - green **Done**, red **Failed**, amber **Stopped** - and a
+failure keeps its error there: **c** copies that error, **l** focuses the log.
+The log carries a scrollbar; **Up/Down** and PageUp/PageDown move it, **End**
+follows the tail again.
 
 ## Browsing files
 
@@ -296,7 +307,10 @@ move through it, **o** opens it with its program, and Escape goes back to the
 matches. It is bounded like the list - three matches per file, 400 rows, the
 same four trees left out - so type one more word to narrow a wide search. A
 pattern ripgrep cannot read is answered in ripgrep's own words, and Escape
-while it is still searching stops it.
+while it is still searching stops it. When `ripgrep` (or `fd`, for the file
+walk) is not installed, the window says which package provides it and
+**Ctrl+I** opens the package search on that package, so the fix is one key away
+instead of a dead end.
 
 `xdg-open` exists too (`/usr/local/bin/xdg-open`, two dozen lines): a URL goes to
 Firefox, and a path goes to the same rule table a double click in the window uses
@@ -550,6 +564,13 @@ Debian's Adwaita ships only monochrome symbolic icons and none of this session's
 names, so the image carries a small **LazyOS** icon theme: rendered once to 48×48 PNGs
 by `desktop/scripts/make-icons.sh`. Its `index.theme` inherits Adwaita and hicolor, so an
 application that brings its own icon still shows it in colour.
+
+The windows derive two readable roles from the theme instead of trusting it:
+secondary text (a size, a date, a hint) is lifted to 4.5:1 against the window,
+and a card's border to 3:1. A selected row keeps the theme's fill, adds the
+accent bar and a bold label, and lifts its own text to 4.5:1 on that fill. The
+theme file still writes `dim` and `selection`; the window computes what it
+draws, so a palette that looks good in `foot` cannot make a menu unreadable.
 
 ## Adding things to the launcher
 

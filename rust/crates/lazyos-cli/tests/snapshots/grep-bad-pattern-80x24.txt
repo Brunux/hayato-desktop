@@ -1,4 +1,4 @@
-Search inside files · (                              ripgrep refused the search
+LazyOS · (                                           ripgrep refused the search
 ────────────────────────────────────────────────────────────────────────────────
 
 
@@ -6,7 +6,7 @@ Search inside files · (                              ripgrep refused the search
 
 
 
-     ╭ Search inside files ───────────────────────────────────────────────╮
+     ╭ Refused ───────────────────────────────────────────────────────────╮
      │ regex parse error:                                                 │
      │     (                                                              │
      │     ^                                                              │

@@ -57,6 +57,13 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    so only the active input shows the accent bar and blinking 500 ms cursor (solid when
    `reduced_motion`), and inputs inside `ColorRole::Surface` cards use `ColorRole::Bg` to preserve
    palette contrast across Solarized Dark (`Surface == Selection`) and light themes.
+   Widgets never draw the raw `Dim`: `TextStyle::Dim` is `ColorRole::Muted` (4.5:1 on `Bg`), a
+   card's border is `ColorRole::Border` (3:1), and a selected row uses `SelectionText`/`SelectionDim`
+   (4.5:1 on `Selection`). `Design` derives them once from the palette, never per frame, so a theme
+   keeps writing `dim`/`selection` while the window draws what is readable on it;
+   `every_builtin_theme_clears_the_derived_floors` fails a palette that cannot. The key bar draws a
+   hint whole or not at all: it drops the middle to `…` and keeps the last hint (the way out) on
+   the right.
 10. **A recording is a file of the screen**: the capture menu starts `wf-recorder` as its own argv
    (`lazyos menu capture --start`, a detached re-exec; never a shell line, so the saved pid is the
    recorder), verifies `/proc/<pid>/comm`, and signals that exact pid (INT, then TERM). While
@@ -170,6 +177,22 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    release; core's rootfs setup installs it), with the notes folder as its vault; a search hit opens
    at the top because editxr has no line argument. `tests/notes.rs` snapshots both grids and is the
    layout's witness.
+
+18. **One header grammar and no duplicate titles**: the header is `<product> · <surface>` on the
+   left, the status on the right, and the card title is the context (the question, or what the
+   card holds) - never the surface's own name. A picker whose question repeats its name draws no
+   card title. The menu draws one heading per group (`Group::heading`) from a `Row::heading`: it
+   is a label with a rule, never a cursor stop or a click target, and it leaves the list as soon
+   as a filter is typed. `ListState` skips headings on every move, and `tests/menu.rs` snapshots
+   the result at 80×24 and 152×45.
+
+19. **A dead end offers the next step**: a finished task draws its outcome as a card in the
+   outcome's colour (green Done, red Failed, amber Stopped), and a failure offers `c` (copy the
+   error) beside `l` (focus the log). The log pane carries a scrollbar and `↑↓`/`End` in the key
+   bar. A search whose tool is missing (`fd`, `ripgrep`) offers `Ctrl+I`, which opens
+   `lazyos menu pkg --search <package>` in a new window; the key bar drops the hints that cannot
+   work (`open`, `copy path`) while the tool is missing. `tests/files.rs` proves the hand-off and
+   the task snapshots prove the card.
 
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single

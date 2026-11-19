@@ -599,11 +599,15 @@ impl Renderer {
         } else {
             card_y + 19.0
         };
+        // The glyph is 12 px; the target is a finger. 44 logical px is the
+        // smallest target a touch screen can hit reliably, and the card bounds
+        // still clip it, so a click outside the card never closes it.
+        let target = 44.0 * scale;
         let close_rect = Rect::new(
-            map_x(close_x - 4.0),
-            map_y(close_y - 12.0),
-            18.0 * scale,
-            18.0 * scale,
+            map_x(close_x + 6.0) - target / 2.0,
+            map_y(close_y - 6.0) - target / 2.0,
+            target,
+            target,
         );
         notif.close_rect = Some(close_rect);
 

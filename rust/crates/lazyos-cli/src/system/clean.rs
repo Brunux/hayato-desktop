@@ -227,7 +227,7 @@ impl CleanScreen {
             strip: ActionStrip::default(),
             runner: ActionRunner::new(),
             list: ListState::new(),
-            header: Header::new("Free space").subtitle("Disk cleaner"),
+            header: Header::new("LazyOS").subtitle("Free space"),
             keybar: vec![
                 KeyHint::new("Enter", "clean item"),
                 KeyHint::new("Tab", "actions"),
@@ -457,9 +457,7 @@ impl CleanScreen {
         } else {
             "Calculating reclaimable space\u{2026}".to_string()
         };
-        self.header = Header::new("Free space")
-            .subtitle("Disk cleaner")
-            .status(status);
+        self.header = Header::new("LazyOS").subtitle("Free space").status(status);
     }
 
     fn layout(area: Rect) -> (Rect, Rect, Rect, Rect) {
@@ -673,7 +671,13 @@ impl Screen for CleanScreen {
     }
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Free space"), true);
+        draw_card(
+            ctx.buf,
+            ctx.area,
+            ctx.design,
+            Some("What is using the disk"),
+            true,
+        );
         let (hero, strip, filter, rows) = Self::layout(ctx.area);
         self.draw_hero(ctx.buf, hero, ctx.design);
         self.strip.render(strip, ctx.buf, ctx.design);

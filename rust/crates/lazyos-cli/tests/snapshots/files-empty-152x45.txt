@@ -1,11 +1,11 @@
-Files · ~/src                                                                                                               0 dirs · 0 files · ### free
+LazyOS · Files · ~/src                                                                                                      0 dirs · 0 files · ### free
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-╭ Files ──────────────────────────────────────────────────────────────────────────╮╭ home ─────────────────────────────────────────────────────────────╮
+╭ This folder ────────────────────────────────────────────────────────────────────╮╭ home ─────────────────────────────────────────────────────────────╮
 │ type to filter, or a path - Enter opens it                                     ││  2 folders · 4 files                                              │
 │                                                                                 ││                                                                   │
 │▍   ..  parent directory                                                        ││  Photos/                                                          │
-│    hidden files  hidden - Enter shows them                                     ││  src/                                                             │
-│                                                                                 ││  film.mkv                                                         │
+│    This folder is empty  Ctrl+H shows hidden files                             ││  src/                                                             │
+│    hidden files  hidden - Enter shows them                                     ││  film.mkv                                                         │
 │                                                                                 ││  gone                                                             │
 │                                                                                 ││  notes.md                                                         │
 │                                                                                 ││  photo.png                                                        │

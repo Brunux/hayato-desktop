@@ -5,15 +5,13 @@ LazyOS · AI · Ask                                                      no agen
 
 
 
-     ╭ Ask · AI ──────────────────────────────────────────────────────────╮
-     │ No agent can answer one question: install OpenCode or Claude Code. │
+
+
+     ╭ No agent ──────────────────────────────────────────────────────────╮
+     │ No agent can answer one question yet.                              │
+     │ The Agents menu installs OpenCode or Claude Code.                  │
      │                                                                    │
-     │                                                                    │
-     │                                                                    │
-     │ ▍What do you want to know?                                         │
-     │                                                                    │
-     │ Enter asks · Esc goes back · it uses the agent's own account       │
-     │                                                                    │
+     │ Enter opens it · Esc goes back                                     │
      │                                                                    │
      ╰────────────────────────────────────────────────────────────────────╯
 
@@ -21,4 +19,6 @@ LazyOS · AI · Ask                                                      no agen
 
 
 
- [Enter]  ask   [Esc]  back
+
+
+ [Enter]  open Agents   [Esc]  back

@@ -97,6 +97,17 @@ impl PkgScreen {
         }
     }
 
+    /// A search that is already typed (the Find/Grep screen sends the person
+    /// here with the package that provides the missing tool).
+    pub fn new_with_query(query: Option<&str>) -> Self {
+        let mut screen = Self::new();
+        if let Some(query) = query.filter(|query| !query.trim().is_empty()) {
+            screen.input = Input::with_text(query.to_string());
+            screen.search(query);
+        }
+        screen
+    }
+
     fn load_installed() -> std::collections::HashSet<String> {
         let mut installed = std::collections::HashSet::new();
         let output = Command::new("dpkg-query")
@@ -595,13 +606,29 @@ pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
+    menu_with_args(&[], terminal, design)
+}
+
+/// `lazyos menu pkg [--search QUERY]`: the Find/Grep screens use `--search`
+/// to land on the package that provides the tool they are missing.
+pub fn menu_with_args(
+    args: &[String],
+    terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
+    design: &Design,
+) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(&["apt-cache", "apt-get", "dpkg-query", "sudo"]) {
         return Err(crate::Failure::new(
             "Packages",
             format!("{said} (apt, dpkg, sudo)"),
         ));
     }
-    let mut screen = PkgScreen::new();
+    let query = args
+        .iter()
+        .position(|arg| arg == "--search")
+        .and_then(|at| args.get(at + 1))
+        .or_else(|| args.first().filter(|arg| !arg.starts_with('-')))
+        .map(String::as_str);
+    let mut screen = PkgScreen::new_with_query(query);
     crate::run_screen(terminal, design, "Packages", &mut screen)
 }
 

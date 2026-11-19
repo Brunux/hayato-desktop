@@ -212,7 +212,7 @@ impl RunScreen {
 
 impl Screen for RunScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Run"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("Commands"), true);
         let (filter, rows) = Self::list_layout(ctx.area);
         let x = ctx.buf.set_string(
             filter.x,

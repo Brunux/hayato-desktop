@@ -310,7 +310,7 @@ impl NetScreen {
             list: ListState::new(),
             mode: NetMode::List,
             runner: ActionRunner::new(),
-            header: Header::new("Wi-Fi"),
+            header: Header::new("LazyOS").subtitle("Wi-Fi"),
             keybar: Vec::new(),
             rows_height: Cell::new(16),
         };
@@ -468,7 +468,7 @@ impl NetScreen {
                         self.aps.len()
                     )
                 };
-                self.header = Header::new("Wi-Fi").subtitle("Network").status(status);
+                self.header = Header::new("LazyOS").subtitle("Wi-Fi").status(status);
                 self.keybar = vec![
                     KeyHint::new(
                         "Enter",
@@ -487,8 +487,8 @@ impl NetScreen {
                 ];
             }
             NetMode::Password { ssid, .. } => {
-                self.header = Header::new("Wi-Fi")
-                    .subtitle(format!("Password for {ssid}"))
+                self.header = Header::new("LazyOS")
+                    .subtitle("Wi-Fi")
                     .status("Enter connects \u{00b7} Escape returns to networks");
                 self.keybar = vec![
                     KeyHint::new("Enter", "connect"),
@@ -503,7 +503,7 @@ impl NetScreen {
                     .unwrap_or_else(|| {
                         "s saves PNG \u{00b7} c copies payload \u{00b7} o opens folder".to_string()
                     });
-                self.header = Header::new("Wi-Fi").subtitle(title.clone()).status(status);
+                self.header = Header::new("LazyOS").subtitle("Wi-Fi").status(status);
                 self.keybar = vec![
                     KeyHint::new("s", "save PNG"),
                     KeyHint::new("c", "copy payload"),
@@ -888,7 +888,7 @@ impl Screen for NetScreen {
                 input.render(input_rect, ctx.buf, ctx.design, "WPA passphrase\u{2026}");
             }
             NetMode::List => {
-                draw_card(ctx.buf, ctx.area, ctx.design, Some("Wi-Fi"), true);
+                draw_card(ctx.buf, ctx.area, ctx.design, Some("Networks"), true);
                 let (hero, strip, filter, rows) = Self::layout(ctx.area);
                 self.draw_hero(ctx.buf, hero, ctx.design);
                 self.strip.render(strip, ctx.buf, ctx.design);

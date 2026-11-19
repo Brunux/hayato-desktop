@@ -198,7 +198,7 @@ impl MediaScreen {
 
 impl Screen for MediaScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Media"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("Now playing"), true);
         let (hero, filter, rows) = Self::layout(ctx.area);
 
         if let Some(h) = hero {

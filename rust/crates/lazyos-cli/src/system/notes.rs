@@ -494,7 +494,7 @@ impl NotesScreen {
 
 impl Screen for NotesScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        let inner = draw_card(ctx.buf, ctx.area, ctx.design, Some("Notes"), true);
+        let inner = draw_card(ctx.buf, ctx.area, ctx.design, Some("All notes"), true);
         let panes = panes(inner);
         self.rows_height.set(panes.list.height);
         match self.mode {

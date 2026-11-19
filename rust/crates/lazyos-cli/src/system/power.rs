@@ -175,11 +175,7 @@ impl Hibernate {
             return Some("This kernel cannot hibernate (no 'disk' in /sys/power/state).".into());
         }
         let Some(device) = &self.swap_dev else {
-            return Some(
-                "No swap on disk. Hibernation needs a swap partition (2 GB or more) \
-                 labelled lazyos_swap, normally on the microSD."
-                    .into(),
-            );
+            return Some("Needs a swap partition of 2 GB+ labelled lazyos_swap.".into());
         };
         if self.swap_kb < self.need_kb {
             return Some(format!(
@@ -280,7 +276,7 @@ Filename                                Type            Size            Used    
 ";
         let h = Hibernate::read(STATE, swaps, MEMINFO, "resume=LABEL=x", |_| None);
         assert_eq!(h.swap_dev, None);
-        assert!(h.refusal().unwrap().starts_with("No swap on disk"));
+        assert!(h.refusal().unwrap().starts_with("Needs a swap partition"));
     }
 
     #[test]

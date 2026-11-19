@@ -256,7 +256,7 @@ impl GrepScreen {
             hits: Vec::new(),
             list: ListState::new().with_empty("nothing matches - Backspace widens it"),
             query: String::new(),
-            header: Header::new("Search inside files"),
+            header: Header::new("LazyOS").subtitle("Search inside files"),
             keybar: Vec::new(),
             rows_height: Cell::new(10),
             view_height: Cell::new(20),
@@ -291,10 +291,16 @@ impl GrepScreen {
                 KeyHint::new("o", "open the file"),
                 KeyHint::new("Esc", "back to the matches"),
             ],
-            Mode::Failed(_) => vec![
-                KeyHint::new("Enter", "try again"),
-                KeyHint::new("Esc", "close"),
-            ],
+            Mode::Failed(_) => {
+                let mut hints = Vec::new();
+                if self.rg.is_none() {
+                    hints.push(KeyHint::new("Ctrl+I", "install ripgrep"));
+                } else {
+                    hints.push(KeyHint::new("Enter", "try again"));
+                }
+                hints.push(KeyHint::new("Esc", "close"));
+                hints
+            }
         };
     }
 
@@ -343,7 +349,8 @@ impl GrepScreen {
                     .collect(),
             });
         });
-        self.header = Header::new("Search inside files")
+        self.header = Header::new("LazyOS")
+            .subtitle("Search inside files")
             .subtitle(query.clone())
             .status("searching…");
         self.query = query.clone();
@@ -464,7 +471,7 @@ impl Screen for GrepScreen {
         match &self.mode {
             Mode::Prompt(input) => {
                 let card = lazyos_ui::centered(ctx.area, 88, 7);
-                let inner = draw_card(ctx.buf, card, ctx.design, Some("Search inside files"), true);
+                let inner = draw_card(ctx.buf, card, ctx.design, Some("The pattern"), true);
                 put_trunc(
                     ctx.buf,
                     inner.x,
@@ -540,7 +547,7 @@ impl Screen for GrepScreen {
             }
             Mode::Failed(lines) => {
                 let card = lazyos_ui::centered(ctx.area, 88, lines.len() as u16 + 4);
-                let inner = draw_card(ctx.buf, card, ctx.design, Some("Search inside files"), true);
+                let inner = draw_card(ctx.buf, card, ctx.design, Some("Refused"), true);
                 for (i, line) in lines.iter().enumerate() {
                     let style = if i == 0 {
                         ctx.design.style(TextStyle::Danger)
@@ -580,7 +587,9 @@ impl Screen for GrepScreen {
             Mode::Running(running) if key.code == KeyCode::Esc => {
                 let query = running.query.clone();
                 self.mode = Mode::Prompt(Input::with_text(query));
-                self.header = Header::new("Search inside files").status("stopped");
+                self.header = Header::new("LazyOS")
+                    .subtitle("Search inside files")
+                    .status("stopped");
                 Outcome::Consumed
             }
             Mode::Running(_) => Outcome::Consumed,
@@ -649,13 +658,26 @@ impl Screen for GrepScreen {
                     _ => Outcome::Consumed,
                 }
             }
-            Mode::Failed(_) => match key.code {
-                KeyCode::Enter if self.rg.is_some() => {
-                    self.mode = Mode::Prompt(Input::with_text(self.query.clone()));
-                    Outcome::Consumed
+            Mode::Failed(_) => {
+                if control && key.code == KeyCode::Char('i') && self.rg.is_none() {
+                    let exe = super::self_exe();
+                    self.chosen = Some(Chosen::Run(vec![
+                        exe,
+                        "menu".to_string(),
+                        "pkg".to_string(),
+                        "--search".to_string(),
+                        "ripgrep".to_string(),
+                    ]));
+                    return Outcome::Done(lazyos_ui::app::exit::OK);
                 }
-                _ => Outcome::Continue,
-            },
+                match key.code {
+                    KeyCode::Enter if self.rg.is_some() => {
+                        self.mode = Mode::Prompt(Input::with_text(self.query.clone()));
+                        Outcome::Consumed
+                    }
+                    _ => Outcome::Continue,
+                }
+            }
         };
         self.keys();
         outcome

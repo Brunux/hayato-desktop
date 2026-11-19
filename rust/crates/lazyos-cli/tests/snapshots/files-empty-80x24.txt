@@ -1,11 +1,11 @@
-Files · ~/src                                       0 dirs · 0 files · ### free
+LazyOS · Files · ~/src                              0 dirs · 0 files · ### free
 ────────────────────────────────────────────────────────────────────────────────
-╭ Files ───────────────────────────────────────────────────────────────────────╮
+╭ This folder ─────────────────────────────────────────────────────────────────╮
 │ type to filter, or a path - Enter opens it                                  │
 │                                                                              │
 │▍   ..  parent directory                                                     │
+│    This folder is empty  Ctrl+H shows hidden files                          │
 │    hidden files  hidden - Enter shows them                                  │
-│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │

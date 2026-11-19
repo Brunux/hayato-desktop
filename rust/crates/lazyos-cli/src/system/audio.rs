@@ -460,7 +460,7 @@ impl Screen for AudioScreen {
     }
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Audio output"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("Outputs"), true);
         let (hero, strip, filter, rows) = Self::layout(ctx.area);
         self.draw_hero(ctx.buf, hero, ctx.design);
         self.strip.render(strip, ctx.buf, ctx.design);

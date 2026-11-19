@@ -13,6 +13,7 @@
 //! - a role is added here deliberately - a widget that "just needs a slightly
 //!   different grey" is a token, not a local constant.
 
+use lazyos_theme::contrast::ratio;
 use lazyos_theme::{Palette, Rgb};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, BorderType, Borders, Padding};
@@ -26,10 +27,16 @@ pub enum ColorRole {
     Surface,
     /// A second surface on top of `Surface`.
     SurfaceAlt,
+    /// A card or list boundary: cleared to 3:1 against the background.
+    Border,
     /// Regular text.
     Text,
-    /// Secondary text: sizes, dates, hints.
+    /// The theme's own quiet grey, for decoration only. Widgets ask for
+    /// [`TextStyle::Dim`], which is `Muted`; this is the raw palette value.
     Dim,
+    /// Secondary text that carries meaning (a size, a date, a hint): cleared to
+    /// 4.5:1 against the background.
+    Muted,
     /// The one colour that marks "this is LazyOS" and the current focus.
     Accent,
     /// A second accent for information that is not the focus.
@@ -37,8 +44,15 @@ pub enum ColorRole {
     Ok,
     Warn,
     Danger,
-    /// The fill of the selected row.
+    /// The fill of the selected row: the theme's own tint. The 3:1 cue that
+    /// marks the row is the accent bar and the bold label, not the fill.
     Selection,
+    /// The selected row's label: cleared to 4.5:1 against [`Selection`].
+    SelectionText,
+    /// The selected row's detail: cleared to 4.5:1 against [`Selection`].
+    SelectionDim,
+    /// The letters on a key chip: cleared to 4.5:1 against [`Accent`].
+    KeyText,
 }
 
 impl ColorRole {
@@ -46,8 +60,6 @@ impl ColorRole {
     pub const Warning: Self = Self::Warn;
     #[allow(non_upper_case_globals)]
     pub const Success: Self = Self::Ok;
-    #[allow(non_upper_case_globals)]
-    pub const Border: Self = Self::Faint;
     #[allow(non_upper_case_globals)]
     pub const Faint: Self = Self::SurfaceAlt;
 }
@@ -87,7 +99,12 @@ pub enum TextStyle {
     /// A window or card title.
     Title,
     Body,
+    /// Secondary text that carries meaning; `Muted`, not the raw `Dim`.
     Dim,
+    /// The selected row's label.
+    Selected,
+    /// The selected row's detail.
+    SelectedDim,
     /// A command, a path, a number worth copying.
     Code,
     /// A key in the key bar.
@@ -140,11 +157,99 @@ pub fn color(rgb: Rgb) -> Color {
 }
 
 /// The palette plus the decisions derived from it.
+///
+/// The derived colours are computed once, when the palette is read, and then
+/// copied into every cell: a frame never runs a contrast calculation. They are
+/// the readable variants of the theme's own roles, so a theme file keeps saying
+/// `dim` and `surface_alt` while the UI draws what a person can read on it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Design {
     palette: Palette,
     density: Density,
     reduced_motion: bool,
+    muted: Rgb,
+    border: Rgb,
+    selection: Rgb,
+    selection_text: Rgb,
+    selection_dim: Rgb,
+    key_text: Rgb,
+}
+
+/// The extremes, for the one role that has to move away from a colour that is
+/// neither the background nor the text (a key chip on the accent).
+const BLACK: Rgb = Rgb::new(0, 0, 0);
+const WHITE: Rgb = Rgb::new(255, 255, 255);
+
+/// Blend `from` toward `toward`; `t` is clamped to 0..=1.
+fn mix(from: Rgb, toward: Rgb, t: f32) -> Rgb {
+    let t = t.clamp(0.0, 1.0);
+    let channel = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * t).round() as u8;
+    Rgb::new(
+        channel(from.r, toward.r),
+        channel(from.g, toward.g),
+        channel(from.b, toward.b),
+    )
+}
+
+/// The endpoint that is further from `against` in contrast, used when a role
+/// has to move away from a fill rather than toward the theme's text.
+fn extreme(against: Rgb) -> Rgb {
+    if ratio(WHITE, against) >= ratio(BLACK, against) {
+        WHITE
+    } else {
+        BLACK
+    }
+}
+
+/// `from`, or the smallest step from `from` toward `toward` that clears
+/// `floor` against `against`. A theme that already passes is unchanged.
+fn readable(from: Rgb, toward: Rgb, against: Rgb, floor: f32) -> Rgb {
+    if ratio(from, against) >= floor {
+        return from;
+    }
+    if ratio(toward, against) < floor {
+        return toward;
+    }
+    let (mut low, mut high) = (0.0f32, 1.0f32);
+    for _ in 0..12 {
+        let middle = (low + high) / 2.0;
+        if ratio(mix(from, toward, middle), against) >= floor {
+            high = middle;
+        } else {
+            low = middle;
+        }
+    }
+    mix(from, toward, high)
+}
+
+/// The readable roles a palette implies, computed once.
+struct Derived {
+    muted: Rgb,
+    border: Rgb,
+    selection: Rgb,
+    selection_text: Rgb,
+    selection_dim: Rgb,
+    key_text: Rgb,
+}
+
+impl Derived {
+    fn of(palette: &Palette) -> Self {
+        let muted = readable(palette.dim, palette.text, palette.bg, 4.5);
+        let border = readable(palette.surface_alt, palette.text, palette.bg, 3.0);
+        // The fill stays the theme's: lifting it to 3:1 against the background
+        // would make the theme's own text unreadable on it (solarized's text
+        // fell to 1.9:1). The 3:1 cue is the accent bar and the bold label;
+        // the fill is a tint that says "this row", not the only signal.
+        let selection = palette.selection;
+        Self {
+            muted,
+            border,
+            selection,
+            selection_text: readable(palette.text, extreme(selection), selection, 4.5),
+            selection_dim: readable(muted, palette.text, selection, 4.5),
+            key_text: readable(palette.bg, extreme(palette.accent), palette.accent, 4.5),
+        }
+    }
 }
 
 fn reduced_motion_file() -> std::path::PathBuf {
@@ -169,11 +274,18 @@ fn reduced_motion_requested() -> bool {
 }
 
 impl Design {
-    pub const fn new(palette: Palette, density: Density, reduced_motion: bool) -> Self {
+    pub fn new(palette: Palette, density: Density, reduced_motion: bool) -> Self {
+        let derived = Derived::of(&palette);
         Self {
             palette,
             density,
             reduced_motion,
+            muted: derived.muted,
+            border: derived.border,
+            selection: derived.selection,
+            selection_text: derived.selection_text,
+            selection_dim: derived.selection_dim,
+            key_text: derived.key_text,
         }
     }
 
@@ -195,7 +307,14 @@ impl Design {
     }
 
     pub fn with_palette(mut self, palette: Palette) -> Self {
+        let derived = Derived::of(&palette);
         self.palette = palette;
+        self.muted = derived.muted;
+        self.border = derived.border;
+        self.selection = derived.selection;
+        self.selection_text = derived.selection_text;
+        self.selection_dim = derived.selection_dim;
+        self.key_text = derived.key_text;
         self
     }
 
@@ -239,14 +358,19 @@ impl Design {
             ColorRole::Bg => p.bg,
             ColorRole::Surface => p.surface,
             ColorRole::SurfaceAlt => p.surface_alt,
+            ColorRole::Border => self.border,
             ColorRole::Text => p.text,
             ColorRole::Dim => p.dim,
+            ColorRole::Muted => self.muted,
             ColorRole::Accent => p.accent,
             ColorRole::AccentAlt => p.accent_alt,
             ColorRole::Ok => p.ok,
             ColorRole::Warn => p.warn,
             ColorRole::Danger => p.danger,
-            ColorRole::Selection => p.selection,
+            ColorRole::Selection => self.selection,
+            ColorRole::SelectionText => self.selection_text,
+            ColorRole::SelectionDim => self.selection_dim,
+            ColorRole::KeyText => self.key_text,
         })
     }
 
@@ -259,11 +383,15 @@ impl Design {
                 .fg(self.color(ColorRole::Text))
                 .bg(self.color(ColorRole::Bg)),
             TextStyle::Dim => Style::default()
-                .fg(self.color(ColorRole::Dim))
+                .fg(self.color(ColorRole::Muted))
                 .bg(self.color(ColorRole::Bg)),
+            TextStyle::Selected => Style::default()
+                .fg(self.color(ColorRole::SelectionText))
+                .add_modifier(Modifier::BOLD),
+            TextStyle::SelectedDim => Style::default().fg(self.color(ColorRole::SelectionDim)),
             TextStyle::Code => Style::default().fg(self.color(ColorRole::AccentAlt)),
             TextStyle::Key => Style::default()
-                .fg(self.color(ColorRole::Bg))
+                .fg(self.color(ColorRole::KeyText))
                 .bg(self.color(ColorRole::Accent))
                 .add_modifier(Modifier::BOLD),
             TextStyle::Danger => Style::default()
@@ -304,7 +432,7 @@ impl Design {
             block = block
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(self.color(ColorRole::SurfaceAlt)));
+                .border_style(Style::default().fg(self.color(ColorRole::Border)));
         }
         block
     }
@@ -402,6 +530,46 @@ mod tests {
         // title or an error that disappears into the window is a blank row.
         for kind in [TextStyle::Title, TextStyle::Danger, TextStyle::Body] {
             assert_ne!(design.style(kind).fg, Some(design.color(ColorRole::Bg)));
+        }
+    }
+
+    fn rgb(colour: Color) -> Rgb {
+        match colour {
+            Color::Rgb(r, g, b) => Rgb::new(r, g, b),
+            other => panic!("not an RGB colour: {other:?}"),
+        }
+    }
+
+    /// A theme file may keep a quiet `dim` and a flat `selection`; what the UI
+    /// draws is derived, and every built-in has to clear the floor it is used
+    /// at. A new theme that cannot be read fails here, with its slug.
+    #[test]
+    fn every_builtin_theme_clears_the_derived_floors() {
+        for (slug, text) in lazyos_theme::builtin::ALL {
+            let theme = lazyos_theme::Theme::parse(text).unwrap();
+            let design = Design::new(theme.palette(), Density::Normal, true);
+            // The selected row is marked by the accent bar (3:1) and the bold
+            // label; its fill is a tint, and it only has to be distinct from
+            // the background, not to carry the state alone.
+            assert_ne!(
+                design.color(ColorRole::Selection),
+                design.color(ColorRole::Bg),
+                "{slug}: the selection fill is the background"
+            );
+            for (role, against, floor) in [
+                (ColorRole::Muted, ColorRole::Bg, 4.5),
+                (ColorRole::Border, ColorRole::Bg, 3.0),
+                (ColorRole::Accent, ColorRole::Bg, 3.0),
+                (ColorRole::SelectionText, ColorRole::Selection, 4.5),
+                (ColorRole::SelectionDim, ColorRole::Selection, 4.5),
+                (ColorRole::KeyText, ColorRole::Accent, 4.5),
+            ] {
+                let value = ratio(rgb(design.color(role)), rgb(design.color(against)));
+                assert!(
+                    value >= floor,
+                    "{slug}: {role:?} on {against:?} is {value:.2}, below {floor:.1}"
+                );
+            }
         }
     }
 

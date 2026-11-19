@@ -85,12 +85,15 @@ pub struct Setup {
 /// The question that ends the session, Cancel first: the one gate the Power
 /// rows have, whoever opened it.
 fn confirm_for(action: SessionAction) -> Confirm {
-    Confirm::new("Power", action.question()).with_options(&["Cancel", action.verb()])
+    Confirm::new("Confirm", action.question()).with_options(&["Cancel", action.verb()])
 }
 
 pub struct MenuScreen {
     setup: Setup,
     entries: Vec<Entry>,
+    /// For each row the list draws, the entry it acts on (`None` for a section
+    /// heading): the list index includes headings, the entry index does not.
+    row_entries: Vec<Option<usize>>,
     list: ListState,
     power: ListState,
     mode: Mode,
@@ -112,12 +115,22 @@ impl MenuScreen {
         let mut list = ListState::new()
             .with_empty("nothing matches - Backspace widens it")
             .ranked();
-        list.set_rows(
-            entries
-                .iter()
-                .map(|entry| entry.row(frecency.boost(&entry.key, now)))
-                .collect(),
-        );
+        // A heading before each group, in the order the table already has
+        // them. It is a label in the list, not an entry: `row_entries` is what
+        // maps the row a person picked back to the entry that acts.
+        let mut rows = Vec::with_capacity(entries.len() + 4);
+        let mut row_entries = Vec::with_capacity(entries.len() + 4);
+        let mut group = None;
+        for (index, entry) in entries.iter().enumerate() {
+            if group != Some(entry.group) {
+                group = Some(entry.group);
+                rows.push(Row::heading(entry.group.heading()));
+                row_entries.push(None);
+            }
+            rows.push(entry.row(frecency.boost(&entry.key, now)));
+            row_entries.push(Some(index));
+        }
+        list.set_rows(rows);
         let mut power = ListState::new();
         let gate = setup.hibernate_gate.clone();
         power.set_rows(
@@ -153,6 +166,7 @@ impl MenuScreen {
         let mut screen = Self {
             setup,
             entries,
+            row_entries,
             list,
             power,
             mode,
@@ -174,9 +188,16 @@ impl MenuScreen {
                     Surface::Root => "Menu",
                     Surface::Palette => "Palette",
                 },
-                match self.list.visible_len() {
-                    1 => "1 row".to_string(),
-                    n => format!("{n} rows"),
+                if !self.list.filter().is_empty() {
+                    match self.list.visible_len() {
+                        1 => "1 match".to_string(),
+                        n => format!("{n} matches"),
+                    }
+                } else {
+                    match self.setup.surface {
+                        Surface::Root => format!("{} commands", self.entries.len()),
+                        Surface::Palette => format!("{} entries", self.entries.len()),
+                    }
                 },
                 vec![
                     ("Enter", "open"),
@@ -202,7 +223,13 @@ impl MenuScreen {
             Mode::Ask(_) => (
                 "AI \u{00b7} Ask",
                 self.agent_name().to_string(),
-                vec![("Enter", "ask"), ("Esc", "back")],
+                if self.setup.agent.is_none() {
+                    // There is nobody to ask: the one useful key is the menu
+                    // that installs an agent.
+                    vec![("Enter", "open Agents"), ("Esc", "back")]
+                } else {
+                    vec![("Enter", "ask"), ("Esc", "back")]
+                },
             ),
             Mode::Answer(answer) => ("AI \u{00b7} Ask", answer.status(), answer.keys()),
         };
@@ -242,7 +269,14 @@ impl MenuScreen {
     }
 
     fn activate(&mut self, index: usize) -> Outcome {
-        let Some(entry) = self.entries.get(index).cloned() else {
+        let Some(entry) = self
+            .row_entries
+            .get(index)
+            .copied()
+            .flatten()
+            .and_then(|entry| self.entries.get(entry))
+            .cloned()
+        else {
             return Outcome::Continue;
         };
         match entry.action {
@@ -340,8 +374,8 @@ impl MenuScreen {
 
     fn draw_list(&self, ctx: &mut BodyCtx) {
         let title = match self.setup.surface {
-            Surface::Root => "Menu",
-            Surface::Palette => "Palette",
+            Surface::Root => "Commands",
+            Surface::Palette => "Everything",
         };
         draw_card(ctx.buf, ctx.area, ctx.design, Some(title), true);
         let (filter, rows) = Self::list_layout(ctx.area);
@@ -367,7 +401,10 @@ impl MenuScreen {
                 ctx.buf,
                 x,
                 filter.y,
-                "type to filter: a name, a word of it, or `system`",
+                match self.setup.surface {
+                    Surface::Root => "type to filter: a name, a word of it, or `system`",
+                    Surface::Palette => "type a command, theme or setting",
+                },
                 room,
                 ctx.design.style(TextStyle::Dim),
             );
@@ -394,7 +431,7 @@ impl MenuScreen {
     }
 
     fn draw_power(&self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Power"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("Session"), true);
         let (filter, rows) = Self::list_layout(ctx.area);
         if let Some(err) = &self.power_error {
             put_trunc(
@@ -419,52 +456,69 @@ impl MenuScreen {
     }
 
     fn draw_ask(&self, ctx: &mut BodyCtx, input: &Input) {
+        // No agent: the card is the answer, and the field is not drawn at all.
+        // A question typed into a box nobody can read is worse than a sentence
+        // that says where to install the reader.
+        let Some(choice) = &self.setup.agent else {
+            let card = lazyos_ui::centered(ctx.area, 88, 7);
+            let inner = draw_card(ctx.buf, card, ctx.design, Some("No agent"), true);
+            let line = |buf: &mut ratatui::buffer::Buffer, y: u16, text: &str, style| {
+                put_trunc(buf, inner.x, y, text, inner.width, style);
+            };
+            line(
+                ctx.buf,
+                inner.y,
+                "No agent can answer one question yet.",
+                ctx.design.style(TextStyle::Danger),
+            );
+            line(
+                ctx.buf,
+                inner.y + 1,
+                "The Agents menu installs OpenCode or Claude Code.",
+                ctx.design.style(TextStyle::Body),
+            );
+            line(
+                ctx.buf,
+                inner.y + 3,
+                "Enter opens it \u{00b7} Esc goes back",
+                ctx.design.style(TextStyle::Dim),
+            );
+            return;
+        };
         let card = lazyos_ui::centered(ctx.area, 88, 11);
-        let inner = draw_card(ctx.buf, card, ctx.design, Some("Ask \u{00b7} AI"), true);
+        let inner = draw_card(ctx.buf, card, ctx.design, Some("Your question"), true);
         let width = inner.width;
         let mut y = inner.y;
         let line = |buf: &mut ratatui::buffer::Buffer, y: u16, text: &str, style| {
             put_trunc(buf, inner.x, y, text, width, style);
         };
-        match &self.setup.agent {
-            Some(choice) => {
-                line(
-                    ctx.buf,
-                    y,
-                    &format!(
-                        "One question to {}; the answer appears here.",
-                        choice.agent.name()
-                    ),
-                    ctx.design.style(TextStyle::Body),
-                );
-                y += 1;
-                let sent = match choice.agent {
-                    // What leaves the machine, said before Enter, and short
-                    // enough to be whole in the smallest window (80 columns).
-                    Agent::Claude => {
-                        "Sends the question only: no files, no tools, no saved session."
-                    }
-                    Agent::OpenCode => "Sends the question only, from an empty private directory.",
-                };
-                line(ctx.buf, y, sent, ctx.design.style(TextStyle::Dim));
-                y += 1;
-                if let Some(note) = &choice.note {
-                    line(
-                        ctx.buf,
-                        y,
-                        note,
-                        ctx.design
-                            .style(TextStyle::Body)
-                            .fg(ctx.design.color(ColorRole::Warn)),
-                    );
-                }
-            }
-            None => line(
+        line(
+            ctx.buf,
+            y,
+            &format!(
+                "One question to {}; the answer appears here.",
+                choice.agent.name()
+            ),
+            ctx.design.style(TextStyle::Body),
+        );
+        y += 1;
+        let sent = match choice.agent {
+            // What leaves the machine, said before Enter, and short
+            // enough to be whole in the smallest window (80 columns).
+            Agent::Claude => "Sends the question only: no files, no tools, no saved session.",
+            Agent::OpenCode => "Sends the question only, from an empty private directory.",
+        };
+        line(ctx.buf, y, sent, ctx.design.style(TextStyle::Dim));
+        y += 1;
+        if let Some(note) = &choice.note {
+            line(
                 ctx.buf,
                 y,
-                "No agent can answer one question: install OpenCode or Claude Code.",
-                ctx.design.style(TextStyle::Danger),
-            ),
+                note,
+                ctx.design
+                    .style(TextStyle::Body)
+                    .fg(ctx.design.color(ColorRole::Warn)),
+            );
         }
         let field = Rect {
             x: inner.x,
@@ -578,22 +632,48 @@ impl Screen for MenuScreen {
                     ConfirmAction::None => Outcome::Continue,
                 }
             }
-            Mode::Ask(input) => match input.handle(key) {
-                InputAction::Submitted => {
-                    let question = input.text().trim().to_string();
-                    self.ask(question)
-                }
-                InputAction::Cancelled => {
-                    if self.setup.ask.is_some() {
-                        // Opened as `lazyos ask`: there is no menu to go back to.
-                        Outcome::Done(ESCAPE)
-                    } else {
-                        self.mode = Mode::List;
-                        Outcome::Consumed
+            Mode::Ask(input) => {
+                // With no agent, Enter is the Agents menu: the only thing this
+                // window can do that changes the answer.
+                if self.setup.agent.is_none() {
+                    match key.code {
+                        KeyCode::Enter => {
+                            self.chosen = Some(Picked::Run {
+                                key: "agents".to_string(),
+                                argv: vec![
+                                    self.setup.exe.clone(),
+                                    "menu".to_string(),
+                                    "agents".to_string(),
+                                ],
+                            });
+                            Outcome::Done(OK)
+                        }
+                        KeyCode::Esc if self.setup.ask.is_some() => Outcome::Done(ESCAPE),
+                        KeyCode::Esc => {
+                            self.mode = Mode::List;
+                            Outcome::Consumed
+                        }
+                        _ => Outcome::Consumed,
+                    }
+                } else {
+                    match input.handle(key) {
+                        InputAction::Submitted => {
+                            let question = input.text().trim().to_string();
+                            self.ask(question)
+                        }
+                        InputAction::Cancelled => {
+                            if self.setup.ask.is_some() {
+                                // Opened as `lazyos ask`: there is no menu to go back to.
+                                Outcome::Done(ESCAPE)
+                            } else {
+                                self.mode = Mode::List;
+                                Outcome::Consumed
+                            }
+                        }
+                        _ => Outcome::Continue,
                     }
                 }
-                _ => Outcome::Continue,
-            },
+            }
             Mode::Answer(answer) => answer.key(key, design),
         };
         self.refresh();

@@ -232,7 +232,7 @@ impl Picker {
             questions,
             current: Current::Empty,
             answers: Vec::new(),
-            header: Header::new(title.to_string()),
+            header: Header::new("LazyOS").subtitle(title.to_string()),
             subtitle: String::new(),
             note: String::new(),
             keybar: Vec::new(),
@@ -337,8 +337,8 @@ impl Picker {
             .get(at)
             .map(|q| fill(q.note(), &answers))
             .unwrap_or_default();
-        self.header = Header::new(self.name.clone())
-            .subtitle(self.subtitle.clone())
+        self.header = Header::new("LazyOS")
+            .subtitle(self.name.clone())
             .status(status);
         self.keybar = keys
             .into_iter()
@@ -395,7 +395,18 @@ impl Screen for Picker {
         if matches!(self.current, Current::Empty) {
             return;
         }
-        draw_card(ctx.buf, ctx.area, ctx.design, Some(&self.name), true);
+        // The question is the card's title; a confirmation draws its own card
+        // with the question, so the card behind it only says what it is. A
+        // question that merely repeats the surface name is not a title: the
+        // header already carries the name.
+        let title = if matches!(self.current, Current::Ask { .. }) {
+            Some("Confirm")
+        } else if self.subtitle == self.name {
+            None
+        } else {
+            Some(self.subtitle.as_str())
+        };
+        draw_card(ctx.buf, ctx.area, ctx.design, title, true);
         let (filter, rows) = list_layout(ctx.area);
         match &mut self.current {
             Current::Choose { list, .. } | Current::Rows { list, .. } => {

@@ -34,7 +34,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::app::{BodyCtx, Outcome, Screen};
 use crate::design::{ColorRole, Design, TextStyle};
-use crate::widgets::{KeyHint, LogPane, draw_card, draw_progress, put, put_trunc};
+use crate::widgets::{KeyHint, LogPane, draw_card, draw_card_with, draw_progress, put, put_trunc};
 
 // ---------------------------------------------------------------------------
 // Public state machine
@@ -1074,8 +1074,10 @@ impl TaskView {
         }
         if self.task.state == TaskState::Failed {
             hints.push(KeyHint::new("l", "log"));
+            hints.push(KeyHint::new("c", "copy error"));
         }
         if !self.task.log.following() {
+            hints.push(KeyHint::new("\u{2191}\u{2193}", "scroll"));
             hints.push(KeyHint::new("End", "follow"));
         }
         self.keybar = hints;
@@ -1246,49 +1248,56 @@ impl Screen for TaskView {
         self.task.log.render(log_area, ctx.buf, ctx.design);
         y += log_height;
 
-        // Result block.
+        // Result block: a card in the outcome's own colour, so "done" and
+        // "failed" are the same shape with a different border, not a line
+        // that says "Result:" twice.
         if is_terminal && y + result_height * stride <= card_inner.bottom() {
-            let (text, role) = match self.task.state {
+            let (title, role, text) = match self.task.state {
                 TaskState::Done => (
-                    self.task.result.as_deref().unwrap_or("Finished"),
+                    "Done",
                     ColorRole::Ok,
+                    self.task.result.as_deref().unwrap_or("Finished"),
                 ),
                 TaskState::Failed => (
+                    "Failed",
+                    ColorRole::Danger,
                     self.task
                         .error_line
                         .as_deref()
                         .unwrap_or(self.task.result.as_deref().unwrap_or("Failed")),
-                    ColorRole::Danger,
                 ),
                 TaskState::Stopped => (
-                    self.task.result.as_deref().unwrap_or("Stopped"),
+                    "Stopped",
                     ColorRole::Warn,
+                    self.task.result.as_deref().unwrap_or("Stopped"),
                 ),
                 TaskState::DidNotFinish => (
-                    "Did not finish (reboot or process replaced)",
+                    "Did not finish",
                     ColorRole::Warn,
+                    "The reboot or a replaced process ended this task",
                 ),
-                _ => ("", ColorRole::Text),
+                _ => ("Result", ColorRole::Text, ""),
             };
+            let title_style = if role == ColorRole::Danger {
+                ctx.design.style(TextStyle::Danger)
+            } else {
+                ctx.design.style(TextStyle::Title)
+            };
+            let inner = draw_card_with(
+                ctx.buf,
+                Rect {
+                    x: card_inner.x,
+                    y,
+                    width: card_inner.width,
+                    height: result_height * stride,
+                },
+                ctx.design,
+                Some(title),
+                role,
+                title_style,
+            );
             let style = ctx.design.style(TextStyle::Body).fg(ctx.design.color(role));
-            put(
-                ctx.buf,
-                card_inner.x,
-                y,
-                "Result: ",
-                card_inner.width,
-                ctx.design.style(TextStyle::Dim),
-            );
-            let prefix = "Result: ";
-            let prefix_width = UnicodeWidthStr::width(prefix) as u16;
-            put_trunc(
-                ctx.buf,
-                card_inner.x + prefix_width,
-                y,
-                text,
-                card_inner.width.saturating_sub(prefix_width),
-                style,
-            );
+            put_trunc(ctx.buf, inner.x, inner.y, text, inner.width, style);
         }
 
         // Transient message (e.g. "this task cannot be stopped").
@@ -1313,6 +1322,23 @@ impl Screen for TaskView {
         }
 
         if self.log_focused && self.task.log.handle(key, 10) {
+            self.update_keybar();
+            return Outcome::Continue;
+        }
+
+        // The failure's own words, on the clipboard: the reason a person opens
+        // a failed task is usually to paste it somewhere.
+        if self.task.state == TaskState::Failed && key.code == KeyCode::Char('c') {
+            let text = self
+                .task
+                .error_line
+                .as_deref()
+                .or(self.task.result.as_deref())
+                .unwrap_or("the task failed");
+            match crate::card::copy_to_clipboard(text) {
+                Ok(()) => self.task.set_message("copied the error"),
+                Err(error) => self.task.set_message(format!("not copied: {error}")),
+            }
             self.update_keybar();
             return Outcome::Continue;
         }

@@ -115,7 +115,7 @@ impl Screen for ControllerScreen {
     }
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Controller"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("Buttons"), true);
         let inner = Rect {
             x: ctx.area.x + 2,
             y: ctx.area.y + 1,
@@ -215,7 +215,7 @@ impl Screen for ControllerScreen {
                 .fg(ctx.design.color(ColorRole::AccentAlt))
                 .bg(background);
             let arrow_style = Style::default()
-                .fg(ctx.design.color(ColorRole::Dim))
+                .fg(ctx.design.color(ColorRole::Muted))
                 .bg(background);
 
             if index == RESET_ROW {

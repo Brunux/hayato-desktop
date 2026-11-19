@@ -90,7 +90,7 @@ impl Urgency {
 
     pub fn role(self) -> ColorRole {
         match self {
-            Self::Low => ColorRole::Dim,
+            Self::Low => ColorRole::Muted,
             Self::Normal => ColorRole::Accent,
             Self::Critical => ColorRole::Danger,
         }
@@ -783,7 +783,7 @@ mod tests {
         assert_eq!(Urgency::Low.level(), 0);
         assert_eq!(Urgency::Normal.level(), 1);
         assert_eq!(Urgency::Critical.level(), 2);
-        assert_eq!(Urgency::Low.role(), ColorRole::Dim);
+        assert_eq!(Urgency::Low.role(), ColorRole::Muted);
         assert_eq!(Urgency::Normal.role(), ColorRole::Accent);
         assert_eq!(Urgency::Critical.role(), ColorRole::Danger);
         assert_eq!(Urgency::parse("critical"), Some(Urgency::Critical));

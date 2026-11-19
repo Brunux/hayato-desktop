@@ -363,7 +363,7 @@ impl AppsScreen {
 
 impl Screen for AppsScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Applications"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("Installed"), true);
         let (filter, rows) = Self::list_layout(ctx.area);
         draw_filter_bar(
             ctx.buf,

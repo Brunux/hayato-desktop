@@ -1,8 +1,9 @@
-LazyOS · Menu                                                                                                                                   52 rows
+LazyOS · Menu                                                                                                                               52 commands
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-╭ Menu ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭ Commands ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                                                                                                  │
 │                                                                                                                                                      │
+│  Open  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── █ │
 │ ▍   Terminal  foot                                                                                                                           open █ │
 │     Files  browse the filesystem                                                                                                             open █ │
 │     Files (window)  favnyr: folders, drag and drop, trash                                                                                    open █ │
@@ -23,13 +24,15 @@ LazyOS · Menu                                                                  
 │     Clipboard  what was copied, back in one pick                                                                                             open █ │
 │     Password  32 random characters, into the clipboard                                                                                       open █ │
 │     SSH  remote login status                                                                                                                 open █ │
+│  AI  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── █ │
 │     Agent session  ● opencode, in ~/Work                                                                                                       ai █ │
 │     Ask  one question, the answer here                                                                                                         ai █ │
 │     Agents  Claude Code, Codex and the others                                                                                                  ai █ │
-│     Dictation  speak, and it is typed                                                                                                          ai █ │
-│     Local model  a 1.7B model, offline, on four cores                                                                                          ai █ │
-│     Wi-Fi  pick a network                                                                                                                  system █ │
-│     DNS  the resolver this connection uses                                                                                                 system █ │
+│     Dictation  speak, and it is typed                                                                                                          ai │ │
+│     Local model  a 1.7B model, offline, on four cores                                                                                          ai │ │
+│  System  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │ │
+│     Wi-Fi  pick a network                                                                                                                  system │ │
+│     DNS  the resolver this connection uses                                                                                                 system │ │
 │     Bluetooth  scan, connect, disconnect                                                                                                   system │ │
 │     Audio output  switch sink, mute, pavucontrol                                                                                           system │ │
 │     Media  play, pause, next, copy track                                                                                                   system │ │
@@ -38,8 +41,5 @@ LazyOS · Menu                                                                  
 │     Time zone  and network time                                                                                                            system │ │
 │     Free space  what is using it, and clean up                                                                                             system │ │
 │     Auxiliary swap  a card as more memory, on every boot                                                                                   system │ │
-│     Format a disk  erase a stick or a card                                                                                                 system │ │
-│     Display arrangement  the external monitor                                                                                              system │ │
-│     Install LazyOS  copy this system to the internal disk - asks twice                                                                     system │ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
  [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close
