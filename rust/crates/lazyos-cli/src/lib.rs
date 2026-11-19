@@ -329,7 +329,14 @@ fn query(resolved: &Resolved) -> Option<i32> {
             println!("{}", system::vnc::status());
             Some(EXIT_OK)
         }
-        ("menu vnc", ["start"]) => match system::vnc::start() {
+        ("menu vnc", ["start"]) => match system::vnc::start(system::vnc::Mode::View) {
+            Ok(()) => Some(EXIT_OK),
+            Err(err) => {
+                eprintln!("{err}");
+                Some(EXIT_FAILED)
+            }
+        },
+        ("menu vnc", ["control"]) => match system::vnc::start(system::vnc::Mode::Control) {
             Ok(()) => Some(EXIT_OK),
             Err(err) => {
                 eprintln!("{err}");
@@ -344,7 +351,14 @@ fn query(resolved: &Resolved) -> Option<i32> {
             }
         },
         ("menu vnc", ["--command"]) => {
-            println!("{}", system::vnc::command_line().join(" "));
+            println!(
+                "view: {}",
+                system::vnc::command_line(system::vnc::Mode::View).join(" ")
+            );
+            println!(
+                "control: {}",
+                system::vnc::command_line(system::vnc::Mode::Control).join(" ")
+            );
             println!("{}", system::vnc::tunnel_command());
             Some(EXIT_OK)
         }

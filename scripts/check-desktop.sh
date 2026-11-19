@@ -2045,14 +2045,22 @@ else
 fi
 _vnc_cmd=$(lazyos menu vnc --command 2>/dev/null || :)
 if [ -n "$_vnc_cmd" ]; then
-	if printf '%s\n' "$_vnc_cmd" | grep -qs -- '--disable-input'; then
-		ok "screen sharing is read-only (wayvnc --disable-input)"
+	_vnc_view=$(printf '%s\n' "$_vnc_cmd" | sed -n 's/^view: //p')
+	_vnc_control=$(printf '%s\n' "$_vnc_cmd" | sed -n 's/^control: //p')
+	if printf '%s' "$_vnc_view" | grep -qs -- '--disable-input'; then
+		ok "screen sharing defaults to read-only (wayvnc --disable-input)"
 	else
-		fail "lazyos menu vnc no longer passes --disable-input: a viewer could type into this session"
+		fail "lazyos menu vnc lost --disable-input from the default start: a viewer could type into this session"
 	fi
-	if printf '%s\n' "$_vnc_cmd" | grep -qs '127\.0\.0\.1' &&
-		! printf '%s\n' "$_vnc_cmd" | grep -qs '0\.0\.0\.0'; then
-		ok "screen sharing listens on the loopback address only"
+	if [ -n "$_vnc_control" ] &&
+		! printf '%s' "$_vnc_control" | grep -qs -- '--disable-input'; then
+		ok "remote control is the explicit second start (no --disable-input)"
+	else
+		fail "lazyos menu vnc --command has no control line: remote control would have no way in"
+	fi
+	if printf '%s\n%s\n' "$_vnc_view" "$_vnc_control" | grep -qs '127\.0\.0\.1' &&
+		! printf '%s\n%s\n' "$_vnc_view" "$_vnc_control" | grep -qs '0\.0\.0\.0'; then
+		ok "both screen-sharing modes listen on the loopback address only"
 	else
 		fail "lazyos menu vnc does not bind 127.0.0.1 only: that is an unauthenticated desktop on the network"
 	fi
@@ -2085,6 +2093,9 @@ if [ -r "$HOME/.config/waybar/style.css" ]; then
 	grep -qs '#custom-vnc.empty' "$HOME/.config/waybar/style.css" &&
 		ok "the sharing indicator collapses when nothing is shared" ||
 		warn "style.css has no #custom-vnc.empty: an empty card is left on the bar"
+	grep -qs '#custom-vnc.control' "$HOME/.config/waybar/style.css" &&
+		ok "the bar distinguishes remote control from read-only sharing" ||
+		warn "style.css has no #custom-vnc.control: remote control looks like a read-only view"
 fi
 # Nothing starts it by itself.  A wayvnc in the session's startup - or one left
 # behind by a script - is a screen served to whoever asks, and the menu would

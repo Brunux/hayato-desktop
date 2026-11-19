@@ -256,11 +256,23 @@ photograph.
 
 **Settings** (Alt+Ctrl+O) → **Share this screen** starts it and says where it is
 serving; the same list is in the root menu (Alt+Space), and it is where **Stop
-sharing** and **Copy the tunnel command** live. While it is on, an eye appears on
-the bar (right click stops it).
+sharing** and **Copy the tunnel command** live. While it is on, the bar shows an
+eye for read-only sharing or a keyboard for remote control (right click stops
+either).
 
-It listens on **127.0.0.1:5900 and nothing else**, and it is **read-only**. Both
-are decisions, not limitations:
+It listens on **127.0.0.1:5900 and nothing else**. There are two starts, and the
+first is the safe one:
+
+* **Share this screen** (the default) is **read-only**: `wayvnc
+  --disable-input` creates no virtual keyboard and no virtual pointer, so the
+  viewer cannot type, click or move the pointer here.
+* **Allow remote control** starts the same server without that flag, so the
+  viewer's keyboard and pointer reach this session. It is still
+  **127.0.0.1:5900 and nothing else**, reached through the same ssh tunnel, so
+  the login that opens the tunnel is the authentication — and now it is the
+  authentication for input too.
+
+The loopback address is a decision, not a limitation:
 
 * wayvnc 0.10 authenticates only through `~/.config/wayvnc/config`, where
   `enable_auth` wants a certificate, a private key and a password. This image
@@ -270,9 +282,12 @@ are decisions, not limitations:
   answers** (`openssh-server` is installed and `ssh.service` enabled on every
   boot), so the tunnel *is* the authentication — using the part that is already
   configured, tested and documented.
-* read-only (`--disable-input`) means the viewer cannot type, click or move the
-  pointer here. Remote input would arrive in this session as a keyboard nobody
-  can attribute, and "see what is on the screen" never needs to touch it.
+* read-only stays the default because "see what is on the screen" never needs to
+  touch it. **Allow remote control** is for the case where a window has to be
+  clicked from the other machine; while it is on, the bar shows a **keyboard**
+  instead of the eye and the tooltip says so. **Switch to view only** (or
+  **Switch to remote control**) stops and restarts the server in the other
+  mode, and **Stop sharing** ends either one.
 
 From the other machine:
 
@@ -290,16 +305,23 @@ A few things follow from the rules above and are worth knowing before debugging
 them:
 
 * **No audio.** VNC carries pixels; the sound stays on this machine.
+* **Remote control is input.** Whatever has focus receives it — a terminal, a
+  browser, a password prompt. Turn it on only while you are the one typing, and
+  stop sharing when you are done.
+* **The mode is the process.** `status` and the bar read
+  `/proc/<pid>/cmdline`, so a stale file cannot claim read-only while the server
+  accepts input; switching modes restarts the server rather than editing a flag.
 * **Nothing runs until the row is used**, and nothing stays after **Stop
   sharing**. There is no unit and no autostart: `wayvnc` is one process started
-  by the menu, and the bar's eye is a state file being read (one `sh` every ten
+  by the menu, and the bar's icon is a state file being read (one `sh` every ten
   seconds), not a daemon.
 * **A session that ends takes the state with it** (it lives in
   `$XDG_RUNTIME_DIR/lazyos-vnc`), so a logout cannot leave a stale "on".
 * **Port 5900 is the only port.** If something else already listens there, the
   menu says so — with wayvnc's own message — instead of starting half a server.
-* `~/.config/bin/lazyos-vnc status` prints the state in one line, which is the
-  quickest answer to "is this machine being watched right now".
+* `~/.config/bin/lazyos-vnc status` prints the state in one line
+  (`localhost:5900 · read-only`, `localhost:5900 · remote control`, or `off`),
+  which is the quickest answer to "is this machine being watched right now".
 
 ## Suspend and hibernate
 

@@ -73,6 +73,7 @@ tooltip label {
 #custom-bluetooth     { color: #967aa6; }
 #custom-bluetooth.on  { color: #a64dff; } /* blue */
 #custom-vnc           { color: #ffd700; } /* yellow: this session is being served */
+#custom-vnc.control   { color: #ff5588; } /* red: a viewer can type into this session */
 #network              { color: #ff66ff; }
 #network.disconnected {
     color: #ff5588;
