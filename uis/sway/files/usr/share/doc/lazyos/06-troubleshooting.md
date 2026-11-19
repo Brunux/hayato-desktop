@@ -947,6 +947,13 @@ where it fails.
 - **The pad works but the buttons do the wrong thing**: open **Settings →
   Input → Controller** (or **`o` → Controller** in the game library). Every
   button's action is there, and the table can be edited with no pad connected.
+- **A zipped game does not appear, or plays the wrong game**: a `.zip` belongs
+  to the platform folder it sits in (`~/Games/nes/Mario.zip`), because its
+  extension names no platform, and a zip outside those folders is not a game.
+  RetroArch plays the **first ROM inside** the archive, so one game per zip:
+  a zip holding several ROMs shows one row and starts whichever file is first.
+  PlayStation disc games are not zipped — a `.cue` inside an archive cannot find
+  its `.bin` files — and firmware in `bios/` is never zipped either.
 - **In the HTML game window only**: the game uses the browser Gamepad API,
   which is separate from the mapper; check that the game calls
   `navigator.getGamepads()` and that the pad is a standard-mapping one.

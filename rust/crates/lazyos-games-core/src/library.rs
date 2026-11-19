@@ -82,12 +82,17 @@ fn layout_readme() -> String {
         "LazyOS Games\n\
          ============\n\n\
          Drop a ROM in the folder for its platform; the file extension picks the\n\
-         core. Arcade romsets stay zipped and keep the set's own name\n\
-         (mslug.zip, sf2.zip). Firmware goes in bios/.\n\n",
+         core. A zipped game goes in that folder too and plays the first ROM\n\
+         inside it, so keep one game per zip. Arcade romsets stay zipped and\n\
+         keep the set's own name (mslug.zip, sf2.zip). Firmware goes in bios/.\n\n",
     );
     for row in platform::PLATFORMS {
         let folder = row.folders.map(|folders| folders[0]).unwrap_or(row.id);
-        let extensions = row.extensions.join(", ");
+        let extensions = if row.archive {
+            format!("{}, zip", row.extensions.join(", "))
+        } else {
+            row.extensions.join(", ")
+        };
         text.push_str(&format!(
             "  {folder:<9} {:<30} {extensions:<22} {}\n",
             row.title, row.core
@@ -404,6 +409,11 @@ pub struct PublicGame {
     pub author: Option<String>,
 }
 
+/// The floor for a zipped game: not zero (an empty file is not a game) and not
+/// the platform's ROM floor, because compression is what makes a 40 KB NES ROM
+/// a 12 KB file.
+const ARCHIVE_MIN_BYTES: u64 = 256;
+
 pub fn scan(options: &ScanOptions, state: &State) -> Library {
     let mut games = Vec::new();
     let mut seen = BTreeSet::new();
@@ -467,9 +477,16 @@ fn walk_roms(
         };
         // `.md` is a Mega Drive extension and a Markdown one; a README is not a
         // ROM. The same floor keeps a `.cue` descriptor (which is allowed to be
-        // tiny) on a platform whose floor is zero.
+        // tiny) on a platform whose floor is zero. An archive is compressed and
+        // can never be a README, so it only has to be a real file: a small
+        // homebrew ROM zipped would otherwise fall under a console's floor.
         let size = path.metadata().map(|metadata| metadata.len()).unwrap_or(0);
-        if size < platform.min_bytes {
+        let floor = if platform.archive {
+            ARCHIVE_MIN_BYTES
+        } else {
+            platform.min_bytes
+        };
+        if size < floor {
             continue;
         }
         let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
@@ -685,6 +702,52 @@ mod tests {
             state_dir: root.join("state"),
             libretro_dir: libretro,
         }
+    }
+
+    #[test]
+    fn a_zip_in_its_platform_folder_is_a_game() {
+        let temp = tempfile::tempdir().unwrap();
+        let options = options(temp.path());
+        for folder in ["nes", "psx", "neogeo"] {
+            fs::create_dir_all(options.roots[0].join(folder)).unwrap();
+        }
+        // The scan never opens an archive: the folder is the platform, so the
+        // bytes are never read. 2 KB stands in for a compressed ROM, and it is
+        // below the 16 KB NES floor on purpose: an archive only has to be a
+        // real file.
+        fs::write(
+            options.roots[0].join("nes/Mega Man 2 (USA).zip"),
+            vec![0u8; 2048],
+        )
+        .unwrap();
+        // Anywhere else a zip claims nothing.
+        fs::write(options.roots[0].join("downloads.zip"), vec![0u8; 2048]).unwrap();
+        // A disc platform: the cue inside cannot find the bins beside it.
+        fs::write(
+            options.roots[0].join("psx/Final Fantasy VII.zip"),
+            vec![0u8; 2048],
+        )
+        .unwrap();
+        // An arcade romset keeps its own 64 KB floor: a stub is not a set.
+        fs::write(options.roots[0].join("neogeo/stub.zip"), vec![0u8; 2048]).unwrap();
+        // Not a file at all.
+        fs::write(options.roots[0].join("nes/empty.zip"), Vec::new()).unwrap();
+
+        let library = scan(&options, &State::default());
+        assert_eq!(library.games.len(), 1, "{:#?}", library.games);
+        let game = &library.games[0];
+        assert_eq!(game.title, "Mega Man 2");
+        assert_eq!(game.platform, "nes");
+        assert_eq!(game.platform_title, "Nintendo Entertainment System");
+        assert_eq!(game.core.as_deref(), Some("nestopia"));
+        assert_eq!(game.size, 2048);
+        assert!(
+            game.rom
+                .as_deref()
+                .is_some_and(|rom| rom.ends_with("nes/Mega Man 2 (USA).zip")),
+            "{:?}",
+            game.rom
+        );
     }
 
     #[test]

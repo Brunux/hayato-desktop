@@ -1389,11 +1389,14 @@ fn manual_markdown(roots: &[PathBuf], core_present: &dyn Fn(&str) -> bool) -> St
          `LAZYOS_GAMES_ROM_DIRS=/media/usb/games:~/MoreGames`\n\n"
     ));
     text.push_str(
-        "A `.zip` is not unpacked: unzip it first — except arcade and Neo Geo, whose\n\
-         romsets stay zipped and are read as they are. Put those in `neogeo/`, `cps1/`,\n\
-         `cps2/`, `cps3/`, `pgm/` or `arcade/`, with the BIOS zips in `bios/`. A `.zip`\n\
-         anywhere else is not a game. For a multi-disc PlayStation game, list the\n\
-         `.cue` files in an `.m3u`.\n\n",
+        "A `.zip` belongs to the folder it sits in, because its extension names no\n\
+         platform: `nes/Mega Man 2.zip` is a NES game. RetroArch opens the archive and\n\
+         plays the first ROM inside it, so keep **one game per zip**. A `.zip` outside a\n\
+         platform folder is not a game. PlayStation disc games are not zipped — a `.cue`\n\
+         inside an archive cannot find its `.bin` files — and firmware in `bios/` is never\n\
+         zipped. Arcade and Neo Geo romsets stay zipped and are read as they are: put\n\
+         those in `neogeo/`, `cps1/`, `cps2/`, `cps3/`, `pgm/` or `arcade/`. For a\n\
+         multi-disc PlayStation game, list the `.cue` files in an `.m3u`.\n\n",
     );
     text.push_str(
         "## Platforms\n\n\
@@ -1409,12 +1412,21 @@ fn manual_markdown(roots: &[PathBuf], core_present: &dyn Fn(&str) -> bool) -> St
         };
         let files = match row.folders {
             Some(folders) => format!("`zip` in `{}/`", folders[0]),
-            None => row
-                .extensions
-                .iter()
-                .map(|extension| format!("`{extension}`"))
-                .collect::<Vec<_>>()
-                .join(", "),
+            None => {
+                let list = row
+                    .extensions
+                    .iter()
+                    .map(|extension| format!("`{extension}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                // A console platform also takes a zip, but only in its own
+                // folder: the extension names no platform.
+                if row.archive {
+                    format!("{list}, `zip` in `{}/`", row.id)
+                } else {
+                    list
+                }
+            }
         };
         let core = if core_present(row.core) {
             row.core.to_string()
@@ -1438,7 +1450,8 @@ fn manual_markdown(roots: &[PathBuf], core_present: &dyn Fn(&str) -> bool) -> St
     }
     text.push_str(
         "\n## Play a game\n\n\
-         1. Copy the ROM into its folder (an arcade romset stays zipped).\n\
+         1. Copy the ROM into its folder (a zip goes in its platform's folder,\n\
+         an arcade romset in its board's).\n\
          2. Press `s` here to rescan, or reopen the library.\n\
          3. `←` / `→` choose a platform, `↑` / `↓` a game, `Enter` plays it.\n\
          4. `Esc` in the game comes back here; `F1` opens RetroArch's menu.\n\n\
