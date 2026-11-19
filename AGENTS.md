@@ -209,7 +209,12 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    the machine builds them in a `questions(...)` function that takes that data as arguments
    (`places::questions(&places, note)`, `agents::questions(&installed, &accounts, default, note)`),
    so `tests/pickers.rs` draws the real screen at both grids without a mounted disk, a clipboard
-   or an agent on `PATH`; `menu()` calls the same function and nothing else builds rows.
+   or an agent on `PATH`; `menu()` calls the same function and nothing else builds rows. A screen
+   that writes to the terminal while being constructed gets a silent constructor for the net
+   (`ThemePickerScreen::with_design_silent` skips the OSC preview), and one that reads the host
+   takes its data as an argument (`InstallerScreen::from_preflight_isolated(preflight, true)`,
+   `GreeterSetup` plus `set_clock_for_test`) instead of going untested. **Every screen is in
+   `tests/screens.rs` or `tests/pickers.rs`; a new one lands with a render.**
 
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single
