@@ -170,11 +170,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &["lazyos-dns"],
     },
     CommandSpec {
-        // `lazyos-vnc`: wayvnc on loopback, read-only, nothing resident. The
-        // tunnel command is copied for the other machine. The bar's eye is a
+        // `lazyos-vnc`: wayvnc on loopback, read-only by default and with
+        // remote control as the explicit second start, nothing resident. The
+        // tunnel command is copied for the other machine. The bar's icon is a
         // state file, not a process.
         path: "menu vnc",
-        summary: "share this screen read-only over ssh (spec 010)",
+        summary: "share this screen read-only or with remote control over ssh (spec 010)",
         shape: Shape::Pick,
         symlinks: &["lazyos-vnc"],
         installed: &["lazyos-vnc"],
