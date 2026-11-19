@@ -162,7 +162,7 @@ impl Screen for ClipScreen {
                 rows,
                 ctx.design,
                 "Nothing has been copied yet",
-                "Clipboard entries appear here automatically as you copy text or images",
+                "Copied text and images appear here",
             );
         } else {
             self.list

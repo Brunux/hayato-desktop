@@ -1,0 +1,45 @@
+LazyOS · Capture                                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+╭ Actions ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  type to filter · Enter runs · Escape closes                                                                                               13 / 13  │
+│                                                                                                                                                      │
+│ ▍   Screenshot · the whole screen  saved to ~/Pictures/2026-11-19                                                     │
+│     Screenshot · an area  saved to ~/Pictures/2026-11-19                                                              │
+│     Screenshot · an area, to the clipboard  paste it anywhere                                                                                       │
+│     Screenshot · a window  pick one with the pointer                                                                                                │
+│     Annotate an area  arrows, text, crop (swappy)                                                                                                   │
+│     Recording audio  no audio                                                                                                        Enter cycles   │
+│     Webcam overlay  off                                                                                                             Enter toggles   │
+│     Record · the whole screen  until you stop it · no audio · camera off                                                                            │
+│     Record · an area  pick it with the pointer · no audio · camera off                                                                              │
+│     Text from an area  OCR (tesseract) → clipboard                                                                                                  │
+│     QR code from an area  zbarimg → clipboard                                                                                                       │
+│     Make a QR code  the Wi-Fi password, or any text                                                                                                 │
+│     Open the pictures folder  ~/Pictures                                                                              │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  run   [type]  filter   [Esc]  close                                                                                                           

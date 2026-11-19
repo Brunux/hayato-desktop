@@ -267,7 +267,7 @@ impl Screen for NotifyScreen {
                 rows,
                 ctx.design,
                 "Nothing in notification history yet",
-                "Notifications land here after they expire · Ctrl+D toggles Do Not Disturb",
+                "Notifications land here after they expire",
             );
         } else {
             self.list

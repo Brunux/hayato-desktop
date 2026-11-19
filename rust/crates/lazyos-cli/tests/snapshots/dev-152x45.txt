@@ -1,0 +1,45 @@
+LazyOS · Developer                                                                                                                                      
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+╭ Actions ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ The archive carries ~/.ssh and ~/.gnupg · the passphrase protects it                                                                                 │
+│                                                                                                                                                      │
+│ ▍   Export my profile  keys, configs and optional home folder, encrypted · to a disk                                                                │
+│     Restore a profile  from an exported archive · the current files are backed up first                                                             │
+│     Save a diagnostics bundle  the system report and this boot's journal, for a bug report                                                          │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  select   [↑↓]  move   [Esc]  close                                                                                                            

@@ -1458,13 +1458,17 @@ pub fn centered(area: Rect, percent_x: u16, height: u16) -> Rect {
 
 fn centred_line(buf: &mut Buffer, area: Rect, y: u16, text: &str, style: Style) {
     let width = UnicodeWidthStr::width(text) as u16;
-    let x = area.x + area.width.saturating_sub(width) / 2;
-    put(buf, x, y, text, area.width, style);
+    let x = if width >= area.width {
+        area.x
+    } else {
+        area.x + (area.width - width) / 2
+    };
+    put_trunc(buf, x, y, text, area.right().saturating_sub(x), style);
 }
 
 /// The card a command shows when it has nothing to show yet.
 pub fn draw_empty(buf: &mut Buffer, area: Rect, design: &Design, title: &str, hint: &str) {
-    let card = centered(area, 62, 9);
+    let card = centered(area, 76, 9);
     let inner = draw_card(buf, card, design, Some("LazyOS"), true);
     centred_line(
         buf,
