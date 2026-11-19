@@ -328,7 +328,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         // The controller: what each pad button does, saved where the mapper
         // reads it. The row is also reachable from Settings → Input.
         path: "menu controller",
-        summary: "the gamepad: what each button does, and the PS3 pairing",
+        summary: "the gamepad: what each button does, and how a pad pairs",
         shape: Shape::Pick,
         symlinks: &[],
         installed: &[],

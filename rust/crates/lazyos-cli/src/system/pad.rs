@@ -1,5 +1,5 @@
 //! Controller (`lazyos menu controller`, Settings → Input): what each pad
-//! button does, and the PlayStation 3 pairing in one line.
+//! button does, and how a PlayStation pad pairs, in one line.
 //!
 //! The table is [`crate::padmap`], the same one `lazyos gamepad` reads, and
 //! every change is written to `~/.config/lazyos/pad.json` immediately. The
@@ -8,11 +8,12 @@
 //! are chosen with ←/→ rather than by pressing the button, which is what makes
 //! a preconfigured pad editable before it is paired.
 //!
-//! The defaults are the console layout, and a PlayStation 3 pad is already
-//! covered by them: Cross confirms, Circle cancels, Square opens the Games
-//! options, Triangle the manual, L1 the game's folder. Pairing is the one step
-//! the pad cannot do by itself — BlueZ's sixaxis plugin writes this machine's
-//! address over USB, so the screen says so when a Sony pad is on USB.
+//! The defaults are the console layout, and a DualShock 4 is already covered by
+//! them: Cross confirms, Circle cancels, Square opens the Games options,
+//! Triangle the manual, L1 the game's folder. A DS4 pairs over Bluetooth (hold
+//! **PS + Share** until the light bar flashes); a DualShock 3 is the exception,
+//! pairing once over USB because BlueZ's sixaxis plugin writes this machine's
+//! address into it. The screen says which one is waiting.
 
 use std::path::PathBuf;
 
@@ -225,13 +226,13 @@ impl Screen for ControllerScreen {
             y += 1;
         }
 
-        // The one step a PlayStation 3 pad cannot do by itself. It is shown
-        // until a Sony pad is seen at all, so a person who has just taken the
-        // pad out of the drawer knows what to do before pairing it.
+        // The pairing step, shown until a Sony pad is seen at all, so a person
+        // who has just taken the pad out of the drawer knows what to do before
+        // pairing it.
         if let Some(text) = pairing_note(&self.pads) {
             for (offset, line) in crate::system::manual::wrap(text, usize::from(inner.width))
                 .into_iter()
-                .take(2)
+                .take(3)
                 .enumerate()
             {
                 let note_y = y + 1 + offset as u16;
@@ -316,12 +317,14 @@ impl Screen for ControllerScreen {
     }
 }
 
-/// The PlayStation 3 pairing line, or nothing once a Sony pad is known: a pad
-/// that is already paired does not need the instruction.
+/// The pairing line, or nothing once a Sony pad is known: a pad that is
+/// already connected does not need the instruction. A DualShock 4 is the
+/// Bluetooth case (PS + Share); a DualShock 3 is the USB exception.
 fn pairing_note(pads: &[PadInfo]) -> Option<&'static str> {
     let playstation = pads.iter().any(|pad| pad.vendor == 0x054c);
     (!playstation).then_some(
-        "PS3 pad: plug it in by USB once and press the PS button, then unplug it and press PS again.",
+        "PS4 pad: hold PS + Share until the light bar flashes, then pair it in Settings → Bluetooth. \
+         A PS3 pad pairs once over USB: plug it in, press PS, unplug it and press PS again.",
     )
 }
 
@@ -406,8 +409,12 @@ mod tests {
     }
 
     #[test]
-    fn the_ps3_note_is_shown_until_a_sony_pad_is_seen() {
-        assert!(pairing_note(&[]).is_some());
+    fn the_pairing_note_names_the_playstation_cases() {
+        let note = pairing_note(&[]).expect("a note when no pad is connected");
+        assert!(note.contains("PS4"), "the Bluetooth case must be first");
+        assert!(note.contains("PS + Share"));
+        assert!(note.contains("PS3"));
+        assert!(note.contains("USB"));
         let xbox = PadInfo {
             name: "Xbox Wireless Controller".to_string(),
             bus: evdev::BusType::BUS_BLUETOOTH,
@@ -415,13 +422,13 @@ mod tests {
             product: 0x0b13,
         };
         assert!(pairing_note(&[xbox]).is_some());
-        let ps3 = PadInfo {
-            name: "Sony PLAYSTATION(R)3 Controller".to_string(),
+        let ps4 = PadInfo {
+            name: "Wireless Controller".to_string(),
             bus: evdev::BusType::BUS_BLUETOOTH,
             vendor: 0x054c,
-            product: 0x0268,
+            product: 0x09cc,
         };
-        assert!(pairing_note(&[ps3]).is_none());
+        assert!(pairing_note(&[ps4]).is_none());
     }
 
     #[test]

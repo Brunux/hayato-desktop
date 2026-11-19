@@ -128,8 +128,9 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    Settings → Input, and the library's `o` row) edits it and writes
    `~/.config/lazyos/pad.json`, and the mapper reloads the file when its mtime changes, so a remap
    needs no restart and works with no pad connected. The defaults are the console layout and cover
-   a PS3 pad (Cross confirm, Circle cancel); PS3 pairing is BlueZ's sixaxis plugin over USB, never
-   a scan. The HTML game host and RetroArch keep their own input (the browser Gamepad API and
+   a DualShock 4 (Cross confirm, Circle cancel), which pairs over Bluetooth (PS + Share) like any
+   other pad; a DualShock 3 is the USB exception (BlueZ's sixaxis plugin writes the host address),
+   never a scan. The HTML game host and RetroArch keep their own input (the browser Gamepad API and
    udev), so a press never moves two things. It is the one resident input helper; a pid lock keeps
    it single. The game stack itself is built, not installed from
    Debian: `tools/retroarch/` builds the slim emulator (no Qt, assets, FFmpeg, Vulkan or updater)

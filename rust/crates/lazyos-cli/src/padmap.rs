@@ -206,7 +206,9 @@ pub struct PadInfo {
 impl PadInfo {
     /// A PlayStation pad on USB is the one case where the mapper can say what
     /// the next step is: BlueZ's sixaxis plugin is writing this machine's
-    /// address into it, and the pad only needs to be unplugged and switched on.
+    /// address into it (a DualShock 3, or a DualShock 4 cable-paired instead
+    /// of using PS + Share), and the pad only needs to be unplugged and
+    /// switched on.
     pub fn is_playstation_on_usb(&self) -> bool {
         self.vendor == 0x054c && self.bus == evdev::BusType::BUS_USB
     }

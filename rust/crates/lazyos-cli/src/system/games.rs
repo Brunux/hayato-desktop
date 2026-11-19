@@ -1462,9 +1462,10 @@ fn manual_markdown(roots: &[PathBuf], core_present: &dyn Fn(&str) -> bool) -> St
          this screen **X** opens the options, **Y** the manual and **L1** the game's\n\
          folder in Files; those three are Alt+O, Alt+M and Alt+R, because a bare\n\
          letter would type into another screen's filter. Every button can be\n\
-         reassigned in `o` → Controller (it works with no pad connected), and a\n\
-         PlayStation 3 pad pairs once over USB: plug it in, press PS, unplug it and\n\
-         press PS again.\n\n\
+         reassigned in `o` → Controller (it works with no pad connected). A PS4 pad\n\
+         pairs over Bluetooth: hold PS + Share until the light bar flashes, then pair\n\
+         it in Settings → Bluetooth. A PS3 pad pairs once over USB: plug it in, press\n\
+         PS, unplug it and press PS again.\n\n\
          ## Saves\n\n\
          Battery saves live in `~/.local/share/lazyos/games/saves` and save states in\n\
          `~/.local/state/lazyos/games/states`. Both load and save automatically, so a\n\

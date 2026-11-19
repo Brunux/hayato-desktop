@@ -3984,13 +3984,26 @@ if have lazyos-games; then
 	if [ -n "$_hid_sony" ]; then
 		ok "the kernel has the PlayStation HID driver (hid_sony)"
 	else
-		warn "no hid_sony module: a PS3 pad may not appear"
+		warn "no hid_sony module: a PlayStation pad may not appear"
+	fi
+	_hid_playstation=
+	if have modinfo && modinfo -F filename hid_playstation >/dev/null 2>&1; then
+		_hid_playstation=1
+	else
+		for _hid_module in /lib/modules/"$(uname -r)"/kernel/drivers/hid/hid-playstation.ko*; do
+			[ -e "$_hid_module" ] && _hid_playstation=1
+		done
+	fi
+	if [ -n "$_hid_playstation" ]; then
+		ok "the kernel has the DualShock 4 driver (hid_playstation)"
+	else
+		warn "no hid_playstation module: a DualShock 4 may not appear"
 	fi
 	if [ -x /usr/libexec/bluetooth/bluetoothd ] &&
 		grep -aq sixaxis /usr/libexec/bluetooth/bluetoothd; then
-		ok "BlueZ can cable-pair a PS3 pad (sixaxis is built in)"
+		ok "BlueZ can cable-pair a PlayStation pad (sixaxis is built in)"
 	else
-		warn "BlueZ has no sixaxis support: a PS3 pad needs an external pairing tool"
+		warn "BlueZ has no sixaxis support: a DualShock 3 needs an external pairing tool"
 	fi
 	if have retroarch; then
 		_ra_version="$(retroarch --version 2>/dev/null | sed -n 's/^Version: //p' | head -n 1)"

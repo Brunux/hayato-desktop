@@ -563,7 +563,8 @@ maps the pad to arrows, Enter and Escape in every `lazyos-*` window, including
 the Games library (a Ratatui screen: **← / →** tabs, **↑ / ↓** list, Enter
 plays). The GTK + WebKit host and RetroArch keep their own input. The pad table
 is in `03-shortcuts.md`; every button can be reassigned in Settings → Input →
-Controller, and a PS3 pad pairs once over USB.
+Controller. A DualShock 4 pairs over Bluetooth (PS + Share); a DualShock 3 pairs
+once over USB.
 
 ## The retirement of rofi (Spec 014)
 

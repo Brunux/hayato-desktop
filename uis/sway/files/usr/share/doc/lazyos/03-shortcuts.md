@@ -36,10 +36,12 @@ Controller** in the game library). The screen shows the pad it found, or
 be configured before it is paired. Changes are written to
 `~/.config/lazyos/pad.json` and `lazyos gamepad` reloads it within two seconds.
 
-A **PlayStation 3** pad is already covered by the defaults. Pair it once over
-USB: plug it in, press **PS**, unplug it and press **PS** again; BlueZ's
-sixaxis support stores this machine's address, and the mapper picks the pad up
-when it appears. `06-troubleshooting.md` has the checks when a pad does nothing.
+A **DualShock 4** is already covered by the defaults and pairs over Bluetooth:
+hold **PS + Share** until the light bar flashes, then choose **Wireless
+Controller** in Settings → Network → Bluetooth. A **DualShock 3** has no
+pairing mode and pairs once over USB instead: plug it in, press **PS**, unplug
+it and press **PS** again (BlueZ's sixaxis support stores this machine's
+address). `06-troubleshooting.md` has the checks when a pad does nothing.
 
 The HTML game host and RetroArch keep their own input (the browser Gamepad API
 and udev), and a plain `foot` shell and other applications are deliberately not
