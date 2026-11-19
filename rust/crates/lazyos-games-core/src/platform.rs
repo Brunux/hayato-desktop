@@ -29,6 +29,15 @@ pub struct Platform {
     /// and also Markdown, and `.cue`/`.m3u` are text descriptors; the floor is
     /// what keeps a README out of the Genesis shelf.
     pub min_bytes: u64,
+    /// Whether a `.zip` in this platform's folder is one of its games.
+    ///
+    /// The folder is the platform for an archive, because the extension of a
+    /// `.zip` says nothing: `nes/Mario.zip` is a NES game because it sits in
+    /// `nes/`. Disc platforms are excluded — a `.cue` inside an archive cannot
+    /// find the `.bin` files next to it, and RetroArch would extract the cue
+    /// alone — and so are the arcade boards, which claim zipped romsets
+    /// through [`Platform::folders`] already.
+    pub archive: bool,
 }
 
 pub const PLATFORMS: &[Platform] = &[
@@ -40,6 +49,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: Some("disksys.rom, for Famicom Disk System games"),
         folders: None,
         min_bytes: 16 * 1024,
+        archive: true,
     },
     Platform {
         id: "snes",
@@ -49,6 +59,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: None,
         folders: None,
         min_bytes: 32 * 1024,
+        archive: true,
     },
     Platform {
         id: "gb",
@@ -58,6 +69,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: None,
         folders: None,
         min_bytes: 32 * 1024,
+        archive: true,
     },
     Platform {
         id: "gba",
@@ -67,6 +79,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: Some("gba_bios.bin, optional (mGBA runs without it)"),
         folders: None,
         min_bytes: 64 * 1024,
+        archive: true,
     },
     Platform {
         id: "genesis",
@@ -76,6 +89,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: None,
         folders: None,
         min_bytes: 64 * 1024,
+        archive: true,
     },
     Platform {
         id: "sms",
@@ -85,6 +99,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: None,
         folders: None,
         min_bytes: 8 * 1024,
+        archive: true,
     },
     Platform {
         id: "psx",
@@ -94,6 +109,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: Some("scph5501.bin (US), scph5502.bin (EU), scph5500.bin (JP)"),
         folders: None,
         min_bytes: 0,
+        archive: false,
     },
     Platform {
         id: "pce",
@@ -103,6 +119,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: Some("syscard3.pce, for CD games"),
         folders: None,
         min_bytes: 8 * 1024,
+        archive: true,
     },
     Platform {
         id: "vb",
@@ -112,6 +129,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: None,
         folders: None,
         min_bytes: 64 * 1024,
+        archive: true,
     },
     Platform {
         id: "wswan",
@@ -121,6 +139,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: None,
         folders: None,
         min_bytes: 64 * 1024,
+        archive: true,
     },
     Platform {
         id: "n64",
@@ -130,6 +149,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: None,
         folders: None,
         min_bytes: 1024 * 1024,
+        archive: true,
     },
     // Arcade boards all run the one FBNeo core; the folder is what tells the
     // library which board a romset belongs to. A romset stays zipped: FBNeo
@@ -142,6 +162,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: Some("neogeo.zip, the MVS BIOS (also AES)"),
         folders: Some(&["neogeo", "mvs", "aes"]),
         min_bytes: 64 * 1024,
+        archive: false,
     },
     Platform {
         id: "cps1",
@@ -151,6 +172,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: None,
         folders: Some(&["cps1"]),
         min_bytes: 64 * 1024,
+        archive: false,
     },
     Platform {
         id: "cps2",
@@ -160,6 +182,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: Some("qsound.zip, the QSound samples"),
         folders: Some(&["cps2"]),
         min_bytes: 64 * 1024,
+        archive: false,
     },
     Platform {
         id: "cps3",
@@ -169,6 +192,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: Some("cps3.zip, the CPS3 BIOS"),
         folders: Some(&["cps3"]),
         min_bytes: 64 * 1024,
+        archive: false,
     },
     Platform {
         id: "pgm",
@@ -178,6 +202,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: Some("pgm.zip, the PGM BIOS"),
         folders: Some(&["pgm"]),
         min_bytes: 64 * 1024,
+        archive: false,
     },
     Platform {
         id: "arcade",
@@ -187,6 +212,7 @@ pub const PLATFORMS: &[Platform] = &[
         bios: None,
         folders: Some(&["arcade", "mame", "fbneo"]),
         min_bytes: 64 * 1024,
+        archive: false,
     },
 ];
 
@@ -209,7 +235,7 @@ pub fn detect(path: &Path) -> Option<&'static Platform> {
         .parent()
         .and_then(Path::file_name)
         .map(|name| name.to_string_lossy().to_ascii_lowercase());
-    PLATFORMS.iter().find(|platform| {
+    let by_extension = PLATFORMS.iter().find(|platform| {
         if !platform.extensions.contains(&extension.as_str()) {
             return false;
         }
@@ -219,7 +245,21 @@ pub fn detect(path: &Path) -> Option<&'static Platform> {
                 .as_deref()
                 .is_some_and(|folder| folders.contains(&folder)),
         }
-    })
+    });
+    if by_extension.is_some() {
+        return by_extension;
+    }
+    // A `.zip` says nothing about its platform, so the folder the library made
+    // for the platform is what claims it: `nes/Mario.zip` is a NES game
+    // because it sits in `nes/`. Zipped arcade romsets are matched above, by
+    // their own folder lists; a disc platform is never claimed this way.
+    if extension != "zip" {
+        return None;
+    }
+    let folder = folder?;
+    PLATFORMS
+        .iter()
+        .find(|platform| platform.archive && platform.id == folder)
 }
 
 #[cfg(test)]
@@ -326,13 +366,47 @@ mod tests {
             let rom = Path::new(folder).join("mslug.zip");
             assert_eq!(detect(&rom).map(|p| p.id), Some(board), "{folder}");
         }
-        assert_eq!(detect(Path::new("snes/zipped.zip")), None);
         assert_eq!(detect(Path::new("zipped.zip")), None);
         assert_eq!(
             detect(Path::new("snes/Super Mario World.sfc")).map(|p| p.id),
             Some("snes")
         );
         assert_eq!(detect(Path::new("n64/game.z64")).map(|p| p.id), Some("n64"));
+    }
+
+    #[test]
+    fn a_console_zip_belongs_to_the_folder_the_library_made() {
+        // The extension of a zip says nothing, so the platform's own folder is
+        // what claims it: that is the schema the README teaches.
+        for (folder, id) in [
+            ("nes", "nes"),
+            ("snes", "snes"),
+            ("gb", "gb"),
+            ("gba", "gba"),
+            ("genesis", "genesis"),
+            ("sms", "sms"),
+            ("pce", "pce"),
+            ("vb", "vb"),
+            ("wswan", "wswan"),
+            ("n64", "n64"),
+        ] {
+            let rom = Path::new(folder).join("Mario (USA).zip");
+            assert_eq!(detect(&rom).map(|p| p.id), Some(id), "{folder}");
+        }
+        // The folder name is matched without regard to case, like the arcade
+        // boards above.
+        assert_eq!(
+            detect(Path::new("NES/Mario.zip")).map(|p| p.id),
+            Some("nes")
+        );
+        // Anywhere else a zip claims nothing: the folder is the whole rule.
+        assert_eq!(detect(Path::new("downloads/Mario.zip")), None);
+        assert_eq!(detect(Path::new("misc/Mario.zip")), None);
+        // A disc platform is never claimed by a zip: the cue inside cannot
+        // find the bins beside it.
+        assert_eq!(detect(Path::new("psx/Final Fantasy VII.zip")), None);
+        // A console zip is still not a romset: `zip` alone resolves to nothing.
+        assert_eq!(by_extension("zip"), None);
     }
 
     #[test]

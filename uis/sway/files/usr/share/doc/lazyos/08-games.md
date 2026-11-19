@@ -135,17 +135,28 @@ Put a ROM in a platform folder, then press **s** (or reopen the library):
 ~/Games/psx/Final Fantasy VII (Disc 1).cue
 ```
 
-The folder name does not matter; the extension selects the platform. A file is
-ignored when it is smaller than the smallest real ROM for that platform, which
-is what keeps a `README.md` out of the Genesis shelf (`.md` is also a Mega Drive
-extension).
+The folder name does not matter for a ROM; the extension selects the platform.
+A file is ignored when it is smaller than the smallest real ROM for that
+platform, which is what keeps a `README.md` out of the Genesis shelf (`.md` is
+also a Mega Drive extension). A `.zip` is the one exception, because its
+extension names no platform: it belongs to the folder it sits in.
 
 **The folders are already there.** The first time the library opens it creates
 one folder per platform and `bios/`, plus `~/Games/LAZYOS-GAMES.txt` with the
-same table as below, so all you have to do is drop files in. Arcade romsets are
-the exception to the extension rule: they stay zipped, and the **folder** names
-the board (`neogeo/`, `cps1/`, `cps2/`, `cps3/`, `pgm/`, `arcade/`); a `.zip`
-anywhere else is not a game.
+same table as below, so all you have to do is drop files in. A `.zip` in a
+console platform's folder is one of its games:
+
+```
+~/Games/nes/Mega Man 2 (USA).zip
+```
+
+RetroArch opens the archive itself and plays the first ROM inside it, so keep
+**one game per zip** — a zip holding a whole set becomes one row that plays
+whichever file is first. PlayStation is the exception: a `.cue` inside an
+archive cannot find the `.bin` files beside it, so disc games stay loose or as
+`.chd`. Arcade romsets keep their own rule: they stay zipped, and the **folder**
+names the board (`neogeo/`, `cps1/`, `cps2/`, `cps3/`, `pgm/`, `arcade/`); a
+`.zip` outside a platform folder is not a game.
 
 | Platform | Extensions | Core | Firmware |
 |---|---|---|---|
@@ -168,9 +179,10 @@ anywhere else is not a game.
 | Arcade (everything else) | `zip` in `arcade/`, `mame/`, `fbneo/` | fbneo | some boards |
 
 Firmware goes in `~/Games/bios/`. It is not shipped: a BIOS is copyrighted, and
-a PS1 game without one simply does not start. A zipped ROM is not unpacked by
-the library; unzip it first — except a Neo Geo romset, which the core reads as
-it is.
+a PS1 game without one simply does not start. Firmware is never zipped: the
+library skips `bios/` when it scans, and a core looks for the BIOS by name. A
+zipped ROM is not unpacked by the library either — RetroArch reads the archive
+and plays the first ROM inside, which is why one game per zip is the rule.
 
 **Nintendo 64 is experimental.** Debian has no N64 core, so the image builds
 Mupen64Plus-Next with the AArch64 dynarec and GLideN64 on GLES3 for the

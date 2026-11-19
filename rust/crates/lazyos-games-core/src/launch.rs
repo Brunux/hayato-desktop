@@ -183,6 +183,22 @@ mod tests {
     }
 
     #[test]
+    fn a_zipped_game_is_the_archive_path_itself() {
+        // RetroArch opens the archive and plays the first ROM inside it, so the
+        // argv carries the `.zip` and nothing else: no extraction of ours, and
+        // no `#entry` syntax to depend on.
+        let mut zipped = game();
+        zipped.platform = "nes".into();
+        zipped.core = Some("nestopia".into());
+        zipped.rom = Some(PathBuf::from("/home/lazy/Games/nes/Mega Man 2.zip"));
+        let args = retro_argv(&zipped, Path::new("/usr/lib/libretro"));
+        assert_eq!(args.last().unwrap(), "/home/lazy/Games/nes/Mega Man 2.zip");
+        assert!(!args.iter().any(|arg| arg.contains('#')));
+        let core = args.iter().position(|arg| arg == "-L").expect("no -L");
+        assert_eq!(args[core + 1], "/usr/lib/libretro/nestopia_libretro.so");
+    }
+
+    #[test]
     fn a_web_game_url_is_its_manifest_slug_and_entry() {
         let mut web = game();
         web.id = "web:snake".into();

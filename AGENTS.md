@@ -98,9 +98,13 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    table is the only place a platform is declared: the scan (`platform::detect`), the manual's
    table and the launch core all read `platform::PLATFORMS`. A row with `folders` is claimed only
    inside those folder names — the six arcade boards are the case, because a `.zip` is a romset in
-   `neogeo/`, `cps1/`, `cps2/`, `cps3/`, `pgm/` or `arcade/`, and a zipped SNES ROM must stay
-   invisible. The first time the library opens it creates one folder per platform plus `bios/`
-   and a generated `LAZYOS-GAMES.txt`, so a new person only drops files in. The library
+   `neogeo/`, `cps1/`, `cps2/`, `cps3/`, `pgm/` or `arcade/`. A row with `archive` is claimed by a
+   `.zip` **only inside its own folder** (`nes/Mario.zip`): a zip's extension names no platform, so
+   the folder schema is the whole rule, and RetroArch opens the archive and plays the first ROM
+   inside it — hence one game per zip, said in the manual. A disc row is never claimed by a zip,
+   because a `.cue` inside an archive cannot find the `.bin` files beside it. The first time the
+   library opens it creates one folder per platform plus `bios/` and a generated
+   `LAZYOS-GAMES.txt`, so a new person only drops files in. The library
    **exits before a game starts**; the host returns to a new `lazyos menu games` window, so the
    TUI and the game window are never alive together on a 4 GB machine. Web games are trusted
    local data; the sandbox and per-origin storage are the boundary, not a second shell.

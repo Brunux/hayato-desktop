@@ -3946,6 +3946,28 @@ if have lazyos-games; then
 			ok "the ROM scan roots are reported" ||
 			fail "the library reports no ROM scan root"
 	fi
+	# A zipped game is claimed by the folder the library made for its platform,
+	# because a `.zip` has no extension that names one. The scan reads the
+	# folder and never opens the archive, so a plain file stands in for a
+	# compressed ROM here.
+	_zip_root=$(mktemp -d)
+	mkdir -p "$_zip_root/nes" "$_zip_root/psx"
+	head -c 2048 /dev/zero > "$_zip_root/nes/Zip Fixture (USA).zip"
+	head -c 2048 /dev/zero > "$_zip_root/psx/Zip Fixture.zip"
+	_zip_json=$(LAZYOS_GAMES_ROM_DIRS="$_zip_root" lazyos-games --scan 2>/dev/null || true)
+	if printf '%s' "$_zip_json" |
+		jq -e '[.games[] | select(.title == "Zip Fixture" and .platform == "nes")] | length == 1' >/dev/null 2>&1; then
+		ok "a zip in its platform folder is a game"
+	else
+		fail "a zip in nes/ is not listed: the folder schema is not used for archives"
+	fi
+	if printf '%s' "$_zip_json" |
+		jq -e '[.games[] | select(.platform == "psx")] | length == 0' >/dev/null 2>&1; then
+		ok "a zip on a disc platform is ignored (the cue inside cannot find its bins)"
+	else
+		fail "a zip in psx/ is listed: the cue inside cannot find its bins"
+	fi
+	rm -rf "$_zip_root"
 	_games_missing=
 	for _games_file in \
 		/usr/share/lazyos/games/theme-default.css \
