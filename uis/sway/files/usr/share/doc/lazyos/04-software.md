@@ -164,6 +164,25 @@ be appended to it last - initialised earlier, the hook is dropped and the first
 
 **nano** is the editor that is always there (`nano file`).
 
+**editxr** is the note editor: **Alt+Space → Notes** opens a quick note in
+editxr, which renders Markdown as it is typed and uses the notes folder as its
+vault, so `[[wikilinks]]` and `Ctrl+K` work across the folder. `Ctrl+S` saves,
+`Ctrl+Q` quits, `Ctrl+F` finds, `Ctrl+E` exports HTML, and `Ctrl+P` opens the
+palette for themes (Solarized is built in) and settings. It starts on the editxr
+theme that matches the session — Solarized, Nord, Gruvbox, Tokyo Night,
+Catppuccin, Dracula or One Dark — and the Notes menu writes only those two keys
+in `~/.config/editxr/config.json` before it opens the editor, leaving the
+person's other settings alone; the LazyOS themes with no editxr twin
+(Everforest, Kanagawa, Rose Pine, …) fall back to
+editxr's neutral System palette, because editxr's themes are a fixed set and it
+has no custom palette file. `Ctrl+P` changes the theme for that window; the next
+note open follows the session again. It is not `$EDITOR`, so
+the shell keeps nvim for `eff`, `git commit` and `crontab -e`; a person who
+exports `EDITOR` still gets their editor when editxr is not installed. editxr has
+no line-number argument, so a search hit opens at the top of the note. Its AI
+assist is opt-in and local-first: the image ships it signed out, and nothing is
+sent anywhere until a provider is configured.
+
 **nvim** is what `$EDITOR` names, so `eff`, `git commit` and `crontab -e` open
 Neovim: `nvim file` for one file, `nvim` for the empty buffer. It brings its own
 Lua runtime and tree-sitter, and it starts with no configuration - plugins, a
@@ -179,19 +198,21 @@ export yourself wins.
 
 **Alt+Space → Notes** (also the launcher entry **Notes**, and `lazyos-notes`)
 is one list for the three document shapes this image has, each opened by the
-tool that owns it:
+tool that owns it. The selected note is read on the page beside the list; on a
+narrow window the first line and the date sit in a two-line strip below it.
+Typing filters the list (Escape clears the filter before it closes the window).
 
 | Row | What it does |
 |---|---|
-| a note (`.md`, `.txt`) | Enter opens it in `$EDITOR` (nvim) in a foot window; quitting the editor returns to the list. **Ctrl+P** previews it with `glow`, **Del** moves it to the trash |
+| a note (`.md`, `.txt`) | Enter opens it in **editxr** in a foot window; quitting the editor returns to the list. The page shows its Markdown, **Ctrl+P** opens the whole note in `glow`, **Del** moves it to the trash |
 | **New quick note** | asks for a title, writes `~/Documents/Notes/<date>-<title>.md`, and opens it |
 | **Today's note** | opens `~/Documents/Notes/<date>.md`, creating it with the date as its heading |
 | a `.xopp` ink note | Enter opens it in **xournalpp** |
 | **New ink note** | a blank xournalpp document; save it in this folder (Ctrl+S) and it joins the list |
-| **Annotate or sign a PDF** | picks a PDF from Documents or Downloads and opens it in xournalpp; save the `.xopp`, then export the signed PDF |
-| **Export an ink note to PDF** | `xournalpp --create-pdf` writes `<name>.pdf` into `~/Documents/Signed` |
-| **Search inside the notes** | ripgrep over the folder; Enter opens the note at the matching line |
-| **Open the notes folder** | the folder in Files |
+| **Sign or annotate a PDF** | picks a PDF from Documents or Downloads and opens it in xournalpp; save the `.xopp`, then export the signed PDF |
+| **Export ink to PDF** | `xournalpp --create-pdf` writes `<name>.pdf` into `~/Documents/Signed` |
+| **Search the notes** | ripgrep over the folder; Enter opens the note in editxr (`Ctrl+F` finds the match) |
+| **Open folder** | the notes folder in Files |
 
 The folder is the state: there is no index and no daemon. The first open creates
 `~/Documents/Notes` with a `README.md` and `~/Documents/Signed` for exported

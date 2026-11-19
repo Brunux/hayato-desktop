@@ -150,11 +150,21 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `retroarch`, so `install-retroarch.sh` installs the LazyOS package **first** and the cores
    after it; installing the session list first would pull Debian's retroarch, its 547 MB assets
    and Qt5.
-15. **The game stack is built, not installed from Debian**: `tools/retroarch/` builds the slim
+16. **The game stack is built, not installed from Debian**: `tools/retroarch/` builds the slim
    emulator (no Qt, assets, FFmpeg, Vulkan or updater) and `tools/mupen64plus-next/` builds the
    N64 core Debian does not have. The cores in `packages/games.list` Depends on `retroarch`, so
    `install-retroarch.sh` installs the LazyOS package **first** and the cores after it; installing
    the session list first would pull Debian's retroarch, its 547 MB assets and Qt5.
+17. **Notes is a shelf beside a page, and the folder is still the state**: `system/notes.rs` reads
+   the selected note once when the selection changes (`refresh_preview`) and caches the wrapped
+   Markdown (`wrap`), so the draw loop copies strings and does no IO or allocation per frame. The
+   page sits beside the shelf at 100 columns and wider and becomes a two-line strip on the 80×24
+   window; the title prompt owns the shelf and swaps the key bar, so a key never means two things.
+   Typing filters the list and the counter shows `visible / total`; Escape clears the filter before
+   the shell sees it. Quick notes open in **editxr** (`tools/editxr/` pins the static aarch64
+   release; core's rootfs setup installs it), with the notes folder as its vault; a search hit opens
+   at the top because editxr has no line argument. `tests/notes.rs` snapshots both grids and is the
+   layout's witness.
 
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single

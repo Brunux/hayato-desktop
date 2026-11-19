@@ -1200,6 +1200,15 @@ if [ -x "$HOME/.config/bin/lazyos-notes" ]; then
 else
 	fail "bin/lazyos-notes is missing: the Notes row does nothing"
 fi
+if have editxr; then
+	_editxr_version=$(editxr --version 2>/dev/null | head -n1 || :)
+	case "$_editxr_version" in
+	"editxr "*) ok "Notes opens quick notes in $_editxr_version" ;;
+	*) fail "editxr --version did not answer: $_editxr_version" ;;
+	esac
+else
+	fail "editxr is missing: Notes cannot edit a quick note"
+fi
 for _doc_tool in xournalpp foliate; do
 	have "$_doc_tool" && ok "document tool installed: $_doc_tool" ||
 		fail "document tool missing: $_doc_tool (Notes or EPUB would have no editor/reader)"
