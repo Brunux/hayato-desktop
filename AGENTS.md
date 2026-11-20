@@ -217,8 +217,9 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `tests/screens.rs` or `tests/pickers.rs`; a new one lands with a render.**
 
 21. **The bar is the session's statusline**: `~/.config/waybar/style.css` is generated from
-   `templates/waybar-style.css.tpl`, and the shape is the contract. The bar floats 6px in from
-   the top and both sides (`config.jsonc` margins) with a 3px radius in `style.css` and a 1px border in the bar's own
+   `templates/waybar-style.css.tpl`, and the shape is the contract. The bar floats 6px from
+   the top and 12px from both sides (`config.jsonc` margins - the side inset matches a window's,
+   gaps outer 4 + inner 8) with a 3px radius in `style.css` and a 1px border in the bar's own
    background colour, so the panel reads as one solid object with no edge drawn around it; the
    4px inset in `.modules-left` / `.modules-right` keeps the ends off the rounded corners. A
    module is a flat segment with no hover fill: pointing at an indicator must not light it up.

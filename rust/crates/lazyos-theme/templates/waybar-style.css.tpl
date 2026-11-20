@@ -25,7 +25,8 @@
 /* The bar is a layer-shell surface with alpha < 1 so that swayfx can blur the
    wallpaper behind it (layer_effects "waybar" in
    /etc/sway/config.d/26-swayfx.conf). The bar floats: `config.jsonc` insets it
-   by 6px on the top and both sides, and this rule rounds it. The border is the
+   by 6px at the top and 12px on both sides - the same left/right inset as the
+   windows under it - and this rule rounds it. The border is the
    bar's own background colour, so the panel reads as one solid object with no
    edge drawn around it; it stays 1px so the geometry does not change when the
    colour does. The alpha keeps `text` readable over any wallpaper. */

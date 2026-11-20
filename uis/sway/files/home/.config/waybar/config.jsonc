@@ -24,14 +24,16 @@
     "layer": "top",
     "position": "top",
     "height": 34,
-    // No gap between modules; the bar itself floats: a 6px inset from the top
-    // and both sides, with the rounded corners style.css draws, so it reads as
-    // a panel over the desktop instead of a strip welded to the edge. The 4px
-    // at each end is a separate margin inside style.css.
+    // No gap between modules; the bar itself floats: 6px from the top and 12px
+    // from both sides, with the rounded corners style.css draws, so it reads as
+    // a panel over the desktop instead of a strip welded to the edge. The 12px
+    // is the session's window inset (gaps outer 4 + inner 8 in
+    // 90-solarized.conf), so the panel's sides line up with the windows under
+    // it. The 4px at each end is a separate margin inside style.css.
     "spacing": 0,
     "margin-top": 6,
-    "margin-left": 6,
-    "margin-right": 6,
+    "margin-left": 12,
+    "margin-right": 12,
     "modules-left": [
         "custom/brand",
         "custom/brand-dot",
