@@ -2197,6 +2197,14 @@ fi
 # The watcher is the one part a binary cannot prove: it either is running or
 # nothing is being stored.  `-fx` and not `-f`: pgrep -f matches this script's
 # own command line, which contains the pattern, and would always answer "yes".
+# The helper's own liveness test needs the same anchor, and for the same
+# reason: sway starts it from a `sh -c` line that contains the watcher words,
+# so an unanchored pattern matches the launcher and the watcher never starts.
+if grep -qs "^watcher='\\^" "$HOME/.config/bin/hayato-clipboard"; then
+	ok "the clipboard helper's watcher pattern is anchored (its launcher cannot match it)"
+else
+	fail "bin/hayato-clipboard uses an unanchored watcher pattern: the session's sh -c line matches it and the watcher is never started"
+fi
 if pgrep -fx 'wl-paste --watch cliphist store' >/dev/null 2>&1; then
 	ok "clipboard watcher running (wl-paste --watch cliphist store)"
 else

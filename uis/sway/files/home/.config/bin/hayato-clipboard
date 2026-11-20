@@ -15,7 +15,12 @@ set -eu
 
 conf=${XDG_CONFIG_HOME:-$HOME/.config}/hayato/clipboard.conf
 enabled=yes
-watcher='[w]l-paste --watch cliphist store'
+# Anchored on purpose. Sway starts this helper from a `sh -c` line that itself
+# contains "wl-paste --watch cliphist store"; an unanchored `pgrep -f` matches
+# that parent, concludes the watcher is already up, and never starts it - which
+# is why the v0.6.0 first boot had no clipboard history until it was started by
+# hand. `^...$` matches the watcher's own argv and nothing else.
+watcher='^wl-paste --watch cliphist store$'
 
 read_config() {
 	[ -r "$conf" ] || return 0
