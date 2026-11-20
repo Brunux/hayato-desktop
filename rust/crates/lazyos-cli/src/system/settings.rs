@@ -977,6 +977,7 @@ pub fn menu(
                 {
                     banner = Some(format!("Could not power Bluetooth controller {action}"));
                 } else {
+                    super::bluetooth::signal_bar();
                     banner = Some(format!("Bluetooth controller powered {action}"));
                 }
             }

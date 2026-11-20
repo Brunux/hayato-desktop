@@ -110,8 +110,9 @@ A **fullscreen video or presentation** in Firefox or `papers`, and a video in
 **mpv**, are exempt: they ask the compositor to inhibit the idle timer while
 they are being watched, so a film is not interrupted and the screen stays on.
 The automatic half is `/etc/sway/config.d/32-idle-inhibit.conf`; the manual half
-is the **coffee cup on the bar**, yellow while the screen is kept awake and dim
-when it may sleep. It is waybar's own module and starts no process.
+is the **coffee cup on the bar**, in the workspace accent while the screen is
+kept awake and dim when it may sleep. It is waybar's own module and starts no
+process.
 
 ## The first launch
 

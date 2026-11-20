@@ -23,15 +23,18 @@
 {
     "layer": "top",
     "position": "top",
-    "height": 30,
-    // No gap between modules and no inset: the segments are one line, and the
-    // 4px at each end is a margin inside style.css (.modules-left / -right).
+    "height": 34,
+    // No gap between modules; the bar itself floats: a 6px inset from the top
+    // and both sides, with the rounded corners style.css draws, so it reads as
+    // a panel over the desktop instead of a strip welded to the edge. The 4px
+    // at each end is a separate margin inside style.css.
     "spacing": 0,
-    "margin-top": 0,
-    "margin-left": 0,
-    "margin-right": 0,
+    "margin-top": 6,
+    "margin-left": 6,
+    "margin-right": 6,
     "modules-left": [
-        "custom/menu",
+        "custom/brand",
+        "custom/brand-dot",
         "sway/workspaces",
         "sway/mode"
     ],
@@ -40,19 +43,31 @@
     ],
     "modules-right": [
         "custom/busy",
-        "custom/updates",
-        "tray",
         "custom/keyboard-layout",
-        "custom/bluetooth",
         "custom/vnc",
+        "custom/bluetooth",
         "network",
         "pulseaudio",
         "backlight",
         "idle_inhibitor",
-        "battery"
+        "battery",
+        "custom/updates",
+        "tray"
     ],
-    "custom/menu": {
-        "format": "<span font_desc='JetBrains Mono 13'>\uf17c</span>",
+    // The brand: the mark is a prompt (`z_`, the lazy z and its cursor - the
+    // same shape as brand/lazyos.svg), the `z` in the reading colour and the
+    // `_` cursor in the accent - the same accent as the current workspace
+    // chip. The word is split across two modules only so the cursor can carry
+    // a colour of its own; style.css joins them and both halves are the menu
+    // button.
+    "custom/brand": {
+        "format": "<span font_desc='JetBrains Mono 14' weight='bold'>z</span>",
+        "tooltip": false,
+        "on-click": "~/.config/bin/bar-menu",
+        "on-click-right": "foot"
+    },
+    "custom/brand-dot": {
+        "format": "<span font_desc='JetBrains Mono 14' weight='bold'>_</span>",
         "tooltip": false,
         "on-click": "~/.config/bin/bar-menu",
         "on-click-right": "foot"
@@ -80,7 +95,7 @@
         "tooltip": false
     },
     "clock": {
-        "format": "<span font_desc='JetBrains Mono 13'>\uf073</span>  {:%a %d %b  %H:%M}",
+        "format": "<span font_desc='JetBrains Mono 13'>\uf073</span>  {:%a, %d %b  %H:%M}",
         "format-alt": "<span font_desc='JetBrains Mono 13'>\uf073</span>  {:%H:%M:%S}",
         "tooltip-format": "<big>{:%A, %d %B %Y}</big>\n<tt><small>{calendar}</small></tt>",
         "calendar": {
@@ -163,11 +178,26 @@
         "on-click-right": "foot --app-id=popup bluetoothctl"
     },
     "network": {
-        "interval": 10,
-        "format-wifi": "<span font_desc='JetBrains Mono 13'>\uf1eb</span>",
-        "format-ethernet": "<span font_desc='JetBrains Mono 13'>\uf233</span>  Ethernet",
-        "format-linked": "<span font_desc='JetBrains Mono 13'>\uf1e6</span>  {ifname}",
-        "format-disconnected": "<span font_desc='JetBrains Mono 13'>\uf05e</span>  Offline",
+        // Waybar's built-in network module is the one indicator that cannot be
+        // signalled: only `custom/*` modules listen for RTMIN+8, and this one
+        // exposes nothing but `interval`. Its poll is a libiw ioctl and a read
+        // of /proc/net/wireless - no process is spawned - so it runs every 3 s
+        // instead: a radio toggle or a new association shows up almost at
+        // once, and an external one (nmtui in a terminal) within the same
+        // three seconds.
+        "interval": 3,
+        // The wifi pair is one picture in two states: the arcs while connected
+        // (`f05a9`), the same arcs with a slash while offline (`f05aa`), both
+        // from the Material Design Icons font the image ships. Bluetooth and
+        // the volume follow the same pattern, so "off" always reads the same
+        // way on this bar. No percentage rides beside them: the battery's
+        // charge is a tooltip too. JSON's `\u` takes exactly four
+        // hex digits, so a plane-15 glyph is written as a surrogate pair:
+        // `\udb81\udda9` is U+F05A9, `\udb81\uddaa` is U+F05AA.
+        "format-wifi": "<span font_desc='JetBrains Mono 13'>\udb81\udda9</span>",
+        "format-ethernet": "<span font_desc='JetBrains Mono 13'>\uf233</span>",
+        "format-linked": "<span font_desc='JetBrains Mono 13'>\uf1e6</span>",
+        "format-disconnected": "<span font_desc='JetBrains Mono 13'>\udb81\uddaa</span>",
         "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ifname}: {ipaddr}\nGateway: {gwaddr}\nClick to pick a network",
         "tooltip-format-ethernet": "{ifname}: {ipaddr}\nGateway: {gwaddr}",
         "on-click": "~/.config/bin/bar-net",
@@ -175,12 +205,15 @@
     },
     "pulseaudio": {
         "format": "<span font_desc='JetBrains Mono 13'>{icon}</span>",
-        "format-muted": "<span font_desc='JetBrains Mono 13'>\uf026</span>  muted",
+        // Mute is the speaker with the same slash the wifi and Bluetooth use
+        // (`f0581` = `\udb81\udd81`), not a different "no" symbol; the three
+        // levels are U+F057F/U+F0580/U+F057E.
+        "format-muted": "<span font_desc='JetBrains Mono 13'>\udb81\udd81</span>",
         "format-icons": {
             "default": [
-                "\uf026",
-                "\uf027",
-                "\uf028"
+                "\udb81\udd7f",
+                "\udb81\udd80",
+                "\udb81\udd7e"
             ]
         },
         "tooltip-format": "{desc} ({volume}%)",
@@ -201,10 +234,13 @@
     // Keep the screen awake, on purpose, for the length of a film, a recipe or a
     // download watch.  This is waybar's own module: it holds a
     // zwp_idle_inhibitor_v1 on the bar's surface, so the session gains no helper
-    // process and no script, and a click is the whole interface.  The coffee cup
-    // is always visible (dim = the screen may sleep, yellow = it may not),
-    // because the control has to be visible to be turned on; `start-activated`
-    // stays false so a login never inherits it.
+    // process and no script, and a click is the whole interface.  The cup is
+    // always visible, because the control has to be visible to be turned on.
+    // It is the one switch with a single picture, so it says its state in
+    // colour instead: `dim` while the screen may sleep (the usual case), the
+    // accent - the current workspace's colour - while it is holding the screen
+    // awake; the two rules are in style.css, `#idle_inhibitor`.
+    // `start-activated` stays false so a login never inherits it.
     //
     // Sway's own `inhibit_idle` is not what this uses: it has no `toggle` (only
     // focus|fullscreen|open|none|visible) and its user inhibitors belong to a
@@ -212,11 +248,7 @@
     // must not be interrupted are handled in config.d/32-idle-inhibit.conf, and
     // mpv asks for its own inhibitor.
     "idle_inhibitor": {
-        "format": "<span font_desc='JetBrains Mono 13'>{icon}</span>",
-        "format-icons": {
-            "activated": "\uf0f4",
-            "deactivated": "\uf0f4"
-        },
+        "format": "<span font_desc='JetBrains Mono 13'>\uf0f4</span>",
         "tooltip-format-activated": "Keeping the screen awake\nClick to let it sleep",
         "tooltip-format-deactivated": "Click to keep the screen awake",
         "start-activated": false
@@ -227,10 +259,14 @@
             "warning": 30,
             "critical": 15
         },
-        "format": "<span font_desc='JetBrains Mono 13'>{icon}</span>  {capacity}%",
-        "format-charging": "<span font_desc='JetBrains Mono 13'>\uf0e7</span>  {capacity}%",
-        "format-plugged": "<span font_desc='JetBrains Mono 13'>\uf1e6</span>  {capacity}%",
-        "format-full": "<span font_desc='JetBrains Mono 13'>\uf240</span>  {capacity}%",
+        // The icon and nothing else: the charge is a tooltip, like every other
+        // reading on the line, so the right end stays glyphs only. The bolt
+        // (charging), the plug (plugged) and the full battery are the only
+        // pictures that change; otherwise the five steps of `format-icons`.
+        "format": "<span font_desc='JetBrains Mono 13'>{icon}</span>",
+        "format-charging": "<span font_desc='JetBrains Mono 13'>\uf0e7</span>",
+        "format-plugged": "<span font_desc='JetBrains Mono 13'>\uf1e6</span>",
+        "format-full": "<span font_desc='JetBrains Mono 13'>\uf240</span>",
         "format-icons": [
             "\uf244",
             "\uf243",

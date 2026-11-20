@@ -47,19 +47,28 @@ question only something watching can answer. The table is
 title or its app_id, and the next window or workspace change picks it up - no
 restart, and an app with no line of its own shows a plain window outline.
 
-**The bar is the session's statusline.** It runs edge to edge with no gaps, so
-it reads as one line rather than a row of floating cards, and it borrows the
-grammar of the windows under it: the active workspace is a tab with the theme's
-selection tint and an accent rule along its bottom edge, and the only filled
-chips on the line are work in progress (the spinner and the task it names,
-which is also the button that stops it) and a mode (resize, move). Everything
-else stays in the reading colour,
-so **a colour on the bar always means a state**: amber for "there is something
-to do" (updates, kept awake, the screen is being shared), red for "this needs
-you" (a muted microphone, no network, a battery about to die, a session someone
-else can type into). A state is never colour alone - the word is there too
-("Offline", "muted", a percentage), and a status drawn as text is lifted to
-4.5:1 on every built-in theme.
+**The bar is the session's statusline.** It floats a few pixels in from the top
+and both sides, with rounded corners and no edge drawn around it, so it reads
+as a panel over the desktop rather than a strip welded to the edge, and it
+borrows the grammar of the windows under it. It opens with the mark - `z_`, a
+prompt - the `z` in the reading colour and the cursor in the accent, and the
+mark is also the menu button. The current workspace is a filled rounded chip,
+the way the mockup draws it. The only filled things on the line are that chip,
+work in progress (the spinner and the task it names, which is also the button
+that stops it) and a mode (resize, move). Everything else stays in the reading
+colour: a state is the picture, never a hue. Offline, muted, a pending
+update and a screen someone else is watching all say what they are with the
+glyph and the tooltip, so nothing on the right end turns red or amber, and no
+word rides beside an icon either - the right end is glyphs only. A switch
+changes its picture: the icon while the thing is on, and the same icon with a
+slash through it while it is off - Bluetooth, wifi and the volume all use that
+one pattern, drawn from the Material Design Icons font the image ships. The
+keep-awake cup is the one switch with a single glyph and the one indicator that
+takes a hue: dim while the screen may sleep and the accent (the current
+workspace's colour) while it is held awake. Hover any of them and the tooltip
+says which state it is in. The battery is the icon and nothing else: its charge
+is in the tooltip, like wifi's signal, Bluetooth's state and the update count,
+so the line stays glyphs.
 
 ## The windows the framework draws
 

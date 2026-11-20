@@ -5,18 +5,18 @@
    LazyOS is a terminal-first desktop, so its bar follows the same grammar as
    every framework window: one continuous line, a rule under it, and colour
    that means a state instead of decorating an icon. A module is a segment of
-   that line (flat, evenly padded, one hover fill); the only filled chips are
-   work in progress and a mode, because those are the two things that have to
-   be noticed from across the room. The active workspace is marked the way the Games
-   library marks its selected tab - the theme's tint and a bold label - with
-   the accent rule along its bottom edge, so "where I am" is never the fill
-   alone. A state word uses `*_text`, the readable form of a status colour.
+   that line (flat, evenly padded, one hover fill). The brand sits at the left
+   end with its cursor in the accent, the current workspace is a filled chip,
+   and the busy and mode chips shout; nothing else is filled. A state word uses
+   `*_text`, the readable form of a status colour; a switch changes its glyph,
+   not its colour, except the keep-awake cup, which takes the accent while it
+   is on.
 
    The palette comes from the active theme (spec 004) - this file is generated. */
 * {
     font-family: "JetBrains Mono", monospace;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
     min-height: 0;
     border: none;
     border-radius: 0;
@@ -25,13 +25,16 @@
 
 /* The bar is a layer-shell surface with alpha < 1 so that swayfx can blur the
    wallpaper behind it (layer_effects "waybar" in
-   /etc/sway/config.d/26-swayfx.conf). One rule under it, in the theme's border
-   colour at low alpha: enough to end the line, not enough to draw a second
-   bar. The alpha keeps `text` readable over any wallpaper. */
+   /etc/sway/config.d/26-swayfx.conf). The bar floats: `config.jsonc` insets it
+   by 6px on the top and both sides, and this rule rounds it. The border is the
+   bar's own background colour, so the panel reads as one solid object with no
+   edge drawn around it; it stays 1px so the geometry does not change when the
+   colour does. The alpha keeps `text` readable over any wallpaper. */
 window#waybar {
-    background: rgba(30, 30, 46, 0.82);
+    background: rgba(30, 30, 46, 0.88);
     color: #cdd6f4;
-    border-bottom: 1px solid rgba(203, 166, 247, 0.38);
+    border: 1px solid rgba(30, 30, 46, 0.88);
+    border-radius: 4.5px;
 }
 
 /* A 4px inset at both ends, so the first glyph and the last value never sit
@@ -62,7 +65,6 @@ tooltip label {
    colour here because it is the *bright* end of the palette, which on a light
    theme (Catppuccin Latte) is the colour of the background. Emphasis is
    weight. */
-#custom-menu,
 #custom-busy,
 #custom-updates,
 #tray,
@@ -82,45 +84,52 @@ tooltip label {
     color: #cdd6f4;
 }
 
-/* Colour is a state, so most of the line is quiet: an indicator is `text`
-   until it has something to say. The menu is the exception - it is the one
-   action on the bar and it stays in the accent. */
-#custom-menu { color: #cba6f7; }
-#custom-updates { color: #f9e2af; }
-#custom-bluetooth.on { color: #89b4fa; font-weight: 700; }
-#custom-vnc { color: #f9e2af; }
-#custom-vnc.control { color: #f38ba8; font-weight: 700; }
-#network.disconnected { color: #f38ba8; font-weight: 700; }
-#pulseaudio.muted { color: #f38ba8; font-weight: 700; }
-#idle_inhibitor.activated { color: #f9e2af; font-weight: 700; }
-#battery.warning { color: #f9e2af; }
-/* The 2px bar means "this needs you" everywhere in the session: an urgent
-   workspace, a battery about to die. The fill is the palette's tint and the
-   label stays `text`, which clears 4.5:1 on it in every built-in theme; the
-   status colour is the bar, never the word. */
-#battery.critical:not(.charging) {
+/* The brand, at the left end: the mark (`z_`, the lazy z and its cursor, the
+   shape of brand/lazyos.svg) with no pill - the `z` is the reading colour and
+   the `_` cursor is the accent, the same accent as the current workspace chip.
+   The word is split across two modules only so the cursor can carry a colour
+   of its own; both halves are the menu button. */
+#custom-brand {
+    margin: 4px 0 4px 4px;
+    padding: 0 0 0 9px;
     color: #cdd6f4;
-    background: #443244;
-    border-left: 2px solid #f38ba8;
     font-weight: 700;
 }
-/* Charging changes the glyph (a bolt) and nothing else: a good state is not
-   an alarm, so it stays in the reading colour. */
-#battery.charging,
-#battery.plugged { color: #cdd6f4; }
 
-#custom-menu:hover,
-#custom-updates:hover,
-#custom-keyboard-layout:hover,
-#custom-bluetooth:hover,
-#custom-vnc:hover,
-#network:hover,
-#pulseaudio:hover,
-#backlight:hover,
-#idle_inhibitor:hover,
-#battery:hover {
-    background: rgba(26, 26, 40, 0.55);
+#custom-brand-dot {
+    margin: 4px 6px 4px 0;
+    padding: 0 9px 0 0;
+    color: #cba6f7;
+    font-weight: 700;
 }
+
+/* The line is monochrome: an indicator is the reading colour, and the state is
+   the picture. Bluetooth, wifi and the volume share one pattern from the
+   Material Design Icons font the image already ships: the icon while the thing
+   is on, the same icon with a slash through it while it is off
+   (`f00af`/`f00b2`, `f05a9`/`f05aa`, `f057e`/`f0581`). The keep-awake cup is
+   the one switch with a single picture, so it says its state in colour: `dim`
+   while the screen may sleep (the usual case), the accent while it is holding
+   the screen awake. That accent, the brand's cursor and the current workspace
+   chip are the only colour on the line; nothing else changes hue. */
+
+/* The keep-awake cup, both states of the one glyph: `dim` is the resting state,
+   the accent (the current workspace's colour) is the promise. The tooltip says
+   it in words too. */
+#idle_inhibitor.deactivated {
+    color: #8489a1;
+}
+
+#idle_inhibitor.activated {
+    color: #cba6f7;
+}
+
+/* The battery has no rule of its own: an icon at every charge, in the reading
+   colour. The charge is a tooltip, like every other reading on the line, and
+   only charging changes the picture (a bolt). */
+
+/* No hover fill: pointing at an indicator must not light it up. The tooltip
+   is the feedback, and the click does what the tooltip says. */
 
 /* Work in progress is the one filled chip on the line, so the spinner and the
    task it names are the first thing the eye finds. The fill is the *readable*
@@ -133,10 +142,6 @@ tooltip label {
     background: #f9e2af;
     color: #1e1e2e;
     font-weight: 700;
-}
-
-#custom-busy:hover {
-    background: #f9e2af;
 }
 
 /* The StatusNotifier icons keep their own colours; only the slot is themed. */
@@ -181,52 +186,45 @@ tooltip label {
     margin: 0;
 }
 
-/* Workspaces are the session's tabs, drawn the way the Games library draws
-   its rail: the selected one takes the theme's selection tint and a bold
-   label, and here it also carries a 2px accent rule along its bottom edge -
-   the horizontal form of the bar that marks a selected row. The transparent
-   rule on the inactive tabs reserves the space, so a label never shifts when
-   the workspace changes. */
+/* Workspaces are the session's tabs, drawn the way the mockup draws them: a
+   number, and the current one in a filled rounded chip with the background's
+   colour as its label (the same pair the busy chip uses, which clears 4.5:1
+   in every built-in theme). The chip is the only fill on the left end. */
 #workspaces {
-    margin: 4px 2px 0 2px;
+    margin: 4px 2px;
     padding: 0;
 }
 
 #workspaces button {
     min-width: 22px;
-    padding: 0 8px;
-    margin: 0 1px;
+    padding: 0 9px;
+    margin: 0 2px;
     background: transparent;
     color: #cdd6f4;
     border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
+    border-radius: 5px;
     box-shadow: none;
-}
-
-#workspaces button:hover {
-    background: rgba(26, 26, 40, 0.55);
-    color: #cdd6f4;
-    border-bottom-color: transparent;
 }
 
 #workspaces button.focused,
 #workspaces button.active {
-    background: rgba(49, 50, 68, 0.95);
-    color: #cdd6f4;
-    border-bottom: 2px solid #cba6f7;
+    background: #cba6f7;
+    color: #1e1e2e;
+    border-radius: 5px;
     box-shadow: none;
 }
 
-#workspaces button.urgent {
-    background: #443244;
-    color: #cdd6f4;
-    border-bottom: 2px solid #f38ba8;
+/* Urgency on a tab that is not the current one: the label takes
+   `danger_text`. The current tab keeps its fill, because the fill is where
+   you are. */
+#workspaces button.urgent:not(.focused):not(.active) {
+    color: #f38ba8;
+    font-weight: 700;
 }
 
 #workspaces button label {
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
 }
 
 #workspaces button.focused label,

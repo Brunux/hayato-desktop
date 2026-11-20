@@ -630,12 +630,26 @@ else
 fi
 if ! grep -qs '"idle_inhibitor"' "$HOME/.config/waybar/config.jsonc"; then
 	warn "the bar has no idle_inhibitor module: there is no way to keep the screen awake by hand"
-elif ! grep -qs 'idle_inhibitor\.activated' "$HOME/.config/waybar/style.css"; then
-	warn "style.css has no #idle_inhibitor.activated rule: the coffee cup does not show whether it is on"
+elif ! grep -qs 'idle_inhibitor\.activated' "$HOME/.config/waybar/style.css" ||
+	! grep -qs 'idle_inhibitor\.deactivated' "$HOME/.config/waybar/style.css"; then
+	warn "style.css has no #idle_inhibitor.activated/.deactivated rule: the keep-awake cup does not show whether it is on"
 elif ! grep -qs '^\.modules-left' "$HOME/.config/waybar/style.css" || ! grep -qs '^\.modules-right' "$HOME/.config/waybar/style.css"; then
 	warn "style.css lacks .modules-left/.modules-right 4px end spacing (run \`lazyos theme set\`)"
 else
 	ok "the bar carries a keep-awake toggle (idle_inhibitor) and 4px end spacing"
+fi
+
+# The brand is the mark, not a pill: `z` in the reading colour and the `_`
+# cursor in the accent (the same accent as the current workspace chip).  The
+# cursor is a second module only so it can carry a colour of its own, so both
+# halves and the dot's rule have to be present; without the rule it falls back
+# to `text` and the mark loses its one colour.
+if grep -qs '"custom/brand"' "$HOME/.config/waybar/config.jsonc" &&
+	grep -qs '"custom/brand-dot"' "$HOME/.config/waybar/config.jsonc" &&
+	grep -qs '#custom-brand-dot' "$HOME/.config/waybar/style.css"; then
+	ok "the brand is the mark z_ with its cursor in the accent"
+else
+	warn "the bar's brand lost its cursor half (custom/brand-dot in config.jsonc, #custom-brand-dot in style.css): the mark draws in one colour"
 fi
 
 # The on-screen display the volume and brightness keys draw.  The keys used to
