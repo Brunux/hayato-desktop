@@ -33,7 +33,7 @@ window#waybar {
     background: rgba({{ background:rgb }}, 0.88);
     color: {{ text }};
     border: 1px solid rgba({{ background:rgb }}, 0.88);
-    border-radius: 4.5px;
+    border-radius: 3px;
 }
 
 /* A 4px inset at both ends, so the first glyph and the last value never sit

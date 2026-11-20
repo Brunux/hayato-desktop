@@ -34,7 +34,7 @@ window#waybar {
     background: rgba(255, 252, 240, 0.88);
     color: #100f0f;
     border: 1px solid rgba(255, 252, 240, 0.88);
-    border-radius: 4.5px;
+    border-radius: 3px;
 }
 
 /* A 4px inset at both ends, so the first glyph and the last value never sit
