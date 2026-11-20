@@ -1020,7 +1020,7 @@ pub fn print_list() {
 pub fn print_current() {
     let p = paths();
     let active = store::active(&p).unwrap_or_else(|| "tokyo-night".to_string());
-    let name = Theme::parse(builtin::get(&active).unwrap_or(builtin::SOLARIZED))
+    let name = Theme::parse(builtin::get(&active).unwrap_or(builtin::TOKYO_NIGHT))
         .map(|t| t.name)
         .unwrap_or_else(|_| active.clone());
     println!("{active}\t{name}");

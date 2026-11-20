@@ -42,7 +42,7 @@ Two things about the contents are deliberate:
 * **`/etc/sway/config` is dropped from the package.** Upstream installs its default configuration
   there. This port owns that path (`uis/sway/files/etc/sway/config`), and because
   `install-swayfx.sh` can run after the rootfs overlay, a packaged copy would silently replace the
-  solarized, tested configuration with upstream's sample.
+  tested configuration with upstream's sample.
 * **The `.pkgconfig` file and the headers are not shipped.** Only runtime code goes into the image;
   they exist in the staging tree for the duration of the build, which is what lets swayfx link
   against the freshly built library.

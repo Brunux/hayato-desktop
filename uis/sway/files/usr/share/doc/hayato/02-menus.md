@@ -330,7 +330,7 @@ double click reaches `~/.config/bin/hayato-view` through
 `/etc/xdg/mimeapps.list`, so text goes to `bat`, a document to `papers`, a picture
 to `imv` (or `chafa`'s sixels when imv cannot start), a video to `mpv` and an
 HTML page, an EPUB or a `.deb` to Firefox (the list itself reads an HTML file as
-text). Its colours are the session's too (base03 window, cyan selection,
+text). Its colours are the session's too (background window, cyan selection,
 JetBrains Mono, the same icons). It is the *only* GTK3 window in
 the image, which is why it has a stylesheet and not a theme of its own, and it
 needs `gvfs` for the trash; SMB and phone mounts are not installed, so its

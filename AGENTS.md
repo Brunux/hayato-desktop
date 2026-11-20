@@ -56,7 +56,8 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `GreeterScreen`, `GreeterSettingsScreen`, `ExportSetupScreen`) must render via `Input::render_field(..., focused, blink_on, bg_role, ...)`
    so only the active input shows the accent bar and blinking 500 ms cursor (solid when
    `reduced_motion`), and inputs inside `ColorRole::Surface` cards use `ColorRole::Bg` to preserve
-   palette contrast across Solarized Dark (`Surface == Selection`) and light themes.
+   palette contrast across themes where the two are close (they were identical in Solarized Dark,
+   which is why the rule exists) and across light themes.
    Widgets never draw the raw `Dim`: `TextStyle::Dim` is `ColorRole::Muted` (4.5:1 on `Bg`), a
    card's border is `ColorRole::Border` (3:1), a selected row uses `SelectionText`/`SelectionDim`
    (4.5:1 on `Selection`), and the three status roles `Ok`/`Warn`/`Danger` are lifted to 4.5:1 on

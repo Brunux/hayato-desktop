@@ -1,5 +1,5 @@
 {{ header:/* }}
-/* Solarized Dark, the GTK3 half of the palette.
+/* Tokyo Night, the GTK3 half of the palette.
  *
  * One palette, five surfaces: foot draws the terminal in it, waybar and the framework windows
  * paint their own layer-shell surfaces from their own files, and this file is

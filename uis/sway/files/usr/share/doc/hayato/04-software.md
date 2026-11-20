@@ -466,7 +466,7 @@ one: tile it, move it to another workspace, close it with **Alt+Q**.
   *settings portal* for the desktop's colour scheme, and this image runs no
   Settings portal (the only backend is the wlr one, for screenshots and screen
   casting). It therefore opened in libadwaita's light default, a white rectangle
-  in a base03 session. `~/.config/gtk-4.0/settings.ini` states the dark
+  in a dark session. `~/.config/gtk-4.0/settings.ini` states the dark
   preference and `~/.config/gtk-4.0/gtk.css` paints the libadwaita named colours
   in the same tokyo-night values as the GTK3 file next door. Any other GTK4 or
   libadwaita application you install inherits it, and no portal daemon is

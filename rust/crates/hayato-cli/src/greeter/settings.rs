@@ -109,11 +109,11 @@ impl GreeterSettingsScreen {
             .theme
             .as_deref()
             .filter(|s| load_theme_by_slug(s).is_some())
-            .unwrap_or("solarized")
+            .unwrap_or("tokyo-night")
             .to_string();
         let theme = load_theme_by_slug(&initial_slug)
-            .or_else(|| load_theme_by_slug("solarized"))
-            .expect("solarized built-in theme must exist");
+            .or_else(|| load_theme_by_slug("tokyo-night"))
+            .expect("tokyo-night built-in theme must exist");
 
         let theme_slugs: Vec<&'static str> = builtin::slugs().collect();
         let mut theme_list = ListState::new().with_empty("no themes");
@@ -260,7 +260,7 @@ impl GreeterSettingsScreen {
             .theme
             .as_deref()
             .filter(|s| load_theme_by_slug(s).is_some())
-            .unwrap_or("solarized");
+            .unwrap_or("tokyo-night");
         if let Some(t) = load_theme_by_slug(slug) {
             self.theme_slug = slug.to_string();
             self.theme = t;

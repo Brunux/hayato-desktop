@@ -235,7 +235,7 @@ start_kbd() {
 		say Tablet 'the on-screen keyboard is not installed (wvkbd)'
 		return 1
 	}
-	# Solarized, opaque, and the same font as the session: the keyboard is
+	# Tokyo Night, opaque, and the same font as the session: the keyboard is
 	# part of the screen, not a foreign window.  It is opaque on purpose -
 	# with alpha the window underneath showed through the keys, and a
 	# keyboard whose keys are a photograph is harder to read than one whose

@@ -24,7 +24,7 @@ spec 002 (`specs/002-design-system.md`) grows the design system here.
 
 ## `crates/hayato-theme` - the palette
 
-The colour roles a surface asks for (`Palette`, `Rgb`), solarized dark today.
+The colour roles a surface asks for (`Palette`, `Rgb`), Tokyo Night today.
 Spec 004 turns it into the engine that owns `theme.toml` and the generated
 palette files.
 

@@ -278,7 +278,7 @@ means both `imv` and `chafa` are.
 asks the **settings portal** for the desktop's colour scheme, and this image runs
 no Settings portal (the only backend is the wlr one, for screenshots and screen
 casting). With no answer libadwaita uses its light default, so the document
-reader was a white window in a base03 session. The fix is the pair of files
+reader was a white window in a dark session. The fix is the pair of files
 `~/.config/gtk-4.0/settings.ini` (the dark preference) and
 `~/.config/gtk-4.0/gtk.css` (the tokyo-night named colours); `check-system.sh`
 reports both. The other answer would be `xdg-desktop-portal-gtk`, a resident

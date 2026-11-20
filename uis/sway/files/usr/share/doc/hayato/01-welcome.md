@@ -129,7 +129,7 @@ effect rebuilds the letters, then the next one does it differently, and so on wh
 key, any movement of the mouse or trackpad, or a tap on the touchscreen returns you to the
 session, and the 150 s starts over.
 
-At 300 s the screen locks instead: the wallpaper inside a base03 frame. The lock stops the animation
+At 300 s the screen locks instead: the wallpaper inside the background colour's frame. The lock stops the animation
 first and refuses to draw a second time over itself, and the suspend shortcuts lock the screen
 *before* the machine sleeps, so nothing behind the lock is ever on screen.
 

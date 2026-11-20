@@ -436,7 +436,7 @@ pub fn cycle_animations() -> Result<String, String> {
 
 pub fn theme_name() -> String {
     let paths = crate::theme::paths();
-    let slug = hayato_theme::store::active(&paths).unwrap_or_else(|| "solarized".to_string());
+    let slug = hayato_theme::store::active(&paths).unwrap_or_else(|| "tokyo-night".to_string());
     crate::theme::theme(&slug)
         .map(|theme| theme.name)
         .unwrap_or(slug)

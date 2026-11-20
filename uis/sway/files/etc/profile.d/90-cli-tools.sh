@@ -17,7 +17,7 @@ export MANROFFOPT="-c"
 export MANPAGER="sh -c 'col -bx | bat -l man -p'"
 
 # `ansi` makes bat paint with the terminal's own 16 colours instead of one of its
-# own truecolour themes; those 16 are the solarized palette in
+# own truecolour themes; those 16 are the Tokyo Night palette in
 # ~/.config/foot/foot.ini, so a file previewed by bat matches the session.
 export BAT_THEME=ansi
 

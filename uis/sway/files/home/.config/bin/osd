@@ -15,7 +15,7 @@
 #   * the `value` hint: mako(5) says "Progress can be indicated in a
 #     notification by setting a hint, 'value' to an integer between 0 and 100",
 #     and ~/.config/mako/config sets `progress-color=over #2aa198ff` - so the
-#     card carries the solarized bar the task spinner has.
+#     card carries the Tokyo Night bar the task spinner has.
 #
 # The level picks the icon: Font Awesome's volume-off/down/up (f026/f027/f028)
 # rendered by scripts/make-icons.sh as audio-volume-{muted,low,high}, plus

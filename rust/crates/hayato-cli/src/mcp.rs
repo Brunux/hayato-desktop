@@ -825,7 +825,7 @@ impl Handler for Desk {
         }
         if uri == "hayato://theme/current" {
             let slug = hayato_theme::store::active(&crate::theme::paths())
-                .unwrap_or_else(|| "solarized".to_string());
+                .unwrap_or_else(|| "tokyo-night".to_string());
             let text = hayato_theme::builtin::get(&slug)?;
             return Some((
                 "application/toml".to_string(),

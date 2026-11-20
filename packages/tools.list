@@ -185,7 +185,7 @@ npm
 #                  editor and Keybindings-view tooling for Omarchy's own
 #                  components; nothing in this session parses a grammar or Lua.
 #   gawk           installed upstream because omarchy's theme renderer needs
-#                  awk's RT variable; the solarized theme here is a static file,
+#                  awk's RT variable; the Tokyo Night style here is a static file,
 #                  and Debian's mawk is the faster default.
 #   libnotify-bin  notify-send is already pulled in by grimshot (or by mako's
 #                  client tools), so listing it would change nothing.

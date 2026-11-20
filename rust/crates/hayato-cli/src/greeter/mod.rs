@@ -447,7 +447,7 @@ pub fn format_greeter_config(cfg: &GreeterConfig) -> String {
     if let Some(theme) = cfg.theme.as_deref().filter(|s| !s.trim().is_empty()) {
         out.push_str(&format!("theme = \"{}\"\n", toml_escape(theme.trim())));
     } else {
-        out.push_str("# theme = \"solarized\"\n");
+        out.push_str("# theme = \"tokyo-night\"\n");
     }
     if let Some(greeting) = cfg.greeting.as_deref().filter(|s| !s.trim().is_empty()) {
         out.push_str(&format!(
@@ -565,7 +565,7 @@ pub fn load_theme_by_slug(slug: &str) -> Option<Theme> {
 /// 2. Last user's `~/.local/state/hayato/theme/active` (or `$HOME` in preview)
 /// 3. Greeter's own remembered state (`state.theme`)
 /// 4. `/etc/hayato/greeter.toml` `theme = "..."`
-/// 5. Built-in `"solarized"`
+/// 5. Built-in `"tokyo-night"`
 ///
 /// When `follow_user_theme = false`, step 4 precedes steps 2 and 3.
 pub fn resolve_theme_and_greeting(
@@ -614,9 +614,9 @@ pub fn resolve_theme_and_greeting(
         }
     }
 
-    let fallback = Theme::parse(builtin::get("solarized").expect("solarized builtin exists"))
-        .expect("solarized theme parses");
-    ("solarized".into(), fallback, greeting)
+    let fallback = Theme::parse(builtin::get("tokyo-night").expect("tokyo-night builtin exists"))
+        .expect("tokyo-night theme parses");
+    ("tokyo-night".into(), fallback, greeting)
 }
 
 fn read_system_xkb_layout() -> String {
@@ -1080,7 +1080,7 @@ DesktopNames=sway;wlroots;swayfx
     }
 
     #[test]
-    fn theme_resolution_follows_priority_and_falls_back_to_solarized() {
+    fn theme_resolution_follows_priority_and_falls_back_to_the_default() {
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path().join("home/brunux");
         let active_dir = home.join(".local/state/hayato/theme");
@@ -1109,14 +1109,14 @@ DesktopNames=sway;wlroots;swayfx
         let (slug, _, _) = resolve_theme_and_greeting(None, None, &state, &cfg);
         assert_eq!(slug, "dracula");
 
-        // Config overrides solarized fallback.
+        // Config overrides the default fallback.
         let (slug, _, _) = resolve_theme_and_greeting(None, None, &GreeterState::default(), &cfg);
         assert_eq!(slug, "gruvbox");
 
-        // Invalid slug falls back to solarized.
+        // Invalid slug falls back to the default theme.
         fs::write(&cfg, "theme = \"does-not-exist\"\n").unwrap();
         let (slug, _, _) = resolve_theme_and_greeting(None, None, &GreeterState::default(), &cfg);
-        assert_eq!(slug, "solarized");
+        assert_eq!(slug, "tokyo-night");
     }
 
     #[test]

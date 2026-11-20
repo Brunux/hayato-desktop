@@ -152,7 +152,7 @@ fn preview(paths: &Paths, rest: &[&str]) -> i32 {
         Some(slug) => (*slug).to_string(),
         None => match store::active(paths) {
             Some(slug) => slug,
-            None => "solarized".to_string(),
+            None => "tokyo-night".to_string(),
         },
     };
     let theme = match theme(&slug) {
@@ -236,7 +236,7 @@ fn preview(paths: &Paths, rest: &[&str]) -> i32 {
 }
 
 fn next(paths: &Paths, rest: &[&str]) -> i32 {
-    let slug = store::active(paths).unwrap_or_else(|| "solarized".to_string());
+    let slug = store::active(paths).unwrap_or_else(|| "tokyo-night".to_string());
     let slugs: Vec<&str> = builtin::slugs().collect();
     let at = slugs
         .iter()
@@ -539,7 +539,7 @@ fn render_into(args: &[&str]) -> i32 {
         eprintln!("hayato theme render: --to DIR and --home PATH are required");
         return EXIT_USAGE;
     };
-    let slug = value("--theme").unwrap_or("solarized");
+    let slug = value("--theme").unwrap_or("tokyo-night");
     let theme = match theme(slug) {
         Ok(theme) => theme,
         Err(error) => {
