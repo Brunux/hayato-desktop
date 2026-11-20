@@ -56,14 +56,14 @@
         "custom/updates",
         "tray"
     ],
-    // The brand: the mark is a prompt (`z_`, the lazy z and its cursor - the
-    // same shape as brand/hayato.svg), the `z` in the reading colour and the
-    // `_` cursor in the accent - the same accent as the current workspace
-    // chip. The word is split across two modules only so the cursor can carry
-    // a colour of its own; style.css joins them and both halves are the menu
+    // The brand: the wordmark's first letter and its cursor (`H_`, the mark is
+    // the eagle in brand/hayato.svg), the `H` in the reading colour and the `_`
+    // cursor in the accent - the same accent as the current workspace chip.
+    // The word is split across two modules only so the cursor can carry a
+    // colour of its own; style.css joins them and both halves are the menu
     // button.
     "custom/brand": {
-        "format": "<span font_desc='JetBrains Mono 14' weight='bold'>z</span>",
+        "format": "<span font_desc='JetBrains Mono 14' weight='bold'>H</span>",
         "tooltip": false,
         "on-click": "~/.config/bin/bar-menu",
         "on-click-right": "foot"

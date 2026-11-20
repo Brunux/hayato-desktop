@@ -226,10 +226,10 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    module is a flat segment with no hover fill: pointing at an indicator must not light it up.
    Three things are filled and nothing else: the current workspace chip (solid `accent` fill,
    `background` label - the same readable pair as the busy chip), the work-in-progress chip
-   (solid `warn_text` fill) and the mode chip. The brand at the left end is the mark `z_` with
-   no pill - `z` in `text`, the `_` cursor in `accent` (the same accent as the current chip),
-   split across two modules only so the cursor can carry a colour - and both halves are the
-   menu button. No indicator changes hue except the keep-awake cup: **a switch changes its
+   (solid `warn_text` fill) and the mode chip. The brand at the left end is the wordmark's
+   `H_` with no pill - `H` in `text`, the `_` cursor in `accent` (the same accent as the current
+   chip), split across two modules only so the cursor can carry a colour - and both halves are
+   the menu button. No indicator changes hue except the keep-awake cup: **a switch changes its
    glyph, not its colour** - the icon while
    the thing is on, the same icon with a slash through it while it is off, all three from the
    Material Design Icons font the image ships (`f00af`/`f00b2` Bluetooth, `f05a9`/`f05aa` wifi,

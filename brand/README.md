@@ -62,6 +62,10 @@ wings, fingered primaries, a golden nape. The name says how it moves; the eagle 
 - In running text the name is **Hayato** (no underscore, no colour). Identifiers stay `hayato`
   (`org.hayato.*`, `~/.config/hayato/`, `ID=hayato`).
 - The tagline is **light. fast. fun.** — lowercase, full stops, one line. Never "lazy by design".
+- In the bar, the mark is `H_`: the wordmark's first letter in the reading colour and the
+  underscore in the bar's accent, split across two modules so the cursor can carry a colour.
+  The eagle is an image, and a 30 px bar has no room for it; the letter is the wordmark, and
+  the wordmark is the brand.
 
 ## The palette
 

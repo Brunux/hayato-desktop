@@ -2,7 +2,7 @@
 // next to the Hayato mark instead of Debian's swirl.  `hayato-about` runs
 // `fastfetch` in the popup foot window, and this file is what makes it Hayato's.
 //
-// The logo is the z_ mark in block characters with the wordmark under it
+// The logo is the eagle in block characters with the wordmark under it
 // (scripts/make-brand.sh writes it; brand/README.md has the rules).  It is a
 // "file" logo, not "file-raw", so $1..$3 in it are the colours below and
 // fastfetch measures its width without them: cyan z, orange cursor, base2 name.
