@@ -1057,6 +1057,22 @@ usage: hayato-profile export [DIR] [--include-home] [--no-encrypt] [--passphrase
 EOF
 }
 
+# A profile export or restore is a background task: gpg, zstd and tar are CPU
+# and I/O bound for minutes. On the 8-core MT8192 the big cores (4-7) keep the
+# efficiency cores (0-3) free for the touchpad, the compositor and the session;
+# a restore reading from a stick used to make the pointer lag. Machines with
+# fewer cores (CI) run unpinned.
+if [ "${HAYATO_PROFILE_PINNED:-no}" != yes ] && command -v taskset >/dev/null 2>&1; then
+	case ${1:-} in
+	export | import)
+		if [ "$(nproc 2>/dev/null || printf 0)" -ge 8 ]; then
+			export HAYATO_PROFILE_PINNED=yes
+			exec taskset -c 4-7 "$0" "$@"
+		fi
+		;;
+	esac
+fi
+
 case ${1:-} in
 export) shift; cmd_export "$@" ;;
 import) shift; cmd_import "$@" ;;
