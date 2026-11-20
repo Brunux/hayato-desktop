@@ -856,10 +856,15 @@ impl Screen for ThemePickerScreen {
                 }
             }
 
-            // Wallpaper cycle for selected theme
+            // Wallpaper cycle for selected theme. A custom wallpaper from
+            // Settings -> Appearance is a later sway drop-in (36-custom-
+            // wallpaper.conf) and wins over the theme's 35-theme.conf on the
+            // reload below, so the cycle looked like it did nothing. Cycling a
+            // theme wallpaper is an explicit choice: drop the custom one first.
             KeyCode::Char('w') => {
                 if let Some(selected) = self.selected_entry() {
                     let slug = selected.slug.clone();
+                    let _ = crate::system::appearance::clear_custom_wallpaper();
                     match cycle_wallpaper_for(&p, Some(&slug)) {
                         Ok((wp, _)) => {
                             if let Some(entry) = self.selected_entry_mut() {
