@@ -1,9 +1,20 @@
 {{ header:/* }}
-/* The bar: restrained terminal aesthetic with consistent module spacing. The
-   palette comes from the active theme (spec 004) - this file is generated. */
+/* The bar is the session's statusline, not a shelf of widget cards.
+
+   LazyOS is a terminal-first desktop, so its bar follows the same grammar as
+   every framework window: one continuous line, a rule under it, and colour
+   that means a state instead of decorating an icon. A module is a segment of
+   that line (flat, evenly padded, one hover fill); the only filled chips are
+   work in progress and a mode, because those are the two things that have to
+   be noticed from across the room. The active workspace is marked the way the Games
+   library marks its selected tab - the theme's tint and a bold label - with
+   the accent rule along its bottom edge, so "where I am" is never the fill
+   alone. A state word uses `*_text`, the readable form of a status colour.
+
+   The palette comes from the active theme (spec 004) - this file is generated. */
 * {
     font-family: "JetBrains Mono", monospace;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     min-height: 0;
     border: none;
@@ -11,19 +22,19 @@
     transition: background-color 120ms ease, color 120ms ease;
 }
 
-/* The theme's colours, as roles */
 /* The bar is a layer-shell surface with alpha < 1 so that swayfx can blur the
    wallpaper behind it (layer_effects "waybar" in
-   /etc/sway/config.d/26-swayfx.conf). The cards below keep enough opacity for
-   base1 text to stay readable over any wallpaper; the blur shows through the
-   bar itself and between the cards. */
+   /etc/sway/config.d/26-swayfx.conf). One rule under it, in the theme's border
+   colour at low alpha: enough to end the line, not enough to draw a second
+   bar. The alpha keeps `text` readable over any wallpaper. */
 window#waybar {
-    background: rgba({{ background:rgb }}, 0.71);
+    background: rgba({{ background:rgb }}, 0.82);
     color: {{ text }};
-    border-bottom: 1px solid {{ surface }};
+    border-bottom: 1px solid rgba({{ border:rgb }}, 0.38);
 }
 
-/* Match horizontal edge inset at both ends of the bar to the 4px widget spacing. */
+/* A 4px inset at both ends, so the first glyph and the last value never sit
+   against the edge of the screen. */
 .modules-left {
     margin-left: 4px;
 }
@@ -34,18 +45,22 @@ window#waybar {
 
 tooltip {
     background: {{ surface }};
-    color: {{ strong }};
-    border: 1px solid {{ dim }};
-    border-radius: 6px;
-    padding: 5px 8px;
+    color: {{ text }};
+    border: 1px solid rgba({{ border:rgb }}, 0.55);
+    border-radius: 0;
+    padding: 6px 9px;
 }
 
 tooltip label {
-    color: {{ strong }};
+    color: {{ text }};
 }
 
-/* Every indicator is the same card, whether it is a built-in module or one of
-   the bar-* scripts: equal padding, height and background. */
+/* A segment: no card, no outline, the same padding for a built-in module and
+   for one of the bar-* scripts. `text` is the reading colour and clears 4.5:1
+   on the background in every built-in theme; `strong` is not used as a text
+   colour here because it is the *bright* end of the palette, which on a light
+   theme (Catppuccin Latte) is the colour of the background. Emphasis is
+   weight. */
 #custom-menu,
 #custom-busy,
 #custom-updates,
@@ -58,44 +73,42 @@ tooltip label {
 #backlight,
 #idle_inhibitor,
 #battery {
-    margin: 4px 0;
+    margin: 0;
     padding: 0 9px;
-    background: rgba({{ surface:rgb }}, 0.80);
-    border: 1px solid rgba({{ hover:rgb }}, 0.9);
-    border-radius: 5px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    color: {{ text }};
 }
 
-#custom-menu          { color: {{ accent }}; } /* cyan */
-#custom-busy          { color: {{ warn }}; } /* yellow: something is happening */
-#custom-updates       { color: {{ warn }}; } /* yellow */
-#custom-keyboard-layout { color: {{ faint }}; }
-#custom-bluetooth     { color: {{ dim }}; }
-#custom-bluetooth.on  { color: {{ accent_alt }}; } /* blue */
-#custom-vnc           { color: {{ warn }}; } /* yellow: this session is being served */
-#custom-vnc.control   { color: {{ danger }}; } /* red: a viewer can type into this session */
-#network              { color: {{ accent }}; }
-#network.disconnected {
-    color: {{ danger }};
-    border-color: {{ danger }};
-}
-#pulseaudio           { color: {{ accent_alt }}; } /* violet */
-#pulseaudio.muted     { color: {{ danger }}; }
-#backlight            { color: {{ warn }}; }
-/* The coffee cup is a switch: dim is its off state, yellow is on. */
-#idle_inhibitor       { color: {{ dim }}; }
-#idle_inhibitor.activated { color: {{ warn }}; } /* yellow: kept awake */
-#battery              { color: {{ ok }}; }
-#battery.warning      { color: {{ warn }}; }
+/* Colour is a state, so most of the line is quiet: an indicator is `text`
+   until it has something to say. The menu is the exception - it is the one
+   action on the bar and it stays in the accent. */
+#custom-menu { color: {{ accent }}; }
+#custom-updates { color: {{ warn_text }}; }
+#custom-bluetooth.on { color: {{ accent_alt }}; font-weight: 700; }
+#custom-vnc { color: {{ warn }}; }
+#custom-vnc.control { color: {{ danger }}; font-weight: 700; }
+#network.disconnected { color: {{ danger_text }}; font-weight: 700; }
+#pulseaudio.muted { color: {{ danger_text }}; font-weight: 700; }
+#idle_inhibitor.activated { color: {{ warn }}; font-weight: 700; }
+#battery.warning { color: {{ warn_text }}; }
+/* The 2px bar means "this needs you" everywhere in the session: an urgent
+   workspace, a battery about to die. The fill is the palette's tint and the
+   label stays `text`, which clears 4.5:1 on it in every built-in theme; the
+   status colour is the bar, never the word. */
 #battery.critical:not(.charging) {
-    color: {{ danger }};
+    color: {{ text }};
     background: {{ danger_bg }};
-    border-color: {{ danger }};
+    border-left: 2px solid {{ danger }};
+    font-weight: 700;
 }
+/* Charging changes the glyph (a bolt) and nothing else: a good state is not
+   an alarm, so it stays in the reading colour. */
 #battery.charging,
-#battery.plugged { color: {{ accent }}; }
+#battery.plugged { color: {{ text }}; }
 
 #custom-menu:hover,
-#custom-busy:hover,
 #custom-updates:hover,
 #custom-keyboard-layout:hover,
 #custom-bluetooth:hover,
@@ -105,12 +118,29 @@ tooltip label {
 #backlight:hover,
 #idle_inhibitor:hover,
 #battery:hover {
-    background: rgba({{ hover:rgb }}, 0.86);
+    background: rgba({{ hover:rgb }}, 0.55);
+}
+
+/* Work in progress is the one filled chip on the line, so the spinner and the
+   task it names are the first thing the eye finds. The fill is the *readable*
+   warning colour and the label is the background, a pair that clears 4.5:1 on
+   every built-in theme; the plain `warn` would leave the label at 3.5:1 on a
+   light one. It is also the stop button. */
+#custom-busy {
+    margin: 4px 4px 4px 0;
+    padding: 0 8px;
+    background: {{ warn_text }};
+    color: {{ background }};
+    font-weight: 700;
+}
+
+#custom-busy:hover {
+    background: {{ warn_text }};
 }
 
 /* The StatusNotifier icons keep their own colours; only the slot is themed. */
 #tray {
-    padding: 0 6px;
+    padding: 0 8px;
     color: {{ text }};
 }
 
@@ -120,11 +150,11 @@ tooltip label {
 
 #tray > .needs-attention {
     background: {{ danger_bg }};
-    border-color: {{ danger }};
+    border-left: 2px solid {{ danger }};
 }
 
 /* A module whose script reports nothing (no upgrades, a single keyboard
-   layout) collapses to zero width instead of leaving an empty card on the
+   layout) collapses to zero width instead of leaving an empty segment on the
    bar.  The class comes from the JSON the script prints. */
 #custom-updates.empty,
 #custom-busy.empty,
@@ -136,9 +166,12 @@ tooltip label {
     background: transparent;
 }
 
-/* The centered clock is plain text, not a rounded module/card. */
+/* The clock is the anchor of the line: the only larger text on the bar, bold
+   and in `text`, so it reads on a light theme too. */
 #clock {
-    color: {{ strong }};
+    color: {{ text }};
+    font-size: 14px;
+    font-weight: 700;
     background: transparent;
     border: none;
     border-radius: 0;
@@ -147,53 +180,68 @@ tooltip label {
     margin: 0;
 }
 
-/* Workspace buttons look like compact terminal tabs. */
+/* Workspaces are the session's tabs, drawn the way the Games library draws
+   its rail: the selected one takes the theme's selection tint and a bold
+   label, and here it also carries a 2px accent rule along its bottom edge -
+   the horizontal form of the bar that marks a selected row. The transparent
+   rule on the inactive tabs reserves the space, so a label never shifts when
+   the workspace changes. */
 #workspaces {
-    margin: 4px 2px 4px 0;
+    margin: 4px 2px 0 2px;
     padding: 0;
 }
 
 #workspaces button {
     min-width: 22px;
-    padding: 0 7px;
-    margin: 0 2px;
-    background: rgba({{ surface:rgb }}, 0.80);
+    padding: 0 8px;
+    margin: 0 1px;
+    background: transparent;
     color: {{ text }};
-    border: 1px solid rgba({{ hover:rgb }}, 0.9);
-    border-radius: 5px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
     box-shadow: none;
 }
 
 #workspaces button:hover {
-    background: {{ dim }};
-    color: {{ strong }};
-    border-color: {{ faint }};
+    background: rgba({{ hover:rgb }}, 0.55);
+    color: {{ text }};
+    border-bottom-color: transparent;
 }
 
 #workspaces button.focused,
 #workspaces button.active {
-    background: {{ accent }}; /* cyan */
-    color: {{ background }};
-    border-color: {{ accent }};
+    background: rgba({{ selection:rgb }}, 0.95);
+    color: {{ text }};
+    border-bottom: 2px solid {{ accent }};
     box-shadow: none;
 }
 
 #workspaces button.urgent {
-    background: {{ danger }}; /* red */
-    color: {{ strong }};
-    border-color: {{ danger }};
+    background: {{ danger_bg }};
+    color: {{ text }};
+    border-bottom: 2px solid {{ danger }};
 }
 
 #workspaces button label {
-    font-size: 12px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#workspaces button.focused label,
+#workspaces button.active label,
+#workspaces button.urgent label {
     font-weight: 700;
 }
 
+/* A mode (resize, move) is a filled chip in the readable warning colour, the
+   second and last thing on the bar that is allowed to shout. */
 #mode {
     margin: 4px 0;
     padding: 0 9px;
     color: {{ background }};
-    background: {{ warn }}; /* yellow */
-    border: 1px solid {{ warn }};
-    border-radius: 5px;
+    background: {{ warn_text }};
+    border: 1px solid {{ warn_text }};
+    border-radius: 0;
+    font-weight: 700;
 }

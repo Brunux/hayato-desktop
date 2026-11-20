@@ -216,6 +216,23 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `GreeterSetup` plus `set_clock_for_test`) instead of going untested. **Every screen is in
    `tests/screens.rs` or `tests/pickers.rs`; a new one lands with a render.**
 
+21. **The bar is the session's statusline**: `~/.config/waybar/style.css` is generated from
+   `templates/waybar-style.css.tpl`, and the shape is the contract. The bar is one edge-to-edge
+   line (`config.jsonc` `spacing: 0`, margins `0`, with the 4px inset in `.modules-left` /
+   `.modules-right`), a module is a flat segment with one hover fill, and only two things are
+   allowed to shout: the work-in-progress chip (solid `warn_text` fill, `background` label) and
+   the mode chip. Everything else stays in `text`, so **a colour on the bar means a state**:
+   `warn_text` for "there is something to do", `danger_text` for "this needs you", and a 2px
+   `danger` bar on `danger_bg` for an urgent workspace or a critical battery. The active
+   workspace is a tab - selection tint, bold label, 2px accent rule along its bottom edge - and
+   never the fill alone. A status drawn as a word uses `ok_text`/`warn_text`/`danger_text` (the
+   palette's colour lifted toward the theme's text until it clears 4.5:1 on the background,
+   derived in `lazyos-theme` and proven by `a_status_drawn_as_text_clears_the_body_text_floor`);
+   the raw `ok`/`warn`/`danger` stay for icons, which only need 3:1. `text`, never `strong`, is
+   the bar's reading colour: `strong` is the bright end of the palette, and on Catppuccin Latte
+   it is the colour of the background. A new state is a word plus a colour, or a 2px bar - never
+   a colour alone.
+
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single
   `home_excludes` list in `bin/lazyos-profile` is used by both the `du` size estimate and the

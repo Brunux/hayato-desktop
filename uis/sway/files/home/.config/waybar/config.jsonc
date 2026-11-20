@@ -1,6 +1,8 @@
-// Solarized bar, ported from the maintainer's Deboma (Omarchy) session.
+// The session's statusline. It spans the screen edge to edge with no gaps, so
+// it reads as one line rather than a shelf of floating cards; style.css owns
+// what each segment looks like.
 //
-// Every pointer interaction that Deboma answers with a panel is answered here
+// Every pointer interaction that Deboma (Omarchy) answers with a panel is answered here
 // with a short-lived menu popup from ~/.config/bin/bar-*, and nothing stays
 // resident: the bar itself is the only process this file keeps alive.  Icons
 // are written as \uXXXX so the codepoints are readable and survive any editor;
@@ -22,10 +24,12 @@
     "layer": "top",
     "position": "top",
     "height": 30,
-    "spacing": 4,
-    "margin-top": 4,
-    "margin-left": 6,
-    "margin-right": 6,
+    // No gap between modules and no inset: the segments are one line, and the
+    // 4px at each end is a margin inside style.css (.modules-left / -right).
+    "spacing": 0,
+    "margin-top": 0,
+    "margin-left": 0,
+    "margin-right": 0,
     "modules-left": [
         "custom/menu",
         "sway/workspaces",

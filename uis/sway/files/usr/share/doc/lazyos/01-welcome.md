@@ -28,7 +28,7 @@ supplies everything above the kernel.
 
 | Piece | What it is |
 |---|---|
-| the bar (top) | waybar: menu, workspaces, clock, updates, tray, keyboard layout, Bluetooth, network, volume, brightness, battery. Left/right click and scroll do different things on each |
+| the bar (top) | waybar, drawn as the session's statusline: menu, workspaces, clock, updates, tray, keyboard layout, Bluetooth, network, volume, brightness, battery. Left/right click and scroll do different things on each |
 | compositor | **swayfx**, a fork of sway that draws rounded corners, shadows and a blurred backdrop under the translucent terminal, launcher and bar |
 | the terminal | **foot**: solarized palette, no GPU renderer, about half the memory of an Alacritty window |
 | the launcher | **lazyos**: applications (`lazyos menu apps`), windows (`lazyos menu window`), commands (`lazyos menu run`), and the 35 ported session menus rendered in native Ratatui TUI inside floating foot windows |
@@ -46,6 +46,20 @@ question only something watching can answer. The table is
 `~/.config/workstyle/config.toml`: one line per application, matched against its
 title or its app_id, and the next window or workspace change picks it up - no
 restart, and an app with no line of its own shows a plain window outline.
+
+**The bar is the session's statusline.** It runs edge to edge with no gaps, so
+it reads as one line rather than a row of floating cards, and it borrows the
+grammar of the windows under it: the active workspace is a tab with the theme's
+selection tint and an accent rule along its bottom edge, and the only filled
+chips on the line are work in progress (the spinner and the task it names,
+which is also the button that stops it) and a mode (resize, move). Everything
+else stays in the reading colour,
+so **a colour on the bar always means a state**: amber for "there is something
+to do" (updates, kept awake, the screen is being shared), red for "this needs
+you" (a muted microphone, no network, a battery about to die, a session someone
+else can type into). A state is never colour alone - the word is there too
+("Offline", "muted", a percentage), and a status drawn as text is lifted to
+4.5:1 on every built-in theme.
 
 ## The windows the framework draws
 

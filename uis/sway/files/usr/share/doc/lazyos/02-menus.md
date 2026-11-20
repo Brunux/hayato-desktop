@@ -574,6 +574,13 @@ accent bar and a bold label, and lifts its own text to 4.5:1 on that fill. The
 theme file still writes `dim` and `selection`; the window computes what it
 draws, so a palette that looks good in `foot` cannot make a menu unreadable.
 
+The bar gets the same treatment from the template: a status colour used as a
+word asks for `ok_text`, `warn_text` or `danger_text` - the palette's colour
+moved toward the theme's text until it clears 4.5:1 on the background - while an
+icon can keep the raw status colour, which only has to clear 3:1. A filled chip
+inverts the pair (its fill is `warn_text` and its label the background colour),
+so the one loud element on the line is readable on a light theme too.
+
 ## Adding things to the launcher
 
 * **An application**: drop a `.desktop` file in `~/.local/share/applications/`.
