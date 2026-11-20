@@ -4484,14 +4484,20 @@ fi
 # The mark itself: the About entry asks for Icon=hayato, and a theme without it
 # draws a hole where a picture should be, quietly.
 _missing_mark=""
-for _f in 48x48/apps/hayato.png scalable/apps/hayato.svg; do
+for _f in 16x16/apps/hayato.png 24x24/apps/hayato.png 48x48/apps/hayato.png scalable/apps/hayato.svg; do
 	[ -r "/usr/share/icons/Hayato/$_f" ] || _missing_mark="$_missing_mark $_f"
 done
 if [ -z "$_missing_mark" ]; then
-	ok "the theme carries the mark (hayato.png, hayato.svg)"
+	ok "the theme carries the mark at 16, 24 and 48 px (hayato.png, hayato.svg)"
 else
 	fail "the theme is missing the mark:$_missing_mark (About Hayato shows a hole)"
 fi
+# A directory the index does not list is a directory GTK never looks in, so the
+# 16 px form would be drawn by scaling the 48 instead of from the grid.
+for _d in 16x16/apps 24x24/apps 48x48/apps; do
+	grep -qs "$_d" /usr/share/icons/Hayato/index.theme ||
+		fail "index.theme does not list $_d: the mark is resampled, not sampled"
+done
 
 # The card the launcher's About row opens, and the logo fastfetch draws there.
 if [ -r "$HOME/.config/fastfetch/config.jsonc" ]; then

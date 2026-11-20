@@ -51,10 +51,9 @@ alt="$theme/scalable/apps"
 # so the same 48x48 PNGs are also reachable through a Scalable entry.  The
 # launcher draws them at 22-24 px, where the downscale is invisible.
 font=${ICON_FONT:-FontAwesome}
-# Solarized cyan, brightened: at 22 px on the launcher's base03 the plain
-# #2aa198 reads as a smudge next to 12 pt white text, while #41cfc4 keeps the
-# hue and is legible as a glyph.
-colour=${ICON_COLOUR:-#41cfc4}
+# Tokyo Night's cyan: bright enough to read as a glyph at 22 px beside 12 pt
+# text, and the same hue the bar and the mark already use.
+colour=${ICON_COLOUR:-#7dcfff}
 size=${ICON_SIZE:-48}
 points=${ICON_POINTS:-30}
 
@@ -145,9 +144,9 @@ TABLE
 # 2. The command palette.  It resolves an icon by *asking the icon theme for the
 #    name of the binary it would run*, not from a .desktop entry, so a
 #    palette row has an icon only if the theme has an icon with that exact name.
-#    Adwaita has none of these.  The element is a fixed 26 px column
-#    (solarized.rasi), so the rows a person starts from a palette get a glyph and
-#    the system binaries that have none keep their text aligned.
+#    Adwaita has none of these.  The element is a fixed 26 px column, so the
+#    rows a person starts from a palette get a glyph and the system binaries
+#    that have none keep their text aligned.
 render <<'COMMANDS'
 foot                               f120
 footclient                         f120

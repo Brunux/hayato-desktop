@@ -1021,7 +1021,7 @@ impl Screen for GreeterSettingsScreen {
 }
 
 fn build_setting_rows(cfg: &GreeterConfig) -> Vec<Row> {
-    let theme_slug = cfg.theme.as_deref().unwrap_or("solarized");
+    let theme_slug = cfg.theme.as_deref().unwrap_or("tokyo-night");
     let theme_name = load_theme_by_slug(theme_slug)
         .map(|t| format!("{} ({theme_slug})", t.name))
         .unwrap_or_else(|| theme_slug.to_string());
@@ -1104,7 +1104,7 @@ pub fn status_summary() -> String {
             None => "follow user".into(),
         }
     } else {
-        format!("fixed ({})", cfg.theme.as_deref().unwrap_or("solarized"))
+        format!("fixed ({})", cfg.theme.as_deref().unwrap_or("tokyo-night"))
     };
     let pills = if cfg.show_user_pills {
         "pills on"

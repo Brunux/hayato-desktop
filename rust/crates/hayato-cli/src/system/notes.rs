@@ -1423,7 +1423,7 @@ fn sync_editxr_theme() -> Result<(), String> {
 }
 
 fn sync_editxr_theme_at(home: &Path, paths: &theme_store::Paths) -> Result<(), String> {
-    let slug = theme_store::active(paths).unwrap_or_else(|| "solarized".to_string());
+    let slug = theme_store::active(paths).unwrap_or_else(|| "tokyo-night".to_string());
     let theme = builtin::get(&slug).and_then(|text| Theme::parse(text).ok());
     let (name, appearance) = editxr_settings(&slug, theme.as_ref());
     let path = home.join(".config/editxr/config.json");

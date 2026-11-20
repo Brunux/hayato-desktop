@@ -2,7 +2,17 @@
 Name=Hayato
 Comment=Tokyo Night Font Awesome icons for the session's own launcher entries
 Inherits=Adwaita,hicolor
-Directories=48x48/apps,scalable/apps
+Directories=16x16/apps,24x24/apps,48x48/apps,scalable/apps
+
+[16x16/apps]
+Size=16
+Type=Fixed
+Context=Applications
+
+[24x24/apps]
+Size=24
+Type=Fixed
+Context=Applications
 
 [48x48/apps]
 Size=48
