@@ -1003,6 +1003,12 @@ cmd_report() {
 # filesystem a person can see, newest first.  The menu turns each line into a
 # row; import takes the path back.  The filter is the same one hayato-places uses
 # for its disk list (/ and /boot are not places to look for a profile).
+#
+# The prefix is `*-profile-`, not `hayato-profile-`: an archive exported before
+# the rebrand carries the old product name, and a restore must find the backup a
+# person already has.  Export always writes `hayato-profile-`.  The old word
+# stays out of the tree on purpose (the brand guard in `./build.sh validate`),
+# so the match is the generic shape rather than the old literal.
 cmd_list_archives() {
 	{
 		findmnt -rn -o TARGET,FSTYPE 2>/dev/null |
@@ -1020,7 +1026,7 @@ cmd_list_archives() {
 	} | while IFS= read -r _root; do
 		[ -r "$_root" ] || continue
 		find "$_root" -maxdepth 3 -type f \
-			\( -name 'hayato-profile-*.tar.zst' -o -name 'hayato-profile-*.tar.zst.gpg' \) \
+			\( -name '*-profile-*.tar.zst' -o -name '*-profile-*.tar.zst.gpg' \) \
 			-printf '%T@\t%s\t%p\n' 2>/dev/null || :
 	done | sort -rn | awk -F'\t' '{ printf "%s\t%s\t%s\n", $3, $2, $1 }'
 }

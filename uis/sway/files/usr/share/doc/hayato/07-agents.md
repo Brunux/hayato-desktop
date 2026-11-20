@@ -87,7 +87,8 @@ finds it happily). Bumping the pinned version is `tools/opencode/README.md`.
 ## The desktop the agent can drive
 
 OpenCode starts with this desktop's own tools: `~/.config/opencode/opencode.json`
-registers `hayato mcp`, an MCP server inside the `hayato` binary, and
+registers `hayato mcp` under `mcp.servers` (the shape OpenCode V2 reads), an MCP
+server inside the `hayato` binary, and
 `~/.config/opencode/AGENTS.md` tells the agent the rules in every session. There
 are three kinds of tool, and the line between them is a promise this machine makes
 to the person sitting at it: **the AI proposes, you confirm.**

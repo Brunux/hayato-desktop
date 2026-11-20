@@ -173,6 +173,13 @@ tooltip label {
     background: transparent;
 }
 
+/* Remote control is the explicit second start (`--disable-input` absent), and
+   the tooltip is the word. The state is a 2px bar in `danger`, never a hue on
+   the glyph: a switch changes its glyph, not its colour. */
+#custom-vnc.control {
+    box-shadow: inset 0 -2px 0 #ff5588;
+}
+
 /* The clock is the anchor of the line: the only larger text on the bar, bold
    and in `text`, so it reads on a light theme too. */
 #clock {

@@ -818,6 +818,7 @@ if [ -n "$_nc_tmp" ]; then
 	esac
 	_keys_conf=${DESKTOP_REPO:+$DESKTOP_REPO/uis/sway/files/etc/sway/config.d/24-keys.conf}
 	[ -r "$_keys_conf" ] || _keys_conf="$HOME/.config/sway/config.d/24-keys.conf"
+	[ -r "$_keys_conf" ] || _keys_conf=/etc/sway/config.d/24-keys.conf
 	if grep -qs -- '--control act-newest' "$_keys_conf" &&
 		grep -qs -- '--control dismiss-newest' "$_keys_conf" &&
 		grep -qs -- '--control dismiss-all' "$_keys_conf"; then
@@ -1305,6 +1306,21 @@ if [ -x "$HOME/.config/bin/hayato-profile" ]; then
 		ok "the profile export includes the file manager (favnyr settings and workspaces)"
 	else
 		fail "bin/hayato-profile no longer exports ~/.config/favnyr or ~/.local/share/favnyr: a restored profile has a default file manager"
+	fi
+	# A restore must find the backup a person already has: the list matches the
+	# generic *-profile-*.tar.zst* shape, not only today's prefix, because the
+	# archives exported before the rebrand carry the older name. The probe uses
+	# a third name so it proves the shape rather than the literal.
+	if _dev_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-archive.XXXXXX"); then
+		mkdir -p "$_dev_tmp/Downloads"
+		: >"$_dev_tmp/Downloads/older-profile-host-20260101.tar.zst.gpg"
+		if HOME="$_dev_tmp" "$HOME/.config/bin/hayato-profile" list-archives 2>/dev/null |
+			grep -q 'older-profile-host'; then
+			ok "the profile restore lists an archive exported under an older name"
+		else
+			fail "bin/hayato-profile list-archives only finds today's prefix: a backup exported before the rebrand cannot be restored"
+		fi
+		rm -rf "$_dev_tmp"
 	fi
 	grep -qsxF -- '.config/pcmanfm' "$HOME/.config/bin/hayato-profile" &&
 		fail "bin/hayato-profile still lists ~/.config/pcmanfm, which favnyr never writes: the entry travels and saves nothing"
@@ -2527,12 +2543,23 @@ fi
 # The manual is rendered with glow, and both the binary and the glamour style
 # are needed: without the style glow prints an error and exits, and hayato-learn
 # opens a foot window that closes immediately, which reads as "nothing happened".
+# The style is whichever file `glow.yml` names (the theme engine writes one per
+# palette, Tokyo Night by default), never a hardcoded name: a fresh image ships
+# tokyo-night.json, and the old solarized.json is only a historical theme.
+_glow_style=""
 _glow=""
 have glow || _glow="$_glow glow"
-[ -r "$HOME/.config/glow/solarized.json" ] || _glow="$_glow .config/glow/solarized.json"
-[ -r "$HOME/.config/glow/glow.yml" ] || _glow="$_glow .config/glow/glow.yml"
+if [ -r "$HOME/.config/glow/glow.yml" ]; then
+	_glow_style=$(sed -n 's/^style:[[:space:]]*//p' "$HOME/.config/glow/glow.yml" 2>/dev/null | head -n 1)
+	_glow_style="${_glow_style/#\~/$HOME}"
+	if [ -z "$_glow_style" ] || [ ! -r "$_glow_style" ]; then
+		_glow="$_glow ${_glow_style:-.config/glow/glow.yml names no style}"
+	fi
+else
+	_glow="$_glow .config/glow/glow.yml"
+fi
 if [ -z "$_glow" ]; then
-	ok "manual renderer complete (glow with the solarized glamour style)"
+	ok "manual renderer complete (glow with the $(basename "$_glow_style") glamour style)"
 else
 	fail "manual renderer incomplete:$_glow (Learn opens a window that closes at once)"
 fi
@@ -2541,8 +2568,8 @@ fi
 # ignores it and the page falls back to its own colours. Nothing errors, which is
 # why the first version of this style shipped 23 bare values and only looked
 # wrong (inline code as a blank block). Cosmetic, so it warns.
-if [ -r "$HOME/.config/glow/solarized.json" ] &&
-	grep -qE '":[[:space:]]*"[0-9a-fA-F]{6}"' "$HOME/.config/glow/solarized.json"; then
+if [ -n "$_glow_style" ] && [ -r "$_glow_style" ] &&
+	grep -qE '":[[:space:]]*"[0-9a-fA-F]{6}"' "$_glow_style"; then
 	warn "glow style: a colour is missing its # (glamour reads it as a 256-colour index; the page loses its palette)"
 fi
 
@@ -3987,6 +4014,20 @@ section "Games"
 # the next phase; this section does not pretend it is installed.
 if have hayato-games; then
 	ok "the game library is installed"
+	# The shelf is part of the image: a fresh account has one folder per
+	# platform, bios/ and the README before the library is ever opened. The
+	# list is a sample of the platform table; the library's own test covers
+	# every row.
+	_games_layout=ok
+	for _d in nes snes psx n64 neogeo arcade bios; do
+		[ -d "$HOME/Games/$_d" ] || _games_layout=
+	done
+	[ -f "$HOME/Games/HAYATO-GAMES.txt" ] || _games_layout=
+	if [ -n "$_games_layout" ]; then
+		ok "the ~/Games shelf exists (a folder per platform, bios/, and the README)"
+	else
+		fail "~/Games is missing or incomplete: the library has nowhere to put a ROM (open Games once, or run hayato-games --ensure-layout)"
+	fi
 	# The library spawns the host by name, so the first copy in PATH is the one
 	# that runs. A stale build left in /usr/local/bin once shadowed the
 	# installed one: its scan had no console zips, every launch answered "no
@@ -4326,7 +4367,7 @@ _mcp_conf="$HOME/.config/opencode/opencode.json"
 # not reported as missing on every machine that annotates its config.
 _mcp_reg=""
 if [ -r "$_mcp_conf" ] && have jq; then
-	_mcp_reg=$(jq -c '.mcp.hayato | [.type, .command, (.enabled // true)]' "$_mcp_conf" 2>/dev/null) || _mcp_reg=""
+	_mcp_reg=$(jq -c '.mcp.servers.hayato | [.type, .command, ((.disabled // false) | not)]' "$_mcp_conf" 2>/dev/null) || _mcp_reg=""
 	if [ -z "$_mcp_reg" ] && have python3; then
 		_mcp_reg=$(python3 - "$_mcp_conf" 2>/dev/null <<'PY'
 import json
@@ -4375,9 +4416,9 @@ def jsonc(text):
 
 
 doc = json.loads(jsonc(open(sys.argv[1]).read()))
-entry = (doc.get("mcp") or {}).get("hayato") or {}
+entry = ((doc.get("mcp") or {}).get("servers") or {}).get("hayato") or {}
 print(json.dumps(
-    [entry.get("type"), entry.get("command"), entry.get("enabled", True)],
+    [entry.get("type"), entry.get("command"), not entry.get("disabled", False)],
     separators=(",", ":"),
 ))
 PY
@@ -4391,7 +4432,7 @@ elif ! have jq; then
 elif [ "$_mcp_reg" = '["local",["hayato","mcp"],true]' ]; then
 	ok "OpenCode registers hayato mcp as a local server"
 else
-	fail "opencode.json has no enabled local mcp.hayato running [\"hayato\",\"mcp\"]"
+	fail "opencode.json has no enabled local mcp.servers.hayato running [\"hayato\",\"mcp\"]"
 fi
 _mcp_rules="$HOME/.config/opencode/AGENTS.md"
 _mcp_pin=$(sed -n 's/^hayato-mcp manifest: //p' "$_mcp_rules" 2>/dev/null | head -n 1)
@@ -4464,11 +4505,11 @@ if [ -r "$HOME/Pictures/Wallpapers/hayato.png" ]; then
 else
 	fail "missing Pictures/Wallpapers/hayato.png: the desktop falls back to a flat colour"
 fi
-if grep -rqs 'Pictures/Wallpapers/hayato.png' /etc/sway/config "$HOME/.config/sway/config" \
+if grep -rqsE 'output \* bg .*Pictures/Wallpapers/' /etc/sway/config "$HOME/.config/sway/config" \
 	/etc/sway/config.d "$HOME/.config/sway/config.d" 2>/dev/null; then
-	ok "sway paints the brand wallpaper"
+	ok "sway paints the theme wallpaper"
 else
-	fail "sway does not name Pictures/Wallpapers/hayato.png (output * bg)"
+	fail "no sway drop-in paints a Pictures/Wallpapers image (output * bg): the session falls back to a flat colour"
 fi
 if [ -r "$HOME/Pictures/Wallpapers/mountains.jpg" ]; then
 	ok "lock screen wallpaper present"

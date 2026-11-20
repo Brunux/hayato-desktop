@@ -120,17 +120,19 @@ fn paint_window() {
 }
 
 /// The theme the session is actually using, for the frame before the page
-/// loads. Solarized Dark is the fallback only when the state file or the
-/// built-in table cannot answer.
+/// loads. Tokyo Night, the image's default, is the fallback only when the
+/// state file or the built-in table cannot answer.
 fn active_theme() -> hayato_theme::Theme {
     let paths = hayato_theme::Paths::from_env();
     hayato_theme::store::active(&paths)
         .and_then(|slug| hayato_theme::builtin::get(&slug))
         .and_then(|text| hayato_theme::Theme::parse(text).ok())
-        .unwrap_or_else(|| {
-            hayato_theme::Theme::parse(hayato_theme::builtin::SOLARIZED)
-                .expect("the built-in Solarized theme parses")
-        })
+        .unwrap_or_else(fallback_theme)
+}
+
+fn fallback_theme() -> hayato_theme::Theme {
+    hayato_theme::Theme::parse(hayato_theme::builtin::TOKYO_NIGHT)
+        .expect("the built-in Tokyo Night theme parses")
 }
 
 fn build_webview(
@@ -246,4 +248,18 @@ fn connect_bridge(manager: &UserContentManager, app: &gtk::Application) {
             app.quit();
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    /// The frame before the page loads must wear the image's default (Tokyo
+    /// Night), not the theme the previous release used: a fresh host has no
+    /// active-theme state until the first session writes it.
+    #[test]
+    fn the_fallback_theme_is_tokyo_night() {
+        let expected = hayato_theme::Theme::parse(hayato_theme::builtin::TOKYO_NIGHT)
+            .expect("the built-in Tokyo Night theme parses");
+        let fallback = super::fallback_theme();
+        assert_eq!(fallback.roles(), expected.roles());
+    }
 }

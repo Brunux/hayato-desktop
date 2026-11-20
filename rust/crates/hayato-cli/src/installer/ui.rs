@@ -2518,10 +2518,9 @@ impl InstallerScreen {
 
         let mut y = card.y + 1;
         let pct = self.worker_state.percent as f64 / 100.0;
-        let gauge_label = format!(
-            "{}% - {}",
-            self.worker_state.percent, self.worker_state.phase_name
-        );
+        // The gauge draws the percentage itself (`put_percent`); the label is
+        // the phase only, or the number appears twice beside the bar.
+        let gauge_label = self.worker_state.phase_name.clone();
         draw_gauge(
             buf,
             Rect {
@@ -3086,5 +3085,25 @@ mod tests {
         if let Some(sel) = scr.tz_list.selected() {
             assert_eq!(sel.label, scr.selected_tz);
         }
+    }
+
+    /// The gauge draws the percentage itself; a label that carries it too puts
+    /// the number on the screen twice ("42% 42% - Copying").
+    #[test]
+    fn the_progress_gauge_prints_the_percentage_once() {
+        let mut scr =
+            InstallerScreen::from_preflight_isolated(mock_preflight(BootType::Depthcharge), true);
+        scr.worker_state.percent = 42;
+        scr.worker_state.phase_name = "Copying the system".to_string();
+        let frame = render_step(&mut scr, WizardStep::Progress, 100, 30);
+        let row = frame
+            .lines()
+            .find(|line| line.contains("42%"))
+            .expect("the gauge row carries the percentage");
+        assert_eq!(
+            row.matches("42%").count(),
+            1,
+            "the percentage is drawn twice: {row}"
+        );
     }
 }

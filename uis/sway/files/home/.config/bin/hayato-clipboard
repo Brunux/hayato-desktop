@@ -42,7 +42,22 @@ start_watcher() {
 	read_config
 	[ "$enabled" = yes ] || return 0
 	running && return 0
-	setsid wl-paste --watch cliphist store >/dev/null 2>&1 &
+	# The watcher's own words go to a file, not /dev/null: a session that
+	# starts before the compositor's socket is reachable leaves wl-paste with
+	# nothing to connect to, and without this line the next boot can only say
+	# "not running". One retry covers that race.
+	_log="${XDG_STATE_HOME:-$HOME/.local/state}/hayato/clipboard.log"
+	mkdir -p "${_log%/*}" 2>/dev/null || :
+	setsid wl-paste --watch cliphist store >>"$_log" 2>&1 &
+	_i=0
+	while [ "$_i" -lt 20 ] && ! running; do
+		sleep 0.1
+		_i=$((_i + 1))
+	done
+	if ! running; then
+		printf '%s start: wl-paste exited, retrying\n' "$(date '+%F %T')" >>"$_log"
+		setsid wl-paste --watch cliphist store >>"$_log" 2>&1 &
+	fi
 }
 
 case ${1:-} in

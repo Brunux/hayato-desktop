@@ -354,9 +354,14 @@ lock instead of a flat colour.
 
 The **Auxiliary swap** row in Places (and in the root menu) writes that partition
 and the `/etc/fstab` line that activates it on every boot, with priority 10 so
-zram keeps being used first. It does not add `resume=`: that is a kernel command
-line change and needs the kernel partition rebuilt. The image ships the checkout
-it was built from, so this is done once, on the machine:
+zram keeps being used first. If the card already carries a swap area - whatever
+its label, including one written by an older release - the row offers to **adopt
+it**: the partition is relabelled `hayato_swap`, the `/etc/fstab` line is written
+and it is activated, with nothing erased. Erasing and repartitioning stays a
+separate choice, and when no swap area is found the row offers to create one from
+the whole card or a fixed 2/4/8 GiB slice. It does not add `resume=`: that is a
+kernel command line change and needs the kernel partition rebuilt. The image
+ships the checkout it was built from, so this is done once, on the machine:
 
 ```sh
 CONFIRM=yes RESUME=yes /usr/libexec/hayato/install-kpart.sh

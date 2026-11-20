@@ -33,6 +33,19 @@ case ":$PATH:" in
 	*) PATH="/usr/local/bin${PATH:+:$PATH}" ;;
 esac
 
+# The sbin directories. Debian's /etc/profile gives a non-root login shell
+# /usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games, and greetd sources
+# that file before it starts sway, so the whole session inherits a PATH without
+# them. parted, mkfs.exfat, mkfs.ext2/4, mkswap, swapon, swapoff, blkid,
+# blockdev, e2fsck, findfs and i2cset live in /usr/sbin: the disk menu, the
+# installer pre-flight, the auto-mount helper and the Type-C mux resume hook
+# call them by name, and without this they answer "missing" in the session
+# while being installed. Root keeps its own list from /etc/profile.
+case ":$PATH:" in
+	*":/usr/sbin:"*) ;;
+	*) PATH="/usr/sbin:/sbin${PATH:+:$PATH}" ;;
+esac
+
 # Session scripts and helpers live here (~/.config/bin).
 # Prepended so user scripts and ported symlinks are discoverable.
 if [ -n "${HOME:-}" ]; then

@@ -65,7 +65,13 @@ impl CardTheme {
                 }
             }
         }
-        if let Ok(theme) = hayato_theme::Theme::parse(hayato_theme::builtin::SOLARIZED) {
+        Self::fallback()
+    }
+
+    /// The card palette before a theme is chosen: Tokyo Night, the image's
+    /// default, never the theme the previous release used.
+    pub fn fallback() -> Self {
+        if let Ok(theme) = hayato_theme::Theme::parse(hayato_theme::builtin::TOKYO_NIGHT) {
             return Self::from_theme(&theme);
         }
         Self::default()
@@ -956,5 +962,20 @@ mod tests {
         .expect("pixmap allocation");
 
         renderer.render(&mut pixmap, &mut notifications);
+    }
+
+    /// A fresh image has no active-theme state yet (the first session writes
+    /// it), so the card palette must fall back to the image's default, Tokyo
+    /// Night - the rebrand's whole point - and not to the theme the previous
+    /// release happened to use.
+    #[test]
+    fn the_fallback_card_is_tokyo_night() {
+        let tokyo = hayato_theme::Theme::parse(hayato_theme::builtin::TOKYO_NIGHT)
+            .expect("the built-in Tokyo Night theme parses");
+        let expected = CardTheme::from_theme(&tokyo);
+        let fallback = CardTheme::fallback();
+        assert_eq!(fallback.bg, expected.bg, "card background");
+        assert_eq!(fallback.accent, expected.accent, "card accent");
+        assert_eq!(fallback.text_body, expected.text_body, "card body text");
     }
 }

@@ -872,6 +872,10 @@ environment until it is closed.
   `chmod 700 ~/.ssh && chmod 600 ~/.ssh/id_*` is the two-line repair.
 * **gpg says a key is unusable after a restore**: an agent started with the old
   `~/.gnupg` may still be holding it. `gpgconf --kill gpg-agent` and try again.
+* **The archive is not in the list.** The restore lists every
+  `*-profile-*.tar.zst*` on a mounted filesystem, so an archive exported under
+  the product's older name is found too. If the stick itself is missing, the
+  four reasons in **Export my profile** above say which one it is.
 * **The wrong archive was restored.** The restore wrote the profile that was
   there before to
   `~/.cache/hayato/backups/profile-before-restore-<date>.tar.zst`; extract it

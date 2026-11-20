@@ -764,9 +764,21 @@ fn the_shipped_registration_and_instructions_match_the_binary() {
     let config = repo().join("uis/sway/files/home/.config/opencode");
     let json: Value =
         serde_json::from_str(&fs::read_to_string(config.join("opencode.json")).unwrap()).unwrap();
-    assert_eq!(json["mcp"]["hayato"]["type"], "local");
-    assert_eq!(json["mcp"]["hayato"]["command"], json!(["hayato", "mcp"]));
-    assert_eq!(json["mcp"]["hayato"]["enabled"], true);
+    // OpenCode V2 reads servers under `mcp.servers` and uses `disabled`;
+    // a name directly under `mcp` is the V1 shape and is ignored.
+    assert!(
+        json["mcp"].get("hayato").is_none(),
+        "V2 does not place server names directly under mcp"
+    );
+    assert_eq!(json["mcp"]["servers"]["hayato"]["type"], "local");
+    assert_eq!(
+        json["mcp"]["servers"]["hayato"]["command"],
+        json!(["hayato", "mcp"])
+    );
+    assert!(
+        json["mcp"]["servers"]["hayato"].get("disabled").is_none(),
+        "the shipped server is enabled"
+    );
     let instructions = fs::read_to_string(config.join("AGENTS.md")).unwrap();
     let pinned = instructions
         .lines()

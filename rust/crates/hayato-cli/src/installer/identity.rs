@@ -93,6 +93,12 @@ pub fn build_copy_rootfs_args(
         state_exclude,
         "--exclude=/tmp/*".to_string(),
         "--exclude=/var/tmp/*".to_string(),
+        // The image builds fontconfig's system cache (`fc-cache -s`) once so
+        // the first window does not walk every font directory. The blanket
+        // cache exclude below dropped it on every install; the two includes
+        // keep it and still drop apt's archives and the rest.
+        "--include=/var/cache/fontconfig/".to_string(),
+        "--include=/var/cache/fontconfig/**".to_string(),
         "--exclude=/var/cache/*".to_string(),
         "--exclude=/var/log/journal/*".to_string(),
         "--exclude=/etc/machine-id".to_string(),
@@ -617,5 +623,27 @@ mod tests {
         );
         assert!(!no_ssh.iter().any(|a| a == "--exclude=/etc/ssh/ssh_host_*"));
         assert!(no_ssh.iter().any(|a| a == "--exclude=/boot/efi"));
+    }
+
+    /// The image builds fontconfig's system cache once; the install used to drop
+    /// it with the other `/var/cache` contents, so the first window walked every
+    /// font directory. The include has to precede the blanket exclude or rsync
+    /// never reaches it.
+    #[test]
+    fn copy_rootfs_args_keep_the_fontconfig_cache() {
+        let args = build_copy_rootfs_args(
+            Path::new("/run/hayato-install/mnt"),
+            Path::new("/run/hayato-install"),
+            true,
+        );
+        let include = args
+            .iter()
+            .position(|a| a == "--include=/var/cache/fontconfig/**")
+            .expect("the fontconfig cache is included");
+        let exclude = args
+            .iter()
+            .position(|a| a == "--exclude=/var/cache/*")
+            .expect("the rest of /var/cache is excluded");
+        assert!(include < exclude, "rsync filters are first-match: {args:?}");
     }
 }

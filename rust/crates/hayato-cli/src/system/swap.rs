@@ -27,13 +27,24 @@ use super::step::{self, Failed, Step};
 use super::{missing, out};
 
 /// What the menu needs before it offers anything.
-pub const NEEDED: &[&str] = &["parted", "mkswap", "swapon", "swapoff", "blkid", "lsblk"];
+pub const NEEDED: &[&str] = &[
+    "parted",
+    "mkswap",
+    "swapon",
+    "swapoff",
+    "swaplabel",
+    "blkid",
+    "lsblk",
+];
 
 /// The state of the auxiliary swap, readable from the machine.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Status {
-    /// The partition node carrying `hayato_swap`, if any.
+    /// The partition node carrying a swap signature, if any.
     pub part: Option<String>,
+    /// The label the partition carries now. An older release wrote another
+    /// name, and a person should not have to repartition the card to keep it.
+    pub label: Option<String>,
     /// The size `lsblk` reports for the partition.
     pub size: Option<String>,
     /// The priority the kernel shows for the partition, if active.
@@ -47,8 +58,7 @@ pub struct Status {
 impl Status {
     /// Read the current state from the machine.
     pub fn from_machine() -> Self {
-        let part = out(&["blkid", "-L", "hayato_swap"]).unwrap_or_default();
-        let part = if part.is_empty() { None } else { Some(part) };
+        let (part, label) = detect_swap_partition();
 
         let size = part
             .as_ref()
@@ -79,6 +89,7 @@ impl Status {
 
         Self {
             part,
+            label,
             size,
             priority,
             configured,
@@ -117,14 +128,68 @@ impl Status {
                 if let Some(prio) = self.priority {
                     d.push_str(&format!(" · priority {prio}, after the compressed RAM"));
                 }
-            } else {
+            } else if self.configured {
                 d.push_str(" · not active now");
+            } else {
+                d.push_str(" · a swap area this build can adopt");
             }
             d
         } else {
-            "the hayato_swap card is not inserted · a boot without it waits 15 s at most".into()
+            "no auxiliary swap card is inserted · a boot without it waits 15 s at most".into()
         }
     }
+}
+
+/// The disk a partition belongs to: `lsblk -s` walks up and the last line is
+/// the disk (`mmcblk1p1` -> `mmcblk1`).
+fn disk_of(node: &str) -> Option<String> {
+    out(&["lsblk", "-snro", "NAME", node]).and_then(|chain| {
+        chain
+            .lines()
+            .last()
+            .map(|line| line.trim().to_string())
+            .filter(|disk| !disk.is_empty())
+    })
+}
+
+/// Whether the disk is the one this system runs from (`/` or `/boot`).
+fn is_root_disk(disk: &str) -> bool {
+    ["/", "/boot"].iter().any(|mount| {
+        out(&["findmnt", "-no", "SOURCE", mount])
+            .and_then(|source| disk_of(source.trim()))
+            .is_some_and(|root| root == disk)
+    })
+}
+
+/// The auxiliary swap area, whatever it is labelled.
+///
+/// `blkid -L hayato_swap` is the fast path, but a card prepared by an older
+/// release carries another label, and the menu used to answer "not inserted"
+/// while the partition was right there. Any swap partition on a disk the
+/// system does not run from is the auxiliary swap; the compressed RAM and
+/// loop devices are never it.
+fn detect_swap_partition() -> (Option<String>, Option<String>) {
+    let labelled = out(&["blkid", "-L", fstab::LABEL]).unwrap_or_default();
+    if !labelled.is_empty() {
+        return (Some(labelled), Some(fstab::LABEL.to_string()));
+    }
+    let listing = out(&["lsblk", "-nrpo", "NAME,FSTYPE,LABEL"]).unwrap_or_default();
+    for line in listing.lines() {
+        let mut fields = line.split_whitespace();
+        let (Some(node), Some(fstype)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        if fstype != "swap" || node.starts_with("/dev/zram") || node.starts_with("/dev/loop") {
+            continue;
+        }
+        let Some(disk) = disk_of(node) else { continue };
+        if is_root_disk(&disk) {
+            continue;
+        }
+        let label = fields.next().map(str::to_string);
+        return (Some(node.to_string()), label);
+    }
+    (None, None)
 }
 
 /// The whole-card size and the smaller fixed sizes (with 64 MiB margin).
@@ -462,156 +527,259 @@ pub fn menu(
             .map_err(|e| crate::Failure::new("Auxiliary swap", e.to_string()))?;
         let mut view = TaskView::new(task);
         crate::run_screen(terminal, design, "Auxiliary swap", &mut view)
+    } else if let Some(part) = status.part.clone() {
+        let Some(choice) = ask_existing(terminal, design, &part, status.label.as_deref())? else {
+            return Ok(0);
+        };
+        if choice == "use" {
+            return adopt(terminal, design, &part, &fstab_text);
+        }
+        create(terminal, design, &fstab_text)
     } else {
-        let found = loop {
-            let listing = out(&["lsblk", "-dnro", "NAME,SIZE,MODEL,TRAN"]).unwrap_or_default();
-            let facts = Facts::from_machine();
-            let candidates = disk::candidates(&listing, &facts);
-            if !candidates.is_empty() {
-                break candidates;
-            }
-            let mut empty_picker = Picker::new(
-                "Auxiliary swap",
-                vec![Question::choose(
-                    "No removable disks available",
-                    disk::NOTHING,
-                    vec![row(
-                        "Rescan removable disks",
-                        "plug in an unmounted USB stick or SD card and press Enter",
-                        Glyph::Sync,
-                    )],
-                    vec!["rescan".to_string()],
-                )],
-            );
-            let code = crate::run_screen(terminal, design, "Auxiliary swap", &mut empty_picker)?;
-            if code != 0 {
-                return Ok(code);
-            }
-        };
+        create(terminal, design, &fstab_text)
+    }
+}
 
-        let mut picker = Picker::new("Auxiliary swap", questions(&found));
-        let code = crate::run_screen(terminal, design, "Auxiliary swap", &mut picker)?;
-        if code != 0 {
-            return Ok(code);
-        }
-
-        let answers = picker.answers();
-        let Some(dev) = answers.first().cloned() else {
-            return Ok(1);
-        };
-        let name = dev.trim_start_matches("/dev/");
-
-        let now = Facts::from_machine();
-        if disk::is_system_disk(name, &now) {
-            return Err(crate::Failure::new(
-                "Auxiliary swap",
-                format!(
-                    "{dev} is built into this machine or is the disk this system runs from: never repartitioned here"
-                ),
-            ));
-        }
-
-        let existing = out(&["blkid", "-L", "hayato_swap"]).unwrap_or_default();
-        let parent = out(&["lsblk", "-no", "PKNAME", &dev]).unwrap_or_default();
-        let parent = parent.trim();
-        if label_taken(&existing, &dev, parent, name) {
-            return Err(crate::Failure::new(
-                "Auxiliary swap",
-                format!(
-                    "{existing} already carries the hayato_swap label: turn that swap off first"
-                ),
-            ));
-        }
-
-        let bytes = out(&["lsblk", "-bdno", "SIZE", &dev]).unwrap_or_default();
-        let total_mib: u64 = bytes.trim().parse().unwrap_or(0);
-
-        let size_opts = sizes(total_mib);
-        let size_rows: Vec<hayato_ui::Row> = size_opts
-            .iter()
-            .map(|(_key, label)| row(label.clone(), String::new(), Glyph::Disk))
-            .collect();
-        let size_keys: Vec<String> = size_opts.iter().map(|(k, _)| k.clone()).collect();
-
-        let mut picker = Picker::new(
-            "Auxiliary swap",
+/// The question an existing, unconfigured swap area asks: adopt it in place, or
+/// erase the card and start over. Adoption never writes to the card except for
+/// its label, so it needs no confirm of its own; the erase path goes through
+/// the create flow and its confirm.
+fn ask_existing(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    design: &Design,
+    part: &str,
+    label: Option<&str>,
+) -> Result<Option<String>, crate::Failure> {
+    let mut picker = Picker::new(
+        "Auxiliary swap",
+        vec![Question::choose(
+            "A swap area is already on the card",
+            format!(
+                "{part} · {} · it is not active and /etc/fstab does not name it",
+                label.unwrap_or("no label")
+            ),
             vec![
-                Question::choose(
-                    "How much swap?",
-                    "{0} \u{00b7} more swap is slower than RAM",
-                    size_rows,
-                    size_keys,
+                row(
+                    "Use it now and at boot",
+                    "label it hayato_swap, add the fstab line, activate it at priority 10 · no data is erased",
+                    Glyph::Chip,
                 ),
-                Question::ask(
-                    "Use this card for swap?",
-                    "{0} \u{00b7} every file on it is lost",
-                    "{0} \u{00b7} {1} of swap, label hayato_swap",
-                    "Erase it",
-                    "go",
+                row(
+                    "Erase it and create a new one",
+                    "repartitions the card · every file on it is lost",
+                    Glyph::Warning,
                 ),
             ],
-        );
-        picker.set_answers(vec![dev.clone()]);
+            vec!["use".to_string(), "recreate".to_string()],
+        )],
+    );
+    let code = crate::run_screen(terminal, design, "Auxiliary swap", &mut picker)?;
+    if code != 0 {
+        return Ok(None);
+    }
+    Ok(Some(
+        picker
+            .answers()
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "recreate".to_string()),
+    ))
+}
 
-        let code = crate::run_screen(terminal, design, "Auxiliary swap", &mut picker)?;
+/// The steps that adopt a swap area that already exists: give it the label the
+/// fstab line names, then activate it at the auxiliary priority.
+fn adopt_steps(part: &str) -> Vec<Step> {
+    vec![
+        Step::root("swap-label", &["swaplabel", "-L", fstab::LABEL, part]),
+        Step::root("activation", &["swapon", "-p", "10", part]),
+    ]
+}
+
+fn adopt(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    design: &Design,
+    part: &str,
+    fstab_text: &str,
+) -> Result<i32, crate::Failure> {
+    fstab::replace(&fstab::with_swap(fstab_text))
+        .map_err(|f| crate::Failure::new("Auxiliary swap", f))?;
+
+    let mut commands = Vec::new();
+    for s in adopt_steps(part) {
+        let mut cmd = vec!["sudo".to_string(), "-n".to_string()];
+        cmd.extend(s.argv);
+        commands.push(cmd);
+    }
+
+    let tag = format!("swap-adopt-{}", std::process::id());
+    let step_labels = vec![
+        format!("Label {part} hayato_swap (swaplabel -L)"),
+        format!("Activate swap at priority 10 (swapon -p 10 {part})"),
+    ];
+    let task = Task::start_steps(
+        &tag,
+        format!("Use {part} as auxiliary swap"),
+        step_labels,
+        false,
+        commands,
+    )
+    .map_err(|e| crate::Failure::new("Auxiliary swap", e.to_string()))?;
+    let mut view = TaskView::new(task);
+    crate::run_screen(terminal, design, "Auxiliary swap", &mut view)
+}
+
+/// The create flow: pick a removable disk, choose the size, erase and set it up.
+fn create(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    design: &Design,
+    fstab_text: &str,
+) -> Result<i32, crate::Failure> {
+    let found = loop {
+        let listing = out(&["lsblk", "-dnro", "NAME,SIZE,MODEL,TRAN"]).unwrap_or_default();
+        let facts = Facts::from_machine();
+        let candidates = disk::candidates(&listing, &facts);
+        if !candidates.is_empty() {
+            break candidates;
+        }
+        let mut empty_picker = Picker::new(
+            "Auxiliary swap",
+            vec![Question::choose(
+                "No removable disks available",
+                disk::NOTHING,
+                vec![row(
+                    "Rescan removable disks",
+                    "plug in an unmounted USB stick or SD card and press Enter",
+                    Glyph::Sync,
+                )],
+                vec!["rescan".to_string()],
+            )],
+        );
+        let code = crate::run_screen(terminal, design, "Auxiliary swap", &mut empty_picker)?;
         if code != 0 {
             return Ok(code);
         }
+    };
 
-        let answers = picker.answers();
-        if answers.get(2) != Some(&"go".to_string()) {
-            return Ok(0);
-        }
-
-        let Some(size_choice) = answers.get(1) else {
-            return Ok(1);
-        };
-        let end = extent(size_choice, total_mib);
-        let part = fstab::partition(&dev);
-
-        let new_fstab = fstab::with_swap(&fstab_text);
-        fstab::replace(&new_fstab).map_err(|f| crate::Failure::new("Auxiliary swap", f))?;
-
-        let mut commands = Vec::new();
-        for s in partition_steps(&dev, &end) {
-            let mut cmd = vec!["sudo".to_string(), "-n".to_string()];
-            cmd.extend(s.argv);
-            commands.push(cmd);
-        }
-        commands.push(vec![
-            "sh".to_string(),
-            "-c".to_string(),
-            format!(
-                "for _i in $(seq 1 50); do [ -e '{part}' ] && exit 0; sleep 0.1; done; [ -e '{part}' ]"
-            ),
-        ]);
-        for s in [swap_area_step(&part), reload_step(), activation_step(&part)] {
-            let mut cmd = vec!["sudo".to_string(), "-n".to_string()];
-            cmd.extend(s.argv);
-            commands.push(cmd);
-        }
-
-        let tag = format!("swap-on-{}", std::process::id());
-        let step_labels = vec![
-            format!("Create GPT partition table on {dev}"),
-            format!("Create linux-swap partition (1MiB..{end})"),
-            format!("Wait for kernel partition node {part}"),
-            format!("Write swap header (mkswap -L {})", fstab::LABEL),
-            "Reload systemd mount units (systemctl daemon-reload)".to_string(),
-            format!("Activate swap at priority 10 (swapon -p 10 {part})"),
-        ];
-        let task = Task::start_steps(
-            &tag,
-            format!("Configure auxiliary swap on {dev}"),
-            step_labels,
-            false,
-            commands,
-        )
-        .map_err(|e| crate::Failure::new("Auxiliary swap", e.to_string()))?;
-
-        let mut view = TaskView::new(task);
-        crate::run_screen(terminal, design, "Auxiliary swap", &mut view)
+    let mut picker = Picker::new("Auxiliary swap", questions(&found));
+    let code = crate::run_screen(terminal, design, "Auxiliary swap", &mut picker)?;
+    if code != 0 {
+        return Ok(code);
     }
+
+    let answers = picker.answers();
+    let Some(dev) = answers.first().cloned() else {
+        return Ok(1);
+    };
+    let name = dev.trim_start_matches("/dev/");
+
+    let now = Facts::from_machine();
+    if disk::is_system_disk(name, &now) {
+        return Err(crate::Failure::new(
+            "Auxiliary swap",
+            format!(
+                "{dev} is built into this machine or is the disk this system runs from: never repartitioned here"
+            ),
+        ));
+    }
+
+    let existing = out(&["blkid", "-L", "hayato_swap"]).unwrap_or_default();
+    let parent = out(&["lsblk", "-no", "PKNAME", &dev]).unwrap_or_default();
+    let parent = parent.trim();
+    if label_taken(&existing, &dev, parent, name) {
+        return Err(crate::Failure::new(
+            "Auxiliary swap",
+            format!("{existing} already carries the hayato_swap label: turn that swap off first"),
+        ));
+    }
+
+    let bytes = out(&["lsblk", "-bdno", "SIZE", &dev]).unwrap_or_default();
+    let total_mib: u64 = bytes.trim().parse().unwrap_or(0);
+
+    let size_opts = sizes(total_mib);
+    let size_rows: Vec<hayato_ui::Row> = size_opts
+        .iter()
+        .map(|(_key, label)| row(label.clone(), String::new(), Glyph::Disk))
+        .collect();
+    let size_keys: Vec<String> = size_opts.iter().map(|(k, _)| k.clone()).collect();
+
+    let mut picker = Picker::new(
+        "Auxiliary swap",
+        vec![
+            Question::choose(
+                "How much swap?",
+                "{0} \u{00b7} more swap is slower than RAM",
+                size_rows,
+                size_keys,
+            ),
+            Question::ask(
+                "Use this card for swap?",
+                "{0} \u{00b7} every file on it is lost",
+                "{0} \u{00b7} {1} of swap, label hayato_swap",
+                "Erase it",
+                "go",
+            ),
+        ],
+    );
+    picker.set_answers(vec![dev.clone()]);
+
+    let code = crate::run_screen(terminal, design, "Auxiliary swap", &mut picker)?;
+    if code != 0 {
+        return Ok(code);
+    }
+
+    let answers = picker.answers();
+    if answers.get(2) != Some(&"go".to_string()) {
+        return Ok(0);
+    }
+
+    let Some(size_choice) = answers.get(1) else {
+        return Ok(1);
+    };
+    let end = extent(size_choice, total_mib);
+    let part = fstab::partition(&dev);
+
+    let new_fstab = fstab::with_swap(fstab_text);
+    fstab::replace(&new_fstab).map_err(|f| crate::Failure::new("Auxiliary swap", f))?;
+
+    let mut commands = Vec::new();
+    for s in partition_steps(&dev, &end) {
+        let mut cmd = vec!["sudo".to_string(), "-n".to_string()];
+        cmd.extend(s.argv);
+        commands.push(cmd);
+    }
+    commands.push(vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        format!(
+            "for _i in $(seq 1 50); do [ -e '{part}' ] && exit 0; sleep 0.1; done; [ -e '{part}' ]"
+        ),
+    ]);
+    for s in [swap_area_step(&part), reload_step(), activation_step(&part)] {
+        let mut cmd = vec!["sudo".to_string(), "-n".to_string()];
+        cmd.extend(s.argv);
+        commands.push(cmd);
+    }
+
+    let tag = format!("swap-on-{}", std::process::id());
+    let step_labels = vec![
+        format!("Create GPT partition table on {dev}"),
+        format!("Create linux-swap partition (1MiB..{end})"),
+        format!("Wait for kernel partition node {part}"),
+        format!("Write swap header (mkswap -L {})", fstab::LABEL),
+        "Reload systemd mount units (systemctl daemon-reload)".to_string(),
+        format!("Activate swap at priority 10 (swapon -p 10 {part})"),
+    ];
+    let task = Task::start_steps(
+        &tag,
+        format!("Configure auxiliary swap on {dev}"),
+        step_labels,
+        false,
+        commands,
+    )
+    .map_err(|e| crate::Failure::new("Auxiliary swap", e.to_string()))?;
+
+    let mut view = TaskView::new(task);
+    crate::run_screen(terminal, design, "Auxiliary swap", &mut view)
 }
 
 #[cfg(test)]
@@ -622,6 +790,7 @@ mod tests {
     fn status_reads_the_machine_and_formats_a_line() {
         let status = Status {
             part: Some("/dev/sda1".to_string()),
+            label: Some("hayato_swap".to_string()),
             size: Some("8G".to_string()),
             priority: Some(10),
             configured: true,
@@ -639,13 +808,43 @@ mod tests {
     fn status_without_partition_is_still_configured() {
         let status = Status {
             part: None,
+            label: None,
             size: None,
             priority: None,
             configured: true,
             active: false,
         };
-        assert!(status.detail().contains("not inserted"));
+        assert!(
+            status
+                .detail()
+                .contains("no auxiliary swap card is inserted")
+        );
         assert!(status.line().contains("configured"));
+    }
+
+    #[test]
+    fn a_swap_area_that_is_not_configured_is_offered_for_adoption() {
+        let status = Status {
+            part: Some("/dev/mmcblk1p1".to_string()),
+            label: Some("an_older_label".to_string()),
+            size: Some("8G".to_string()),
+            priority: None,
+            configured: false,
+            active: false,
+        };
+        assert!(status.detail().contains("can adopt"));
+        assert!(status.detail().contains("/dev/mmcblk1p1"));
+    }
+
+    #[test]
+    fn adoption_relabels_before_it_activates() {
+        let steps = adopt_steps("/dev/mmcblk1p1");
+        assert_eq!(
+            steps[0].argv,
+            ["swaplabel", "-L", "hayato_swap", "/dev/mmcblk1p1"]
+        );
+        assert_eq!(steps[1].argv, ["swapon", "-p", "10", "/dev/mmcblk1p1"]);
+        assert!(steps.iter().all(|step| step.root));
     }
 
     #[test]

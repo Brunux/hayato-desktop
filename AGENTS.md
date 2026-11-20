@@ -120,7 +120,10 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    inside it — hence one game per zip, said in the manual. A disc row is never claimed by a zip,
    because a `.cue` inside an archive cannot find the `.bin` files beside it. The first time the
    library opens it creates one folder per platform plus `bios/` and a generated
-   `HAYATO-GAMES.txt`, so a new person only drops files in. The library
+   `HAYATO-GAMES.txt`, so a new person only drops files in. The image build
+   creates the shelf (`install-hayato.sh` runs `hayato-games --ensure-layout`,
+   the same `library::ensure_layout` the library runs when it opens), so a fresh
+   host has it before Games is ever opened. The library
    **exits before a game starts**; the host returns to a new `hayato menu games` window, so the
    TUI and the game window are never alive together on a 4 GB machine. Web games are trusted
    local data; the sandbox and per-origin storage are the boundary, not a second shell.
@@ -269,6 +272,17 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    exactly three wallpapers, and `rust/crates/hayato-theme/tests/wallpapers.rs` fails a theme that
    declares another number, a file that is not in the tree, or a name carrying the old brand.
 
+23. **The session PATH carries the sbin directories, and the agent config is V2**: greetd sources
+    `/etc/profile`, whose non-root PATH omits `/usr/sbin` and `/sbin`, and every window inherits it.
+    `uis/sway/files/etc/profile.d/90-cli-tools.sh` puts them back because `parted`, `mkfs.exfat`,
+    `mkfs.ext2/4`, `mkswap`, `swapon`, `swapoff`, `blkid`, `blockdev`, `e2fsck`, `findfs` and
+    `i2cset` live there; the disk menu, the installer pre-flight, the auto-mount helper and the
+    Type-C mux resume hook call them by name, and without the block they answer "missing" while
+    being installed. `~/.config/opencode/opencode.json` is OpenCode V2's shape -
+    `mcp.servers.<name>`, with `disabled` rather than `enabled` - and the shipped file and
+    `check-desktop.sh` move together. The release sanitizer strips `service.json` and `auth.json`
+    from that directory, never the directory, so the registration reaches the image.
+
 ## Developer Profile Export
 - `hayato-profile export --include-home` streams the whole home through tar. The single
   `home_excludes` list in `bin/hayato-profile` is used by both the `du` size estimate and the
@@ -293,13 +307,14 @@ that file as the contract; never add a second one.
 | `reduced motion` | `~/.config/hayato/reduced-motion` | `1`/`yes`/`true` = on. `Design::for_session` reads it alongside `HAYATO_REDUCED_MOTION=1`. |
 | `appearance` | `~/.config/hayato/appearance.conf` + `~/.config/sway/config.d/41-appearance.conf` + `~/.config/sway/config.d/36-custom-wallpaper.conf` | `corners=sharp\|rounded\|soft`, `shadows=on\|off`, `blur=off\|frosted\|xray`, `animations=off\|calm\|normal`, `wallpaper=theme\|/abs/path`; the 41 drop-in is the generated compositor copy, and the 36 drop-in is the custom image override (copied into `~/.local/share/hayato/wallpapers/`). Bar position/density/modules live in `~/.config/waybar/config.jsonc`, not here. |
 | `hayato-notify` | `~/.config/hayato/notify.conf` + `$XDG_RUNTIME_DIR/hayato-notify.sock` | `default_timeout` (ms, 0 = never), `max_visible`, `card_width`, `history_limit`, `group_by_sender`, `collapse_repeats`. Read once at startup; Settings restarts the daemon after a save. The 0600 socket takes `act-newest`, `dismiss-newest`, `dismiss-all` from the keyboard keys and dies with the session. |
-| `hayato-clipboard` | `~/.config/hayato/clipboard.conf` | `enabled=yes\|no`; the helper starts/stops `wl-paste --watch cliphist store`. |
+| `hayato-clipboard` | `~/.config/hayato/clipboard.conf` + `$XDG_STATE_HOME/hayato/clipboard.log` | `enabled=yes\|no`; the helper starts/stops `wl-paste --watch cliphist store`, logs the watcher's own errors and retries once (a session can start before the compositor socket answers). |
 | `hayato-capture` | `~/.config/hayato/record.conf` + `$XDG_RUNTIME_DIR/hayato-capture/camera.pid` | `audio=off\|mic\|system`, `webcam=on\|off`; the camera pid is the mpv overlay, signalled with the recorder. |
 | `hayato-vnc` | `$XDG_RUNTIME_DIR/hayato-vnc/{pid,wayvnc.log}` | the mode is the process, not a file: `status` and the bar read `/proc/<pid>/cmdline`, where `--disable-input` means read-only and its absence means remote control. Both bind 127.0.0.1 and are reached through the ssh tunnel; remote input is the explicit second start. |
 | `notes` | `~/Documents/Notes` + `~/Documents/Signed` | `*.md` quick notes edited in `$EDITOR` (nvim), `*.xopp` ink notes opened in xournalpp, `README.md` generated once and skipped by the list; exported PDFs in `Signed`. No state file: the folder is the list. EPUB is Files/`open` → foliate, never the Notes menu. |
 | `tablet-mode` | `$XDG_RUNTIME_DIR/hayato-tablet/` | `kbd.pid`, `poller.pid`, `out` while on; absent while off. `off` repairs a missing directory. |
 | `busy` / `bar-busy` | `$XDG_RUNTIME_DIR/hayato-busy/<tag>.{label,id,icon,stop}` | `.stop` is the line the bar runs; `busy cancelled` says whether the card is gone. |
-| `hayato-profile` | target archive + `$XDG_CACHE_HOME/hayato` | export writes `.partial` then renames; import backs up then extracts; `report` is one file. |
+| `hayato-profile` | target archive + `$XDG_CACHE_HOME/hayato` | export writes `.partial` then renames; import backs up then extracts; `report` is one file. The archive list matches `*-profile-*.tar.zst*`, so a backup exported before the rebrand is still offered. |
+| `auxiliary swap` | `/etc/fstab` marked block + `LABEL=hayato_swap` | the label is the contract: an existing swap area is adopted by relabelling it, `configured()` reads the block or a hand-written `LABEL=hayato_swap` line, and `pri=10` keeps it below zram's 100. |
 | `sway-lock` | no file | lock/unlock belongs to the compositor; readiness is the fifo handshake. |
 | `quake` console | no file | the window is the state: it waits in Sway's scratchpad while hidden, and `hayato quake --status` reads `swaymsg -t get_tree` for `absent`/`hidden`/`visible`. `34-agent-console.conf` owns its geometry (full width, 60% tall, top, no border) and `Alt+grave` toggles it. |
 | `hayato-screensaver` | no file | one `foot` window; idempotent by `pgrep`. |
@@ -342,6 +357,10 @@ Add a probe when a new state is introduced.
   last. `core/scripts/install-emmc.sh` stays intact only as a Hayato manual/debug fallback.
 - When desktop binaries invoke `hayato-core` system scripts (`install-boot.sh`, `backup-system.sh`),
   resolve `/usr/libexec/hayato/<script>` first, then `$HAYATO_CORE_DIR/scripts/`, then umbrella/sibling fallbacks.
+- The installer's `rsync` excludes `/var/cache/*` but includes `/var/cache/fontconfig/**` first
+  (rsync filters are first-match): the image builds the font cache once, and dropping it made the
+  first window walk every font directory on the installed disk. `install-emmc.sh` carries the same
+  pair.
 - Guard optional hardware resume hooks in Sway configs (e.g., `[ -x /usr/local/bin/hayato-dp-resume ]`),
   and detect both `eDP-*` and `DSI-*` internal panel outputs dynamically in `system::display`.
 

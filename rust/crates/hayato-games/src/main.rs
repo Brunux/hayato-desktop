@@ -19,6 +19,7 @@ hayato-games — the GTK + WebKit host for one Hayato HTML game
 Usage:
   hayato-games --play <id>     run one game, then return to the TUI library
   hayato-games --scan          print the library as JSON, no window
+  hayato-games --ensure-layout create ~/Games (one folder per platform, bios/ and the README)
   hayato-games --version       print the desktop version
   hayato-games --help          this text
 
@@ -52,6 +53,7 @@ fn main() -> ExitCode {
             app::run_play(argument.trim_start_matches("--play="))
         }
         Some("--scan") => scan(),
+        Some("--ensure-layout") => ensure_layout(),
         Some("--version") | Some("-V") => {
             println!("{}", paths::version());
             ExitCode::SUCCESS
@@ -78,6 +80,26 @@ fn scan() -> ExitCode {
         }
         Err(error) => {
             eprintln!("hayato-games: cannot serialize the library: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Create the shelf without opening the window: one folder per platform,
+/// `bios/` and the README, all generated from `platform::PLATFORMS`. The image
+/// build runs this so `~/Games` exists on a fresh host; opening the library
+/// runs the same function, and both are idempotent.
+fn ensure_layout() -> ExitCode {
+    let options = ScanOptions::from_env();
+    match library::ensure_layout(&options) {
+        Ok(()) => {
+            if let Some(root) = options.roots.first() {
+                println!("{}", root.display());
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("hayato-games: cannot create the game folders: {error}");
             ExitCode::FAILURE
         }
     }

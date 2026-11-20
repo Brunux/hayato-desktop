@@ -153,9 +153,10 @@ platform, which is what keeps a `README.md` out of the Genesis shelf (`.md` is
 also a Mega Drive extension). A `.zip` is the one exception, because its
 extension names no platform: it belongs to the folder it sits in.
 
-**The folders are already there.** The first time the library opens it creates
-one folder per platform and `bios/`, plus `~/Games/HAYATO-GAMES.txt` with the
-same table as below, so all you have to do is drop files in. A `.zip` in a
+**The folders are already there.** The image build creates one folder per
+platform and `bios/`, plus `~/Games/HAYATO-GAMES.txt` with the same table as
+below, so all you have to do is drop files in. Opening the library runs the
+same function, so a home that lost the folders gets them back. A `.zip` in a
 console platform's folder is one of its games:
 
 ```
