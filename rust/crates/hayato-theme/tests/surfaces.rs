@@ -205,3 +205,58 @@ fn every_surface_changes_with_the_theme_or_it_is_not_reading_the_palette() {
         );
     }
 }
+
+fn sway_surface() -> &'static hayato_theme::Surface {
+    SURFACES
+        .iter()
+        .find(|surface| surface.name == "sway")
+        .expect("the sway surface")
+}
+
+#[test]
+fn a_missing_wallpaper_falls_back_to_one_that_is_installed() {
+    let temp = Temp::new("wallpaper-fallback");
+    let home = temp.0.join("home");
+    let pictures = home.join("Pictures/Wallpapers");
+    fs::create_dir_all(&pictures).unwrap();
+    fs::write(pictures.join("hayato.png"), b"not a real png").unwrap();
+
+    let body = store::render_surface(
+        sway_surface(),
+        &theme("tokyo-night"),
+        "tokyo-night",
+        home.to_str().unwrap(),
+    )
+    .unwrap();
+    assert!(
+        body.contains("/Pictures/Wallpapers/hayato.png "),
+        "the brand wallpaper is the fallback:\n{body}"
+    );
+    assert!(
+        !body.contains("tokyo-night-sunset-lake.jpg"),
+        "the missing picture is not named:\n{body}"
+    );
+}
+
+#[test]
+fn no_wallpaper_at_all_leaves_sway_its_own_background() {
+    let temp = Temp::new("wallpaper-none");
+    let home = temp.0.join("home");
+    fs::create_dir_all(home.join("Pictures/Wallpapers")).unwrap();
+
+    let body = store::render_surface(
+        sway_surface(),
+        &theme("tokyo-night"),
+        "tokyo-night",
+        home.to_str().unwrap(),
+    )
+    .unwrap();
+    assert!(
+        !body.lines().any(|line| line.starts_with("output * bg ")),
+        "a missing wallpaper must not fail the whole config:\n{body}"
+    );
+    assert!(
+        body.lines().any(|line| line.starts_with("# output * bg ")),
+        "the line says why it is gone:\n{body}"
+    );
+}

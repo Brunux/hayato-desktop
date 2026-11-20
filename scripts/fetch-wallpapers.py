@@ -15,11 +15,16 @@ Usage:
     scripts/fetch-wallpapers.py --check    # verify every theme has three
 """
 import os
+import shutil
 import subprocess
 import sys
 
 BASE = "https://raw.githubusercontent.com/omacom/omarchy/quattro/themes"
 REPO = os.path.abspath("uis/sway/files/home/Pictures/Wallpapers")
+# The same pictures land in the person's own folder: the theme engine writes an
+# absolute path into the sway drop-in, and `output * bg` on a missing file fails
+# the whole config, so a dev machine and the image must hold the same set.
+HOST = os.path.expanduser("~/Pictures/Wallpapers")
 
 # theme -> [(source, dest name)]; a source of None means the file already ships
 # in this repository (a picture from before the omarchy import).
@@ -135,6 +140,14 @@ def fetch(source, dest):
     convert(tmp, dest)
 
 
+def install_to_home(dest, name):
+    if not os.path.isdir(HOST):
+        return
+    target = os.path.join(HOST, name)
+    if not os.path.exists(target):
+        shutil.copy2(dest, target)
+
+
 def main():
     check = "--check" in sys.argv
     os.makedirs(REPO, exist_ok=True)
@@ -152,6 +165,7 @@ def main():
                     raise SystemExit(f"{name} should ship in the repo but is missing")
                 print(f"  {theme:18} {name}")
                 fetch(source, dest)
+            install_to_home(dest, name)
     if check:
         if missing:
             print("missing wallpapers:")

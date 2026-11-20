@@ -178,17 +178,80 @@ fn sibling(target: &Path, extension: &str) -> PathBuf {
 }
 
 /// Generates one surface from the embedded template.
+/// The wallpaper the sway surface should name.
+///
+/// The theme lists three; on an installed machine the first is normally there.
+/// When the directory exists but that picture does not (an image upgrade that
+/// renamed the files, or a half-copied home), naming a missing file is not a
+/// cosmetic problem: `output * bg` fails, and sway refuses the whole config on
+/// the next login. So the renderer walks the theme's list, then the brand
+/// wallpaper, and if none is present it leaves the line out entirely and sway
+/// keeps whatever background it had.
+fn wallpaper_for(theme: &Theme, home: &str) -> WallpaperChoice {
+    let dir = Path::new(home).join("Pictures/Wallpapers");
+    if !dir.is_dir() {
+        // No home tree at all (a fixture, a build host): the target is not this
+        // machine, so the theme's own choice is the answer.
+        return WallpaperChoice::Keep;
+    }
+    let chosen = theme.wallpapers.first().cloned().unwrap_or_default();
+    if dir.join(&chosen).exists() {
+        return WallpaperChoice::Keep;
+    }
+    for name in theme
+        .wallpapers
+        .iter()
+        .skip(1)
+        .chain(["hayato.png".to_string()].iter())
+    {
+        if dir.join(name).exists() {
+            return WallpaperChoice::Use(name.clone());
+        }
+    }
+    WallpaperChoice::Omit
+}
+
+enum WallpaperChoice {
+    Keep,
+    Use(String),
+    Omit,
+}
+
 pub fn render_surface(
     surface: &Surface,
     theme: &Theme,
     slug: &str,
     home: &str,
 ) -> Result<String, String> {
-    crate::render::render(
+    let body = crate::render::render(
         surface.template,
         &crate::render::Context { theme, slug, home },
     )
-    .map_err(|error| format!("{}: {error}", surface.name))
+    .map_err(|error| format!("{}: {error}", surface.name))?;
+    if surface.name != "sway" {
+        return Ok(body);
+    }
+    let chosen = theme.wallpapers.first().cloned().unwrap_or_default();
+    Ok(match wallpaper_for(theme, home) {
+        WallpaperChoice::Keep => body,
+        WallpaperChoice::Use(name) => body.replace(
+            &format!("/Pictures/Wallpapers/{chosen} "),
+            &format!("/Pictures/Wallpapers/{name} "),
+        ),
+        WallpaperChoice::Omit => {
+            body.lines()
+                .map(|line| {
+                    if line.starts_with("output * bg ") {
+                        format!("# {line} (the theme's wallpapers are not installed)")
+                    } else {
+                        line.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n"
+        }
+    })
 }
 
 /// Writes one surface, honouring the three rules above.
