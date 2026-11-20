@@ -20,7 +20,7 @@ use super::Glyph;
 pub const FONT_FAMILY: &str = "Symbols Nerd Font Mono";
 pub const EXTRA_FAMILIES: &str = "Font Awesome 6 Free Solid, Font Awesome 6 Brands Regular";
 pub const FONT_FILE: &str = "SymbolsNerdFontMono-Regular.ttf";
-pub const FONT_SHA256: &str = "b5c6ae7c7542b07abba3f13077f1a095e4ccaff7fe3c2128d25a3561aaefd7d2";
+pub const FONT_SHA256: &str = "72d55ea90314649e143f603af34c98189538bade245d646a0ca6ce25eb2ca1e0";
 
 /// The Nerd Fonts release the candidate codepoints come from.
 pub const NERD_VERSION: &str = "3.5.1";
