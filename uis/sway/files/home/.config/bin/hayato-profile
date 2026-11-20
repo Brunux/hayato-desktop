@@ -443,6 +443,22 @@ manifest() {
 # build_tar OUT [MODE] [ARG] [PASS_FILE]: stream tar | zstd (and optionally gpg
 # -c into OUT) directly onto the target filesystem so no multi-GB archive copy
 # touches local staging storage and no plaintext archive hits the target disk.
+# build_tar ARCHIVE [profile|home|filelist] [ARGS] [PASSFILE]: stream $HOME
+# (or the listed members) through tar and zstd into ARCHIVE.
+#
+# tar's exit status is 1 when a file changed while it was read ("some files
+# differ"). A live home always has one - a log, a session file, the health
+# check's own writes - and the archive is still a usable snapshot; only 2 is
+# fatal. The `--warning=no-file-changed` above hides the message but not the
+# status, which is why a restore used to abort with a valid backup on disk.
+tar_ok() {
+	if [ -s "$WORK/tar.rc" ]; then
+		[ "$(cat "$WORK/tar.rc")" -le 1 ]
+	else
+		return 0
+	fi
+}
+
 build_tar() {
 	_bt_out=$1
 	_bt_mode=${2:-profile}
@@ -541,7 +557,7 @@ build_tar() {
 		} | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
 			--compress-algo none --cipher-algo AES256 --s2k-digest-algo SHA512 -c \
 			-o "$_bt_out" 3<"$_bt_pass" 2>"$WORK/gpg.log" || _bt_gpg_rc=$?
-		[ ! -s "$WORK/tar.rc" ] && [ ! -s "$WORK/zstd.rc" ] && [ "$_bt_gpg_rc" -eq 0 ]
+		tar_ok && [ ! -s "$WORK/zstd.rc" ] && [ "$_bt_gpg_rc" -eq 0 ]
 	else
 		_bt_zstd_rc=0
 		{
@@ -550,7 +566,7 @@ build_tar() {
 				exec tar "$@" --null -T "$_bt_list" -cf -
 			) || printf '%s\n' "$?" >"$WORK/tar.rc"
 		} | zstd -q -1 -T0 -o "$_bt_out" || _bt_zstd_rc=$?
-		[ ! -s "$WORK/tar.rc" ] && [ "$_bt_zstd_rc" -eq 0 ]
+		tar_ok && [ "$_bt_zstd_rc" -eq 0 ]
 	fi
 }
 
