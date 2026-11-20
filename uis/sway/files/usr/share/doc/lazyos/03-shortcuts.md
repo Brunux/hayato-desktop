@@ -194,10 +194,11 @@ Two applications are exempt while they are being watched: a **fullscreen video o
 presentation** in Firefox or the document reader, and a video in **mpv**. They ask
 the compositor to keep the screen awake, so the lock does not interrupt a film.
 
-The **coffee cup on the bar** is the manual switch: while it is yellow the screen
-stays awake (a long download, a recipe, a page you are reading from across the
-room), and a click on it puts it back to dim, which means "let it sleep". It is
-the bar's own module and it starts nothing.
+The **coffee cup on the bar** is the manual switch: while it takes the accent
+colour of the current workspace the screen stays awake (a long download, a
+recipe, a page you are reading from across the room), and a click on it dims
+it, which means "let it sleep". It is the bar's own module and it starts
+nothing.
 
 ## Windows
 

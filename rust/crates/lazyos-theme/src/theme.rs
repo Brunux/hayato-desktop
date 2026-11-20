@@ -141,6 +141,16 @@ pub struct Roles {
     pub danger: Hex,
     pub info: Hex,
     pub selection: Hex,
+    /// The three status colours as *text*: the same hue moved toward the
+    /// theme's text until it clears 4.5:1 on the background. The bare `ok` /
+    /// `warn` / `danger` clear 3:1, which is enough for an icon or a bar and
+    /// not enough for a word ("muted", "Offline", a percentage), so a template
+    /// that draws one says `warn_text`. A filled chip inverts the pair: its
+    /// fill is `warn_text` and its label `background`, which clears the same
+    /// floor on every built-in theme.
+    pub ok_text: Hex,
+    pub warn_text: Hex,
+    pub danger_text: Hex,
 }
 
 impl Roles {
@@ -166,6 +176,9 @@ impl Roles {
             ("danger", self.danger),
             ("info", self.info),
             ("selection", self.selection),
+            ("ok_text", self.ok_text),
+            ("warn_text", self.warn_text),
+            ("danger_text", self.danger_text),
         ])
     }
 }
@@ -222,6 +235,21 @@ impl Theme {
         let stated = &self.roles;
         let surface = stated.surface.unwrap_or(c.regular0);
         let accent = stated.accent.unwrap_or(c.regular6);
+        let text = stated.text.unwrap_or(c.foreground);
+        // A status is a colour first (3:1, an icon) and a word second (4.5:1).
+        // The lift is toward the theme's own text, so a readable status colour
+        // keeps exactly the value the theme stated.
+        let as_text = |colour: Hex| {
+            Hex(crate::contrast::readable(
+                colour.0,
+                text.0,
+                c.background.0,
+                4.5,
+            ))
+        };
+        let ok = stated.ok.unwrap_or(c.regular2);
+        let warn = stated.warn.unwrap_or(c.regular3);
+        let danger = stated.danger.unwrap_or(c.regular1);
         Roles {
             surface,
             surface_alt: stated.surface_alt.unwrap_or(c.bright0),
@@ -236,18 +264,21 @@ impl Theme {
                 .unwrap_or_else(|| stated.danger.unwrap_or(c.regular1).mix(c.background, 0.82)),
             border: stated.border.unwrap_or(accent),
             border_focus: stated.border_focus.unwrap_or(accent),
-            text: stated.text.unwrap_or(c.foreground),
+            text,
             strong: stated.strong.unwrap_or(c.bright7),
             dim: stated
                 .dim
                 .unwrap_or_else(|| c.foreground.mix(c.background, 0.42)),
             accent,
             accent_alt: stated.accent_alt.unwrap_or(c.regular4),
-            ok: stated.ok.unwrap_or(c.regular2),
-            warn: stated.warn.unwrap_or(c.regular3),
-            danger: stated.danger.unwrap_or(c.regular1),
+            ok,
+            warn,
+            danger,
             info: stated.info.unwrap_or(c.regular4),
             selection: stated.selection.unwrap_or(surface),
+            ok_text: as_text(ok),
+            warn_text: as_text(warn),
+            danger_text: as_text(danger),
         }
     }
 
@@ -409,6 +440,35 @@ mod tests {
         assert_eq!(roles.accent.hashed(), "#2aa198");
         assert_eq!(roles.dim.hashed(), "#586e75");
         assert_eq!(roles.selection.hashed(), "#073642");
+    }
+
+    #[test]
+    fn a_status_drawn_as_text_clears_the_body_text_floor() {
+        for (slug, text) in crate::builtin::ALL {
+            let theme = Theme::parse(text).unwrap();
+            let roles = theme.roles();
+            let background = theme.colors.background.0;
+            for (name, colour) in [
+                ("ok_text", roles.ok_text),
+                ("warn_text", roles.warn_text),
+                ("danger_text", roles.danger_text),
+            ] {
+                let ratio = crate::contrast::ratio(colour.0, background);
+                assert!(
+                    ratio >= 4.5,
+                    "`{slug}`: {name} is {ratio:.2}:1 on the background, below 4.5:1"
+                );
+                // A filled chip inverts the pair: the label is the background
+                // colour on the lifted fill. The lift moves away from the
+                // background, so this clears the same floor - which is what the
+                // bar's "working on it" chip relies on.
+                let inverted = crate::contrast::ratio(background, colour.0);
+                assert!(
+                    inverted >= 4.5,
+                    "`{slug}`: the background on {name} is {inverted:.2}:1, below 4.5:1"
+                );
+            }
+        }
     }
 
     #[test]

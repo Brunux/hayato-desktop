@@ -24,6 +24,14 @@ use crate::system::{missing, out};
 
 const NEEDED: &[&str] = &["bluetoothctl", "foot"];
 
+/// Waybar's `custom/bluetooth` module polls every 30 s (`interval` in
+/// `config.jsonc`). A power or connection change made here has to reach the
+/// bar now instead of on the next poll, so this takes the wait out of it:
+/// `signal: 8` in the module is RTMIN+8, the same signal the vnc module sends.
+pub fn signal_bar() {
+    let _ = out(&["pkill", "-RTMIN+8", "waybar"]);
+}
+
 /// Returns true if the device name is just a formatted MAC address (e.g. "44-F9-B4-7F-6C-CA").
 fn is_raw_mac(name: &str) -> bool {
     let clean = name.replace([':', '-'], "");
@@ -262,6 +270,7 @@ impl BluetoothScreen {
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .status();
+                signal_bar();
                 do_scan(3);
                 let powered = BluetoothScreen::get_powered();
                 let devices = if powered {
@@ -282,6 +291,7 @@ impl BluetoothScreen {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status();
+            signal_bar();
             BtOp::PoweredOff
         });
         self.sync_chrome();
@@ -315,6 +325,7 @@ impl BluetoothScreen {
             } else {
                 pair_and_connect(&d.mac, &d.name)
             };
+            signal_bar();
             let powered = BluetoothScreen::get_powered();
             let devices = if powered {
                 BluetoothScreen::get_devices()
@@ -827,25 +838,32 @@ pub fn status() -> String {
 }
 
 fn format_status(powered: bool, connected_names: &[String]) -> String {
-    const ICON: &str = "\u{f294}";
+    // The state is the picture, not a colour. Both glyphs are Material Design
+    // Icons (`fonts-materialdesignicons-legacy`, already in
+    // uis/sway/packages.list) so the radio and the slash are drawn by one
+    // family: `f00af` is the rune, `f00b2` the same rune with a slash through
+    // it - the pattern the network module uses for wifi (`f05a9`/`f05aa`) and
+    // the volume module for mute (`f0581`).
+    const ON: &str = "\u{f00af}";
+    const OFF: &str = "\u{f00b2}";
     if !powered {
         return format!(
             "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"off\",\"tooltip\":\"Bluetooth off (click to turn on)\"}}",
-            ICON
+            OFF
         );
     }
     if connected_names.is_empty() {
         format!(
             "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"on\",\"tooltip\":\"Bluetooth on · nothing connected\"}}",
-            ICON
+            ON
         )
     } else {
         let tooltip = connected_names.join("\\n").replace('"', "'");
+        // No count on the bar: the only number on the line is the battery's
+        // charge. What is connected is in the tooltip.
         format!(
-            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span> {}\",\"class\":\"on\",\"tooltip\":\"{}\"}}",
-            ICON,
-            connected_names.len(),
-            tooltip
+            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"on\",\"tooltip\":\"{}\"}}",
+            ON, tooltip
         )
     }
 }
@@ -887,10 +905,11 @@ mod tests {
     fn status_json_for_waybar() {
         let off = format_status(false, &[]);
         assert!(off.contains("\"class\":\"off\""));
-        assert!(off.contains("\u{f294}"));
+        assert!(off.contains("\u{f00b2}"));
         let on = format_status(true, &["Buds".to_string()]);
         assert!(on.contains("\"class\":\"on\""));
-        assert!(on.contains("</span> 1\""));
+        assert!(on.contains("\u{f00af}"));
+        assert!(!on.contains("</span> 1\""));
         assert!(on.contains("\"tooltip\":\"Buds\""));
     }
 }

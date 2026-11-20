@@ -216,6 +216,46 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `GreeterSetup` plus `set_clock_for_test`) instead of going untested. **Every screen is in
    `tests/screens.rs` or `tests/pickers.rs`; a new one lands with a render.**
 
+21. **The bar is the session's statusline**: `~/.config/waybar/style.css` is generated from
+   `templates/waybar-style.css.tpl`, and the shape is the contract. The bar floats 6px from
+   the top and 12px from both sides (`config.jsonc` margins - the side inset matches a window's,
+   gaps outer 4 + inner 8) with a 3px radius in `style.css` and a 1px border in the bar's own
+   background colour, so the panel reads as one solid object with no edge drawn around it; the
+   4px inset in `.modules-left` / `.modules-right` keeps the ends off the rounded corners. A
+   module is a flat segment with no hover fill: pointing at an indicator must not light it up.
+   Three things are filled and nothing else: the current workspace chip (solid `accent` fill,
+   `background` label - the same readable pair as the busy chip), the work-in-progress chip
+   (solid `warn_text` fill) and the mode chip. The brand at the left end is the mark `z_` with
+   no pill - `z` in `text`, the `_` cursor in `accent` (the same accent as the current chip),
+   split across two modules only so the cursor can carry a colour - and both halves are the
+   menu button. No indicator changes hue except the keep-awake cup: **a switch changes its
+   glyph, not its colour** - the icon while
+   the thing is on, the same icon with a slash through it while it is off, all three from the
+   Material Design Icons font the image ships (`f00af`/`f00b2` Bluetooth, `f05a9`/`f05aa` wifi,
+   `f057e`/`f0581` volume). Those glyphs live in plane 15, so `config.jsonc` writes them as a
+   surrogate pair with the codepoint named in the comment; the Rust scripts write `\u{f00b2}`
+   directly. The tooltip is the word. The cup is the one switch with a single glyph, so it
+   states its two sides in colour instead - `dim` while the screen may sleep, `accent` while
+   it is held awake - and its tooltip says the same in words. A module that
+   polls (`custom/bluetooth` every 30 s, `custom/vnc` every 10 s, the built-in `network` every
+   10 s) is signalled by the window that changed it - `pkill -RTMIN+8 waybar`, the `signal: 8`
+   in `config.jsonc` - so a toggle made in LazyOS reaches the bar at once instead of on the next
+   tick; a change made outside LazyOS waits for the poll. Offline,
+   muted, a pending update and a served screen all stay in `text`; they say what they are with
+   the glyph and the tooltip, never with a hue and never with a word - the right end is glyphs
+   only, and the name lives in the tooltip. **The bar prints no number**: the battery's charge,
+   wifi's signal, Bluetooth's state and the update count all live in the tooltip, so the line
+   stays glyphs.
+   The line is weight 500; emphasis is 700, and only on the current chip, the busy chip and the
+   mode. An urgent tab that is not current takes `danger_text`; the current chip keeps its fill,
+   because the fill is where you are. A status drawn as a word uses `ok_text`/`warn_text`/`danger_text` (the
+   palette's colour lifted toward the theme's text until it clears 4.5:1 on the background,
+   derived in `lazyos-theme` and proven by `a_status_drawn_as_text_clears_the_body_text_floor`);
+   the raw `ok`/`warn`/`danger` stay for icons, which only need 3:1. `text`, never `strong`, is
+   the bar's reading colour: `strong` is the bright end of the palette, and on Catppuccin Latte
+   it is the colour of the background. A new state is a word plus a colour, or a 2px bar - never
+   a colour alone.
+
 ## Developer Profile Export
 - `lazyos-profile export --include-home` streams the whole home through tar. The single
   `home_excludes` list in `bin/lazyos-profile` is used by both the `du` size estimate and the

@@ -544,7 +544,7 @@ compositor to keep the screen awake; the rules are
 * a Firefox page playing in a background tab does not inhibit, by design - the
   page that is not on screen should not hold the machine awake.
 
-The **coffee cup** on the bar is the manual override (yellow = kept awake) and
+The **coffee cup** on the bar is the manual override (accent = kept awake) and
 works regardless of what the window is.
 
 ## The screen stays lit after the lock
