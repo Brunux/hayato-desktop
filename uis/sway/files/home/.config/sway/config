@@ -3,7 +3,7 @@
 include /etc/sway/config
 
 # Per-user drop-ins, read last so they win over the system configuration. The
-# session writes here (lazyos-layout keeps the keyboard layout it was given); an
+# session writes here (hayato-layout keeps the keyboard layout it was given); an
 # empty directory is fine, a glob that matches nothing is not an error.
 include ~/.config/sway/config.d/*.conf
 
@@ -14,7 +14,7 @@ input type:keyboard {
 }
 
 # Use the Chromebook Search key by itself for the applications: it opens the
-# same launcher as $mod+d ($launcher in /etc/sway/config, `lazyos menu apps`,
+# same launcher as $mod+d ($launcher in /etc/sway/config, `hayato menu apps`,
 # the .desktop entries including this port's own session actions). That is what the
 # key did before the file search borrowed it, and it is the question the
 # magnifier answers for most people.
@@ -25,7 +25,7 @@ input type:keyboard {
 # way to those.
 bindsym --no-repeat --release Super_L exec $launcher
 
-# Alt+Search is what the Search key used to be: lazyos-files in its --search
+# Alt+Search is what the Search key used to be: hayato-files in its --search
 # mode, one bounded fd run over $HOME listed by the file browser, and Enter opens the
 # choice with the program that fits it (text in bat, a picture in imv, a video
 # in mpv, a PDF in papers), or browses the folder that was chosen. This is the
@@ -41,11 +41,11 @@ bindsym --no-repeat --release Super_L exec $launcher
 #   * Search first, Alt still down when Search comes up: keyd forwarded
 #     Super_L, and the release binding below matches the modifiers held at the
 #     release. Released without Alt, it falls through to the launcher above.
-bindsym --no-repeat F20 exec /home/brunux/.config/bin/lazyos-files --search
-bindsym --no-repeat --release Super_L+Mod1 exec /home/brunux/.config/bin/lazyos-files --search
+bindsym --no-repeat F20 exec /home/brunux/.config/bin/hayato-files --search
+bindsym --no-repeat --release Super_L+Mod1 exec /home/brunux/.config/bin/hayato-files --search
 
 # Search+Shift is the same key held with Shift: the *terminal* file search
-# (~/.config/bin/lazyos-find), fd streamed into fzf with a preview pane. The
+# (~/.config/bin/hayato-find), fd streamed into fzf with a preview pane. The
 # windowed manager (favnyr) moved to the Alt+Ctrl+Shift+F family in
 # 24-keys.conf, where the Files key already lives, so this chord stays with the
 # Search key: Search opens the launcher, Alt+Search the file list, Search+Shift
@@ -57,4 +57,4 @@ bindsym --no-repeat --release Super_L+Mod1 exec /home/brunux/.config/bin/lazyos-
 # It is bound on release for the same reason as the line above - the top row
 # doubles as F1-F10 while Search is held (keyd), and it is `--no-repeat` because
 # holding the key has nothing to repeat.
-bindsym --no-repeat --release Super_L+Shift exec /home/brunux/.config/bin/lazyos-find
+bindsym --no-repeat --release Super_L+Shift exec /home/brunux/.config/bin/hayato-find

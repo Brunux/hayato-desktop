@@ -28,7 +28,7 @@
 
 set -u
 
-APP_ID="org.lazyos.screensaver"
+APP_ID="org.hayato.screensaver"
 # The wallpaper the session draws (etc/sway/config), so locking does not look
 # like another machine.  Missing picture is not fatal: the colour stays.
 WALLPAPER="$HOME/Pictures/Wallpapers/mountains.jpg"

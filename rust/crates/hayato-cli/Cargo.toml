@@ -1,0 +1,41 @@
+[package]
+name = "hayato-cli"
+# The version the binary reports comes from the repository's VERSION file,
+# compiled in below; this one only satisfies cargo and never ships.
+version = "0.0.0"
+edition = "2024"
+description = "The Hayato multi-call session binary"
+
+[[bin]]
+name = "hayato"
+path = "src/main.rs"
+
+[dependencies]
+hayato-games-core = { path = "../hayato-games-core" }
+hayato-mcp = { path = "../hayato-mcp" }
+hayato-theme = { path = "../hayato-theme" }
+hayato-ui = { path = "../hayato-ui" }
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
+# The shelf's selection flash: the same runtime hayato-ui already uses for the
+# opening animation, so this adds no crate to the build.
+tachyonfx = { version = "0.25.2", default-features = false, features = ["std"] }
+# Signals: restoring the terminal on SIGINT/SIGTERM needs `signal(2)` and
+# `write(2)` from a handler. crossterm depends on libc already, and using it
+# directly keeps the dependency count at one small crate instead of a wrapper.
+libc = "0.2"
+# The menu's frecency file and the agents' JSON answers (spec 007). Both are
+# already in the tree through hayato-ui, so this adds no crate to the build.
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# The Ask answer is wrapped to the card's width in cells, not bytes.
+unicode-width = "0.2"
+# `png` only: the one format the preview decodes is the thumbnail cache
+# (`hayato-thumbnail` writes PNG). A codec is opt-in (optimization.md §13).
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+ratatui-image = { version = "11.1.0", default-features = false, features = ["crossterm"] }
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5.0"
+evdev = "0.13"
+
+[dev-dependencies]
+tempfile = "3.10"

@@ -1,0 +1,216 @@
+{
+  "document": {
+    "block_prefix": "\n",
+    "block_suffix": "\n",
+    "color": "#a9b1d6",
+    "margin": 2
+  },
+  "paragraph": {
+    "block_suffix": "\n",
+    "color": "#a9b1d6"
+  },
+  "heading": {
+    "block_suffix": "\n",
+    "color": "#c0caf5",
+    "bold": true
+  },
+  "h1": {
+    "block_prefix": "\n",
+    "prefix": "▌ ",
+    "suffix": "",
+    "color": "#7dcfff",
+    "bold": true
+  },
+  "h2": {
+    "prefix": "▌ ",
+    "color": "#7aa2f7",
+    "bold": true
+  },
+  "h3": {
+    "prefix": "▪ ",
+    "color": "#c0caf5",
+    "bold": true
+  },
+  "h4": {
+    "prefix": "",
+    "color": "#9aa5ce",
+    "bold": true
+  },
+  "h5": {
+    "color": "#a9b1d6",
+    "bold": true
+  },
+  "h6": {
+    "color": "#565f89",
+    "bold": true
+  },
+  "text": {
+    "color": "#a9b1d6"
+  },
+  "strong": {
+    "color": "#c0caf5",
+    "bold": true
+  },
+  "emph": {
+    "color": "#9aa5ce",
+    "italic": true
+  },
+  "strikethrough": {
+    "crossed_out": true
+  },
+  "link": {
+    "color": "#7aa2f7",
+    "underline": true
+  },
+  "link_text": {
+    "color": "#7aa2f7",
+    "bold": true
+  },
+  "code": {
+    "prefix": "\u00a0",
+    "suffix": "\u00a0",
+    "color": "#e0af68",
+    "background_color": "#24283b"
+  },
+  "code_block": {
+    "color": "#9aa5ce",
+    "margin": 1,
+    "chroma": {
+      "text": {
+        "color": "#9aa5ce"
+      },
+      "error": {
+        "color": "#c0caf5",
+        "background_color": "#f7768e"
+      },
+      "comment": {
+        "color": "#565f89",
+        "italic": true
+      },
+      "comment_preproc": {
+        "color": "#ff9e64"
+      },
+      "keyword": {
+        "color": "#9ece6a"
+      },
+      "keyword_reserved": {
+        "color": "#9ece6a",
+        "bold": true
+      },
+      "keyword_namespace": {
+        "color": "#e0af68"
+      },
+      "keyword_type": {
+        "color": "#e0af68"
+      },
+      "operator": {
+        "color": "#9aa5ce"
+      },
+      "punctuation": {
+        "color": "#a9b1d6"
+      },
+      "name": {
+        "color": "#9aa5ce"
+      },
+      "name_builtin": {
+        "color": "#7aa2f7"
+      },
+      "name_tag": {
+        "color": "#7aa2f7"
+      },
+      "name_attribute": {
+        "color": "#e0af68"
+      },
+      "name_class": {
+        "color": "#e0af68",
+        "bold": true
+      },
+      "name_constant": {
+        "color": "#bb9af7"
+      },
+      "name_decorator": {
+        "color": "#ff9e64"
+      },
+      "name_exception": {
+        "color": "#f7768e"
+      },
+      "name_function": {
+        "color": "#7aa2f7"
+      },
+      "name_other": {},
+      "literal": {},
+      "literal_number": {
+        "color": "#bb9af7"
+      },
+      "literal_date": {
+        "color": "#7dcfff"
+      },
+      "literal_string": {
+        "color": "#7dcfff"
+      },
+      "literal_string_escape": {
+        "color": "#ff9e64"
+      },
+      "generic_deleted": {
+        "color": "#f7768e"
+      },
+      "generic_emph": {
+        "italic": true
+      },
+      "generic_inserted": {
+        "color": "#9ece6a"
+      },
+      "generic_strong": {
+        "bold": true
+      },
+      "generic_subheading": {
+        "color": "#565f89"
+      },
+      "background": {
+        "background_color": "#24283b"
+      }
+    }
+  },
+  "block_quote": {
+    "indent": 1,
+    "indent_token": "│ ",
+    "color": "#a9b1d6"
+  },
+  "list": {
+    "level_indent": 2
+  },
+  "item": {
+    "block_prefix": "• "
+  },
+  "enumeration": {
+    "block_prefix": ". "
+  },
+  "task": {
+    "ticked": "[✓] ",
+    "unticked": "[ ] "
+  },
+  "horizontal_rule": {
+    "color": "#565f89",
+    "format": "─"
+  },
+  "table": {
+    "center_separator": "┼",
+    "column_separator": "│",
+    "row_separator": "─"
+  },
+  "definition_list": {},
+  "definition_term": {
+    "color": "#c0caf5",
+    "bold": true
+  },
+  "definition_description": {
+    "block_prefix": "  ",
+    "color": "#a9b1d6"
+  },
+  "html_block": {
+    "color": "#565f89"
+  },
+  "html_span": {
+    "color": "#565f89"
+  }
+}

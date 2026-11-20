@@ -1,5 +1,5 @@
 #!/bin/bash
-# Standalone fallback helpers when lazyos-desktop scripts run outside lazyos-core.
+# Standalone fallback helpers when hayato-desktop scripts run outside hayato-core.
 
 [ -n "${_LIB_DESKTOP_LOADED:-}" ] && return 0
 _LIB_DESKTOP_LOADED=1
@@ -7,12 +7,12 @@ _LIB_DESKTOP_LOADED=1
 DESKTOP_DIR="${DESKTOP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 UI="${UI:-sway}"
 ARCH="${ARCH:-$(uname -m)}"
-BUILD_ROOT="${BUILD_ROOT:-/var/tmp/lazyos-build}"
+BUILD_ROOT="${BUILD_ROOT:-/var/tmp/hayato-build}"
 WORK_DIR="${WORK_DIR:-$BUILD_ROOT/work}"
 SRC_DIR="${SRC_DIR:-$BUILD_ROOT/src}"
-LAZYOS_STAGE="${LAZYOS_STAGE:-$WORK_DIR/lazyos-stage}"
+HAYATO_STAGE="${HAYATO_STAGE:-$WORK_DIR/hayato-stage}"
 
-log()  { printf '\033[1;34m[lazyos]\033[0m %s\n' "$*"; }
+log()  { printf '\033[1;34m[hayato]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[fail]\033[0m %s\n' "$*" >&2; exit 1; }
 
@@ -77,7 +77,7 @@ build_deb() {
 		printf 'Package: %s\n' "$name"
 		printf 'Version: %s\n' "$ver"
 		printf 'Architecture: %s\n' "$deb_arch"
-		printf 'Maintainer: LazyOS <maintainers@lazyos.org>\n'
+		printf 'Maintainer: Hayato <maintainers@hayato.org>\n'
 		[ -n "$deps" ] && printf 'Depends: %s\n' "$deps"
 		[ -n "$extra" ] && printf '%s\n' "$extra"
 		printf 'Section: x11\n'

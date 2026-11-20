@@ -87,9 +87,9 @@ if command -v zoxide >/dev/null 2>&1; then
 fi
 
 # --- fzf --------------------------------------------------------------------
-# The colours: `lazyos theme set` writes ~/.config/lazyos/fzf.env from the
+# The colours: `hayato theme set` writes ~/.config/hayato/fzf.env from the
 # theme, so fzf follows the palette like every other surface.
-[ -r "$HOME/.config/lazyos/fzf.env" ] && . "$HOME/.config/lazyos/fzf.env"
+[ -r "$HOME/.config/hayato/fzf.env" ] && . "$HOME/.config/hayato/fzf.env"
 if command -v fzf >/dev/null 2>&1; then
 	# Only the key bindings. fzf's completion.bash rewraps the completion of ~76
 	# commands on every shell start, which is ~25 ms before the prompt (Deboma

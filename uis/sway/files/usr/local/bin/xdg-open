@@ -7,7 +7,7 @@
 # downloaded file. Without an xdg-open those all fail with "command not found".
 #
 # The browser is the answer to the URL half: a URL goes to it as it is. A path
-# is "open this file", which is the question ~/.config/bin/lazyos-view already
+# is "open this file", which is the question ~/.config/bin/hayato-view already
 # answers for a double click in favnyr - imv for a picture, papers for a
 # document, mpv for a video, bat for text - so the shell and the desktop cannot
 # disagree, and the browser stays the fallback (and the answer for a user with
@@ -17,7 +17,7 @@
 # stdin) is deliberately not supported - nothing in this image uses it, and
 # guessing would be worse than saying so.
 #
-# lazyos-files does not call this: it has its own copy of the same rules, so the
+# hayato-files does not call this: it has its own copy of the same rules, so the
 # file browser works even if this script is removed.
 
 set -eu
@@ -37,8 +37,8 @@ case ${1:-} in
 	esac
 	# The desktop's open-with rules, applied from a shell too. A user without
 	# the session's bin directory (root, an ssh session) still gets the browser.
-	if [ -n "${HOME:-}" ] && [ -x "$HOME/.config/bin/lazyos-view" ]; then
-		exec "$HOME/.config/bin/lazyos-view" "$path"
+	if [ -n "${HOME:-}" ] && [ -x "$HOME/.config/bin/hayato-view" ]; then
+		exec "$HOME/.config/bin/hayato-view" "$path"
 	fi
 	exec firefox-esr "file://$path"
 	;;

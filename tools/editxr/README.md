@@ -21,7 +21,7 @@ The theme can be changed from `Ctrl+P`; Solarized is built in.
 ### Themes and the session palette
 
 editxr's themes are a fixed enum, not a palette file, so it cannot take our
-`theme.toml` tokens directly. The Notes menu maps the active LazyOS slug to the
+`theme.toml` tokens directly. The Notes menu maps the active Hayato slug to the
 editxr theme with the same name (Solarized, Nord, Gruvbox, Tokyo Night,
 Catppuccin, Dracula, One Dark, plus GitHub/Monokai/Mono/Clay for a user theme)
 and writes only `theme` and `appearance` into `~/.config/editxr/config.json`,

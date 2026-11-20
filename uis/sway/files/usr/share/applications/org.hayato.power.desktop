@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Power menu
+GenericName=Session and power
+Comment=Lock, suspend, hibernate, log out, reboot, shut down
+Exec=/home/brunux/.config/bin/hayato-power
+Icon=system-shutdown
+Terminal=false
+Categories=System;
+Keywords=power;battery;shutdown;reboot;logout;suspend;hibernate;

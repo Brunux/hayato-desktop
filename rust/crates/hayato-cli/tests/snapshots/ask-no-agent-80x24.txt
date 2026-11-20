@@ -1,0 +1,24 @@
+Hayato · AI · Ask                                                      no agent
+────────────────────────────────────────────────────────────────────────────────
+
+
+
+
+
+
+
+     ╭ No agent ──────────────────────────────────────────────────────────╮
+     │ No agent can answer one question yet.                              │
+     │ The Agents menu installs OpenCode or Claude Code.                  │
+     │                                                                    │
+     │ Enter opens it · Esc goes back                                     │
+     │                                                                    │
+     ╰────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+ [Enter]  open Agents   [Esc]  back

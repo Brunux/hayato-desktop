@@ -40,14 +40,14 @@ wvkbd
 
 # what /etc/sway/config and the drop-ins actually invoke
 waybar
-# The browser: what lazyos-files sends a PDF and the HTML file to, because it is
+# The browser: what hayato-files sends a PDF and the HTML file to, because it is
 # the reader with search, zoom and printing, and its own PDF renderer. It is also
 # what the minimal /usr/local/bin/xdg-open opens, so foot's ctrl+click and any CLI
 # that shells out to xdg-open (yt-dlp's --print-trailer, a script printing a URL)
 # reach a browser instead of failing. 280 MB installed is the largest single
 # addition in this list, and nothing while it is closed.
 firefox-esr
-# The file browser's thumbnails are made by ~/.config/bin/lazyos-thumbnail, and
+# The file browser's thumbnails are made by ~/.config/bin/hayato-thumbnail, and
 # for a PDF the first page comes from poppler: 1.1 MB for pdftocairo (plus
 # pdftotext and pdftoppm), and it is the only PDF renderer besides Firefox's. No
 # XDG thumbnailer package is in this list on purpose - the file browser runs
@@ -60,7 +60,7 @@ poppler-utils
 # resident: the window is the viewer. It was the image viewer until imv arrived
 # and is now the *fallback*: imv needs a working EGL context, and a GPU where it
 # does not get one (Panfrost is the case this port has hit before) still shows
-# the picture in sixels instead of nothing. lazyos-files and lazyos-view try imv
+# the picture in sixels instead of nothing. hayato-files and hayato-view try imv
 # first and fall back here.
 chafa
 # The image viewer: imv 5.0.1 draws the picture on the GPU (one texture, scaled
@@ -71,20 +71,20 @@ chafa
 # (librsvg2-2, libheif1, libjxl0.11). Debian installs no /usr/bin/imv - the
 # package ships imv-wayland and imv-x11 plus a /usr/libexec/imv/imv wrapper that
 # picks one - so scripts/rootfs-setup.sh adds the short name, the same way it
-# does for bat and fd. lazyos-files, lazyos-view and xdg-open all call `imv`.
+# does for bat and fd. hayato-files, hayato-view and xdg-open all call `imv`.
 imv
 # The player: mpv 0.41 decodes anything ffmpeg does (ffmpeg is already in
 # packages/tools.list for yt-dlp), seeks, shows subtitles, takes the XF86Audio*
 # keys and draws through libplacebo360 (installed) on the Wayland context. 3.5 MB
 # plus libass, libsixel1, libbluray/libdvdnav/libcdio, libva and friends. Before
 # this, a video container fell through chafa's "unknown file format" to Firefox,
-# which cannot play it either; lazyos-files and lazyos-view now hand it to mpv,
+# which cannot play it either; hayato-files and hayato-view now hand it to mpv,
 # detached with setsid so the menu exits instead of waiting for the film.
 mpv
 # 83 kB, and it installs /etc/mpv/scripts/mpris.so: without it mpv is invisible
-# to playerctl, so lazyos-media says "nothing is playing" and the bar's player
+# to playerctl, so hayato-media says "nothing is playing" and the bar's player
 # module stays empty. It is a plugin mpv loads from its script directory, and
-# lazyos-view starts mpv with --no-config (so a profile from another machine
+# hayato-view starts mpv with --no-config (so a profile from another machine
 # cannot decide what the session does) which empties those directories - the
 # script is therefore passed explicitly as --script=/etc/mpv/scripts/mpris.so.
 mpv-mpris
@@ -99,7 +99,7 @@ papers
 # The EPUB reader: foliate 3.x (12.4 MB) plus gjs and the WebKitGTK 6
 # introspection the image already has for games/papers. `papers` does not read
 # EPUB, and Firefox cannot either; before this an .epub was a download that
-# opened as a page of binary. Files and `lazyos open` send it here.
+# opened as a page of binary. Files and `hayato open` send it here.
 foliate
 # Ink notes and PDF signing: xournalpp 1.3.8 (8.8 MB, GTK3 like waybar) opens
 # `.xopp` notes, annotates a PDF and exports the signed copy. It depends on
@@ -119,7 +119,7 @@ xournalpp
 # foreign program. The camera itself needs no package: a USB
 # UVC camera is driven by uvcvideo, a module of this kernel, and udev creates
 # /dev/video0 when the device (the internal one sits on the hub at 1-1.4) is on
-# the bus. ~/.config/bin/lazyos-camera is the wrapper that finds that node by
+# the bus. ~/.config/bin/hayato-camera is the wrapper that finds that node by
 # driver and starts the window; nothing here is resident.
 guvcview
 # Mounting removable media as an unprivileged session, which until now was not
@@ -127,14 +127,14 @@ guvcview
 # libcryptsetup/libnvme, providing /usr/bin/udisksctl and the
 # org.freedesktop.UDisks2 service on the system bus. It is D-Bus activated -
 # nothing runs until something asks - and it is what the file manager's device
-# list and gvfs' volume monitor talk to; lazyos-places calls udisksctl to mount and unmount.
+# list and gvfs' volume monitor talk to; hayato-places calls udisksctl to mount and unmount.
 # udiskie is deliberately NOT installed: it is a resident Python daemon
 # (python3-gi + gir1.2-gtk-3.0 + python3-docopt/python3-yaml, none of them here)
 # whose remaining job would be a tray icon this bar does not have. On-demand
-# udisksctl in lazyos-places is the same result with no daemon.
+# udisksctl in hayato-places is the same result with no daemon.
 udisks2
 # favnyr's removal action does not run `eject`: it unmounts through
-# `udisksctl` (the same tool lazyos-places uses) and, when udisks refuses because
+# `udisksctl` (the same tool hayato-places uses) and, when udisks refuses because
 # something holds the mount, runs `fuser -m <mountpoint>` to name what does -
 # its own string table carries `unmount`, `udisksctl`, `power-off`,
 # `--no-user-interaction`, `fuser`, `-m`, and its locale says
@@ -160,8 +160,8 @@ exfatprogs
 # `gtk-3.0/settings.ini`, and `TERMINAL=foot` in `/etc/environment` is what
 # makes "Open terminal here" start a terminal, because its fallback list of
 # emulators has no foot in it. A double click resolves through
-# /etc/xdg/mimeapps.list -> ~/.config/bin/lazyos-view, so it opens what
-# lazyos-files opens. Why not a GTK file manager: nautilus is a 504-package
+# /etc/xdg/mimeapps.list -> ~/.config/bin/hayato-view, so it opens what
+# hayato-files opens. Why not a GTK file manager: nautilus is a 504-package
 # closure, 38 MB of ICU, 31 MB of samba-libs and a localsearch indexer that
 # crawls $HOME, and the GTK3 one this image used shipped its own 229 packages
 # for a 4.9 MB window (docs/omarchy-gap.md has both measurements).
@@ -173,7 +173,7 @@ gvfs
 # `gio` is libglib2.0-bin's CLI, and it is what answers "what opens this file"
 # the way the application itself answers it - `gio mime` also proves the
 # .desktop entry is accepted, because GIO silently drops one whose Exec program
-# does not exist (a lazyos-view without its executable bit reads as "no default
+# does not exist (a hayato-view without its executable bit reads as "no default
 # application", never as an error). check-system.sh asks the same question, and
 # without the binary its fallback only reads the file. 0.9 MB, no daemon.
 libglib2.0-bin
@@ -198,7 +198,7 @@ wf-recorder
 # wayvnc serves this session as VNC, so a screen that is misbehaving can be
 # looked at from a bigger machine - the other half of the ssh login, which gives
 # a shell but not the picture (06-troubleshooting.md, 05-system.md). 0.10.1 is
-# 312 kB plus libneatvnc (218 kB) and libaml (82 kB). lazyos-vnc starts it on
+# 312 kB plus libneatvnc (218 kB) and libaml (82 kB). hayato-vnc starts it on
 # 127.0.0.1:5900 with --disable-input (read-only) and stops it again; nothing
 # runs until the row in Settings is used. Both halves are decisions: a viewer
 # looks and cannot type, and the loopback address means the ssh tunnel is the
@@ -208,7 +208,7 @@ wayvnc
 # wdisplays is the manual display arrangement: a GTK3 window that draws the two
 # outputs as rectangles to drag, over wlr-output-management (swayfx advertises
 # it; verified here with wlr-randr).  188 kB, and every dependency is already in
-# this image.  It is the second half of ~/.config/bin/lazyos-display (Settings ->
+# this image.  It is the second half of ~/.config/bin/hayato-display (Settings ->
 # Display arrangement), which opens it on a workspace of its own - the
 # rectangles need the width - and does the one-line arrangements itself.
 # Nothing resident: a window while it is open.
@@ -219,15 +219,15 @@ brightnessctl
 pulseaudio-utils
 
 # the idle screen
-# It loops the LazyOS wordmark with terminaltexteffects, which Debian ships as
-# python3-terminaltexteffects (binary `tte`; see ~/.config/bin/lazyos-screensaver).
+# It loops the Hayato wordmark with terminaltexteffects, which Debian ships as
+# python3-terminaltexteffects (binary `tte`; see ~/.config/bin/hayato-screensaver).
 # Deboma needs its `ttfx` shim only because Omarchy's scripts call the Rust port
 # by that name; this port calls `tte` directly, so no shim is involved.
 python3-terminaltexteffects
 
-# notifications: lazyos-notify is built from source in rust/crates/lazyos-notify
+# notifications: hayato-notify is built from source in rust/crates/hayato-notify
 
-# login manager (the greeter itself is built into /usr/bin/lazyos-greeter)
+# login manager (the greeter itself is built into /usr/bin/hayato-greeter)
 greetd
 
 # audio
@@ -265,7 +265,7 @@ libgl1-mesa-dri
 mesa-utils
 xdg-desktop-portal-wlr
 xdg-user-dirs
-# The games library and the HTML games (lazyos-games, from rust/): WebKitGTK
+# The games library and the HTML games (hayato-games, from rust/): WebKitGTK
 # 6.0 draws them. 124 MB installed and six new packages, because GTK4,
 # GStreamer, libsoup and bubblewrap are already here; libmanette (the Gamepad
 # API) comes with it. Deliberately no -dev package: the image runs it, it does

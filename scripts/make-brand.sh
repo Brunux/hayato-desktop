@@ -1,19 +1,20 @@
 #!/bin/bash
-# The lazyOS brand, rendered from brand/*.svg into the files the image and the
-# repository ship.  brand/README.md is the brand itself: the mark, the
-# wordmark, the palette and the rules.
+# The Hayato brand, generated from one grid and rendered into the files the
+# image and the repository ship.  brand/README.md is the brand itself: the
+# mark, the wordmark, the palette and the rules.
 #
 # Usage: scripts/make-brand.sh
 #
-#   brand/lazyos.svg                                        the mark (source)
-#   brand/wallpaper.svg                                     the wallpaper (source)
-#   brand/social-preview.svg                                GitHub's social card (source)
+#   brand/mark-48.txt                                       the mark (source of truth)
+#   brand/hayato.svg                                        the mark, generated
+#   brand/wallpaper.svg                                     the wallpaper, generated
+#   brand/social-preview.svg                                GitHub's social card, generated
 #
-#   .../icons/LazyOS/48x48/apps/lazyos.png                  the launcher, the About row
-#   .../icons/LazyOS/scalable/apps/lazyos.svg               GTK at larger sizes
-#   .../home/Pictures/Wallpapers/lazyos.png                 1366x912, the default background
-#   .../home/.config/lazyos/wordmark.txt                    fastfetch's logo
-#   .../home/.config/lazyos/screensaver.txt                 the idle screen's art
+#   .../icons/Hayato/48x48/apps/hayato.png                  the launcher, the About row
+#   .../icons/Hayato/scalable/apps/hayato.svg               GTK at larger sizes
+#   .../home/Pictures/Wallpapers/hayato.png                 1366x912, the default background
+#   .../home/.config/hayato/wordmark.txt                    fastfetch's logo
+#   .../home/.config/hayato/screensaver.txt                 the idle screen's art
 #   brand/social-preview.png                                1280x640, the repository's card
 #   site/apple-touch-icon.png                               180x180, the landing page's touch icon
 #
@@ -29,11 +30,8 @@ set -eu
 
 here=$(cd "$(dirname "$0")/.." && pwd)
 brand="$here/brand"
-theme="$here/uis/sway/files/usr/share/icons/LazyOS"
-wall="$here/uis/sway/files/home/Pictures/Wallpapers/lazyos.png"
-conf="$here/uis/sway/files/home/.config/lazyos"
-wordmark="$conf/wordmark.txt"
-saver="$conf/screensaver.txt"
+theme="$here/uis/sway/files/usr/share/icons/Hayato"
+wall="$here/uis/sway/files/home/Pictures/Wallpapers/hayato.png"
 
 die() {
 	echo "make-brand.sh: $*" >&2
@@ -52,68 +50,44 @@ case "$family" in
 *) die "JetBrains Mono is not installed (Debian: fonts-jetbrains-mono)" ;;
 esac
 
-for _f in lazyos.svg wallpaper.svg social-preview.svg; do
-	[ -r "$brand/$_f" ] || die "missing brand/$_f"
-done
+[ -r "$brand/mark-48.txt" ] || die "missing brand/mark-48.txt"
 
-mkdir -p "$theme/48x48/apps" "$theme/scalable/apps" "$(dirname "$wall")" "$conf"
+# One drawing, every surface: the grid is rasterised into the three SVGs and
+# into the terminal art, so the icon, the wallpaper and the idle screen are
+# the same eagle at different sizes and can never drift apart.
+echo "  generate    brand/*.svg, .config/hayato/{wordmark,screensaver}.txt"
+python3 "$here/scripts/make-brand.py" "$here"
 
-echo "  mark 48x48  $(basename "$theme")/48x48/apps/lazyos.png"
-rsvg-convert -w 48 -h 48 -o "$theme/48x48/apps/lazyos.png" "$brand/lazyos.svg"
+mkdir -p "$theme/48x48/apps" "$theme/24x24/apps" "$theme/16x16/apps" \
+	"$theme/scalable/apps" "$(dirname "$wall")"
 
-echo "  mark svg    $(basename "$theme")/scalable/apps/lazyos.svg"
-install -m 0644 "$brand/lazyos.svg" "$theme/scalable/apps/lazyos.svg"
+# The 16 and 24 px icons are sampled from the grid (3x3 and 2x2 cells per
+# pixel), never resampled from the 48, so each is exact at the size the bar,
+# the launcher and the file manager actually ask for.
+echo "  mark 48x48  $(basename "$theme")/48x48/apps/hayato.png"
+rsvg-convert -w 48 -h 48 -o "$theme/48x48/apps/hayato.png" "$brand/hayato.svg"
+
+echo "  mark 24x24  $(basename "$theme")/24x24/apps/hayato.png"
+rsvg-convert -w 24 -h 24 -o "$theme/24x24/apps/hayato.png" "$brand/hayato-24.svg"
+
+echo "  mark 16x16  $(basename "$theme")/16x16/apps/hayato.png"
+rsvg-convert -w 16 -h 16 -o "$theme/16x16/apps/hayato.png" "$brand/hayato-16.svg"
+
+echo "  mark svg    $(basename "$theme")/scalable/apps/hayato.svg"
+install -m 0644 "$brand/hayato.svg" "$theme/scalable/apps/hayato.svg"
 
 # The panel's own mode (docs/optimization.md): generating at the size it is
 # shown at avoids a resample, and `fill` in the sway config crops rather than
 # stretches if the output ever differs.  The size lives in the SVG.
-echo "  wallpaper   1366x912  Pictures/Wallpapers/lazyos.png"
-rsvg-convert -w 1366 -h 912 -b '#002b36' -o "$wall" "$brand/wallpaper.svg"
+echo "  wallpaper   1366x912  Pictures/Wallpapers/hayato.png"
+rsvg-convert -w 1366 -h 912 -b '#1a1b26' -o "$wall" "$brand/wallpaper.svg"
 
 echo "  social      1280x640  brand/social-preview.png"
-rsvg-convert -w 1280 -h 640 -b '#002b36' -o "$brand/social-preview.png" "$brand/social-preview.svg"
+rsvg-convert -w 1280 -h 640 -b '#1a1b26' -o "$brand/social-preview.png" "$brand/social-preview.svg"
 
 # iOS masks the icon itself and shows transparency as black, so the touch icon
-# is the mark on an opaque base03 square.
+# is the mark on an opaque background square.
 echo "  touch icon  180x180   brand/apple-touch-icon.png"
-rsvg-convert -w 180 -h 180 -b '#002b36' -o "$brand/apple-touch-icon.png" "$brand/lazyos.svg"
-
-# The text forms of the mark.  A terminal cannot draw the SVG, so each terminal
-# surface gets the z_ in full and half blocks, which every monospace font lays
-# out the same way (the old ANSI Shadow letters detached their shadow columns
-# outside a terminal).  The z is 11 columns, the cursor 5, and every row of the
-# picture is padded to the same 17 columns: lazyos-screensaver centres the art
-# line by line, so rows of different widths would shear the letter.
-
-# fastfetch's logo: `"type": "file"`, so $1..$3 are the colours config.jsonc
-# names (cyan, orange, base2) and fastfetch measures the width without them.
-echo "  wordmark    .config/lazyos/wordmark.txt"
-cat >"$wordmark" <<'EOF'
-$1███████████
-$1      ▄███▀
-$1   ▄███▀
-$1▄███▀
-$1███████████ $2▄▄▄▄▄
-
-$3lazyOS$2_
-$1lazy by design
-EOF
-
-# The idle screen's art: one colour (the terminal's foreground, cyan), so no
-# escapes; tte paints its own palette over it.  The picture's rows are quoted
-# because their trailing spaces are the padding, and an editor that strips
-# trailing whitespace would otherwise shear the z without anyone noticing.
-echo "  idle art    .config/lazyos/screensaver.txt"
-printf '%s\n' \
-	"███████████      " \
-	"      ▄███▀      " \
-	"   ▄███▀         " \
-	"▄███▀            " \
-	"███████████ ▄▄▄▄▄" \
-	"" \
-	"lazyOS_" \
-	"" \
-	":: lazy by design ::" \
-	"» press any key to play «" >"$saver"
+rsvg-convert -w 180 -h 180 -b '#1a1b26' -o "$brand/apple-touch-icon.png" "$brand/hayato.svg"
 
 echo "Done."

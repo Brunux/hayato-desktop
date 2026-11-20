@@ -1,0 +1,106 @@
+/* Snake: the sample game.
+ *
+ * It uses the session palette through the variables hayato-theme writes, so it
+ * is the same colours as the library that launched it. The canvas is 768x480
+ * (32x20 cells of 24 px) and is scaled by CSS, never by the drawing code.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace;
+  overscroll-behavior: none;
+  touch-action: none;
+  user-select: none;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  grid-template-rows: auto 1fr;
+  padding: 16px;
+}
+
+#hud {
+  display: flex;
+  width: min(96vw, calc(84vh * 1.6));
+  justify-content: space-between;
+  color: var(--dim);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.label {
+  color: var(--faint);
+}
+
+#score {
+  color: var(--strong);
+}
+
+#best {
+  color: var(--accent);
+}
+
+#game {
+  width: min(96vw, calc(84vh * 1.6));
+  height: auto;
+  max-height: 84vh;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  image-rendering: pixelated;
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  text-align: center;
+  transition: opacity 140ms ease;
+}
+
+#overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#overlay h1 {
+  margin: 0;
+  color: var(--strong);
+  font-size: clamp(30px, 6vw, 54px);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+#overlay p {
+  margin: 0;
+  color: var(--dim);
+  font-size: 13px;
+}
+
+#overlay .start {
+  margin-top: 10px;
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #overlay {
+    transition: none;
+  }
+}

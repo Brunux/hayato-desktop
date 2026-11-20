@@ -1,20 +1,25 @@
-# `lazyos-desktop`
+# `hayato-desktop`
 
 Wayland desktop environment, multi-call Rust UI/CLI suite, theme engine, notifications, boot
-greeter, and user manual for [LazyOS](https://github.com/Brunux/LazyOS).
+greeter, and user manual for [Hayato](https://github.com/Brunux/Hayato).
+
+The brand is a golden eagle on a pixel grid, the default theme is Tokyo Night, and the promise is
+**light. fast. fun.** `brand/mark-48.txt` is the only source for the mark: `scripts/make-brand.sh`
+samples it into the 16/24/48 px icons, the wallpaper, the social card, the fastfetch wordmark and
+the idle screen. `brand/README.md` has the rules.
 
 ## Contents
 
-- `rust/` — Cargo workspace (`lazyos-cli`, `lazyos-ui`, `lazyos-theme`, `lazyos-mcp`,
-  `lazyos-notify`, `lazyos-games-core`, `lazyos-games`, `spike-sixel`)
+- `rust/` — Cargo workspace (`hayato-cli`, `hayato-ui`, `hayato-theme`, `hayato-mcp`,
+  `hayato-notify`, `hayato-games-core`, `hayato-games`, `spike-sixel`)
 - `uis/sway/` — SwayFX configuration, Waybar panels, launcher shortcuts, desktop entries, icons,
-  themes, and bundled user manual (`usr/share/doc/lazyos/`)
+  themes, and bundled user manual (`usr/share/doc/hayato/`)
 - `compositors/swayfx/` — Pinned SwayFX / SceneFX build versions and hashes
 - `tools/` — Pinned `workstyle`, `opencode`, `retroarch` and `mupen64plus-next` versions and hashes
 - `brand/` — SVG master artwork and generated brand assets
 - `packages/tools.list` — Desktop userland CLI package manifest
 - `packages/games.list` — Libretro cores, installed after the slim RetroArch package
-- `lazyos gamepad` — the session's controller mapper (`lazyos-cli/src/gamepad.rs`): evdev → `wtype` arrows/Enter/Escape for the `lazyos-*` windows, with the button table in `padmap.rs` and a Controller screen (`menu controller`) that edits it
+- `hayato gamepad` — the session's controller mapper (`hayato-cli/src/gamepad.rs`): evdev → `wtype` arrows/Enter/Escape for the `hayato-*` windows, with the button table in `padmap.rs` and a Controller screen (`menu controller`) that edits it
 - `scripts/` — Build, asset generation, staging (`stage-desktop.sh`), and `check-desktop.sh`
 
 ## Verification

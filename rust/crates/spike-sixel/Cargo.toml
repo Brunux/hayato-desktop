@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # Only the two formats this program reads: a theme PNG and a picture that
-# `lazyos-thumbnail` produced (PNG/JPEG). The crate's default features pull
+# `hayato-thumbnail` produced (PNG/JPEG). The crate's default features pull
 # every decoder and encoder (AVIF/ravif, EXR, TIFF, WebP, GIF, QOI), which is
 # measured at +98 s of build, +223 MB of target and +1.4 MB of binary for
 # nothing (docs/optimization.md, "What the UI framework costs").

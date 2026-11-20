@@ -1,0 +1,24 @@
+Hayato · Palette                                                     20 matches
+────────────────────────────────────────────────────────────────────────────────
+╭ Everything ──────────────────────────────────────────────────────────────────╮
+│  theme                                                                      │
+│                                                                              │
+│ ▍   Themes  browse and preview color palettes and wallpapers       system █ │
+│     Theme: Nord  the palette and its wallpaper                     system █ │
+│     Theme: Lumon  the palette and its wallpaper                    system █ │
+│     Theme: Omacon  the palette and its wallpaper                   system █ │
+│     Theme Selector  browse themes with live palette & wallpaper pr…       █ │
+│     Theme: Gruvbox  the palette and its wallpaper                  system █ │
+│     Theme: Dracula  the palette and its wallpaper                  system █ │
+│     Theme: Kanagawa  the palette and its wallpaper                 system █ │
+│     Theme: One Dark  the palette and its wallpaper                 system █ │
+│     Theme: Solarized  the palette and its wallpaper                system █ │
+│     Theme: Rose Pine  the palette and its wallpaper                system █ │
+│     Theme: Hackerman  the palette and its wallpaper                system █ │
+│     Theme: Catppuccin  the palette and its wallpaper               system █ │
+│     Theme: Everforest  the palette and its wallpaper               system █ │
+│     Theme: Tokyo Night  the palette and its wallpaper              system │ │
+│     Theme: Matte Black  the palette and its wallpaper              system │ │
+│     Theme: Flexoki Light  the palette and its wallpaper            system │ │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close

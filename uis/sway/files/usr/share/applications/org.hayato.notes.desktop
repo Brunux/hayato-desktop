@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Notes
+GenericName=Notes and documents
+Comment=Quick Markdown notes, ink notes in xournalpp, and signing PDFs
+Exec=/home/brunux/.config/bin/hayato-notes
+Icon=x-office-document
+Terminal=false
+Categories=Office;Utility;
+Keywords=notes;markdown;write;ink;xournalpp;pdf;sign;documents;

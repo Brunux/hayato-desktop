@@ -1,0 +1,270 @@
+#!/bin/sh
+# hayato-model - run a GGUF model locally, with the flags measured on this machine.
+#
+# The numbers behind the flags (llama-bench, Qwen3.5-0.8B WSP, on the Hayato MT8192):
+#
+#   -t 8 (llama.cpp's default)   7.71 tok/s   the four A55 cores drag every barrier
+#   -t 4 (the A76 cluster)      17.30 tok/s   +124% over 8 threads
+#   Q4_K_M prefill (pp512)      92.07 tok/s
+#   peak RSS at 4k context      1227.4 MiB (leaves >1.3 GB free beside session/browser)
+#   model size                  516.8 MiB (Q4_K_M) - half of 1.7B
+#   pathology fix               MIT CSAIL weight-space programming cures thinking loops
+#
+# THREADS, CTX and SAMPLING are one decision in one place: an ad-hoc flag per
+# invocation is how the same machine ends up measured twice, differently.
+#
+# 0 did something, 1 cancelled (nothing picked), 2 usage, 3 nothing to run with.
+
+set -u
+
+MODELS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/hayato/models"
+PINS="${XDG_CONFIG_HOME:-$HOME/.config}/hayato/models.sha256"
+WSP_URL="https://huggingface.co/mradermacher/Qwen3.5-0.8B-weight-space-programming-GGUF/resolve/main"
+MODEL_URL="https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF/resolve/main"
+DEFAULT_MODEL=qwen3.5-0.8b-wsp-Q4_K_M
+THREADS=4
+CTX=4096
+SAMPLING="-fa on -ctk q8_0 -ctv q8_0"
+# Qwen3.5 thinking mode is cured of infinite loops via MIT CSAIL weight-space
+# programming. Keep reasoning=off for instant single-sentence answers, or set
+# REASONING=on for chain-of-thought tasks.
+REASONING=off
+FLAGS="-t $THREADS -c $CTX $SAMPLING -rea $REASONING --jinja"
+
+usage() {
+	cat <<'EOF'
+usage: hayato-model [MODEL [llama-cli args...]]
+       hayato-model --list      the models on this machine, and the ones it can fetch
+       hayato-model --fetch     download the recommended model, verified against its pin
+       hayato-model --verify    check every model against the pinned SHA256
+       hayato-model --bench     re-measure this machine with llama-bench (-t 2, 4, 8)
+       hayato-model --flags     the flags this script uses, and where they are set
+EOF
+}
+
+# The downloaded models, one per line, sorted: the glob is already sorted.
+models() {
+	set -- "$MODELS_DIR"/*.gguf
+	[ -e "$1" ] || return 1
+	for _m in "$@"; do basename "$_m" .gguf; done
+}
+
+# A card, when the row was clicked and there is no terminal to read: a message
+# on stderr goes to the journal, which reads exactly like a key that does nothing.
+card() { # $1 title, $2 body
+	[ -n "${WAYLAND_DISPLAY:-}" ] || return 0
+	command -v notify-send >/dev/null 2>&1 || return 0
+	notify-send -a 'Local model' -i dictate-model "$1" "$2" 2>/dev/null || :
+}
+
+# on_terminal: 0 when stdin is a terminal somebody can see and type into.
+# `[ -t 0 ]` alone is not that test in this session: sway's `exec` inherits the
+# VT the compositor was started on (tty7 here), so a model opened by a key has a
+# *terminal* on stdin that nobody is looking at - and `llama-cli` would then read
+# the prompt from that VT while the session showed nothing at all, which reads as
+# a dead key. The terminal's foreground process group is the difference: a shell,
+# ssh or a console makes this script the foreground group of its terminal, while
+# a child of the compositor is not - its TPGID is not its PGID (and is -1 when
+# there is no controlling terminal at all).
+on_terminal() {
+	[ -t 0 ] || return 1
+	_tpg=$(ps -o tpgid= -p $$ 2>/dev/null | tr -d ' ')
+	_pg=$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')
+	[ -n "$_tpg" ] && [ -n "$_pg" ] && [ "$_tpg" = "$_pg" ]
+}
+
+# The window: a conversation is something to read, and a key has no terminal.
+# --app-id is floated and centred by /etc/sway/config.d/34-local-model.conf.
+# Inside foot stdin is the pty of a prompt this script is the foreground group
+# of, so this runs once.
+window() {
+	on_terminal && return 1
+	[ -n "${WAYLAND_DISPLAY:-}" ] || return 1
+	command -v foot >/dev/null 2>&1 || return 1
+	exec foot --app-id=hayato-model --title="hayato-model" -e "$0" "$@"
+}
+
+no_model() {
+	echo "hayato-model: no model in $MODELS_DIR" >&2
+	echo "hayato-model: 'hayato-model --fetch' downloads Qwen3.5-0.8B Q4_K_M (517 MB)" >&2
+	card 'No model downloaded' "hayato-model --fetch downloads Qwen3.5-0.8B (517 MB) and checks it against its pin."
+	exit 3
+}
+
+# The pin is the only place a hash lives, so a download cannot disagree with
+# --verify: the address lives here, the SHA256 lives in models.sha256.
+fetch() {
+	[ -f "$PINS" ] || { echo "hayato-model: no pins at $PINS" >&2; exit 3; }
+	command -v curl >/dev/null 2>&1 || {
+		echo "hayato-model: curl is missing - apt install curl" >&2
+		exit 3
+	}
+	mkdir -p "$MODELS_DIR" || exit 3
+	_rc=0
+	for _name in "$@"; do
+		_file="$MODELS_DIR/$_name.gguf"
+		if [ -s "$_file" ]; then
+			printf 'already here: %s\n' "$_file"
+			continue
+		fi
+		_want=$(awk -v f="$_name.gguf" '$2 == f { print $1; exit }' "$PINS" 2>/dev/null)
+		if [ -z "$_want" ]; then
+			printf 'hayato-model: %s is not pinned in %s\n' "$_name" "$PINS" >&2
+			_rc=1
+			continue
+		fi
+		case $_name in
+		qwen3.5-0.8b-wsp-Q4_K_M) _url="$WSP_URL/Qwen3.5-0.8B-weight-space-programming.Q4_K_M.gguf" ;;
+		qwen3.5-0.8b-wsp-Q8_0)   _url="$WSP_URL/Qwen3.5-0.8B-weight-space-programming.Q8_0.gguf" ;;
+		qwen3-1.7b-Q4_0)         _url="$MODEL_URL/Qwen_Qwen3-1.7B-Q4_0.gguf" ;;
+		qwen3-1.7b-Q4_K_M)       _url="$MODEL_URL/Qwen_Qwen3-1.7B-Q4_K_M.gguf" ;;
+		*)
+			printf 'hayato-model: no download address for %s\n' "$_name" >&2
+			_rc=1
+			continue
+			;;
+		esac
+		printf 'Fetching %s\n  from %s\n\n' "$_name.gguf" "$_url"
+		# .part then rename: a killed download must not leave a file that looks
+		# like a model to every later `--list`.
+		if ! curl -fL --progress-bar -o "$_file.part" "$_url"; then
+			rm -f "$_file.part"
+			printf 'hayato-model: the download failed\n' >&2
+			_rc=1
+			continue
+		fi
+		if ! printf '%s  %s\n' "$_want" "$_file.part" | sha256sum -c -; then
+			rm -f "$_file.part"
+			printf 'hayato-model: checksum mismatch - not keeping the file\n' >&2
+			_rc=1
+			continue
+		fi
+		mv "$_file.part" "$_file"
+		printf '\nready: %s\n' "$_file"
+	done
+	return "$_rc"
+}
+
+case "${1:-}" in
+-h | --help)
+	usage
+	exit 0
+	;;
+--list)
+	if _have=$(models); then
+		printf '%s\n' "$_have"
+	else
+		echo "hayato-model: nothing in $MODELS_DIR yet" >&2
+	fi
+	# A pinned model that is not here is a download away, and saying so is what
+	# makes the row discoverable instead of an empty menu.
+	if [ -f "$PINS" ]; then
+		while read -r _hash _file; do
+			[ -n "${_file:-}" ] || continue
+			[ -s "$MODELS_DIR/$_file" ] && continue
+			printf 'not downloaded: %s (hayato-model --fetch %s)\n' \
+				"$_file" "${_file%.gguf}"
+		done <"$PINS"
+	fi
+	exit 0
+	;;
+--fetch)
+	shift
+	[ $# -gt 0 ] || set -- "$DEFAULT_MODEL"
+	window --fetch "$@"
+	fetch "$@"
+	exit $?
+	;;
+--verify)
+	[ -f "$PINS" ] || { echo "hayato-model: no pins at $PINS" >&2; exit 3; }
+	cd "$MODELS_DIR" 2>/dev/null || { echo "hayato-model: nothing in $MODELS_DIR" >&2; exit 3; }
+	exec sha256sum --ignore-missing -c "$PINS"
+	;;
+--flags)
+	cat <<EOF
+models  $MODELS_DIR
+threads $THREADS
+ctx     $CTX
+flags   $FLAGS
+EOF
+	exit 0
+	;;
+--bench)
+	command -v llama-bench >/dev/null 2>&1 || {
+		echo "hayato-model: llama-bench is missing - apt install llama.cpp-examples" >&2
+		exit 3
+	}
+	window --bench
+	# The list is captured before it is read: `models | head -1` reports head's
+	# status, so an empty directory would look like a model named "".
+	_all=$(models) || no_model
+	_name=$(printf '%s\n' "$_all" | sed -n 1p)
+	for _t in 2 4 8; do
+		printf 'threads=%-2s ' "$_t"
+		llama-bench -m "$MODELS_DIR/$_name.gguf" -p 128 -n 64 -r 2 -t "$_t" -o md 2>/dev/null |
+			awk -F'|' '/pp128|tg64/ { gsub(/ /, "", $7); gsub(/ /, "", $8); printf "%s=%s ", $7, $8 }'
+		printf '\n'
+	done
+	exit 0
+	;;
+--*)
+	usage >&2
+	exit 2
+	;;
+esac
+
+if [ $# -gt 0 ]; then
+	case "$1" in
+	-*) set -- "$DEFAULT_MODEL" "$@" ;;
+	esac
+fi
+
+_name="${1:-}"
+[ $# -gt 0 ] && shift
+
+if [ -z "$_name" ]; then
+	# One model is not a choice; several are, and fzf is already in the image.
+	_count=0
+	for _f in "$MODELS_DIR"/*.gguf; do
+		[ -f "$_f" ] || continue
+		_count=$((_count + 1))
+		_only=$_f
+	done
+	case $_count in
+	0) no_model ;;
+	1) _name=$(basename "$_only" .gguf) ;;
+	*)
+		command -v fzf >/dev/null 2>&1 || {
+			models >&2
+			echo "hayato-model: several models and no fzf to pick one - name one of the above" >&2
+			exit 2
+		}
+		_name=$(models | fzf --prompt='model> ' --height=100% --reverse) || exit 1
+		[ -n "$_name" ] || exit 1
+		;;
+	esac
+fi
+
+_file="$MODELS_DIR/${_name%.gguf}.gguf"
+if [ ! -f "$_file" ]; then
+	echo "hayato-model: no such model: $_name (see --list)" >&2
+	card 'No such model' "‘$_name’ is not in $MODELS_DIR."
+	exit 2
+fi
+
+command -v llama-cli >/dev/null 2>&1 || {
+	echo "hayato-model: llama-cli is missing - apt install llama.cpp-examples" >&2
+	card 'llama.cpp is not installed' 'apt install llama.cpp-examples puts llama-cli on this machine.'
+	exit 3
+}
+
+window "$_name" "$@"
+
+# taskset keeps the desktop off the four big cores while the model runs. It buys
+# no throughput (measured: 11.19 unpinned against 11.14 pinned) - it keeps the
+# window that asks the question responsive. On a machine whose cores are not
+# 4-7 the pin is skipped rather than wrong.
+if command -v taskset >/dev/null 2>&1 && [ "$(nproc 2>/dev/null || echo 0)" -ge 8 ]; then
+	exec taskset -c 4-7 llama-cli -m "$_file" $FLAGS "$@"
+fi
+exec llama-cli -m "$_file" $FLAGS "$@"

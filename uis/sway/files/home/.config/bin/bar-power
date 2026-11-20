@@ -41,7 +41,7 @@ bat=${bat:-${fallback:-}}
 
 if [ -z "${bat:-}" ]; then
 	printf '%s\n' 'No battery found in /sys/class/power_supply'
-	exec lazyos menu power
+	exec hayato menu power
 fi
 
 cap=$(read_sys "$bat/capacity")
@@ -109,4 +109,4 @@ printf '%s\n' "$msg"
 if [ "${1:-}" = "--status" ]; then
 	exit 0
 fi
-exec lazyos menu power
+exec hayato menu power

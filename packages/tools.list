@@ -24,11 +24,11 @@ bat
 fd-find
 # grep, as rg. Nothing aliases `grep`: rg is not a drop-in for every flag, and
 # a silently different grep in an interactive shell is a trap.  rg is also what
-# "Search the manual" in lazyos-learn uses.
+# "Search the manual" in hayato-learn uses.
 ripgrep
 # Fuzzy finder, for the Ctrl-R/Ctrl-T/Alt-C bindings (~/.bashrc sources
 # /usr/share/fzf/key-bindings.bash), the `ff` preview picker, and the terminal
-# file search lazyos-find (Alt+Search), which is why it is a hard dependency of a
+# file search hayato-find (Alt+Search), which is why it is a hard dependency of a
 # key rather than only of the shell.
 fzf
 # cd, by frecency (`z`, `zi`); ~/.bashrc wraps `cd` so real paths still work.
@@ -127,20 +127,20 @@ gnupg
 # verified against a pinned SHA256.
 whisper.cpp-tools
 # wtype: types the transcription into the focused window, and is what
-# `lazyos gamepad` uses to inject arrows/Enter/Escape for a controller. It is also what an
+# `hayato gamepad` uses to inject arrows/Enter/Escape for a controller. It is also what an
 # emoji picker needs to insert its glyph, so it is not dictation-only.
 wtype
 
 # --- local model ------------------------------------------------------------
-# llama.cpp: the model window (~/.config/bin/lazyos-model, Alt+Ctrl+M) runs a
+# llama.cpp: the model window (~/.config/bin/hayato-model, Alt+Ctrl+M) runs a
 # GGUF file with `llama-cli`, and `--bench` re-measures this machine with
 # `llama-bench`. This is the *Debian package*, not a build: forky's 1:0.7.0
 # runtime-dispatches to libggml-cpu-armv8.2 (the dotprod kernels this SoC has),
 # a platform build with `-DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16` measured
 # +1.7% (11.14 against 10.95 tok/s) for 396 s of build, so tools/llama.cpp/ is
 # not allowed to exist. The weights are not in the image either (2.4 GB): a
-# person fetches them with `lazyos-model --fetch`, verified against the pinned
-# SHA256 in ~/.config/lazyos/models.sha256, the way dictate-model fetches
+# person fetches them with `hayato-model --fetch`, verified against the pinned
+# SHA256 in ~/.config/hayato/models.sha256, the way dictate-model fetches
 # whisper's. The LLM itself is the tool here, and it only runs while its window
 # is open.
 llama.cpp-examples
@@ -157,7 +157,7 @@ ffmpeg
 # MANPAGER below only exists to make it pretty.
 man-db
 # The manual pages themselves, rendered: glow (a markdown reader) is what
-# lazyos-learn opens them with, and its own style is ~/.config/glow/solarized.json.
+# hayato-learn opens them with, and its own style is ~/.config/glow/tokyo-night.json.
 # It is a single binary with no runtime, and it only runs while a page is on
 # screen.
 glow

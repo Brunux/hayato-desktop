@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/lazyos-cli",
-    "crates/lazyos-games",
-    "crates/lazyos-games-core",
-    "crates/lazyos-mcp",
-    "crates/lazyos-notify",
-    "crates/lazyos-theme",
-    "crates/lazyos-ui",
+    "crates/hayato-cli",
+    "crates/hayato-games",
+    "crates/hayato-games-core",
+    "crates/hayato-mcp",
+    "crates/hayato-notify",
+    "crates/hayato-theme",
+    "crates/hayato-ui",
     "crates/spike-sixel",
 ]
 

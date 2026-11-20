@@ -1,7 +1,7 @@
-# RetroArch, built slim for LazyOS
+# RetroArch, built slim for Hayato
 
 The library runs RetroArch as its emulator host: it passes one libretro core and
-one ROM, fullscreen, with `/etc/lazyos/retroarch.cfg` appended to whatever the
+one ROM, fullscreen, with `/etc/hayato/retroarch.cfg` appended to whatever the
 user has in `~/.config/retroarch/retroarch.cfg`.
 
 Debian's `retroarch` package is not used. It hard-depends on
@@ -13,7 +13,7 @@ which needs no assets and is only the in-game menu; the library is the UI.
 
 `version` is the pinned upstream tag, `SHA256SUMS` the tarball it was built
 from. `scripts/build-retroarch.sh` fetches, configures, builds and packages it as
-`retroarch_<version>-lazyos1_<arch>.deb`; `core/scripts/install-retroarch.sh`
+`retroarch_<version>-hayato1_<arch>.deb`; `core/scripts/install-retroarch.sh`
 installs that package. The Debian packages for the cores (and their `.info`
 files) come from `uis/sway/packages.list`; the N64 core is a separate build in
 `tools/mupen64plus-next/`.

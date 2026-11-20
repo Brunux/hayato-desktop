@@ -4,7 +4,7 @@
 # has no xdg-desktop-portal to ask instead: favnyr's double click, `gio open`,
 # a "Open with" dialog in any application. The point of the file is that a
 # picture opens in imv (a GPU viewer, not a browser) and a text file opens paged
-# in bat - the same rules lazyos-files follows, so the Files menu and a double
+# in bat - the same rules hayato-files follows, so the Files menu and a double
 # click in favnyr do not disagree.
 #
 # A user's ~/.config/mimeapps.list is read first and overrides everything here,
@@ -13,30 +13,30 @@
 # inode/directory names `pcmanfm.desktop` and not a favnyr entry on purpose: the
 # name is what the launcher and GIO already know, and the file that carries it is
 # the user-level shadow (~/.local/share/applications/pcmanfm.desktop) whose Exec
-# is `favnyr`. lazyos-files is the keyboard file list, not the directory handler.
+# is `favnyr`. hayato-files is the keyboard file list, not the directory handler.
 # http/https stay with Firefox, which is the browser the shim already calls.
 
 [Default Applications]
-text/plain=org.lazyos.view.desktop
-text/markdown=org.lazyos.view.desktop
-text/x-markdown=org.lazyos.view.desktop
-image/png=org.lazyos.view.desktop
-image/jpeg=org.lazyos.view.desktop
-image/gif=org.lazyos.view.desktop
-image/webp=org.lazyos.view.desktop
-image/bmp=org.lazyos.view.desktop
-image/tiff=org.lazyos.view.desktop
-image/svg+xml=org.lazyos.view.desktop
-image/avif=org.lazyos.view.desktop
-image/heif=org.lazyos.view.desktop
-image/heic=org.lazyos.view.desktop
-video/mp4=org.lazyos.view.desktop
-video/webm=org.lazyos.view.desktop
-video/x-matroska=org.lazyos.view.desktop
-video/quicktime=org.lazyos.view.desktop
-video/x-msvideo=org.lazyos.view.desktop
-video/mpeg=org.lazyos.view.desktop
-video/ogg=org.lazyos.view.desktop
+text/plain=org.hayato.view.desktop
+text/markdown=org.hayato.view.desktop
+text/x-markdown=org.hayato.view.desktop
+image/png=org.hayato.view.desktop
+image/jpeg=org.hayato.view.desktop
+image/gif=org.hayato.view.desktop
+image/webp=org.hayato.view.desktop
+image/bmp=org.hayato.view.desktop
+image/tiff=org.hayato.view.desktop
+image/svg+xml=org.hayato.view.desktop
+image/avif=org.hayato.view.desktop
+image/heif=org.hayato.view.desktop
+image/heic=org.hayato.view.desktop
+video/mp4=org.hayato.view.desktop
+video/webm=org.hayato.view.desktop
+video/x-matroska=org.hayato.view.desktop
+video/quicktime=org.hayato.view.desktop
+video/x-msvideo=org.hayato.view.desktop
+video/mpeg=org.hayato.view.desktop
+video/ogg=org.hayato.view.desktop
 application/pdf=org.gnome.Papers.desktop
 application/x-bzpdf=org.gnome.Papers.desktop
 application/x-gzpdf=org.gnome.Papers.desktop
@@ -57,8 +57,8 @@ x-scheme-handler/https=firefox-esr.desktop
 inode/directory=pcmanfm.desktop
 
 [Added Associations]
-text/plain=org.lazyos.view.desktop;
-image/png=org.lazyos.view.desktop;
-image/jpeg=org.lazyos.view.desktop;
+text/plain=org.hayato.view.desktop;
+image/png=org.hayato.view.desktop;
+image/jpeg=org.hayato.view.desktop;
 application/pdf=org.gnome.Papers.desktop;
 inode/directory=pcmanfm.desktop;

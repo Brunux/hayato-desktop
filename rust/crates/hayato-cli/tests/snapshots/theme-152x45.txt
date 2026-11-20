@@ -1,0 +1,45 @@
+Hayato · Theme & Appearance                                                                                                                             
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+╭ Themes ────────────────────────────╮╭ Preview: Tokyo Night ──────────────────────────────────────────────────────────────────────────────────────────╮
+│ ▍   ● Tokyo Night  toky…          ││  Tokyo Night (tokyo-night)                                                           [ ACTIVE SESSION THEME ]  │
+│     ○ Solarized Dark  s…          ││  by enkia / Folke                                                                                              │
+│     ○ Catppuccin Mocha            ││                                                                                                                │
+│     ○ Rose Pine  rose-p…          ││  Desktop & Wallpaper Simulation                                                                                │
+│     ○ Nord  nord        #88c0d0   ││    Hayato      main  │   LazyNet   80%   95                                                               │
+│     ○ Gruvbox Dark  gru…          ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                                                              │
+│     ○ Everforest Dark  …          ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                                                              │
+│     ○ Kanagawa  kanagawa          ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                                                              │
+│     ○ Dracula  dracula  #bd93f9   ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                                                              │
+│     ○ One Dark  one-dark          ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                                                              │
+│     ○ Hackerman  hacker…          ││  Wallpaper: tokyo-night-sunset-lake.jpg (3 bundled) — Press [w] to cycle                                       │
+│     ○ Lumon  lumon      #8bc9eb   ││                                                                                                                │
+│     ○ Matte Black  matt…          ││  Terminal Palette (16 ANSI Swatches)                                                                           │
+│     ○ Omacon  omacon    #ff66ff   ││   0    1    2    3    4    5    6    7                                                                         │
+│     ○ Catppuccin Latte            ││   8    9    10   11   12   13   14   15                                                                        │
+│     ○ Flexoki Light  fl…          ││                                                                                                                │
+│                                    ││  Semantic Roles                                                                                                │
+│                                    ││  ██ Accent: #7aa2f7  ██ Surface: #1f2335  ██ Border: #7aa2f7  ██ Ok: #9ece6a  ██ Warn: #e0af68                 │
+│                                    ││  ██ Danger: #f7768e                                                                                            │
+│                                    ││                                                                                                                │
+│                                    ││  Contrast & Accessibility (WCAG 2.1)                                                                           │
+│                                    ││  Text: 10.6:1 (AAA PASS)   Accent:  6.8:1 (PASS)   Danger:  6.5:1 (PASS)                                       │
+│                                    ││                                                                                                                │
+│                                    ││  ╭─  System Notice ────────────────────────────╮                                                              │
+│                                    ││  │ Palette updated to Tokyo Night.            │                                                                │
+│                                    ││  ╰──────────────────────────────────────────────╯                                                              │
+│                                    ││                                                                                                                │
+│                                    ││                                                                                                                │
+│                                    ││                                                                                                                │
+│                                    ││                                                                                                                │
+│                                    ││                                                                                                                │
+│                                    ││                                                                                                                │
+│                                    ││                                                                                                                │
+│                                    ││                                                                                                                │
+│                                    ││                                                                                                                │
+│                                    ││                                                                                                                │
+│                                    ││                                                                                                                │
+│                                    ││                                                                                                                │
+│                                    ││                                                                                                                │
+│                                    ││                                                                                                                │
+╰────────────────────────────────────╯╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  apply   [↑↓]  preview   [w]  wallpaper   [p/Space]  peek desktop   [Esc]  close                                                               

@@ -1,7 +1,7 @@
 //! Sixel spike: the one technical risk of `docs/plan-ui.md` §6, validated first.
 //!
 //! It draws two pictures in a real foot window through `ratatui-image`: the
-//! 48 px mark from the LazyOS theme (what a row or a hero card shows) and a
+//! 48 px mark from the Hayato theme (what a row or a hero card shows) and a
 //! document picture (what the preview pane and the file browser show), and it
 //! prints the protocol the terminal answered so a headless run proves the
 //! detection too.
@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args().skip(1);
     let icon_path = args
         .next()
-        .unwrap_or_else(|| "uis/sway/files/usr/share/icons/LazyOS/48x48/apps/lazyos.png".into());
+        .unwrap_or_else(|| "uis/sway/files/usr/share/icons/Hayato/48x48/apps/hayato.png".into());
     let photo_path = args
         .next()
         .unwrap_or_else(|| "docs/screenshots/hayato-r1-sway.png".into());
@@ -316,16 +316,16 @@ mod tests {
 
     #[test]
     fn shorten_keeps_a_short_path() {
-        assert_eq!(shorten("lazyos.png"), "lazyos.png");
-        assert_eq!(shorten("apps/lazyos.png"), "apps/lazyos.png");
-        assert_eq!(shorten("usr/apps/lazyos.png"), "usr/apps/lazyos.png");
+        assert_eq!(shorten("hayato.png"), "hayato.png");
+        assert_eq!(shorten("apps/hayato.png"), "apps/hayato.png");
+        assert_eq!(shorten("usr/apps/hayato.png"), "usr/apps/hayato.png");
     }
 
     #[test]
     fn shorten_elides_an_absolute_path() {
         assert_eq!(
-            shorten("/usr/share/icons/LazyOS/48x48/apps/lazyos.png"),
-            "…/apps/lazyos.png"
+            shorten("/usr/share/icons/Hayato/48x48/apps/hayato.png"),
+            "…/apps/hayato.png"
         );
     }
 

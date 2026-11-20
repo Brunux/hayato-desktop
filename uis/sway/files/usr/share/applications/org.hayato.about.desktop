@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=About Hayato
+GenericName=System information
+Comment=Kernel, uptime, memory, battery, and the version this image was built from
+Exec=/home/brunux/.config/bin/hayato-about
+Icon=hayato
+Terminal=false
+Categories=System;
+Keywords=about;version;system;info;hayato;

@@ -1,0 +1,293 @@
+//! `hayato notify` - a card from the command line (spec 006).
+//!
+//! A direct command: it opens no window, because the card is the answer and a
+//! `foot` started for a `notify-send` would take the focus. The shell's
+//! `notify-send` call sites keep working; this is the same card with the house
+//! rules built in (a picture from the theme, the group tag, the urgency).
+//!
+//! ```text
+//! hayato notify send TITLE [BODY] [--icon auto|none|NAME] [--urgency L] [--group TAG]
+//! hayato notify say  TITLE [BODY] [...]           the same card, for one result line
+//! hayato notify progress TAG PERCENT TITLE [BODY] [...]   one card, updated in place
+//! ```
+//!
+//! `--icon auto` is the default and decides the picture from the body (see
+//! `hayato_ui::card::kind_of`); a name is a glyph name of the alphabet
+//! (`image`) or a theme name (`network-wireless`). Exit codes are the shell's
+//! contract: `0` sent (a picture that was not found is sent as text and the
+//! reason goes to stderr), `2` usage, `3` the daemon did not take it and the
+//! reason is on stderr.
+
+use hayato_ui::Glyph;
+use hayato_ui::card::{self, Card, Icon, Timeout, Urgency};
+
+use crate::command::Resolved;
+
+const EXIT_OK: i32 = 0;
+const EXIT_USAGE: i32 = 2;
+const EXIT_FAILED: i32 = 3;
+
+/// `println!` panics when the reader closes the pipe; a card that could not be
+/// printed is not worth a panic.
+macro_rules! say {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), $($arg)*);
+    }};
+}
+
+#[derive(Debug, Default)]
+struct Options {
+    words: Vec<String>,
+    body: Option<String>,
+    urgency: Option<Urgency>,
+    icon: Option<String>,
+    group: Option<String>,
+    timeout: Option<Timeout>,
+    progress: Option<u8>,
+    open: Option<String>,
+}
+
+pub fn run(resolved: &Resolved) -> i32 {
+    let args = resolved.args.as_slice();
+    let Some((verb, rest)) = args.split_first() else {
+        return usage();
+    };
+    match verb.as_str() {
+        "send" | "say" => match parse(rest) {
+            Ok(options) => card_from(&options, false),
+            Err(message) => usage_error(&message),
+        },
+        "progress" => match parse(rest) {
+            Ok(options) => card_from(&options, true),
+            Err(message) => usage_error(&message),
+        },
+        "-h" | "--help" | "help" => usage(),
+        other => usage_error(&format!(
+            "'{other}' is not a notify verb (send, say, progress)"
+        )),
+    }
+}
+
+fn parse(args: &[String]) -> Result<Options, String> {
+    let mut options = Options::default();
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--body" => options.body = Some(value(&mut iter, "--body")?),
+            "--urgency" => {
+                let word = value(&mut iter, "--urgency")?;
+                options.urgency = Some(Urgency::parse(&word).ok_or_else(|| {
+                    format!("--urgency takes low, normal or critical, not '{word}'")
+                })?);
+            }
+            "--icon" => options.icon = Some(value(&mut iter, "--icon")?),
+            "--group" => options.group = Some(value(&mut iter, "--group")?),
+            "--timeout" => {
+                let word = value(&mut iter, "--timeout")?;
+                options.timeout = Some(if word == "never" {
+                    Timeout::Never
+                } else {
+                    Timeout::Millis(word.parse().map_err(|_| {
+                        format!("--timeout takes milliseconds or 'never', not '{word}'")
+                    })?)
+                });
+            }
+            "--progress" => options.progress = Some(percent(&value(&mut iter, "--progress")?)?),
+            "--open" => options.open = Some(value(&mut iter, "--open")?),
+            flag if flag.starts_with("--") => return Err(format!("unknown option '{flag}'")),
+            word => options.words.push(word.to_string()),
+        }
+    }
+    Ok(options)
+}
+
+fn value<'a>(iter: &mut impl Iterator<Item = &'a String>, flag: &str) -> Result<String, String> {
+    iter.next()
+        .cloned()
+        .ok_or_else(|| format!("{flag} needs a value"))
+}
+
+fn percent(word: &str) -> Result<u8, String> {
+    match word.parse::<u8>() {
+        Ok(value) if value <= 100 => Ok(value),
+        _ => Err(format!("a percentage is 0 to 100, not '{word}'")),
+    }
+}
+
+/// Build the card from the positional words and send it. `progress` takes the
+/// group, the percentage, then the title and body; `send` and `say` take the
+/// title and body.
+fn card_from(options: &Options, progress: bool) -> i32 {
+    let (title, body, group, percent) = if progress {
+        let [tag, percent_word, title, rest @ ..] = options.words.as_slice() else {
+            return usage_error("progress takes TAG PERCENT TITLE [BODY]");
+        };
+        if rest.len() > 1 {
+            return usage_error("progress takes TAG PERCENT TITLE [BODY]");
+        }
+        let percent = match percent(percent_word) {
+            Ok(value) => value,
+            Err(message) => return usage_error(&message),
+        };
+        (
+            title.as_str(),
+            rest.first().map(String::as_str),
+            Some(tag.as_str()),
+            Some(percent),
+        )
+    } else {
+        let (title, rest) = match options.words.as_slice() {
+            [title] => (title.as_str(), None),
+            [title, body] => (title.as_str(), Some(body.as_str())),
+            _ => return usage_error("send takes TITLE [BODY]"),
+        };
+        (title, rest, options.group.as_deref(), options.progress)
+    };
+    let body = options.body.as_deref().or(body);
+    let body = body.filter(|text| !text.is_empty());
+
+    let urgency = options.urgency.unwrap_or(Urgency::Normal);
+    let mut card = Card::new(title).urgency(urgency);
+    if let Some(timeout) = options.timeout {
+        card = card.timeout(timeout);
+    }
+    if let Some(text) = body {
+        card = card.body(text);
+    }
+    card = match options.icon.as_deref() {
+        None | Some("auto") => {
+            let path = body.and_then(|text| std::fs::metadata(text).ok().map(|m| m.is_dir()));
+            card.kind(card::kind_of(body.unwrap_or(""), urgency, path))
+        }
+        Some("none") => card.no_icon(),
+        Some(name) => card.icon(icon_named(name)),
+    };
+    if let Some(tag) = group {
+        card = card.group(tag);
+    }
+    if let Some(path) = options.open.as_deref() {
+        card = card.open_path(path);
+    }
+    if let Some(value) = percent {
+        card = card.progress(value);
+    }
+
+    match card.send() {
+        Ok(sent) => {
+            if let Some(reason) = sent.fallback {
+                say!("hayato notify: no picture: {reason}; the card is text");
+            }
+            EXIT_OK
+        }
+        Err(refused) => {
+            if let Some(reason) = refused.fallback {
+                say!("hayato notify: no picture: {reason}; the card is text");
+            }
+            say!("hayato notify: {}", refused.reason);
+            EXIT_FAILED
+        }
+    }
+}
+
+/// A glyph name of the alphabet first (`image`), then a theme name as given.
+fn icon_named(name: &str) -> Icon {
+    match Glyph::all().iter().find(|glyph| glyph.name() == name) {
+        Some(glyph) => Icon::Glyph(*glyph),
+        None => Icon::Name(name.to_string()),
+    }
+}
+
+fn usage() -> i32 {
+    say!("usage: hayato notify send TITLE [BODY] [options]");
+    say!("       hayato notify say TITLE [BODY] [options]");
+    say!("       hayato notify progress TAG PERCENT TITLE [BODY] [options]");
+    say!();
+    say!("  --icon auto|none|NAME  auto (the default) from the body; a glyph or theme name");
+    say!("  --urgency low|normal|critical");
+    say!("  --group TAG            a card with the same tag replaces the last one");
+    say!("  --timeout MS|never     how long it stays up");
+    say!("  --progress N           a bar under the text, 0 to 100");
+    say!("  --open PATH            clicking the card shows PATH's folder in Files");
+    say!("  --body TEXT            the body, when it is not the second word");
+    EXIT_USAGE
+}
+
+fn usage_error(message: &str) -> i32 {
+    say!("hayato notify: {message}");
+    usage()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(words: &[&str]) -> Vec<String> {
+        words.iter().map(|word| word.to_string()).collect()
+    }
+
+    #[test]
+    fn parse_collects_positional_words_and_flags() {
+        let options = parse(&args(&[
+            "Title",
+            "Body",
+            "--urgency",
+            "critical",
+            "--group",
+            "build",
+            "--progress",
+            "42",
+            "--open",
+            "/home/b/Pictures/a.png",
+        ]))
+        .unwrap();
+        assert_eq!(options.words, vec!["Title", "Body"]);
+        assert_eq!(options.urgency, Some(Urgency::Critical));
+        assert_eq!(options.group.as_deref(), Some("build"));
+        assert_eq!(options.progress, Some(42));
+        assert_eq!(options.open.as_deref(), Some("/home/b/Pictures/a.png"));
+    }
+
+    #[test]
+    fn parse_accepts_every_urgency_word() {
+        for (word, urgency) in [
+            ("low", Urgency::Low),
+            ("normal", Urgency::Normal),
+            ("critical", Urgency::Critical),
+        ] {
+            let options = parse(&args(&["T", "--urgency", word])).unwrap();
+            assert_eq!(options.urgency, Some(urgency), "{word}");
+        }
+        assert!(parse(&args(&["T", "--urgency", "loud"])).is_err());
+    }
+
+    #[test]
+    fn a_flag_without_a_value_is_an_error() {
+        let error = parse(&args(&["--body"])).unwrap_err();
+        assert!(error.contains("--body needs a value"), "{error}");
+    }
+
+    #[test]
+    fn an_unknown_option_is_an_error() {
+        let error = parse(&args(&["T", "--loud"])).unwrap_err();
+        assert!(error.contains("unknown option '--loud'"), "{error}");
+    }
+
+    #[test]
+    fn percent_is_zero_to_one_hundred() {
+        assert_eq!(percent("0").unwrap(), 0);
+        assert_eq!(percent("100").unwrap(), 100);
+        assert!(percent("101").unwrap_err().contains("0 to 100"));
+        assert!(percent("-1").is_err());
+        assert!(percent("ten").is_err());
+    }
+
+    #[test]
+    fn timeout_takes_milliseconds_or_never() {
+        let never = parse(&args(&["T", "--timeout", "never"])).unwrap();
+        assert_eq!(never.timeout, Some(Timeout::Never));
+        let millis = parse(&args(&["T", "--timeout", "1500"])).unwrap();
+        assert_eq!(millis.timeout, Some(Timeout::Millis(1500)));
+        assert!(parse(&args(&["T", "--timeout", "soon"])).is_err());
+    }
+}

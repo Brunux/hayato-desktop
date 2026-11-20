@@ -1,0 +1,24 @@
+Hayato · Translate                               Enter picks · Escape goes back
+────────────────────────────────────────────────────────────────────────────────
+╭ Translate Target Language ───────────────────────────────────────────────────╮
+│ Everything goes into English · Enter sets language                           │
+│                                                                              │
+│ ▍   English  en                                                 ● current █ │
+│     Spanish  es                                                           █ │
+│     French  fr                                                            █ │
+│     German  de                                                            █ │
+│     Portuguese  pt                                                        █ │
+│     Italian  it                                                           █ │
+│     Dutch  nl                                                             █ │
+│     Russian  ru                                                           █ │
+│     Ukrainian  uk                                                         █ │
+│     Polish  pl                                                            █ │
+│     Turkish  tr                                                           █ │
+│     Arabic  ar                                                            │ │
+│     Hebrew  he                                                            │ │
+│     Hindi  hi                                                             │ │
+│     Japanese  ja                                                          │ │
+│     Korean  ko                                                            │ │
+│     Chinese (simplified)  zh-CN                                           │ │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  pick   [Esc]  back

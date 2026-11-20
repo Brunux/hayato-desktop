@@ -37,8 +37,8 @@ usage() {
 sink=@DEFAULT_SINK@
 
 card() { # ICON TITLE BODY VALUE
-	notify-send -a LazyOS -i "$1" -u low -t 1200 \
-		-h string:x-canonical-private-synchronous:lazyos-osd \
+	notify-send -a Hayato -i "$1" -u low -t 1200 \
+		-h string:x-canonical-private-synchronous:hayato-osd \
 		-h "int:value:$4" "$2" "$3" 2>/dev/null || true
 }
 
