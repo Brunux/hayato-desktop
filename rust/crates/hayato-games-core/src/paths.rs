@@ -73,7 +73,19 @@ pub fn system_games() -> PathBuf {
     if installed.is_dir() {
         return installed;
     }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../hayato-games/data")
+    // A checkout: the binary lives in `rust/target/<profile>/`, so the data is
+    // a few levels up. The path is resolved at run time on purpose: baking
+    // `CARGO_MANIFEST_DIR` into the binary ships the builder's home directory
+    // (and whatever the checkout was called) inside every copy of the program.
+    if let Ok(exe) = std::env::current_exe() {
+        for root in exe.ancestors().skip(1).take(6) {
+            let candidate = root.join("crates/hayato-games/data");
+            if candidate.is_dir() {
+                return candidate;
+            }
+        }
+    }
+    installed
 }
 
 /// The folders scanned for ROMs: `~/Games` unless `HAYATO_GAMES_ROM_DIRS`
