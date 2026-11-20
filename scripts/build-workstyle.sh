@@ -25,12 +25,12 @@
 # Output: $WORKSTYLE_STAGE/*.deb   (installed by install-workstyle.sh)
 set -euo pipefail
 _here="$(cd "$(dirname "$0")" && pwd)"
-if [ -n "${LAZYOS_CORE_DIR:-}" ] && [ -f "$LAZYOS_CORE_DIR/scripts/lib.sh" ]; then
-	. "$LAZYOS_CORE_DIR/scripts/lib.sh"
+if [ -n "${HAYATO_CORE_DIR:-}" ] && [ -f "$HAYATO_CORE_DIR/scripts/lib.sh" ]; then
+	. "$HAYATO_CORE_DIR/scripts/lib.sh"
 elif [ -f "$_here/../../core/scripts/lib.sh" ]; then
 	. "$_here/../../core/scripts/lib.sh"
-elif [ -f "$_here/../../lazyos-core/scripts/lib.sh" ]; then
-	. "$_here/../../lazyos-core/scripts/lib.sh"
+elif [ -f "$_here/../../hayato-core/scripts/lib.sh" ]; then
+	. "$_here/../../hayato-core/scripts/lib.sh"
 else
 	. "$_here/lib-desktop.sh"
 fi
@@ -41,7 +41,7 @@ command -v patch >/dev/null 2>&1 || die "patch is not installed (run scripts/00-
 
 # Debian packaging revision: a change to the packaging itself (not the upstream
 # source) bumps this, so apt sees an upgrade.
-PACKAGING_REVISION="1lazyos1"
+PACKAGING_REVISION="1hayato1"
 WORKSTYLE_PKG_VERSION="$WORKSTYLE_VERSION-$PACKAGING_REVISION"
 
 log "Fetching workstyle $WORKSTYLE_VERSION"

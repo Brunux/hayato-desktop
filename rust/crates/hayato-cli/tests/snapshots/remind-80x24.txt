@@ -1,0 +1,24 @@
+Hayato · Reminders                                                              
+────────────────────────────────────────────────────────────────────────────────
+╭ Waiting ─────────────────────────────────────────────────────────────────────╮
+│  ^N   New reminder                                            [Tab] actions │
+│                                                                              │
+│  Press Enter or Ctrl+N to schedule a reminder · Esc backs out               │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│          ╭ Hayato ───────────────────────────────────────────────╮           │
+│          │                                                       │           │
+│          │                 No reminders waiting                  │           │
+│          │                                                       │           │
+│          │   Press Enter or Ctrl+N to schedule a new reminder    │           │
+│          │                                                       │           │
+│          │                                                       │           │
+│          │                                                       │           │
+│          ╰───────────────────────────────────────────────────────╯           │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  new / cancel   [Ctrl+N]  new reminder   [Tab]  actions   [Esc]  back  

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Generates 36x12 and 48x16 PNG thumbnails for all wallpapers in uis/sway/files/home/Pictures/Wallpapers/
-and copies them to ~/.cache/lazyos/wallpapers/thumbnails/ and ~/Pictures/Wallpapers/thumbnails/.
+and copies them to ~/.cache/hayato/wallpapers/thumbnails/ and ~/Pictures/Wallpapers/thumbnails/.
 """
 
 import os
@@ -55,7 +55,7 @@ def main():
                     print(f"Error generating thumbnail for {path}: {e}")
 
     # Also copy to cache directory
-    cache_thumb_dir = os.path.expanduser("~/.cache/lazyos/wallpapers/thumbnails")
+    cache_thumb_dir = os.path.expanduser("~/.cache/hayato/wallpapers/thumbnails")
     os.makedirs(cache_thumb_dir, exist_ok=True)
     for path in glob.glob(os.path.join(WP_DIRS[0], "thumbnails", "*.png")):
         filename = os.path.basename(path)

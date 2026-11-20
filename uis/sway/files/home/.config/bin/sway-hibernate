@@ -12,15 +12,15 @@
 #      and the saved session is lost; initramfs-tools resolves resume=LABEL=...
 #      through udev, so a label is enough)
 #
-# The swap is meant to live on the microSD, labelled "lazyos_swap". It has to be a
+# The swap is meant to live on the microSD, labelled "hayato_swap". It has to be a
 # partition (or another block device), not a swap file: resume=LABEL= resolves
 # through udev, and a file has no label of its own.
 #
-#   sudo mkswap -L lazyos_swap /dev/mmcblk1p4
-#   echo 'LABEL=lazyos_swap none swap sw 0 0' | sudo tee -a /etc/fstab
+#   sudo mkswap -L hayato_swap /dev/mmcblk1p4
+#   echo 'LABEL=hayato_swap none swap sw 0 0' | sudo tee -a /etc/fstab
 #   sudo swapon -a
 #
-# and the kernel command line gets `resume=LABEL=lazyos_swap` the next time the
+# and the kernel command line gets `resume=LABEL=hayato_swap` the next time the
 # kernel partition is built: `CONFIRM=yes RESUME=yes scripts/install-kpart.sh`
 # does that once, on the machine, and keeps it across later kernel updates.
 #
@@ -32,7 +32,7 @@ set -eu
 
 # Every message here is a refusal, so one icon names the subject: the card in
 # mako's history then reads as "hibernation" before the text is read. It is a
-# name scripts/make-icons.sh renders into the LazyOS theme, which is on mako's
+# name scripts/make-icons.sh renders into the Hayato theme, which is on mako's
 # icon-path (see the icon table); a name that does not resolve draws nothing.
 notify() { notify-send -a Hibernate -i system-suspend-hibernate "$@" 2>/dev/null || true; }
 refuse() { notify "$1"; printf 'hibernate: %s\n' "$1" >&2; exit 1; }
@@ -124,13 +124,13 @@ if [ "$KERNEL_OK" != yes ]; then
 fi
 
 [ -n "$SWAP_DEV" ] ||
-	refuse "No swap on disk. Hibernation needs a swap partition (2 GB or more) labelled lazyos_swap, normally on the microSD."
+	refuse "No swap on disk. Hibernation needs a swap partition (2 GB or more) labelled hayato_swap, normally on the microSD."
 
 [ "$SWAP_KB" -ge "$NEED_KB" ] ||
 	refuse "The swap on $SWAP_DEV is $((SWAP_KB / 1024)) MiB; the hibernation image can need about $((NEED_KB / 1024)) MiB."
 
 if [ "$RESUME_OK" != yes ]; then
-	refuse "The kernel command line has no resume=, so a hibernated session could not be restored. Add it once with CONFIRM=yes RESUME=yes /usr/libexec/lazyos/install-boot.sh (it rebuilds the boot configuration and keeps resume= across later kernel updates)."
+	refuse "The kernel command line has no resume=, so a hibernated session could not be restored. Add it once with CONFIRM=yes RESUME=yes /usr/libexec/hayato/install-boot.sh (it rebuilds the boot configuration and keeps resume= across later kernel updates)."
 fi
 
 # resume= is on the command line but names nothing on this machine: a swap card
@@ -139,14 +139,14 @@ fi
 # hibernation losing the work rather than as a command line pointing at a place
 # that no longer exists.
 if [ -z "$RESUME_SPEC" ]; then
-	refuse "The kernel command line has an empty resume=, so a hibernated session could not be restored. Rebuild the boot configuration without it: CONFIRM=yes RESUME=no /usr/libexec/lazyos/install-boot.sh."
+	refuse "The kernel command line has an empty resume=, so a hibernated session could not be restored. Rebuild the boot configuration without it: CONFIRM=yes RESUME=no /usr/libexec/hayato/install-boot.sh."
 fi
 if [ "$RESUME_BROKEN" = yes ]; then
 	_fix='Rebuild'
 	case "$RESUME_SPEC" in
 	LABEL=*) _fix="Relabel that swap (sudo swaplabel -L ${RESUME_SPEC#LABEL=} <device>), or rebuild" ;;
 	esac
-	refuse "The kernel command line says resume=$RESUME_SPEC, but no device carries that name now, so the next boot could not find the hibernation image. $_fix the boot configuration without it: CONFIRM=yes RESUME=no /usr/libexec/lazyos/install-boot.sh."
+	refuse "The kernel command line says resume=$RESUME_SPEC, but no device carries that name now, so the next boot could not find the hibernation image. $_fix the boot configuration without it: CONFIRM=yes RESUME=no /usr/libexec/hayato/install-boot.sh."
 fi
 
 notify "Hibernating to $SWAP_DEV"

@@ -13,7 +13,7 @@
 # \u escape to turn a codepoint into a character, and dash does not have one.
 #
 # So the same codepoints are rendered once into 48x48 PNGs and installed as the
-# LazyOS icon theme.  Its index.theme inherits Adwaita and hicolor, so an
+# Hayato icon theme.  Its index.theme inherits Adwaita and hicolor, so an
 # application that brings its own icon (foot, btop, htop, anything installed
 # later) still shows that one in colour, and only the session's own entries fall
 # back to these.
@@ -27,7 +27,7 @@
 # application-pdf, ...) and the ones notify-send/mako draw on a notification
 # (dialog-information, dialog-warning, dialog-error, network-server, ...).
 # mako does not read the theme metadata - it walks the roots in its `icon-path`
-# for categories and sizes - so /usr/share/icons/LazyOS has to be one of those
+# for categories and sizes - so /usr/share/icons/Hayato has to be one of those
 # roots for these to appear on a notification.
 #
 # The PNGs are committed, so an image build needs no ImageMagick; run this only
@@ -43,7 +43,7 @@
 set -eu
 
 here=$(cd "$(dirname "$0")/.." && pwd)
-theme="$here/uis/sway/files/usr/share/icons/LazyOS"
+theme="$here/uis/sway/files/usr/share/icons/Hayato"
 out="$theme/48x48/apps"
 alt="$theme/scalable/apps"
 # The launcher asks for its own icon size and GTK only falls back to a *larger* fixed
@@ -111,7 +111,7 @@ system-suspend-hibernate           f186
 system-shutdown                    f011
 preferences-desktop-screensaver    f06e
 applets-screenshooter              f030
-# The webcam row (org.lazyos.camera.desktop) asks for camera-web, the GNOME name
+# The webcam row (org.hayato.camera.desktop) asks for camera-web, the GNOME name
 # for a camera application. It is the same Font Awesome camera as Capture's row
 # above, and it is a second *name* because the launcher resolves a .desktop Icon= by
 # name: the glyph existing under another one is a hole on the launcher row.
@@ -137,7 +137,7 @@ document-print-preview             f02f
 # the same PNG either way, and each table stays a complete answer to its own
 # question (what the launcher shows / what the file manager draws).
 folder-download                    f019
-# Install LazyOS (org.lazyos.install.desktop) asks for the shield the root menu
+# Install Hayato (org.hayato.install.desktop) asks for the shield the root menu
 # draws on its row, so the launcher and the menu tell the same story.
 system-software-install            f132
 TABLE
@@ -165,7 +165,7 @@ tig                                f1d3
 nvim                               f121
 vim                                f121
 # The Developer menu's script, which the key view draws on the Alt+Ctrl+D row.
-lazyos-dev                           f121
+hayato-dev                           f121
 nano                               f044
 micro                              f044
 tmux                               f120
@@ -222,29 +222,29 @@ dmesg                              f15c
 check-system                       f05a
 dictate                            f131
 dictate-model                      f019
-lazyos-capture                       f030
-lazyos-qr                            f029
-lazyos-files                         f07b
-lazyos-places                        f07b
-lazyos-settings                         f013
-lazyos-learn                         f02d
-lazyos-tz                            f017
-lazyos-calc                          f1ec
-lazyos-keys                          f11c
-lazyos-notify-history                        f0f3
-lazyos-media                         f001
-lazyos-games                         f11b
-lazyos-kill                          f0e7
-lazyos-clean                         f1f8
-lazyos-agents                        f0c0
-lazyos-power                         f011
-lazyos-emoji                         f118
-lazyos-clip                          f0ea
-lazyos-about                         f05a
-lazyos-dns                           f0c2
-lazyos-pkg                           f187
-lazyos-color                         f1fc
-lazyos-remind                        f017
+hayato-capture                       f030
+hayato-qr                            f029
+hayato-files                         f07b
+hayato-places                        f07b
+hayato-settings                         f013
+hayato-learn                         f02d
+hayato-tz                            f017
+hayato-calc                          f1ec
+hayato-keys                          f11c
+hayato-notify-history                        f0f3
+hayato-media                         f001
+hayato-games                         f11b
+hayato-kill                          f0e7
+hayato-clean                         f1f8
+hayato-agents                        f0c0
+hayato-power                         f011
+hayato-emoji                         f118
+hayato-clip                          f0ea
+hayato-about                         f05a
+hayato-dns                           f0c2
+hayato-pkg                           f187
+hayato-color                         f1fc
+hayato-remind                        f017
 cliphist                           f0ea
 wl-copy                            f0ea
 wl-paste                           f0ea
@@ -263,7 +263,7 @@ sway-lock                          f023
 swayidle                           f04c
 sway-suspend                       f04c
 sway-hibernate                     f186
-lazyos-screensaver                 f070
+hayato-screensaver                 f070
 wifi.sh                            f1eb
 COMMANDS
 

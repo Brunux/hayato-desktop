@@ -13,5 +13,5 @@ Keywords=files;browse;open;view;directory;folder;manage;copy;move;rename;
 # Same filename as the package's entry on purpose: a desktop file in
 # ~/.local/share/applications shadows the system one of that name, which is how
 # this image renames it to "Files (window)". Without it the launcher lists
-# "Files" (lazyos-files, the menu) next to "PCMan File Manager" and the pair looks
+# "Files" (hayato-files, the menu) next to "PCMan File Manager" and the pair looks
 # like two copies of one thing.

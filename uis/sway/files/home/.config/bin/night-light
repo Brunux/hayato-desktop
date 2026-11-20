@@ -8,7 +8,7 @@
 # while the Settings switch still says on - and why the session needs one owner
 # for the command line:
 #
-#   night-light apply    apply ~/.config/lazyos/night-light.conf
+#   night-light apply    apply ~/.config/hayato/night-light.conf
 #   night-light login    follow the sunset at the maintainer's coordinates
 #   night-light start    force the warm end (-T = -t)
 #   night-light stop     kill it and forget the mode
@@ -16,12 +16,12 @@
 #   night-light status   "on schedule", "on warm", "off <mode>" or "off"
 #   night-light config   "mode=auto|warm|off warmth=<kelvin>"
 #
-# The mode is one line in $XDG_RUNTIME_DIR/lazyos-night-light, so a session that
+# The mode is one line in $XDG_RUNTIME_DIR/hayato-night-light, so a session that
 # dies takes it with it and the next login decides again.  Nothing here is
 # resident: wlsunset is the client the session already had, and this script
 # exits after it has started or stopped it.
 #
-# The user's choice lives in ~/.config/lazyos/night-light.conf: `mode` is
+# The user's choice lives in ~/.config/hayato/night-light.conf: `mode` is
 # auto (sunset), warm (always) or off, and `warmth` is the Kelvin value passed
 # to wlsunset. Settings writes that file and calls `apply`; `login` calls
 # `apply` too, so the login line and the Settings row cannot disagree.
@@ -34,8 +34,8 @@
 
 set -eu
 
-state="${XDG_RUNTIME_DIR:-/tmp}/lazyos-night-light"
-conf="${XDG_CONFIG_HOME:-$HOME/.config}/lazyos/night-light.conf"
+state="${XDG_RUNTIME_DIR:-/tmp}/hayato-night-light"
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/hayato/night-light.conf"
 mode=auto
 warmth=4000
 

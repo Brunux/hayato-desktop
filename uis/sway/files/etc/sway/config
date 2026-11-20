@@ -25,18 +25,18 @@ set $term foot
 # Your preferred application launcher. The three jobs the old launcher used to do with its
 # own modes are the framework's now (spec 012) - one binary, one palette:
 # the applications ($launcher, the .desktop entries including this port's own
-# session actions in usr/share/applications/org.lazyos.*), the command palette
+# session actions in usr/share/applications/org.hayato.*), the command palette
 # ($runner, $PATH, where Shift+Enter runs the choice in foot) and the window
 # switcher ($switcher, which sway does not have). They draw a Nerd Font glyph
 # per row and filter as you type, which is what the old rows could not do in
 # foot. See uis/sway/README.md, "The launcher".
-set $launcher lazyos menu apps
-set $runner lazyos menu run
-set $switcher lazyos menu window
+set $launcher hayato menu apps
+set $runner hayato menu run
+set $switcher hayato menu window
 
 ### Output configuration
 #
-# The wallpaper is not here: it belongs to the theme, and `lazyos theme set`
+# The wallpaper is not here: it belongs to the theme, and `hayato theme set`
 # writes ~/.config/sway/config.d/35-theme.conf, which is included after this
 # file. One `output bg` in one place, so a theme switch cannot leave a picture
 # that a system file keeps pinning back.
@@ -65,7 +65,7 @@ input "1267:287:Elan_Touchpad" {
 ### Key bindings
 #
 # $mod is Alt on this machine. Every binding carries its description on the line
-# above (lazyos-keys, Alt+Shift+K, shows those comments), and a description applies
+# above (hayato-keys, Alt+Shift+K, shows those comments), and a description applies
 # to the bindings that follow it until a blank line or the next comment.
 
     # Start a terminal
@@ -78,7 +78,7 @@ input "1267:287:Elan_Touchpad" {
     bindsym $mod+Shift+c reload
 
     # Exit the session (asks first)
-    bindsym $mod+Shift+e exec lazyos menu power --power logout
+    bindsym $mod+Shift+e exec hayato menu power --power logout
 
     # Drag floating windows with $mod and the left mouse button, resize them with
     # the right one.

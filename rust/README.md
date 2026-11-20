@@ -1,28 +1,28 @@
 # rust/
 
-The Rust side of LazyOS: the workspace that `docs/plan-ui.md` grows into the session UI
-framework (`lazyos-ui`, `lazyos-theme`, `lazyos` multi-call binary, `lazyos mcp`).
+The Rust side of Hayato: the workspace that `docs/plan-ui.md` grows into the session UI
+framework (`hayato-ui`, `hayato-theme`, `hayato` multi-call binary, `hayato mcp`).
 
-It holds the framework's crates (`lazyos-cli`, `lazyos-ui`, `lazyos-theme`) and
+It holds the framework's crates (`hayato-cli`, `hayato-ui`, `hayato-theme`) and
 the spike that validated the one technical risk before anything depended on it.
-The framework is built by `scripts/build-lazyos.sh` and installed by
-`scripts/install-lazyos.sh`; `lazyos` reports the repository's `VERSION`
+The framework is built by `scripts/build-hayato.sh` and installed by
+`scripts/install-hayato.sh`; `hayato` reports the repository's `VERSION`
 (compiled in), which is what `check-system.sh` compares with the image record.
 
-## `crates/lazyos-cli` - the binary
+## `crates/hayato-cli` - the binary
 
-`lazyos`, the session's multi-call binary (`specs/001-core.md`): the command
+`hayato`, the session's multi-call binary (`specs/001-core.md`): the command
 table, the `argv[0]`/words dispatch, the host (`foot` window or this terminal),
 the terminal restore and the two states spec 001 draws. `cargo test -p
-lazyos-cli` runs the unit tests and `tests/cli.rs`, which drives the real binary
+hayato-cli` runs the unit tests and `tests/cli.rs`, which drives the real binary
 in a pty.
 
-## `crates/lazyos-ui` - the widgets
+## `crates/hayato-ui` - the widgets
 
 The frame's building blocks; spec 001 ships the empty state and the error card,
 spec 002 (`specs/002-design-system.md`) grows the design system here.
 
-## `crates/lazyos-theme` - the palette
+## `crates/hayato-theme` - the palette
 
 The colour roles a surface asks for (`Palette`, `Rgb`), solarized dark today.
 Spec 004 turns it into the engine that owns `theme.toml` and the generated
@@ -32,7 +32,7 @@ palette files.
 
 The only technical risk of the UI plan, validated first: foot renders sixels natively, and
 `ratatui-image` can draw the theme's PNGs and document pictures through them. The spike draws
-the 48 px LazyOS mark and a screenshot in one full-screen frame, prints the protocol the
+the 48 px Hayato mark and a screenshot in one full-screen frame, prints the protocol the
 terminal answered, and leaves its measurements behind.
 
 ```sh
@@ -40,7 +40,7 @@ cargo build --release
 # in a real foot on the device:
 foot --app-id=spike-sixel --window-size-pixels=1100x650 \
   -e rust/target/release/spike-sixel \
-     uis/sway/files/usr/share/icons/LazyOS/48x48/apps/lazyos.png \
+     uis/sway/files/usr/share/icons/Hayato/48x48/apps/hayato.png \
      docs/screenshots/hayato-r1-sway.png
 ```
 

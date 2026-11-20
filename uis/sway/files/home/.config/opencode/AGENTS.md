@@ -1,14 +1,14 @@
-# LazyOS: the desktop you can drive
+# Hayato: the desktop you can drive
 
-You are running on LazyOS, a Debian desktop for a small ARM Chromebook (sway, foot, a framework
-of `lazyos` windows). The `lazyos` MCP server (registered in `~/.config/opencode/opencode.json`)
+You are running on Hayato, a Debian desktop for a small ARM Chromebook (sway, foot, a framework
+of `hayato` windows). The `hayato` MCP server (registered in `~/.config/opencode/opencode.json`)
 gives you the desktop's own tools. They are a contract with the person at this machine: you
 **read** freely, you **act** where the person can see it and undo it, and for anything
 destructive you **propose** - you open the real window where they decide.
 
-lazyos-mcp manifest: m-56dc68bf6b0df7c9
+hayato-mcp manifest: m-423c6c778b89b941
 
-`lazyos mcp --tools` prints the same table with this version in its first line. If it says
+`hayato mcp --tools` prints the same table with this version in its first line. If it says
 another version, this file describes a different set of tools: trust `--tools`.
 
 ## read - changes nothing
@@ -37,7 +37,7 @@ another version, this file describes a different set of tools: trust `--tools`.
 
 ## propose - the person decides
 
-- `install_propose` - the Install LazyOS window; the person types the disk's name.
+- `install_propose` - the Install Hayato window; the person types the disk's name.
 - `format_propose` - Format a disk; its list only holds removable disks this system does not
   use, and it asks again with Cancel first.
 - `swap_propose` - Auxiliary swap; the person picks the card and the size.
@@ -55,4 +55,4 @@ writes a partition or the kernel partition, or exports or restores a profile (`r
 `profile_*`). Calling one is refused with the menu to point the person at. Your own shell
 session is your command line; on this machine, destructive work is the person's.
 
-The manual is a resource (`lazyos://manual/*.md`) - the same pages the person reads in Learn.
+The manual is a resource (`hayato://manual/*.md`) - the same pages the person reads in Learn.

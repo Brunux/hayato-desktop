@@ -1302,6 +1302,103 @@ dependencies = [
 ]
 
 [[package]]
+name = "hayato-cli"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "dirs",
+ "evdev",
+ "hayato-games-core",
+ "hayato-mcp",
+ "hayato-theme",
+ "hayato-ui",
+ "image",
+ "libc",
+ "ratatui",
+ "ratatui-image",
+ "serde",
+ "serde_json",
+ "tachyonfx",
+ "tempfile",
+ "unicode-width",
+]
+
+[[package]]
+name = "hayato-games"
+version = "0.0.0"
+dependencies = [
+ "gtk4",
+ "hayato-games-core",
+ "hayato-theme",
+ "serde",
+ "serde_json",
+ "soup3",
+ "tempfile",
+ "webkit6",
+]
+
+[[package]]
+name = "hayato-games-core"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
+name = "hayato-mcp"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "hayato-notify"
+version = "0.0.0"
+dependencies = [
+ "calloop 0.14.5",
+ "calloop-wayland-source",
+ "fontdue",
+ "hayato-theme",
+ "hayato-ui",
+ "image",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tiny-skia",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-wlr",
+ "zbus",
+]
+
+[[package]]
+name = "hayato-theme"
+version = "0.0.0"
+dependencies = [
+ "dirs",
+ "image",
+ "serde",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
+name = "hayato-ui"
+version = "0.0.0"
+dependencies = [
+ "hayato-theme",
+ "libc",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "tachyonfx",
+ "unicode-width",
+]
+
+[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1477,103 +1574,6 @@ name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
-
-[[package]]
-name = "lazyos-cli"
-version = "0.0.0"
-dependencies = [
- "chrono",
- "dirs",
- "evdev",
- "image",
- "lazyos-games-core",
- "lazyos-mcp",
- "lazyos-theme",
- "lazyos-ui",
- "libc",
- "ratatui",
- "ratatui-image",
- "serde",
- "serde_json",
- "tachyonfx",
- "tempfile",
- "unicode-width",
-]
-
-[[package]]
-name = "lazyos-games"
-version = "0.0.0"
-dependencies = [
- "gtk4",
- "lazyos-games-core",
- "lazyos-theme",
- "serde",
- "serde_json",
- "soup3",
- "tempfile",
- "webkit6",
-]
-
-[[package]]
-name = "lazyos-games-core"
-version = "0.0.0"
-dependencies = [
- "serde",
- "serde_json",
- "tempfile",
- "toml 0.9.12+spec-1.1.0",
-]
-
-[[package]]
-name = "lazyos-mcp"
-version = "0.0.0"
-dependencies = [
- "serde_json",
-]
-
-[[package]]
-name = "lazyos-notify"
-version = "0.0.0"
-dependencies = [
- "calloop 0.14.5",
- "calloop-wayland-source",
- "fontdue",
- "image",
- "lazyos-theme",
- "lazyos-ui",
- "libc",
- "serde",
- "serde_json",
- "tempfile",
- "tiny-skia",
- "wayland-client",
- "wayland-protocols",
- "wayland-protocols-wlr",
- "zbus",
-]
-
-[[package]]
-name = "lazyos-theme"
-version = "0.0.0"
-dependencies = [
- "dirs",
- "image",
- "serde",
- "toml 0.9.12+spec-1.1.0",
-]
-
-[[package]]
-name = "lazyos-ui"
-version = "0.0.0"
-dependencies = [
- "lazyos-theme",
- "libc",
- "ratatui",
- "serde",
- "serde_json",
- "tachyonfx",
- "unicode-width",
-]
 
 [[package]]
 name = "libc"

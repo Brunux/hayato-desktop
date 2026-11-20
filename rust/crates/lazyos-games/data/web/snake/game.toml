@@ -1,6 +1,0 @@
-id = "snake"
-title = "Snake"
-author = "LazyOS"
-description = "The smallest complete game: a canvas, a gamepad, and a high score that survives a restart. Copy this folder to write another one."
-entry = "index.html"
-art = "art.svg"

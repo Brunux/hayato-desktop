@@ -28,7 +28,7 @@
     // from both sides, with the rounded corners style.css draws, so it reads as
     // a panel over the desktop instead of a strip welded to the edge. The 12px
     // is the session's window inset (gaps outer 4 + inner 8 in
-    // 90-solarized.conf), so the panel's sides line up with the windows under
+    // 90-desktop.conf), so the panel's sides line up with the windows under
     // it. The 4px at each end is a separate margin inside style.css.
     "spacing": 0,
     "margin-top": 6,
@@ -57,7 +57,7 @@
         "tray"
     ],
     // The brand: the mark is a prompt (`z_`, the lazy z and its cursor - the
-    // same shape as brand/lazyos.svg), the `z` in the reading colour and the
+    // same shape as brand/hayato.svg), the `z` in the reading colour and the
     // `_` cursor in the accent - the same accent as the current workspace
     // chip. The word is split across two modules only so the cursor can carry
     // a colour of its own; style.css joins them and both halves are the menu
@@ -137,7 +137,7 @@
         "interval": 21600,
         "signal": 8,
         "tooltip": true,
-        "on-click": "lazyos menu pkg"
+        "on-click": "hayato menu pkg"
     },
     "tray": {
         "icon-size": 14,
@@ -147,19 +147,19 @@
     // Screen sharing (Settings > Share this screen, and the root menu): an eye
     // while wayvnc serves this session read-only on the loopback address, and
     // nothing at all otherwise (style.css collapses .empty).  The module reads
-    // the state file lazyos-vnc keeps - one `sh` every ten seconds, no daemon -
+    // the state file hayato-vnc keeps - one `sh` every ten seconds, no daemon -
     // and a start or a stop signals the bar (RTMIN+8), so the eye appears and
     // disappears at the moment it happens instead of on the next poll.  A right
     // click stops it: the one thing someone wants from an indicator that says
     // "you are being watched" is to be able to end it from the same place.
     "custom/vnc": {
-        "exec": "~/.config/bin/lazyos-vnc status --bar",
+        "exec": "~/.config/bin/hayato-vnc status --bar",
         "return-type": "json",
         "interval": 10,
         "signal": 8,
         "tooltip": true,
-        "on-click": "~/.config/bin/lazyos-vnc",
-        "on-click-right": "~/.config/bin/lazyos-vnc stop"
+        "on-click": "~/.config/bin/hayato-vnc",
+        "on-click-right": "~/.config/bin/hayato-vnc stop"
     },
     "custom/keyboard-layout": {
         "exec": "~/.config/bin/bar-key",
@@ -168,7 +168,7 @@
         "signal": 8,
         "tooltip": true,
         "on-click": "~/.config/bin/bar-key next",
-        "on-click-right": "~/.config/bin/lazyos-layout"
+        "on-click-right": "~/.config/bin/hayato-layout"
     },
     "custom/bluetooth": {
         "exec": "~/.config/bin/bar-bt status",
@@ -229,7 +229,7 @@
         "format": "<span font_desc='JetBrains Mono 13'>\uf185</span>",
         "tooltip-format": "Brightness {percent}%",
         "interval": 5,
-        "on-click": "~/.config/bin/lazyos-display",
+        "on-click": "~/.config/bin/hayato-display",
         "on-scroll-up": "brightnessctl set 5%+",
         "on-scroll-down": "brightnessctl set 5%-"
     },
@@ -279,6 +279,6 @@
         "tooltip-format": "Battery {capacity}%\nClick for power menu",
         "interval": 30,
         "on-click": "~/.config/bin/bar-power",
-        "on-click-right": "~/.config/bin/lazyos-power"
+        "on-click-right": "~/.config/bin/hayato-power"
     }
 }

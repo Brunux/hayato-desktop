@@ -16,7 +16,7 @@
 #   busy cancelled TAG                     exit 0 when this tag has no card left
 #
 # The notification is replaced rather than stacked because every message carries
-# the same mako tag (`string:x-canonical-private-synchronous:lazyos-<tag>`), so a
+# the same mako tag (`string:x-canonical-private-synchronous:hayato-<tag>`), so a
 # scan reads "Looking for networks…" and then the same card reads "9 networks
 # in range".  The bar side is bar-busy, which reads the state written here; both
 # ends are signalled through waybar's signal 8, so the card appears and
@@ -46,12 +46,12 @@
 # Nothing here fails the caller: a session without mako gets no toast, and the
 # action itself still runs.
 #
-# State lives in $XDG_RUNTIME_DIR/lazyos-busy (<tag>.id, .label, .icon, .stop),
+# State lives in $XDG_RUNTIME_DIR/hayato-busy (<tag>.id, .label, .icon, .stop),
 # so it dies with the session rather than surviving in the home directory.
 
 set -u
 
-dir=${XDG_RUNTIME_DIR:-/tmp}/lazyos-busy
+dir=${XDG_RUNTIME_DIR:-/tmp}/hayato-busy
 mkdir -p "$dir" 2>/dev/null || true
 
 cmd=${1:-}
@@ -72,14 +72,14 @@ send() { # TIMEOUT URGENCY MESSAGE [ICON]
 	_urgency=$2
 	_message=$3
 	_icon=${4:-${icon:-dialog-information}}
-	set -- -a LazyOS -i "$_icon" -u "$_urgency" -t "$_timeout"
+	set -- -a Hayato -i "$_icon" -u "$_urgency" -t "$_timeout"
 	if [ -n "$id" ]; then
 		set -- "$@" -r "$id"
 	fi
-	set -- "$@" -h "string:x-canonical-private-synchronous:lazyos-$tag"
+	set -- "$@" -h "string:x-canonical-private-synchronous:hayato-$tag"
 	# A result that names a file can be clicked to show it in Files.
 	if [ -n "${BUSY_OPEN:-}" ]; then
-		set -- "$@" -h "string:x-lazyos-open-path:$BUSY_OPEN"
+		set -- "$@" -h "string:x-hayato-open-path:$BUSY_OPEN"
 	fi
 	notify-send "$@" "$label" "$_message" 2>/dev/null || true
 }
@@ -108,8 +108,8 @@ start)
 	fi
 	# -p prints the id; a session without a notification daemon prints nothing,
 	# which is why the id is optional everywhere below.
-	id=$(notify-send -p -a LazyOS -i "${5:-dialog-information}" -u low -t 0 \
-		-h "string:x-canonical-private-synchronous:lazyos-$tag" \
+	id=$(notify-send -p -a Hayato -i "${5:-dialog-information}" -u low -t 0 \
+		-h "string:x-canonical-private-synchronous:hayato-$tag" \
 		"$label" "${4:-}" 2>/dev/null || true)
 	if [ -n "$id" ]; then
 		printf '%s\n' "$id" >"$dir/$tag.id"

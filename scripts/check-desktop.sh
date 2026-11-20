@@ -1,5 +1,5 @@
 #!/bin/bash
-# LazyOS desktop & framework checks (/usr/libexec/lazyos/check/30-desktop.sh).
+# Hayato desktop & framework checks (/usr/libexec/hayato/check/30-desktop.sh).
 # Can run standalone (./scripts/check-desktop.sh [DESKTOP_REPO]) or sourced by check-system.sh.
 
 _STANDALONE_DESKTOP=0
@@ -33,24 +33,24 @@ if [ "${_CHECK_SYSTEM_SOURCED:-0}" != 1 ]; then
 		else warn "$u is not active"; fi
 	}
 	_self_d="$(cd "$(dirname "$0")" && pwd)"
-	DESKTOP_REPO="${1:-${LAZYOS_DESKTOP_DIR:-$(cd "$_self_d/.." 2>/dev/null && pwd)}}"
+	DESKTOP_REPO="${1:-${HAYATO_DESKTOP_DIR:-$(cd "$_self_d/.." 2>/dev/null && pwd)}}"
 	if [ -z "$DESKTOP_REPO" ] || [ ! -d "$DESKTOP_REPO/uis" ]; then
 		DESKTOP_REPO=""
 	fi
 	if [ -n "$DESKTOP_REPO" ]; then
-		if [ -x "$DESKTOP_REPO/rust/target/release/lazyos" ]; then
+		if [ -x "$DESKTOP_REPO/rust/target/release/hayato" ]; then
 			PATH="$DESKTOP_REPO/rust/target/release:$PATH"
-		elif [ -x "$DESKTOP_REPO/rust/target/debug/lazyos" ]; then
+		elif [ -x "$DESKTOP_REPO/rust/target/debug/hayato" ]; then
 			PATH="$DESKTOP_REPO/rust/target/debug:$PATH"
 		fi
 	fi
 	REPO="${REPO:-$DESKTOP_REPO}"
-	SETTINGS_ROWS="$(lazyos menu settings --rows 2>/dev/null || true)"
+	SETTINGS_ROWS="$(hayato menu settings --rows 2>/dev/null || true)"
 	settings_runs() { awk -F'\t' -v want="$1" '$3 == want { found = 1 } END { exit !found }' <<<"$SETTINGS_ROWS"; }
 else
 	if [ -z "${DESKTOP_REPO:-}" ]; then
-		if [ -n "${LAZYOS_DESKTOP_DIR:-}" ] && [ -d "$LAZYOS_DESKTOP_DIR/uis" ]; then
-			DESKTOP_REPO="$LAZYOS_DESKTOP_DIR"
+		if [ -n "${HAYATO_DESKTOP_DIR:-}" ] && [ -d "$HAYATO_DESKTOP_DIR/uis" ]; then
+			DESKTOP_REPO="$HAYATO_DESKTOP_DIR"
 		elif [ -n "${REPO:-}" ] && [ -d "$REPO/desktop/uis" ]; then
 			DESKTOP_REPO="$REPO/desktop"
 		elif [ -n "${REPO:-}" ] && [ -d "$REPO/uis" ]; then
@@ -70,7 +70,7 @@ RUNTIME="${RUNTIME:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}}"
 # The root menu's table, read once. `menu_runs` matches the command a row runs
 # and `menu_label` the label it draws; both lived in the pre-split
 # check-system.sh and were lost when the desktop hook moved into its own repo.
-MENU_ROWS="$(lazyos menu --rows 2>/dev/null || true)"
+MENU_ROWS="$(hayato menu --rows 2>/dev/null || true)"
 menu_runs() { awk -F'\t' -v want="$1" '$4 == want { found = 1 } END { exit !found }' <<<"$MENU_ROWS"; }
 menu_label() { awk -F'\t' -v want="$1" '$3 == want { found = 1 } END { exit !found }' <<<"$MENU_ROWS"; }
 
@@ -87,22 +87,22 @@ if [ -r /etc/greetd/config.toml ]; then
 		fail "greeter vt = ${_vt:-unset} (must be 7: greetd conflicts with getty@tty7)"
 	getent passwd "$_user" >/dev/null 2>&1 && ok "greeter user $_user exists" ||
 		fail "greeter user '${_user:-unset}' does not exist: greetd exits and the greeter never shows"
-	grep -qs 'lazyos-greeter' /etc/greetd/config.toml 2>/dev/null &&
-		ok "greetd invokes native lazyos-greeter" ||
-		warn "/etc/greetd/config.toml does not invoke lazyos-greeter yet"
+	grep -qs 'hayato-greeter' /etc/greetd/config.toml 2>/dev/null &&
+		ok "greetd invokes native hayato-greeter" ||
+		warn "/etc/greetd/config.toml does not invoke hayato-greeter yet"
 else
 	fail "/etc/greetd/config.toml is missing"
 fi
-if have lazyos-greeter; then
-	ok "lazyos-greeter is installed"
-	lazyos-greeter --check >/dev/null 2>&1 &&
-		ok "lazyos-greeter --check passes" ||
-		fail "lazyos-greeter --check failed"
+if have hayato-greeter; then
+	ok "hayato-greeter is installed"
+	hayato-greeter --check >/dev/null 2>&1 &&
+		ok "hayato-greeter --check passes" ||
+		fail "hayato-greeter --check failed"
 	printf '%s\n' "$SETTINGS_ROWS" | grep -q '^greeter	' &&
 		ok "Settings exposes Login screen (Greeter) defaults" ||
-		fail "Settings (lazyos menu settings) lost the 'greeter' row: greeter defaults are unreachable"
+		fail "Settings (hayato menu settings) lost the 'greeter' row: greeter defaults are unreachable"
 else
-	fail "lazyos-greeter is not installed (run scripts/build-lazyos.sh && scripts/install-lazyos.sh)"
+	fail "hayato-greeter is not installed (run scripts/build-hayato.sh && scripts/install-hayato.sh)"
 fi
 # greetd hands the session only the PAM environment, so pam_env is what puts the
 # locale there; without it every terminal warns "'C' is not a UTF-8 locale" and
@@ -131,7 +131,7 @@ if have sway; then
 	# display, and it ships in mesa-utils (already a package here).
 	if have eglinfo; then
 		_gpu_renderer="$(eglinfo -B 2>/dev/null | awk -F': ' '/OpenGL ES profile renderer/ { print $2; exit }')"
-		_dev_codename="$(tr -d ' \t\r\n' </etc/lazyos/device 2>/dev/null || echo google-asurada)"
+		_dev_codename="$(tr -d ' \t\r\n' </etc/hayato/device 2>/dev/null || echo google-asurada)"
 		case "$_gpu_renderer" in
 		*Panfrost*) ok "GPU renderer is $_gpu_renderer" ;;
 		"") warn "eglinfo reported no renderer: cannot confirm the GPU driver" ;;
@@ -173,7 +173,7 @@ if have sway; then
 	fi
 fi
 _missing_cmds=""
-for _c in waybar foot swaylock swaynag swaybg brightnessctl grimshot wlsunset wpctl pactl lazyos-notify; do
+for _c in waybar foot swaylock swaynag swaybg brightnessctl grimshot wlsunset wpctl pactl hayato-notify; do
 	have "$_c" || _missing_cmds="$_missing_cmds $_c"
 done
 if [ -z "$_missing_cmds" ]; then
@@ -312,31 +312,31 @@ for b in bad:
 	fi
 fi
 
-# Notifications: lazyos-notify owns org.freedesktop.Notifications on the session bus. If
+# Notifications: hayato-notify owns org.freedesktop.Notifications on the session bus. If
 # the daemon is not running (crashed, or never started) nothing logs it and
 # every application's notifications silently disappear, so ask the bus.
 if have busctl; then
 	_notify_name="$(busctl --user list --no-legend 2>/dev/null | awk '$1 == "org.freedesktop.Notifications" { print $1 }')"
 	if [ -n "$_notify_name" ]; then
-		ok "a notification daemon owns org.freedesktop.Notifications (lazyos-notify)"
+		ok "a notification daemon owns org.freedesktop.Notifications (hayato-notify)"
 	else
-		warn "no notification daemon on the session bus: lazyos-notify is not running, notifications are lost"
+		warn "no notification daemon on the session bus: hayato-notify is not running, notifications are lost"
 	fi
 else
 	skip "busctl is not installed"
 fi
 
 # A notification icon is a name looked up in the theme or rendered as a glyph.
-# The names are verified against lazyos --icon-names.
-if command -v lazyos >/dev/null 2>&1 && [ -d /usr/share/icons/LazyOS ]; then
+# The names are verified against hayato --icon-names.
+if command -v hayato >/dev/null 2>&1 && [ -d /usr/share/icons/Hayato ]; then
 	_missing_icon=
-	for _n in $(lazyos --icon-names 2>/dev/null); do
-		ls /usr/share/icons/LazyOS/*/apps/"$_n".png >/dev/null 2>&1 ||
+	for _n in $(hayato --icon-names 2>/dev/null); do
+		ls /usr/share/icons/Hayato/*/apps/"$_n".png >/dev/null 2>&1 ||
 			_missing_icon="$_missing_icon $_n"
 	done
 	[ -z "$_missing_icon" ] &&
-		ok "notification icons resolve in the LazyOS theme (lazyos --icon-names)" ||
-		warn "notification icon(s) missing from /usr/share/icons/LazyOS:$_missing_icon (scripts/make-icons.sh)"
+		ok "notification icons resolve in the Hayato theme (hayato --icon-names)" ||
+		warn "notification icon(s) missing from /usr/share/icons/Hayato:$_missing_icon (scripts/make-icons.sh)"
 fi
 
 # The other half of the same rule: a name only draws if the call asks for one.
@@ -350,10 +350,10 @@ else
 	warn "notification(s) without -i, so a text-only card: $(printf '%s\n' "$_notify_noicon" | sed 's#.*/bin/##' | tr '\n' ' ')"
 fi
 
-if have lazyos-notify; then
-	ok "notifications can carry a picture (lazyos-notify native rendering)"
+if have hayato-notify; then
+	ok "notifications can carry a picture (hayato-notify native rendering)"
 	[ -f /usr/share/dbus-1/services/org.freedesktop.Notifications.service ] &&
-		ok "D-Bus service auto-activation is configured for lazyos-notify"
+		ok "D-Bus service auto-activation is configured for hayato-notify"
 elif [ -r "$HOME/.config/mako/config" ]; then
 	_mako_icons=$(sed -n 's/^icons=//p' "$HOME/.config/mako/config" | head -1)
 	_mako_path=$(sed -n 's/^icon-path=//p' "$HOME/.config/mako/config" | head -1)
@@ -369,7 +369,7 @@ fi
 # missing tool does not log anything - the indicator still appears and every
 # click is a silent no-op - so this is a FAIL, not a warning.
 _missing_bar=""
-for _c in jq nmcli bluetoothctl pactl brightnessctl foot lazyos; do
+for _c in jq nmcli bluetoothctl pactl brightnessctl foot hayato; do
 	have "$_c" || _missing_bar="$_missing_bar $_c"
 done
 for _s in bar-menu bar-net bar-bt bar-key bar-audio bar-updates bar-power \
@@ -384,9 +384,9 @@ fi
 
 # A hotel or airport Wi-Fi answers NetworkManager with `portal` or `limited`
 # until its page is accepted. The Wi-Fi list then starts with a sign-in row;
-# `lazyos menu net --portal` is the same lookup without a window, so a fake
+# `hayato menu net --portal` is the same lookup without a window, so a fake
 # nmcli/curl can prove the URL is found and only http(s) is accepted.
-_portal_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-portal.XXXXXX" 2>/dev/null || true)
+_portal_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-portal.XXXXXX" 2>/dev/null || true)
 if [ -n "$_portal_tmp" ]; then
 	mkdir -p "$_portal_tmp/bin"
 	cat >"$_portal_tmp/bin/nmcli" <<-'NMCLI'
@@ -401,11 +401,11 @@ if [ -n "$_portal_tmp" ]; then
 		printf '302\nhttp://wifi.example/login\nhttp://connectivity-check.ubuntu.com/\n'
 	CURL
 	chmod +x "$_portal_tmp/bin/nmcli" "$_portal_tmp/bin/curl"
-	_portal_url=$(PATH="$_portal_tmp/bin:$PATH" lazyos menu net --portal 2>/dev/null || true)
+	_portal_url=$(PATH="$_portal_tmp/bin:$PATH" hayato menu net --portal 2>/dev/null || true)
 	if [ "$_portal_url" = "http://wifi.example/login" ]; then
 		ok "a captive Wi-Fi sign-in page is found from NetworkManager's redirect"
 	else
-		fail "lazyos menu net --portal found '${_portal_url:-nothing}', not the portal redirect"
+		fail "hayato menu net --portal found '${_portal_url:-nothing}', not the portal redirect"
 	fi
 	rm -rf "$_portal_tmp"
 else
@@ -438,7 +438,7 @@ esac
 # card and runs it, and `busy cancelled` then answers 0 so the producer reports
 # nothing instead of half a result. The probe is one file in the runtime
 # directory and it is removed before this block ends.
-_busy_rt=${XDG_RUNTIME_DIR:-/tmp}/lazyos-busy
+_busy_rt=${XDG_RUNTIME_DIR:-/tmp}/hayato-busy
 _busy_bin="$HOME/.config/bin/busy"
 if [ ! -d "${XDG_RUNTIME_DIR:-/tmp}" ] || [ ! -w "${XDG_RUNTIME_DIR:-/tmp}" ]; then
 	skip "no writable runtime directory: the busy/stop protocol cannot be exercised here"
@@ -467,7 +467,7 @@ fi
 # producer registered and leave no card behind. A private runtime directory
 # keeps this probe away from a real task; the stop command only touches a
 # marker in the same temporary directory.
-_busy_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-busy-probe.XXXXXX" 2>/dev/null || true)
+_busy_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-busy-probe.XXXXXX" 2>/dev/null || true)
 if [ -n "$_busy_tmp" ] && [ -x "$HOME/.config/bin/bar-busy" ]; then
 	mkdir -p "$_busy_tmp/run"
 	_busy_marker="$_busy_tmp/stopped"
@@ -486,8 +486,8 @@ if [ -n "$_busy_tmp" ] && [ -x "$HOME/.config/bin/bar-busy" ]; then
 	rm -rf "$_busy_tmp"
 fi
 
-# The idle screen is a foot window running ~/.config/bin/lazyos-screensaver: a
-# loop of tte effects over the LazyOS wordmark, started by swayidle at 150 s.
+# The idle screen is a foot window running ~/.config/bin/hayato-screensaver: a
+# loop of tte effects over the Hayato wordmark, started by swayidle at 150 s.
 # Each piece fails silently on its own: without tte or the art the static frame
 # stays (the loop, which is the point of the entry, is gone), without the
 # launcher the screen never appears, without the lock helper the 300 s timer
@@ -495,12 +495,12 @@ fi
 _saver=""
 have tte || _saver="$_saver tte"
 have swayidle || _saver="$_saver swayidle"
-[ -s "$HOME/.config/lazyos/screensaver.txt" ] || _saver="$_saver .config/lazyos/screensaver.txt"
-[ -x "$HOME/.config/bin/lazyos-screensaver" ] || _saver="$_saver bin/lazyos-screensaver"
+[ -s "$HOME/.config/hayato/screensaver.txt" ] || _saver="$_saver .config/hayato/screensaver.txt"
+[ -x "$HOME/.config/bin/hayato-screensaver" ] || _saver="$_saver bin/hayato-screensaver"
 [ -x "$HOME/.config/bin/sway-lock" ] || _saver="$_saver bin/sway-lock"
 [ -r "$HOME/.config/foot/screensaver.ini" ] || _saver="$_saver .config/foot/screensaver.ini"
 if [ -z "$_saver" ]; then
-	ok "idle screen complete (tte, LazyOS art, launcher, sway-lock, terminal profile)"
+	ok "idle screen complete (tte, Hayato art, launcher, sway-lock, terminal profile)"
 else
 	fail "idle screen incomplete:$_saver (the idle screen is blank or never starts)"
 fi
@@ -513,7 +513,7 @@ fi
 # anywhere, which is what the card reported.  Leaving the mode on is the other
 # half: a `--run` in a real shell would then write escape sequences into the
 # prompt for the rest of the session.
-_saver_bin="$HOME/.config/bin/lazyos-screensaver"
+_saver_bin="$HOME/.config/bin/hayato-screensaver"
 if [ -x "$_saver_bin" ]; then
 	_saver_ptr=""
 	grep -q '?1003h' "$_saver_bin" || _saver_ptr="no-1003h"
@@ -557,9 +557,9 @@ fi
 # that detaches returns in milliseconds and a foreground one cannot.  (Measured,
 # not assumed: with `-w` a `timeout 1 'sleep 100'` kept a 2 s timeout from firing
 # within 5 s; without `-w` it fired at 2 s.)
-_saver_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-saver.XXXXXX" 2>/dev/null || true)
+_saver_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-saver.XXXXXX" 2>/dev/null || true)
 if [ -n "$_saver_tmp" ] && [ -x "$_saver_bin" ]; then
-	if pgrep -x swaylock >/dev/null 2>&1 || pgrep -f '[o]rg.lazyos.screensaver' >/dev/null 2>&1; then
+	if pgrep -x swaylock >/dev/null 2>&1 || pgrep -f '[o]rg.hayato.screensaver' >/dev/null 2>&1; then
 		# Both make the launcher return before it reaches foot, which would be
 		# an OK for the wrong reason.
 		warn "idle screen launcher not tested: a lock or an idle screen is already up"
@@ -584,16 +584,16 @@ fi
 # twice on purpose: swayidle's own `resume` covers an idle period, and
 # `after-resume` covers a suspend, which is not an idle timeout and would
 # otherwise wake to a black panel that nothing turns back on.
-_idle_cfg=/etc/sway/config.d/23-lazyos-screensaver.conf
+_idle_cfg=/etc/sway/config.d/23-hayato-screensaver.conf
 _idle=""
 [ -r "$_idle_cfg" ] || _idle=" $_idle_cfg"
 if [ -r "$_idle_cfg" ]; then
-	grep -q "timeout 150 .*lazyos-screensaver" "$_idle_cfg" || _idle="$_idle no-150s-screen"
+	grep -q "timeout 150 .*hayato-screensaver" "$_idle_cfg" || _idle="$_idle no-150s-screen"
 	grep -q "timeout 300 .*sway-lock" "$_idle_cfg" || _idle="$_idle no-300s-lock"
 	grep -q "timeout 360 .*power off" "$_idle_cfg" || _idle="$_idle no-360s-dpms"
 	grep -q "^[[:space:]]*resume .*power on" "$_idle_cfg" || _idle="$_idle no-dpms-resume"
 	grep -q "after-resume .*power on" "$_idle_cfg" || _idle="$_idle no-dpms-after-resume"
-	grep -q "after-resume .*lazyos-dp-resume" "$_idle_cfg" || _idle="$_idle no-external-display-after-resume"
+	grep -q "after-resume .*hayato-dp-resume" "$_idle_cfg" || _idle="$_idle no-external-display-after-resume"
 	grep -q "before-sleep .*sway-lock --wait" "$_idle_cfg" || _idle="$_idle no-lock-before-sleep"
 fi
 pgrep -x swayidle >/dev/null 2>&1 || _idle="$_idle swayidle-not-running"
@@ -634,7 +634,7 @@ elif ! grep -qs 'idle_inhibitor\.activated' "$HOME/.config/waybar/style.css" ||
 	! grep -qs 'idle_inhibitor\.deactivated' "$HOME/.config/waybar/style.css"; then
 	warn "style.css has no #idle_inhibitor.activated/.deactivated rule: the keep-awake cup does not show whether it is on"
 elif ! grep -qs '^\.modules-left' "$HOME/.config/waybar/style.css" || ! grep -qs '^\.modules-right' "$HOME/.config/waybar/style.css"; then
-	warn "style.css lacks .modules-left/.modules-right 4px end spacing (run \`lazyos theme set\`)"
+	warn "style.css lacks .modules-left/.modules-right 4px end spacing (run \`hayato theme set\`)"
 else
 	ok "the bar carries a keep-awake toggle (idle_inhibitor) and 4px end spacing"
 fi
@@ -669,15 +669,15 @@ grep -qs 'bin/osd volume' /etc/sway/config.d/21-volume.conf ||
 grep -qs 'bin/osd brightness' /etc/sway/config.d/20-brightness.conf ||
 	_osd="$_osd config.d/20-brightness.conf"
 for _i in audio-volume-muted audio-volume-low audio-volume-high display-brightness; do
-	[ -r "/usr/share/icons/LazyOS/48x48/apps/$_i.png" ] || _osd="$_osd icon:$_i"
+	[ -r "/usr/share/icons/Hayato/48x48/apps/$_i.png" ] || _osd="$_osd icon:$_i"
 done
 if [ -z "$_osd" ]; then
 	ok "volume and brightness keys draw an overlay (bin/osd, three volume icons, the theme's brightness icon)"
 else
 	fail "the volume/brightness overlay is incomplete:$_osd"
 fi
-if have lazyos-notify; then
-	ok "the overlay can carry its icon and its level bar (lazyos-notify)"
+if have hayato-notify; then
+	ok "the overlay can carry its icon and its level bar (hayato-notify)"
 elif [ -r "$HOME/.config/mako/config" ]; then
 	if grep -qs '^icons=1' "$HOME/.config/mako/config" &&
 		grep -qs '^progress-color=' "$HOME/.config/mako/config"; then
@@ -693,7 +693,7 @@ fi
 # `up` works: one direction only, and the helper reads perfectly.  The stub
 # records the arguments the helper really passes, so nothing is written and the
 # helper's own code is what runs.
-_osd_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-osd.XXXXXX" 2>/dev/null || true)
+_osd_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-osd.XXXXXX" 2>/dev/null || true)
 if [ -n "$_osd_tmp" ] && [ -x "$HOME/.config/bin/osd" ]; then
 	printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$*" >>"$OSD_TEST_LOG"' >"$_osd_tmp/brightnessctl"
 	printf '%s\n' '#!/bin/sh' 'exit 0' >"$_osd_tmp/notify-send"
@@ -721,15 +721,15 @@ fi
 # copy of the coordinates are both regressions. The resume has to run after the
 # screensaver kill, and that kill has to be bracketed: swayidle runs the chain
 # with `/bin/sh -c`, whose own command line contains the pattern, so
-# `pkill -f org.lazyos.screensaver` kills the shell before `night-light resume`
+# `pkill -f org.hayato.screensaver` kills the shell before `night-light resume`
 # runs and the screen wakes at daylight colour while the switch says on.
-_nl_cfg=/etc/sway/config.d/23-lazyos-screensaver.conf
+_nl_cfg=/etc/sway/config.d/23-hayato-screensaver.conf
 _night_light=""
 [ -x "$HOME/.config/bin/night-light" ] || _night_light="$_night_light bin/night-light"
 grep -qs '^exec .*/night-light login' /etc/sway/config ||
 	_night_light="$_night_light config(night-light-login)"
 grep -qs 'after-resume .*night-light resume' "$_nl_cfg" ||
-	_night_light="$_night_light config.d/23-lazyos-screensaver.conf(resume)"
+	_night_light="$_night_light config.d/23-hayato-screensaver.conf(resume)"
 settings_runs 'night-light apply' ||
 	_night_light="$_night_light settings(start)"
 if [ -x "$HOME/.config/bin/night-light" ]; then
@@ -746,21 +746,21 @@ fi
 if grep -qs '^exec .*wlsunset' /etc/sway/config; then
 	fail "/etc/sway/config starts wlsunset directly (the night-light helper is bypassed: the switch and the after-resume hook do not know the mode)"
 fi
-if grep -q 'after-resume .*pkill -f org\.lazyos\.screensaver' "$_nl_cfg" 2>/dev/null; then
-	fail "idle chain uses an unbracketed pkill -f org.lazyos.screensaver (it matches its own sh -c and kills the chain before night-light resume)"
+if grep -q 'after-resume .*pkill -f org\.hayato\.screensaver' "$_nl_cfg" 2>/dev/null; then
+	fail "idle chain uses an unbracketed pkill -f org.hayato.screensaver (it matches its own sh -c and kills the chain before night-light resume)"
 fi
 
 # The status line is what the Settings switch and the bar read, and the four
 # answers are distinct: off, off schedule (the client died), on warm, off warm.
 # A fake pgrep makes the process half deterministic; the state file is the
 # other half, in a private runtime directory.
-_nl_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-night-light-probe.XXXXXX" 2>/dev/null || true)
+_nl_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-night-light-probe.XXXXXX" 2>/dev/null || true)
 if [ -n "$_nl_tmp" ] && [ -x "$HOME/.config/bin/night-light" ]; then
 	mkdir -p "$_nl_tmp/run" "$_nl_tmp/bin"
 	printf '%s\n' '#!/bin/sh' 'exit "${FAKE_WLSUNSET:-1}"' >"$_nl_tmp/bin/pgrep"
 	printf '%s\n' '#!/bin/sh' 'exit 0' >"$_nl_tmp/bin/pkill"
 	chmod +x "$_nl_tmp/bin/pgrep" "$_nl_tmp/bin/pkill"
-	_nl_state="$_nl_tmp/run/lazyos-night-light"
+	_nl_state="$_nl_tmp/run/hayato-night-light"
 	_nl_off=$(XDG_RUNTIME_DIR="$_nl_tmp/run" PATH="$_nl_tmp/bin:$PATH" FAKE_WLSUNSET=1 \
 		"$HOME/.config/bin/night-light" status 2>/dev/null || true)
 	printf 'schedule\n' >"$_nl_state"
@@ -784,10 +784,10 @@ fi
 # The mode/warmth file is what the Settings row writes and the login line
 # reads. `config` is the read-back, so a parser change cannot silently flip
 # sunset to warm or ignore the Kelvin value.
-_nl_conf_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-night-light-conf.XXXXXX" 2>/dev/null || true)
+_nl_conf_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-night-light-conf.XXXXXX" 2>/dev/null || true)
 if [ -n "$_nl_conf_tmp" ] && [ -x "$HOME/.config/bin/night-light" ]; then
-	mkdir -p "$_nl_conf_tmp/lazyos"
-	printf 'mode=warm\nwarmth=3500\n' >"$_nl_conf_tmp/lazyos/night-light.conf"
+	mkdir -p "$_nl_conf_tmp/hayato"
+	printf 'mode=warm\nwarmth=3500\n' >"$_nl_conf_tmp/hayato/night-light.conf"
 	_nl_conf=$(XDG_CONFIG_HOME="$_nl_conf_tmp" "$HOME/.config/bin/night-light" config 2>/dev/null || true)
 	if [ "$_nl_conf" = 'mode=warm warmth=3500' ]; then
 		ok "night-light config reads the mode and warmth Settings writes"
@@ -800,21 +800,21 @@ fi
 # Notification and clipboard settings are read by the helpers, not by the
 # Settings window. Ask each helper to read a private config so a parser change
 # cannot silently ignore the value the menu writes.
-_nc_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-notify-clip-probe.XXXXXX" 2>/dev/null || true)
+_nc_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-notify-clip-probe.XXXXXX" 2>/dev/null || true)
 if [ -n "$_nc_tmp" ]; then
-	mkdir -p "$_nc_tmp/notify/lazyos" "$_nc_tmp/clip/lazyos" "$_nc_tmp/bin"
+	mkdir -p "$_nc_tmp/notify/hayato" "$_nc_tmp/clip/hayato" "$_nc_tmp/bin"
 	printf 'default_timeout=8000\nmax_visible=3\ncard_width=380\nhistory_limit=500\n' \
-		>"$_nc_tmp/notify/lazyos/notify.conf"
-	_notify_cfg=$(XDG_CONFIG_HOME="$_nc_tmp/notify" lazyos-notify --config 2>/dev/null || true)
+		>"$_nc_tmp/notify/hayato/notify.conf"
+	_notify_cfg=$(XDG_CONFIG_HOME="$_nc_tmp/notify" hayato-notify --config 2>/dev/null || true)
 	if [ "$_notify_cfg" = 'default_timeout=8000 max_visible=3 card_width=380 history_limit=500 group_by_sender=yes collapse_repeats=yes' ]; then
-		ok "lazyos-notify reads the settings file the Settings menu writes"
+		ok "hayato-notify reads the settings file the Settings menu writes"
 	else
-		fail "lazyos-notify --config read '$_notify_cfg': the notification settings would be ignored"
+		fail "hayato-notify --config read '$_notify_cfg': the notification settings would be ignored"
 	fi
-	_control_usage=$(timeout 2 lazyos-notify --control nope 2>&1 || true)
+	_control_usage=$(timeout 2 hayato-notify --control nope 2>&1 || true)
 	case "$_control_usage" in
-	*"unknown control word"*) ok "lazyos-notify has the keyboard control client" ;;
-	*) fail "lazyos-notify --control is missing: the notification keys would do nothing" ;;
+	*"unknown control word"*) ok "hayato-notify has the keyboard control client" ;;
+	*) fail "hayato-notify --control is missing: the notification keys would do nothing" ;;
 	esac
 	_keys_conf=${DESKTOP_REPO:+$DESKTOP_REPO/uis/sway/files/etc/sway/config.d/24-keys.conf}
 	[ -r "$_keys_conf" ] || _keys_conf="$HOME/.config/sway/config.d/24-keys.conf"
@@ -825,15 +825,15 @@ if [ -n "$_nc_tmp" ]; then
 	else
 		fail "notification control keybindings are missing (Alt+comma family)"
 	fi
-	printf 'enabled=no\n' >"$_nc_tmp/clip/lazyos/clipboard.conf"
+	printf 'enabled=no\n' >"$_nc_tmp/clip/hayato/clipboard.conf"
 	printf '%s\n' '#!/bin/sh' 'exit 1' >"$_nc_tmp/bin/pgrep"
 	chmod +x "$_nc_tmp/bin/pgrep"
 	_clip_status=$(XDG_CONFIG_HOME="$_nc_tmp/clip" PATH="$_nc_tmp/bin:$PATH" \
-		"$HOME/.config/bin/lazyos-clipboard" status 2>/dev/null || true)
+		"$HOME/.config/bin/hayato-clipboard" status 2>/dev/null || true)
 	_clip_conf=${DESKTOP_REPO:+$DESKTOP_REPO/uis/sway/files/etc/sway/config.d/27-clipboard.conf}
 	[ -r "$_clip_conf" ] || _clip_conf=/etc/sway/config.d/27-clipboard.conf
 	if [ "$_clip_status" = 'enabled=no running=no' ] &&
-		grep -qs 'lazyos-clipboard' "$_clip_conf"; then
+		grep -qs 'hayato-clipboard' "$_clip_conf"; then
 		ok "clipboard history can be paused and its watcher goes through the helper"
 	else
 		fail "clipboard helper/config is wrong (status='$_clip_status'): Settings cannot pause history"
@@ -844,7 +844,7 @@ fi
 # The Settings rows that open the existing system pickers. A lost row is a
 # feature nobody can find from the menu, even though the helper is installed.
 _settings_missing=""
-for _settings_row in lazyos-dns lazyos-ssh lazyos-tz lazyos-pkg lazyos-clean touchpad.conf reduced-motion.conf localectl hostnamectl xdg-mime chpasswd notify.conf clipboard.conf 35-workspaces.conf; do
+for _settings_row in hayato-dns hayato-ssh hayato-tz hayato-pkg hayato-clean touchpad.conf reduced-motion.conf localectl hostnamectl xdg-mime chpasswd notify.conf clipboard.conf 35-workspaces.conf; do
 	settings_runs "$_settings_row" || _settings_missing="$_settings_missing $_settings_row"
 done
 if [ -z "$_settings_missing" ]; then
@@ -852,7 +852,7 @@ if [ -z "$_settings_missing" ]; then
 else
 	fail "Settings lost row(s):$_settings_missing (the helper is installed but the menu cannot reach it)"
 fi
-_settings_sections="$(lazyos menu settings --sections 2>/dev/null || true)"
+_settings_sections="$(hayato menu settings --sections 2>/dev/null || true)"
 _settings_sections_missing=""
 for _settings_section in network display-sound appearance input power-idle system accessibility; do
 	awk -F'\t' -v want="$_settings_section" '$1 == want { found = 1 } END { exit !found }' \
@@ -865,7 +865,7 @@ else
 fi
 # Appearance must expose the theme, wallpaper, bar and window-effect rows, and
 # its status must read the same file the menu writes.
-_settings_rows="$(lazyos menu settings --rows 2>/dev/null || true)"
+_settings_rows="$(hayato menu settings --rows 2>/dev/null || true)"
 _settings_appearance_missing=""
 for _appearance_row in wallpaper wallpaper-next wallpaper-theme bar-position bar-density bar-modules corners shadows blur animations; do
 	awk -F'\t' -v want="$_appearance_row" '$1 == want { found = 1 } END { exit !found }' \
@@ -876,21 +876,21 @@ if [ -z "$_settings_appearance_missing" ]; then
 else
 	fail "Appearance lost row(s):$_settings_appearance_missing"
 fi
-_appearance_status=$(lazyos menu settings --status 2>/dev/null || true)
+_appearance_status=$(hayato menu settings --status 2>/dev/null || true)
 case "$_appearance_status" in
 *"Appearance:"*) ok "Appearance status reads the effects and bar state" ;;
-*) fail "lazyos menu settings --status does not name Appearance" ;;
+*) fail "hayato menu settings --status does not name Appearance" ;;
 esac
 # The idle/lock setting is a user-level override of the system swayidle chain.
 # The helper must exist, the login drop-in must start it, and its config reader
 # must answer the defaults and a written file without starting swayidle.
-_idle_bin="$HOME/.config/bin/lazyos-idle"
+_idle_bin="$HOME/.config/bin/hayato-idle"
 _idle_dropin="$HOME/.config/sway/config.d/36-idle.conf"
-if [ -x "$_idle_bin" ] && grep -qs 'lazyos-idle start' "$_idle_dropin"; then
-	_idle_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-idle-probe.XXXXXX" 2>/dev/null || true)
+if [ -x "$_idle_bin" ] && grep -qs 'hayato-idle start' "$_idle_dropin"; then
+	_idle_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-idle-probe.XXXXXX" 2>/dev/null || true)
 	if [ -n "$_idle_tmp" ]; then
-		mkdir -p "$_idle_tmp/empty" "$_idle_tmp/custom/lazyos"
-		printf 'screen_off=60\nlock=120\ndpms=180\n' >"$_idle_tmp/custom/lazyos/idle.conf"
+		mkdir -p "$_idle_tmp/empty" "$_idle_tmp/custom/hayato"
+		printf 'screen_off=60\nlock=120\ndpms=180\n' >"$_idle_tmp/custom/hayato/idle.conf"
 		_idle_default=$(XDG_CONFIG_HOME="$_idle_tmp/empty" "$_idle_bin" status 2>/dev/null || true)
 		_idle_custom=$(XDG_CONFIG_HOME="$_idle_tmp/custom" "$_idle_bin" status 2>/dev/null || true)
 		if [ "$_idle_default" = 'screen_off=150 lock=300 dpms=360' ] &&
@@ -902,13 +902,13 @@ if [ -x "$_idle_bin" ] && grep -qs 'lazyos-idle start' "$_idle_dropin"; then
 		rm -rf "$_idle_tmp"
 	fi
 else
-	fail "idle/lock incomplete (bin/lazyos-idle or config.d/36-idle.conf): the Settings row cannot change the swayidle chain"
+	fail "idle/lock incomplete (bin/hayato-idle or config.d/36-idle.conf): the Settings row cannot change the swayidle chain"
 fi
 
-# The bug the guard in lazyos-screensaver exists for: a saver left running under
+# The bug the guard in hayato-screensaver exists for: a saver left running under
 # an active lock animates to nobody and spends CPU (it used to do exactly that
 # for the 150 s between the two timers).
-if pgrep -x swaylock >/dev/null 2>&1 && pgrep -f org.lazyos.screensaver >/dev/null 2>&1; then
+if pgrep -x swaylock >/dev/null 2>&1 && pgrep -f org.hayato.screensaver >/dev/null 2>&1; then
 	warn "the idle screen is running under swaylock (invisible CPU; it should have refused)"
 fi
 
@@ -1046,13 +1046,13 @@ else
 	warn "~/.bashrc initialises zoxide before starship or lost zd's cd -: zoxide's hook is dropped"
 fi
 
-# The launcher is lazyos menu apps (spec 012), the window switcher is
-# lazyos menu window, and the command palette is lazyos menu run.
+# The launcher is hayato menu apps (spec 012), the window switcher is
+# hayato menu window, and the command palette is hayato menu run.
 # Rofi has been retired from the shipping image (spec 014).
-if command -v lazyos >/dev/null 2>&1; then
-	ok "launcher complete (native framework: lazyos menu apps/window/run)"
+if command -v hayato >/dev/null 2>&1; then
+	ok "launcher complete (native framework: hayato menu apps/window/run)"
 else
-	fail "launcher incomplete: lazyos binary is missing"
+	fail "launcher incomplete: hayato binary is missing"
 fi
 
 # The Search key is the launcher and Alt+Search is the file search; they used to
@@ -1066,9 +1066,9 @@ if grep -qs 'Super_L exec .*\$launcher' "$HOME/.config/sway/config"; then
 else
 	fail "the Search key does not run '\$launcher' in ~/.config/sway/config (it opens the file search, or nothing)"
 fi
-if grep -qs 'F20 exec .*lazyos-files --search' "$HOME/.config/sway/config" &&
-	grep -qs 'Super_L+Mod1 exec .*lazyos-files --search' "$HOME/.config/sway/config"; then
-	ok "Alt+Search opens the file search (lazyos-files --search)"
+if grep -qs 'F20 exec .*hayato-files --search' "$HOME/.config/sway/config" &&
+	grep -qs 'Super_L+Mod1 exec .*hayato-files --search' "$HOME/.config/sway/config"; then
+	ok "Alt+Search opens the file search (hayato-files --search)"
 else
 	fail "Alt+Search is missing its F20 press binding or its Super_L+Mod1 release fallback in ~/.config/sway/config"
 fi
@@ -1087,24 +1087,24 @@ grep -qs 'bindsym \$mod+d exec' /etc/sway/config.d/19-launcher.conf ||
 # The three search questions and the opener are the binary (spec 009): the
 # list (Alt+Ctrl+F, Alt+Search), the walk (Search+Shift), the text inside the
 # files (Alt+Ctrl+G) and what a double click or xdg-open runs. The old script
-# names are links to /usr/bin/lazyos, so the keys did not change - and a name
+# names are links to /usr/bin/hayato, so the keys did not change - and a name
 # that is a script again, or a link to something else, is the old surface
 # back with a different opener table. Grepping a link to an ELF would match
 # strings in the binary and prove nothing, so the binary is asked instead:
 # `--help` lists the commands and `--symlinks` the links it installs.
-_fs_help=$(lazyos --help 2>/dev/null || :)
-_fs_links=$(lazyos --symlinks 2>/dev/null || :)
-for _fs in "lazyos-files:menu files" "lazyos-find:menu find" "lazyos-grep:menu grep" "lazyos-view:open"; do
+_fs_help=$(hayato --help 2>/dev/null || :)
+_fs_links=$(hayato --symlinks 2>/dev/null || :)
+for _fs in "hayato-files:menu files" "hayato-find:menu find" "hayato-grep:menu grep" "hayato-view:open"; do
 	_fs_name=${_fs%%:*}
 	_fs_cmd=${_fs#*:}
 	if ! grep -q "^  $_fs_cmd  " <<<"$_fs_help"; then
-		fail "lazyos has no \`$_fs_cmd\` (lazyos --help): $_fs_name has nothing to run"
-	elif [ "$(readlink -f "$HOME/.config/bin/$_fs_name" 2>/dev/null)" != /usr/bin/lazyos ]; then
-		fail "~/.config/bin/$_fs_name is not a link to /usr/bin/lazyos: the old script, or nothing, answers it"
+		fail "hayato has no \`$_fs_cmd\` (hayato --help): $_fs_name has nothing to run"
+	elif [ "$(readlink -f "$HOME/.config/bin/$_fs_name" 2>/dev/null)" != /usr/bin/hayato ]; then
+		fail "~/.config/bin/$_fs_name is not a link to /usr/bin/hayato: the old script, or nothing, answers it"
 	elif ! grep -q "^$_fs_name	$_fs_cmd\$" <<<"$_fs_links"; then
-		fail "lazyos --symlinks does not install $_fs_name -> $_fs_cmd"
+		fail "hayato --symlinks does not install $_fs_name -> $_fs_cmd"
 	else
-		ok "$_fs_name is \`lazyos $_fs_cmd\` (spec 009)"
+		ok "$_fs_name is \`hayato $_fs_cmd\` (spec 009)"
 	fi
 done
 # The walk and the list's --search need fd; without it both say so in the
@@ -1128,10 +1128,10 @@ else
 fi
 
 # Search+Shift is the walk: every file under $HOME, filtered while fd runs.
-if grep -qs 'Super_L+Shift exec .*lazyos-find' "$HOME/.config/sway/config"; then
-	ok "Search+Shift opens the terminal file search (lazyos-find)"
+if grep -qs 'Super_L+Shift exec .*hayato-find' "$HOME/.config/sway/config"; then
+	ok "Search+Shift opens the terminal file search (hayato-find)"
 else
-	fail "no 'Super_L+Shift exec ...lazyos-find' binding in ~/.config/sway/config: the key does nothing"
+	fail "no 'Super_L+Shift exec ...hayato-find' binding in ~/.config/sway/config: the key does nothing"
 fi
 if [ -f /etc/keyd/default.conf ]; then
 	if grep -qs '^leftmeta = f20$' /etc/keyd/default.conf; then
@@ -1147,10 +1147,10 @@ fi
 # the list finds a file by its name, grep by what is written in it. Two things
 # take it away and neither says so - a missing binding (the key does nothing)
 # or a missing ripgrep (the window says so, and it reads as "no matches").
-if grep -rqs 'Ctrl+g exec .*lazyos-grep' /etc/sway/config.d/; then
-	ok "Alt+Ctrl+G searches inside the files (lazyos-grep)"
+if grep -rqs 'Ctrl+g exec .*hayato-grep' /etc/sway/config.d/; then
+	ok "Alt+Ctrl+G searches inside the files (hayato-grep)"
 else
-	fail "no 'Ctrl+g exec ...lazyos-grep' binding in /etc/sway/config.d/: the key does nothing"
+	fail "no 'Ctrl+g exec ...hayato-grep' binding in /etc/sway/config.d/: the key does nothing"
 fi
 have rg && ok "ripgrep present, which the search inside files runs" ||
 	fail "ripgrep is missing (package ripgrep): Alt+Ctrl+G finds nothing"
@@ -1162,9 +1162,9 @@ have rg && ok "ripgrep present, which the search inside files runs" ||
 # site problem instead of a missing package.
 _missing_dl=""
 for _c in yt-dlp ffmpeg node; do have "$_c" || _missing_dl="$_missing_dl $_c"; done
-[ -x "$HOME/.config/bin/lazyos-download" ] || _missing_dl="$_missing_dl bin/lazyos-download"
+[ -x "$HOME/.config/bin/hayato-download" ] || _missing_dl="$_missing_dl bin/hayato-download"
 if [ -z "$_missing_dl" ]; then
-	ok "download complete (yt-dlp, ffmpeg, node, lazyos-download)"
+	ok "download complete (yt-dlp, ffmpeg, node, hayato-download)"
 else
 	fail "download incomplete:$_missing_dl (the row opens a menu that cannot fetch)"
 fi
@@ -1174,7 +1174,7 @@ grep -qs 'js-runtimes node' /etc/yt-dlp.conf && ok "yt-dlp is told to use node (
 # The home folders the manual and the menus name (Documents, Downloads, Music,
 # Videos) are created by rootfs-setup.sh rather than shipped in the tree, because
 # git cannot carry an empty directory. A missing Downloads only moves the download
-# (lazyos-download creates it), so this warns instead of failing.
+# (hayato-download creates it), so this warns instead of failing.
 _missing_home=""
 for _d in Documents Downloads Music Videos; do
 	[ -d "$HOME/$_d" ] || _missing_home="$_missing_home $_d"
@@ -1183,11 +1183,11 @@ done
 	warn "home folders missing:$_missing_home (rootfs-setup.sh creates them; a download recreates Downloads)"
 
 # The file list's Tab (Alt+1 where it arrives) hands the row to
-# bin/lazyos-file-actions, which is still a script: without it the key says the
+# bin/hayato-file-actions, which is still a script: without it the key says the
 # actions menu did not start.
 _missing_actions=""
 for _c in tar unzip ffmpeg udisksctl; do have "$_c" || _missing_actions="$_missing_actions $_c"; done
-[ -x "$HOME/.config/bin/lazyos-file-actions" ] || _missing_actions="$_missing_actions bin/lazyos-file-actions"
+[ -x "$HOME/.config/bin/hayato-file-actions" ] || _missing_actions="$_missing_actions bin/hayato-file-actions"
 if [ -z "$_missing_actions" ]; then
 	ok "the file actions have their tools (tar, unzip, ffmpeg, udisksctl)"
 else
@@ -1198,21 +1198,21 @@ fi
 # and PDF signing are xournalpp, and EPUB is foliate (papers does not read it).
 # `--rows` and `--dir` are read-only, so the check can read the same table the
 # window draws without creating a note.
-if [ -x "$HOME/.config/bin/lazyos-notes" ]; then
-	ok "notes menu (lazyos-notes) is executable"
-	_notes_rows=$(lazyos menu notes --rows 2>/dev/null || :)
+if [ -x "$HOME/.config/bin/hayato-notes" ]; then
+	ok "notes menu (hayato-notes) is executable"
+	_notes_rows=$(hayato menu notes --rows 2>/dev/null || :)
 	for _want in new daily ink annotate export search folder; do
 		printf '%s\n' "$_notes_rows" | cut -f1 | grep -qx "$_want" &&
 			ok "Notes offers the $_want row" ||
-			fail "lazyos menu notes --rows has no $_want row: the window would lose it"
+			fail "hayato menu notes --rows has no $_want row: the window would lose it"
 	done
-	_notes_dir=$(lazyos menu notes --dir 2>/dev/null || :)
+	_notes_dir=$(hayato menu notes --dir 2>/dev/null || :)
 	case "$_notes_dir" in
 	*/Documents/Notes) ok "notes live in $_notes_dir" ;;
-	*) fail "lazyos menu notes --dir does not name Documents/Notes ($_notes_dir)" ;;
+	*) fail "hayato menu notes --dir does not name Documents/Notes ($_notes_dir)" ;;
 	esac
 else
-	fail "bin/lazyos-notes is missing: the Notes row does nothing"
+	fail "bin/hayato-notes is missing: the Notes row does nothing"
 fi
 if have editxr; then
 	_editxr_version=$(editxr --version 2>/dev/null | head -n1 || :)
@@ -1228,19 +1228,19 @@ for _doc_tool in xournalpp foliate; do
 		fail "document tool missing: $_doc_tool (Notes or EPUB would have no editor/reader)"
 done
 
-# The Developer menu (Alt+Ctrl+D, lazyos-dev, the root menu's Developer row and
-# org.lazyos.dev.desktop) exports ~/.ssh, ~/.gnupg and the dotfiles into an
+# The Developer menu (Alt+Ctrl+D, hayato-dev, the root menu's Developer row and
+# org.hayato.dev.desktop) exports ~/.ssh, ~/.gnupg and the dotfiles into an
 # encrypted archive, restores one, and writes a diagnostics bundle. Every piece
 # is needed at a different moment: a missing gpg fails after the passphrase, a
 # missing tar/zstd fails before it, and a missing udisksctl means a stick that is
 # not mounted yet cannot be offered.
 _missing_dev=""
 for _c in tar zstd gpg udisksctl; do have "$_c" || _missing_dev="$_missing_dev $_c"; done
-for _s in lazyos-dev lazyos-profile; do
+for _s in hayato-dev hayato-profile; do
 	[ -x "$HOME/.config/bin/$_s" ] || _missing_dev="$_missing_dev bin/$_s"
 done
 if [ -z "$_missing_dev" ]; then
-	ok "developer menu complete (tar, zstd, gpg, udisksctl, lazyos-dev, lazyos-profile)"
+	ok "developer menu complete (tar, zstd, gpg, udisksctl, hayato-dev, hayato-profile)"
 else
 	fail "developer menu incomplete:$_missing_dev (Alt+Ctrl+D loses those actions)"
 fi
@@ -1251,20 +1251,20 @@ fi
 # nobody is there to answer. This runs the exact command the menu runs - AES256,
 # passphrase through fd 3 - on a throwaway passphrase and two bytes, so the
 # encryption is proven without touching the account's keys.
-if have gpg && _dev_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-gpg.XXXXXX"); then
+if have gpg && _dev_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-gpg.XXXXXX"); then
 	_dev_agent=
 	if have systemctl; then
 		[ "$(systemctl --user is-active gpg-agent.service 2>/dev/null)" = active ] && _dev_agent=was
 	fi
-	(umask 077; printf 'lazyos-check\n' >"$_dev_tmp/pass")
-	printf 'lazyos' >"$_dev_tmp/plain"
+	(umask 077; printf 'hayato-check\n' >"$_dev_tmp/pass")
+	printf 'hayato' >"$_dev_tmp/plain"
 	_dev_gpg=ok
 	gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
 		--cipher-algo AES256 --s2k-digest-algo SHA512 -c \
 		-o "$_dev_tmp/plain.gpg" "$_dev_tmp/plain" 3<"$_dev_tmp/pass" 2>/dev/null || _dev_gpg=
 	gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
 		-d -o "$_dev_tmp/plain.out" "$_dev_tmp/plain.gpg" 3<"$_dev_tmp/pass" 2>/dev/null || _dev_gpg=
-	[ "$(cat "$_dev_tmp/plain.out" 2>/dev/null)" = lazyos ] || _dev_gpg=
+	[ "$(cat "$_dev_tmp/plain.out" 2>/dev/null)" = hayato ] || _dev_gpg=
 	if [ -n "$_dev_gpg" ]; then
 		ok "gpg round-trips the Developer menu's passphrase pipeline (AES256, fd 3)"
 	else
@@ -1281,14 +1281,14 @@ fi
 # The two lists the export is built from are the feature: the paths travel in
 # the tar, and the dry run prints them without writing anything. A path that
 # leaves the list stops being saved, silently.
-if [ -x "$HOME/.config/bin/lazyos-profile" ]; then
+if [ -x "$HOME/.config/bin/hayato-profile" ]; then
 	_dev_paths=ok
-	grep -qsxF '.ssh' "$HOME/.config/bin/lazyos-profile" || _dev_paths=
-	grep -qsxF '.gnupg' "$HOME/.config/bin/lazyos-profile" || _dev_paths=
+	grep -qsxF '.ssh' "$HOME/.config/bin/hayato-profile" || _dev_paths=
+	grep -qsxF '.gnupg' "$HOME/.config/bin/hayato-profile" || _dev_paths=
 	if [ -n "$_dev_paths" ]; then
 		ok "the profile export still includes ~/.ssh and ~/.gnupg (ENTRIES)"
 	else
-		fail "bin/lazyos-profile ENTRIES no longer names ~/.ssh and ~/.gnupg: the keys would stop travelling"
+		fail "bin/hayato-profile ENTRIES no longer names ~/.ssh and ~/.gnupg: the keys would stop travelling"
 	fi
 	# The file manager's settings are the entry that went stale once already: the
 	# manager was replaced by favnyr and the list kept naming ~/.config/pcmanfm,
@@ -1299,30 +1299,30 @@ if [ -x "$HOME/.config/bin/lazyos-profile" ]; then
 	# agents' below, because the dry run indents every path.
 	_dev_fm=ok
 	for _p in .config/favnyr .local/share/favnyr; do
-		grep -qsxF -- "$_p" "$HOME/.config/bin/lazyos-profile" || _dev_fm=
+		grep -qsxF -- "$_p" "$HOME/.config/bin/hayato-profile" || _dev_fm=
 	done
 	if [ -n "$_dev_fm" ]; then
 		ok "the profile export includes the file manager (favnyr settings and workspaces)"
 	else
-		fail "bin/lazyos-profile no longer exports ~/.config/favnyr or ~/.local/share/favnyr: a restored profile has a default file manager"
+		fail "bin/hayato-profile no longer exports ~/.config/favnyr or ~/.local/share/favnyr: a restored profile has a default file manager"
 	fi
-	grep -qsxF -- '.config/pcmanfm' "$HOME/.config/bin/lazyos-profile" &&
-		fail "bin/lazyos-profile still lists ~/.config/pcmanfm, which favnyr never writes: the entry travels and saves nothing"
+	grep -qsxF -- '.config/pcmanfm' "$HOME/.config/bin/hayato-profile" &&
+		fail "bin/hayato-profile still lists ~/.config/pcmanfm, which favnyr never writes: the entry travels and saves nothing"
 	# The agents are half of what "the account" means now: the menu's account
 	# directories and the CLIs' own homes. The inclusion test is a whole-line
 	# fixed-string match, because the exclusions below it also name the path and a
 	# substring test would pass with the entry gone.
 	_dev_agents=ok
 	for _p in .claude .codex .gemini .copilot .config/github-copilot \
-		.local/share/lazyos/agents .config/opencode; do
-		grep -qsxF -- "$_p" "$HOME/.config/bin/lazyos-profile" || _dev_agents=
+		.local/share/hayato/agents .config/opencode; do
+		grep -qsxF -- "$_p" "$HOME/.config/bin/hayato-profile" || _dev_agents=
 	done
-	grep -qsF -- "--exclude='.claude/projects'" "$HOME/.config/bin/lazyos-profile" ||
+	grep -qsF -- "--exclude='.claude/projects'" "$HOME/.config/bin/hayato-profile" ||
 		_dev_agents=
 	if [ -n "$_dev_agents" ]; then
 		ok "the profile export covers the agents' homes and account directories (transcripts excluded)"
 	else
-		fail "bin/lazyos-profile lost an agent path or its transcript excludes: sign-ins or 100s of MB of history"
+		fail "bin/hayato-profile lost an agent path or its transcript excludes: sign-ins or 100s of MB of history"
 	fi
 	# Firefox is the other half of "the account": bookmarks, passwords and
 	# add-ons travel, the site data (202 MB here), the session and the SQLite
@@ -1331,55 +1331,55 @@ if [ -x "$HOME/.config/bin/lazyos-profile" ]; then
 	# `*mozilla/firefox/*` exclude pattern covers either.
 	_dev_ff=ok
 	for _p in .config/mozilla .mozilla; do
-		grep -qsxF -- "$_p" "$HOME/.config/bin/lazyos-profile" || _dev_ff=
+		grep -qsxF -- "$_p" "$HOME/.config/bin/hayato-profile" || _dev_ff=
 	done
-	grep -qsF -- "--exclude='*mozilla/firefox/*/storage'" "$HOME/.config/bin/lazyos-profile" || _dev_ff=
+	grep -qsF -- "--exclude='*mozilla/firefox/*/storage'" "$HOME/.config/bin/hayato-profile" || _dev_ff=
 	if [ -n "$_dev_ff" ]; then
 		ok "the profile export covers the Firefox profile (site data, session and caches excluded)"
 	else
-		fail "bin/lazyos-profile lost the Firefox profile or its storage/cache excludes: bookmarks and passwords or 200 MB of site data"
+		fail "bin/hayato-profile lost the Firefox profile or its storage/cache excludes: bookmarks and passwords or 200 MB of site data"
 	fi
 	# A passphrase prompt that lands on the VT is worse than no prompt at all:
 	# the session shows a busy card and nothing ever asks. `[ -t 0 ]` alone was
 	# that bug - sway's exec inherits /dev/tty7 - so the foreground-group test
 	# and the session fallback are part of the feature, not an implementation
 	# detail.
-	if grep -qs 'tpgid' "$HOME/.config/bin/lazyos-profile" &&
-		grep -qs 'in_session' "$HOME/.config/bin/lazyos-profile"; then
+	if grep -qs 'tpgid' "$HOME/.config/bin/hayato-profile" &&
+		grep -qs 'in_session' "$HOME/.config/bin/hayato-profile"; then
 		ok "the passphrase prompt cannot land on an invisible terminal (tpgid test, session fallback)"
 	else
-		fail "bin/lazyos-profile asks the passphrase with a bare [ -t 0 ]: from a key the prompt goes to the VT and the export hangs"
+		fail "bin/hayato-profile asks the passphrase with a bare [ -t 0 ]: from a key the prompt goes to the VT and the export hangs"
 	fi
-	_dev_tmp=$(mktemp -d /tmp/lazyos-check-dev.XXXXXX)
+	_dev_tmp=$(mktemp -d /tmp/hayato-check-dev.XXXXXX)
 	mkdir -p "$_dev_tmp/.cache" "$_dev_tmp/.ssh" "$_dev_tmp/Documents"
 	touch "$_dev_tmp/.cache/skip" "$_dev_tmp/.ssh/id_test" "$_dev_tmp/Documents/user.txt"
-	_dev_out=$(HOME=$_dev_tmp "$HOME/.config/bin/lazyos-profile" export --dry-run --include-home 2>/dev/null || true)
+	_dev_out=$(HOME=$_dev_tmp "$HOME/.config/bin/hayato-profile" export --dry-run --include-home 2>/dev/null || true)
 	rm -rf "$_dev_tmp"
 	if printf '%s\n' "$_dev_out" | grep -qs '^scope: home$' &&
 		printf '%s\n' "$_dev_out" | grep -qs '^  Documents$' &&
 		! printf '%s\n' "$_dev_out" | grep -qs '^  \.cache$' &&
-		grep -qs 'stream_archive_open' "$HOME/.config/bin/lazyos-profile" &&
-		! grep -qs 'archive\.tar\.zst' "$HOME/.config/bin/lazyos-profile"; then
-		ok "bin/lazyos-profile supports target-direct streaming full-home export (--include-home)"
+		grep -qs 'stream_archive_open' "$HOME/.config/bin/hayato-profile" &&
+		! grep -qs 'archive\.tar\.zst' "$HOME/.config/bin/hayato-profile"; then
+		ok "bin/hayato-profile supports target-direct streaming full-home export (--include-home)"
 	else
-		fail "bin/lazyos-profile failed target-direct --include-home verification"
+		fail "bin/hayato-profile failed target-direct --include-home verification"
 	fi
 	# Rootless container layers are owned by subuids, so the user cannot read
 	# them and tar aborts the whole archive ("Cannot open: Permission denied")
 	# after copying everything else. A 000 directory reproduces the same
 	# failure without needing a real podman store; the export must skip it and
 	# still carry Documents.
-	_dev_tmp=$(mktemp -d /tmp/lazyos-check-home.XXXXXX)
+	_dev_tmp=$(mktemp -d /tmp/hayato-check-home.XXXXXX)
 	mkdir -p "$_dev_tmp/home/Documents" \
 		"$_dev_tmp/home/.local/share/containers/storage/overlay/layer" \
 		"$_dev_tmp/target"
 	printf 'keep\n' >"$_dev_tmp/home/Documents/user.txt"
 	printf 'layer\n' >"$_dev_tmp/home/.local/share/containers/storage/overlay/layer/file"
 	chmod 000 "$_dev_tmp/home/.local/share/containers/storage/overlay/layer"
-	_dev_profile="$HOME/.config/bin/lazyos-profile"
+	_dev_profile="$HOME/.config/bin/hayato-profile"
 	if HOME="$_dev_tmp/home" XDG_CACHE_HOME="$_dev_tmp/home/.cache" \
 		"$_dev_profile" export "$_dev_tmp/target" --include-home --no-encrypt >/dev/null 2>&1; then
-		_dev_arch=$(find "$_dev_tmp/target" -maxdepth 1 -name 'lazyos-profile-*.tar.zst' | head -n 1)
+		_dev_arch=$(find "$_dev_tmp/target" -maxdepth 1 -name 'hayato-profile-*.tar.zst' | head -n 1)
 		if [ -n "$_dev_arch" ] &&
 			tar --zstd -tf "$_dev_arch" 2>/dev/null | grep -qx 'Documents/user.txt' &&
 			! tar --zstd -tf "$_dev_arch" 2>/dev/null | grep -q 'containers'; then
@@ -1395,26 +1395,26 @@ if [ -x "$HOME/.config/bin/lazyos-profile" ]; then
 fi
 
 # Three places reach the menu and one is enough to lose: the root menu's row
-# (`lazyos menu --rows`), the key (24-keys.conf) and the launcher entry (whose
+# (`hayato menu --rows`), the key (24-keys.conf) and the launcher entry (whose
 # Exec is a $HOME script, so its execute bit is also part of it).
 _dev_reach=ok
-menu_runs lazyos-dev || menu_runs "lazyos menu dev" || _dev_reach=
-grep -rqs 'Ctrl+d exec .*lazyos-dev' /etc/sway/config.d/ || _dev_reach=
-[ -r /usr/share/applications/org.lazyos.dev.desktop ] || _dev_reach=
+menu_runs hayato-dev || menu_runs "hayato menu dev" || _dev_reach=
+grep -rqs 'Ctrl+d exec .*hayato-dev' /etc/sway/config.d/ || _dev_reach=
+[ -r /usr/share/applications/org.hayato.dev.desktop ] || _dev_reach=
 if [ -n "$_dev_reach" ]; then
 	ok "the Developer menu is reachable three ways (root menu, Alt+Ctrl+D, launcher)"
 else
-	fail "the Developer menu lost the root-menu row, the Alt+Ctrl+D binding or org.lazyos.dev.desktop"
+	fail "the Developer menu lost the root-menu row, the Alt+Ctrl+D binding or org.hayato.dev.desktop"
 fi
-grep -qs 'Icon=applications-development' /usr/share/applications/org.lazyos.dev.desktop 2>/dev/null &&
-	[ -r /usr/share/icons/LazyOS/48x48/apps/applications-development.png ] &&
+grep -qs 'Icon=applications-development' /usr/share/applications/org.hayato.dev.desktop 2>/dev/null &&
+	[ -r /usr/share/icons/Hayato/48x48/apps/applications-development.png ] &&
 	ok "the Developer launcher entry asks for a picture the theme carries" ||
-	warn "org.lazyos.dev.desktop has no applications-development icon: the launcher row is a hole"
+	warn "org.hayato.dev.desktop has no applications-development icon: the launcher row is a hole"
 
 # The manual is where the passphrase recipe and the restore steps live; the
 # section is one heading, and losing it makes the feature undiscoverable from a
 # terminal.
-grep -qs 'Your profile, on a stick' /usr/share/doc/lazyos/04-software.md &&
+grep -qs 'Your profile, on a stick' /usr/share/doc/hayato/04-software.md &&
 	ok "the manual has the profile section (04-software.md)" ||
 	warn "04-software.md lost 'Your profile, on a stick': the export and restore are undocumented"
 
@@ -1425,55 +1425,55 @@ grep -qs 'Your profile, on a stick' /usr/share/doc/lazyos/04-software.md &&
 # witnessed below: without it the internal eMMC is offered again.
 _missing_fmt=""
 for _c in parted mkfs.exfat mkfs.ext4; do have "$_c" || _missing_fmt="$_missing_fmt $_c"; done
-[ -x "$HOME/.config/bin/lazyos-format" ] || _missing_fmt="$_missing_fmt bin/lazyos-format"
+[ -x "$HOME/.config/bin/hayato-format" ] || _missing_fmt="$_missing_fmt bin/hayato-format"
 if [ -z "$_missing_fmt" ]; then
-	ok "format a disk complete (parted, mkfs.exfat, mkfs.ext4, lazyos-format)"
+	ok "format a disk complete (parted, mkfs.exfat, mkfs.ext4, hayato-format)"
 else
 	fail "format a disk incomplete:$_missing_fmt (the Places row does nothing)"
 fi
 
 # A fixed disk and the disk the system runs from must never be offered.
-# `lazyos` (`system::disk`, tested on fixtures by `system::disk::tests`
+# `hayato` (`system::disk`, tested on fixtures by `system::disk::tests`
 # and asked live here via `--candidates`) guards format and swap.
 _fmt_guard=ok
 _cands=$(
-	lazyos menu format --candidates 2>/dev/null
-	lazyos menu swap --candidates 2>/dev/null
+	hayato menu format --candidates 2>/dev/null
+	hayato menu swap --candidates 2>/dev/null
 ) || _fmt_guard=
 if printf '%s\n' "$_cands" | grep -qE '^/dev/(mtd|zram)'; then
 	_fmt_guard=
 fi
-_inst_tgt="$(sed -n 's/^deviceinfo_install_target="\([^"]*\)"$/\1/p' /etc/lazyos/deviceinfo 2>/dev/null | head -n1)"
+_inst_tgt="$(sed -n 's/^deviceinfo_install_target="\([^"]*\)"$/\1/p' /etc/hayato/deviceinfo 2>/dev/null | head -n1)"
 if [ -n "$_inst_tgt" ] && printf '%s\n' "$_cands" | grep -qxF "$_inst_tgt"; then
 	_fmt_guard=
 elif [ -z "$_inst_tgt" ] && printf '%s\n' "$_cands" | grep -qE '^/dev/mmcblk0$'; then
-	case "$(tr -d ' \t\r\n' </etc/lazyos/device 2>/dev/null || echo google-asurada)" in
+	case "$(tr -d ' \t\r\n' </etc/hayato/device 2>/dev/null || echo google-asurada)" in
 	google-asurada|google-kukui) _fmt_guard= ;;
 	esac
 fi
 if [ -n "$_fmt_guard" ]; then
 	ok "format a disk refuses fixed storage and the disk this system runs from (system::disk)"
 else
-	fail "the disk guard in lazyos menu format/swap failed: the internal eMMC can be offered for formatting"
+	fail "the disk guard in hayato menu format/swap failed: the internal eMMC can be offered for formatting"
 fi
 
 # The two disk menus test their tools before they draw a row, and greetd's
-# session does not export the sbin directories: lazyos main() ensures
+# session does not export the sbin directories: hayato main() ensures
 # /usr/sbin and /sbin are on PATH so parted, mkswap, swapon, swapoff and
 # blkid are all resolved even on a machine started with a stripped PATH.
-# This asks lazyos in a session-shaped stripped environment to verify PATH resolution.
+# This asks hayato in a session-shaped stripped environment to verify PATH resolution.
 if ! have mkswap; then
 	skip "disk menu PATH not asked (mkswap is not installed; the next check fails)"
 elif env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin \
-	lazyos menu format --candidates >/dev/null 2>&1 &&
+	hayato menu format --candidates >/dev/null 2>&1 &&
 	env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin \
-	lazyos menu swap --candidates >/dev/null 2>&1; then
-	ok "Auxiliary swap and Format a disk resolve the sbin tools (lazyos ensures /usr/sbin:/sbin PATH)"
+	hayato menu swap --candidates >/dev/null 2>&1; then
+	ok "Auxiliary swap and Format a disk resolve the sbin tools (hayato ensures /usr/sbin:/sbin PATH)"
 else
-	fail "lazyos disk menus failed to resolve sbin tools with stripped PATH"
+	fail "hayato disk menus failed to resolve sbin tools with stripped PATH"
 fi
 
-# Auxiliary swap (lazyos-swap) writes a swap partition and the fstab block that
+# Auxiliary swap (hayato-swap) writes a swap partition and the fstab block that
 # activates it at boot. parted, mkswap, swapon/swapoff and blkid are the commands
 # it runs; a missing one is a menu that fails halfway, and the two rows that reach
 # it (Places and the root menu) are plain text that would still be drawn.
@@ -1481,9 +1481,9 @@ _missing_aux=""
 for _c in parted mkswap swapon swapoff blkid; do
 	have "$_c" || _missing_aux="$_missing_aux $_c"
 done
-[ -x "$HOME/.config/bin/lazyos-swap" ] || _missing_aux="$_missing_aux bin/lazyos-swap"
+[ -x "$HOME/.config/bin/hayato-swap" ] || _missing_aux="$_missing_aux bin/hayato-swap"
 if [ -z "$_missing_aux" ]; then
-	ok "auxiliary swap complete (parted, mkswap, swapon, blkid, lazyos-swap)"
+	ok "auxiliary swap complete (parted, mkswap, swapon, blkid, hayato-swap)"
 else
 	fail "auxiliary swap incomplete:$_missing_aux (the menu cannot prepare or activate a card)"
 fi
@@ -1492,7 +1492,7 @@ fi
 # options that keep a missing card from holding the boot are witnessed here:
 # nofail and a device timeout. The priority has to stay below zram's 100, or the
 # kernel round-robins between compressed RAM and the much slower card.
-_aux_opts=$(awk '$1 == "LABEL=lazyos_swap" && $3 == "swap" { print $4; exit }' /etc/fstab 2>/dev/null)
+_aux_opts=$(awk '$1 == "LABEL=hayato_swap" && $3 == "swap" { print $4; exit }' /etc/fstab 2>/dev/null)
 if [ -z "$_aux_opts" ]; then
 	ok "no auxiliary swap configured"
 else
@@ -1518,7 +1518,7 @@ else
 	else
 		warn "auxiliary swap fstab options unsafe:$_aux_bad (a boot without the card waits, or zram stops winning)"
 	fi
-	_aux_dev=$(asroot blkid -L lazyos_swap 2>/dev/null)
+	_aux_dev=$(asroot blkid -L hayato_swap 2>/dev/null)
 	if [ -z "$_aux_dev" ]; then
 		skip "auxiliary swap configured, card not inserted (nofail keeps the boot clean)"
 	else
@@ -1535,50 +1535,50 @@ fi
 
 # The two entry points are static rows, so they can outlive the script. Places is
 # the documented way in (the root menu's row is the second copy).
-if [ -r "$HOME/.config/bin/lazyos-places" ]; then
-	if [ -L "$HOME/.config/bin/lazyos-places" ] && [ "$(readlink -f "$HOME/.config/bin/lazyos-places")" = "/usr/bin/lazyos" ]; then
-		lazyos menu places --rows 2>/dev/null | grep -q 'action:swap' &&
-			ok "Places lists the Auxiliary swap row (lazyos menu places)" ||
-			fail "lazyos menu places has no Auxiliary swap row: the disk menu is unreachable from Places"
+if [ -r "$HOME/.config/bin/hayato-places" ]; then
+	if [ -L "$HOME/.config/bin/hayato-places" ] && [ "$(readlink -f "$HOME/.config/bin/hayato-places")" = "/usr/bin/hayato" ]; then
+		hayato menu places --rows 2>/dev/null | grep -q 'action:swap' &&
+			ok "Places lists the Auxiliary swap row (hayato menu places)" ||
+			fail "hayato menu places has no Auxiliary swap row: the disk menu is unreachable from Places"
 	else
-		grep -qs 'lazyos-swap' "$HOME/.config/bin/lazyos-places" &&
+		grep -qs 'hayato-swap' "$HOME/.config/bin/hayato-places" &&
 			ok "Places lists the Auxiliary swap row" ||
-			fail "bin/lazyos-places has no Auxiliary swap row: the disk menu is unreachable from Places"
+			fail "bin/hayato-places has no Auxiliary swap row: the disk menu is unreachable from Places"
 	fi
 fi
 
-# Install LazyOS (the full TUI installer wizard, spec 018: lazyos installer)
-# Replaces lazyos-installer, lazyos-install-run, and lazyos-install-log.
+# Install Hayato (the full TUI installer wizard, spec 018: hayato installer)
+# Replaces hayato-installer, hayato-install-run, and hayato-install-log.
 # The TUI wizard provides pre-flight hardware inspection, timezone selection,
 # POSIX user account generation, partition diagrams, gated confirmation,
 # real-time progress gauge, and detached worker execution.
-if have lazyos; then
-	if lazyos --help 2>&1 | grep -qs "installer"; then
-		ok "lazyos installer registered in lazyos --help (spec 018)"
+if have hayato; then
+	if hayato --help 2>&1 | grep -qs "installer"; then
+		ok "hayato installer registered in hayato --help (spec 018)"
 	else
-		fail "lazyos installer missing from lazyos --help"
+		fail "hayato installer missing from hayato --help"
 	fi
 
-	if lazyos --symlinks 2>&1 | grep -qs "lazyos-installer[[:space:]]*installer"; then
-		ok "lazyos-installer resolves to lazyos installer in symlinks table"
+	if hayato --symlinks 2>&1 | grep -qs "hayato-installer[[:space:]]*installer"; then
+		ok "hayato-installer resolves to hayato installer in symlinks table"
 	else
-		fail "lazyos-installer does not resolve to installer in lazyos --symlinks"
+		fail "hayato-installer does not resolve to installer in hayato --symlinks"
 	fi
 
-	_inst_check="$(lazyos installer --check 2>&1 || true)"
+	_inst_check="$(hayato installer --check 2>&1 || true)"
 	case "$_inst_check" in
 		ok:*|unsafe:*)
-			ok "lazyos installer --check evaluates hardware & disk safety ($_inst_check)"
+			ok "hayato installer --check evaluates hardware & disk safety ($_inst_check)"
 			;;
 		*)
-			fail "lazyos installer --check failed or returned unexpected output: $_inst_check"
+			fail "hayato installer --check failed or returned unexpected output: $_inst_check"
 			;;
 	esac
 else
-	skip "lazyos binary not installed: installer checks skipped"
+	skip "hayato binary not installed: installer checks skipped"
 fi
 
-_inst_boot_type="$(sed -n 's/^deviceinfo_boot_type="\([^"]*\)"$/\1/p' /etc/lazyos/deviceinfo 2>/dev/null | head -n1)"
+_inst_boot_type="$(sed -n 's/^deviceinfo_boot_type="\([^"]*\)"$/\1/p' /etc/hayato/deviceinfo 2>/dev/null | head -n1)"
 [ -n "$_inst_boot_type" ] || _inst_boot_type="depthcharge"
 _inst_req="rsync parted mkfs.ext4 blkid blockdev lsblk partx udevadm e2fsck"
 case "$_inst_boot_type" in
@@ -1596,13 +1596,13 @@ else
 	fail "installer utilities incomplete for $_inst_boot_type:$_install"
 fi
 
-menu_label 'Install LazyOS' && menu_runs lazyos-installer &&
-	ok "root menu has the Install LazyOS row" ||
-	fail "the root menu has no Install LazyOS row"
+menu_label 'Install Hayato' && menu_runs hayato-installer &&
+	ok "root menu has the Install Hayato row" ||
+	fail "the root menu has no Install Hayato row"
 
-[ -r /usr/share/icons/LazyOS/48x48/apps/system-software-install.png ] &&
-	ok "the install icon is in the LazyOS theme (system-software-install)" ||
-	warn "the LazyOS theme has no system-software-install.png: the launcher row and the install card have no picture"
+[ -r /usr/share/icons/Hayato/48x48/apps/system-software-install.png ] &&
+	ok "the install icon is in the Hayato theme (system-software-install)" ||
+	warn "the Hayato theme has no system-software-install.png: the launcher row and the install card have no picture"
 
 # The Learn menu's second row is the machine's own documentation: apropos searches
 # the whatis database man-db builds, and man renders the page. Without man-db both
@@ -1630,30 +1630,30 @@ fi
 # The manual, the key view, dictation and hibernate. The first two are pure
 # scripts (a missing one is invisible: the menu entry just does nothing); the
 # last two depend on hardware and packages, so they warn instead of failing.
-_learn_pages=$(ls /usr/share/doc/lazyos/*.md 2>/dev/null | wc -l)
-if [ "$_learn_pages" -ge 6 ] && [ -x "$HOME/.config/bin/lazyos-learn" ]; then
-	ok "manual installed ($_learn_pages pages) and lazyos-learn present"
+_learn_pages=$(ls /usr/share/doc/hayato/*.md 2>/dev/null | wc -l)
+if [ "$_learn_pages" -ge 6 ] && [ -x "$HOME/.config/bin/hayato-learn" ]; then
+	ok "manual installed ($_learn_pages pages) and hayato-learn present"
 else
-	fail "manual incomplete: $_learn_pages page(s) in /usr/share/doc/lazyos, lazyos-learn $( [ -x "$HOME/.config/bin/lazyos-learn" ] && echo present || echo missing)"
+	fail "manual incomplete: $_learn_pages page(s) in /usr/share/doc/hayato, hayato-learn $( [ -x "$HOME/.config/bin/hayato-learn" ] && echo present || echo missing)"
 fi
-[ -x "$HOME/.config/bin/lazyos-keys" ] && ok "keybindings view (lazyos-keys) is executable" ||
-	fail "bin/lazyos-keys is missing: the key view has no script"
-[ -x "$HOME/.config/bin/lazyos-files" ] && ok "file browser (lazyos-files) is executable" ||
-	fail "bin/lazyos-files is missing: Alt+Ctrl+F and the Files menu entry do nothing"
+[ -x "$HOME/.config/bin/hayato-keys" ] && ok "keybindings view (hayato-keys) is executable" ||
+	fail "bin/hayato-keys is missing: the key view has no script"
+[ -x "$HOME/.config/bin/hayato-files" ] && ok "file browser (hayato-files) is executable" ||
+	fail "bin/hayato-files is missing: Alt+Ctrl+F and the Files menu entry do nothing"
 # The translate key is taught in one place, the shortcuts page, and the Settings
 # row only says what it does - not that it exists.  A manual that lost the row
 # is a key nobody finds.
-grep -qs 'Alt+Ctrl+T' /usr/share/doc/lazyos/03-shortcuts.md ||
+grep -qs 'Alt+Ctrl+T' /usr/share/doc/hayato/03-shortcuts.md ||
 	fail "03-shortcuts.md does not name Alt+Ctrl+T (the only place the translate key is taught)"
 
 # Every menu behind the root menu is a command or script in `~/.config/bin`
-# (the ported surfaces are symlinks to `/usr/bin/lazyos`). A missing one is the
+# (the ported surfaces are symlinks to `/usr/bin/hayato`). A missing one is the
 # quietest failure in the session: the row is still listed (the menu draws it
 # from a static table) and choosing it does nothing at all.
 _missing_menus=""
-for _s in lazyos-settings lazyos-notify-history lazyos-clean lazyos-kill lazyos-tz lazyos-places \
-	lazyos-media lazyos-calc lazyos-layout lazyos-power lazyos-about lazyos-dns \
-	lazyos-pkg lazyos-color lazyos-remind lazyos-theme-picker; do
+for _s in hayato-settings hayato-notify-history hayato-clean hayato-kill hayato-tz hayato-places \
+	hayato-media hayato-calc hayato-layout hayato-power hayato-about hayato-dns \
+	hayato-pkg hayato-color hayato-remind hayato-theme-picker; do
 	[ -r "$HOME/.config/bin/$_s" ] || _missing_menus="$_missing_menus bin/$_s"
 done
 if [ -z "$_missing_menus" ]; then
@@ -1683,15 +1683,15 @@ fi
 # silently take half the menu away is a missing systemd-analyze (every custom
 # date is then refused while the five delays keep working) and a missing
 # notification icon (the card has no picture and nothing logs it).
-# Note: `lazyos-remind` is now `lazyos menu remind` (unit-tested in
+# Note: `hayato-remind` is now `hayato menu remind` (unit-tested in
 # `system::remind::tests`).
 _reminder=""
 have systemd-analyze || _reminder="$_reminder systemd-analyze"
 have notify-send || _reminder="$_reminder notify-send"
 have jq || _reminder="$_reminder jq"
-[ -r /usr/share/icons/LazyOS/48x48/apps/preferences-system-time.png ] ||
+[ -r /usr/share/icons/Hayato/48x48/apps/preferences-system-time.png ] ||
 	_reminder="$_reminder preferences-system-time.png"
-[ -x "$HOME/.config/bin/lazyos-remind" ] || _reminder="$_reminder bin/lazyos-remind"
+[ -x "$HOME/.config/bin/hayato-remind" ] || _reminder="$_reminder bin/hayato-remind"
 if [ -z "$_reminder" ]; then
 	ok "reminders complete (systemd-analyze, notify-send, jq, the clock icon)"
 else
@@ -1715,12 +1715,12 @@ fi
 # nothing - Colour was the one that had neither the row nor the `case` arm.
 if [ -n "$MENU_ROWS" ]; then
 	_root_missing=
-	for _m in lazyos-dns lazyos-pkg lazyos-color lazyos-about lazyos-remind lazyos-swap lazyos-format lazyos-display lazyos-tz lazyos-vnc lazyos-settings lazyos-ssh 'lazyos menu games'; do
-		menu_runs "$_m" || menu_runs "lazyos menu ${_m#lazyos-}" || menu_runs "lazyos menu colour" || _root_missing="$_root_missing ${_m#lazyos-}"
+	for _m in hayato-dns hayato-pkg hayato-color hayato-about hayato-remind hayato-swap hayato-format hayato-display hayato-tz hayato-vnc hayato-settings hayato-ssh 'hayato menu games'; do
+		menu_runs "$_m" || menu_runs "hayato menu ${_m#hayato-}" || menu_runs "hayato menu colour" || _root_missing="$_root_missing ${_m#hayato-}"
 	done
 	[ -z "$_root_missing" ] &&
 		ok "root menu reaches DNS, Packages, Colour, About, Reminders, Auxiliary swap, Format, Display, Time zone, VNC, Settings and SSH" ||
-		fail "root menu has no entry for:$_root_missing (lazyos menu --rows)"
+		fail "root menu has no entry for:$_root_missing (hayato menu --rows)"
 fi
 
 # A root-menu row cannot lack an action any more - it is an enum in the table
@@ -1739,35 +1739,35 @@ if [ -n "$MENU_ROWS" ]; then
 		fail "root-menu rows whose program is missing (the row does nothing):$_dead_rows"
 fi
 
-# The key view (`lazyos-keys` -> `lazyos menu keys`, spec 012) is now a TUI in
-# `lazyos`: each row draws `Glyph::Key` (verified by `lazyos --glyphs` in the
+# The key view (`hayato-keys` -> `hayato menu keys`, spec 012) is now a TUI in
+# `hayato`: each row draws `Glyph::Key` (verified by `hayato --glyphs` in the
 # framework section) and parses `/etc/sway/config` + `/etc/sway/config.d/*.conf`
 # (unit-tested in `system::keys::tests`). Verify that `--rows` returns bindings
 # from the live config with no empty description column.
-_keys_rows=$(lazyos menu keys --rows 2>/dev/null || :)
+_keys_rows=$(hayato menu keys --rows 2>/dev/null || :)
 if [ -n "$_keys_rows" ] && ! awk -F'\t' '$1 == "" || $2 == "" { exit 1 }' <<<"$_keys_rows"; then
-	fail "lazyos menu keys --rows emitted an empty key or description column"
+	fail "hayato menu keys --rows emitted an empty key or description column"
 elif [ -n "$_keys_rows" ]; then
-	ok "lazyos menu keys parses the sway configuration ($(printf '%s\n' "$_keys_rows" | wc -l) bindings, no empty rows)"
+	ok "hayato menu keys parses the sway configuration ($(printf '%s\n' "$_keys_rows" | wc -l) bindings, no empty rows)"
 else
-	fail "lazyos menu keys --rows returned no bindings"
+	fail "hayato menu keys --rows returned no bindings"
 fi
 
 # fastfetch exits when it has drawn, so without --hold the About window flashes
 # and closes - which reads as "the row does nothing". And the footer must name
 # a close key this keyboard answers (`Alt+Q`, not `Ctrl+Shift+W`). Read from
-# `lazyos menu about --views` (unit-tested in `system::about::tests`).
-_about_views=$(lazyos menu about --views 2>/dev/null || :)
+# `hayato menu about --views` (unit-tested in `system::about::tests`).
+_about_views=$(hayato menu about --views 2>/dev/null || :)
 if printf '%s\n' "$_about_views" | grep -qs -- '--hold'; then
-	ok "lazyos menu about holds its popup windows open (--hold)"
+	ok "hayato menu about holds its popup windows open (--hold)"
 else
-	warn "lazyos menu about no longer passes --hold: the fastfetch picture flashes and closes"
+	warn "hayato menu about no longer passes --hold: the fastfetch picture flashes and closes"
 fi
 _about_footer=$(printf '%s\n' "$_about_views" | grep -c 'close this window with Alt+Q' || true)
 if [ "${_about_footer:-0}" -eq 3 ] && ! printf '%s\n' "$_about_views" | grep -qs 'Ctrl+Shift+W'; then
 	ok "the About windows name a close key this keyboard answers (Alt+Q)"
 else
-	warn "lazyos menu about footers do not all say 'close this window with Alt+Q' (found ${_about_footer:-0}/3)"
+	warn "hayato menu about footers do not all say 'close this window with Alt+Q' (found ${_about_footer:-0}/3)"
 fi
 
 # The capture menu (Alt+Ctrl+C) is a list over external tools: grimshot for the
@@ -1779,7 +1779,7 @@ _missing_capture=""
 for _c in grimshot grim slurp tesseract zbarimg qrencode swappy wf-recorder; do
 	have "$_c" || _missing_capture="$_missing_capture $_c"
 done
-for _s in lazyos-capture lazyos-qr screenshot; do
+for _s in hayato-capture hayato-qr screenshot; do
 	[ -x "$HOME/.config/bin/$_s" ] || _missing_capture="$_missing_capture bin/$_s"
 done
 if [ -z "$_missing_capture" ]; then
@@ -1792,7 +1792,7 @@ fi
 # when it is called through bin/screenshot: grimshot itself writes to $HOME on this
 # image (there is no user-dirs.dirs), so one key that calls it directly drops the
 # picture among the dotfiles again - which was the report.
-# (`lazyos menu capture`'s `screenshot_argv` is verified by
+# (`hayato menu capture`'s `screenshot_argv` is verified by
 # `system::capture::tests::screenshot_uses_wrapper_in_config_bin`.)
 grep -qs 'bin/screenshot' /etc/sway/config.d/90-screenshot-shortcuts.conf &&
 	ok "the screenshot keys go through bin/screenshot" ||
@@ -1800,10 +1800,10 @@ grep -qs 'bin/screenshot' /etc/sway/config.d/90-screenshot-shortcuts.conf &&
 [ -z "$(grep -rs '^[[:space:]]*bindsym.*exec grimshot' /etc/sway/config.d/)" ] &&
 	ok "no key calls grimshot directly" ||
 	fail "a key calls grimshot directly: that screenshot lands in \$HOME"
-if [ -r /usr/share/applications/org.lazyos.screenshot-area.desktop ]; then
-	grep -qs 'Exec=.*bin/screenshot' /usr/share/applications/org.lazyos.screenshot-area.desktop &&
+if [ -r /usr/share/applications/org.hayato.screenshot-area.desktop ]; then
+	grep -qs 'Exec=.*bin/screenshot' /usr/share/applications/org.hayato.screenshot-area.desktop &&
 		ok "the Screenshot (area) launcher entry uses bin/screenshot" ||
-		fail "org.lazyos.screenshot-area.desktop still runs grimshot: that entry saves into \$HOME"
+		fail "org.hayato.screenshot-area.desktop still runs grimshot: that entry saves into \$HOME"
 fi
 
 # A recording is a file of the screen, so two reported defects meet there: the
@@ -1813,15 +1813,15 @@ fi
 # top-right corner of every capture and looked like a broken region). The
 # recorder is pure Rust now: the check reads the argv it builds, runs a fake
 # session end to end, and then asks the notification daemon itself.
-_rec_argv=$(lazyos menu capture --argv /home/brunux/Videos/a.mp4 2>/dev/null || true)
-_rec_argv_area=$(lazyos menu capture --argv /tmp/a.mp4 "10,20 300x200" 2>/dev/null || true)
+_rec_argv=$(hayato menu capture --argv /home/brunux/Videos/a.mp4 2>/dev/null || true)
+_rec_argv_area=$(hayato menu capture --argv /tmp/a.mp4 "10,20 300x200" 2>/dev/null || true)
 if [ "$(printf '%s\n' "$_rec_argv" | sed -n '1p')" = "wf-recorder" ] &&
 	printf '%s\n' "$_rec_argv" | grep -qsx -- 'libx264' &&
 	printf '%s\n' "$_rec_argv" | grep -qsx -- '-f' &&
 	printf '%s\n' "$_rec_argv" | grep -qsx '/home/brunux/Videos/a.mp4'; then
 	ok "the recorder is one argv (wf-recorder ... -f FILE), never a shell line"
 else
-	fail "lazyos menu capture --argv is not wf-recorder's own argv: Stop cannot trust the pid"
+	fail "hayato menu capture --argv is not wf-recorder's own argv: Stop cannot trust the pid"
 fi
 _rec_geom=$(printf '%s\n' "$_rec_argv_area" | awk '
 	$0 == "-g" { g = NR }
@@ -1838,9 +1838,9 @@ fi
 # equal to its file name), a fake `slurp`, and a fake `busy` that records what
 # it was told. The recorder writes the file named by `-f` and logs its argv, so
 # the check can prove the area geometry reached the recorder itself.
-_rec_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-record.XXXXXX" 2>/dev/null || true)
+_rec_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-record.XXXXXX" 2>/dev/null || true)
 if [ -n "$_rec_tmp" ]; then
-	mkdir -p "$_rec_tmp/bin" "$_rec_tmp/run/lazyos-capture" "$_rec_tmp/home"
+	mkdir -p "$_rec_tmp/bin" "$_rec_tmp/run/hayato-capture" "$_rec_tmp/home"
 	cat >"$_rec_tmp/bin/wf-recorder" <<-'REC'
 		#!/bin/sh
 		trap 'exit 0' INT TERM
@@ -1859,18 +1859,18 @@ if [ -n "$_rec_tmp" ]; then
 	chmod +x "$_rec_tmp/bin/wf-recorder" "$_rec_tmp/bin/slurp" "$_rec_tmp/bin/busy"
 	env HOME="$_rec_tmp/home" XDG_RUNTIME_DIR="$_rec_tmp/run" \
 		PATH="$_rec_tmp/bin:$PATH" RECORDER_ARGV="$_rec_tmp/argv.log" \
-		lazyos menu capture --start area >/dev/null 2>&1 || true
-	_rec_pid=$(cat "$_rec_tmp/run/lazyos-capture/recording.pid" 2>/dev/null || true)
-	_rec_file=$(cat "$_rec_tmp/run/lazyos-capture/recording.file" 2>/dev/null || true)
+		hayato menu capture --start area >/dev/null 2>&1 || true
+	_rec_pid=$(cat "$_rec_tmp/run/hayato-capture/recording.pid" 2>/dev/null || true)
+	_rec_file=$(cat "$_rec_tmp/run/hayato-capture/recording.file" 2>/dev/null || true)
 	if [ -n "$_rec_pid" ] && [ "$(cat "/proc/$_rec_pid/comm" 2>/dev/null)" = "wf-recorder" ]; then
 		ok "a recording saves the pid of wf-recorder itself (comm=wf-recorder)"
 	else
 		fail "a recording did not save a live wf-recorder pid (pid=${_rec_pid:-none}): Stop would signal the wrong process"
 	fi
-	if printf '%s\n' "$_rec_file" | grep -qs "^$_rec_tmp/home/Videos/lazyos-.*\.mp4$"; then
+	if printf '%s\n' "$_rec_file" | grep -qs "^$_rec_tmp/home/Videos/hayato-.*\.mp4$"; then
 		ok "the recording writes a timestamped mp4 under ~/Videos"
 	else
-		fail "the recording's output file is not ~/Videos/lazyos-<date>-<time>.mp4 (${_rec_file:-none})"
+		fail "the recording's output file is not ~/Videos/hayato-<date>-<time>.mp4 (${_rec_file:-none})"
 	fi
 	if grep -qs -- '-g 10,20 300x200' "$_rec_tmp/argv.log" 2>/dev/null; then
 		ok "an area recording hands the slurp geometry to wf-recorder itself"
@@ -1878,20 +1878,20 @@ if [ -n "$_rec_tmp" ]; then
 		fail "the recorder never saw the slurp geometry: the chosen region is not the recorded region"
 	fi
 	_rec_status=$(env HOME="$_rec_tmp/home" XDG_RUNTIME_DIR="$_rec_tmp/run" \
-		lazyos menu capture --status 2>/dev/null || true)
+		hayato menu capture --status 2>/dev/null || true)
 	if printf '%s\n' "$_rec_status" | grep -qs '^recording'; then
-		ok "lazyos menu capture --status sees the live recorder"
+		ok "hayato menu capture --status sees the live recorder"
 	else
-		fail "lazyos menu capture --status does not see the recorder it just started (${_rec_status:-none})"
+		fail "hayato menu capture --status does not see the recorder it just started (${_rec_status:-none})"
 	fi
 	if [ -n "$_rec_pid" ]; then
 		env HOME="$_rec_tmp/home" XDG_RUNTIME_DIR="$_rec_tmp/run" PATH="$_rec_tmp/bin:$PATH" \
-			lazyos menu capture --stop-wait "$_rec_pid" "$_rec_file" >/dev/null 2>&1 || true
+			hayato menu capture --stop-wait "$_rec_pid" "$_rec_file" >/dev/null 2>&1 || true
 		_rec_after=$(env HOME="$_rec_tmp/home" XDG_RUNTIME_DIR="$_rec_tmp/run" \
-			lazyos menu capture --status 2>/dev/null || true)
+			hayato menu capture --status 2>/dev/null || true)
 		_rec_state=$(awk '{print $3}' "/proc/$_rec_pid/stat" 2>/dev/null || true)
 		if [ "$_rec_after" = "idle" ] &&
-			[ ! -e "$_rec_tmp/run/lazyos-capture/recording.pid" ] &&
+			[ ! -e "$_rec_tmp/run/hayato-capture/recording.pid" ] &&
 			{ [ -z "$_rec_state" ] || [ "$_rec_state" = "Z" ]; }; then
 			ok "Stop finalises the recorder (SIGINT, then wait) and clears the state"
 		else
@@ -1909,14 +1909,14 @@ else
 	warn "could not make a fake recording session: the start/stop probe was skipped"
 fi
 
-# The webinar choices in ~/.config/lazyos/record.conf: audio names a source
+# The webinar choices in ~/.config/hayato/record.conf: audio names a source
 # (the default microphone or the default sink's monitor) and webcam starts an
 # overlay. A fake pactl names the source, a fake mpv is the camera window and a
 # fake swaymsg says it exists, so the check proves the recorder is handed
 # --audio=<source> and that Stop ends the camera with the recorder.
-_web_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-webinar.XXXXXX" 2>/dev/null || true)
+_web_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-webinar.XXXXXX" 2>/dev/null || true)
 if [ -n "$_web_tmp" ]; then
-	mkdir -p "$_web_tmp/bin" "$_web_tmp/run/lazyos-capture" "$_web_tmp/home/.config/lazyos"
+	mkdir -p "$_web_tmp/bin" "$_web_tmp/run/hayato-capture" "$_web_tmp/home/.config/hayato"
 	cat >"$_web_tmp/bin/wf-recorder" <<-'REC'
 		#!/bin/sh
 		trap 'exit 0' INT TERM
@@ -1947,7 +1947,7 @@ if [ -n "$_web_tmp" ]; then
 	cat >"$_web_tmp/bin/swaymsg" <<-'SWAY'
 		#!/bin/sh
 		case "$*" in
-			*get_tree*) printf '{"app_id":"lazyos-webcam"}\n' ;;
+			*get_tree*) printf '{"app_id":"hayato-webcam"}\n' ;;
 			*get_workspaces*|*get_outputs*) printf '[{"focused":true,"rect":{"x":0,"y":0,"width":1366,"height":768}}]\n' ;;
 			*) printf '[]\n' ;;
 		esac
@@ -1962,30 +1962,30 @@ if [ -n "$_web_tmp" ]; then
 		env HOME="$_web_tmp/home" XDG_RUNTIME_DIR="$_web_tmp/run" \
 			PATH="$_web_tmp/bin:$PATH" RECORDER_ARGV="$_web_tmp/argv.log" \
 			MPV_ARGV="$_web_tmp/mpv.argv" \
-			lazyos menu capture --start >/dev/null 2>&1 || true
-		_web_pid=$(cat "$_web_tmp/run/lazyos-capture/recording.pid" 2>/dev/null || true)
-		_web_file=$(cat "$_web_tmp/run/lazyos-capture/recording.file" 2>/dev/null || true)
+			hayato menu capture --start >/dev/null 2>&1 || true
+		_web_pid=$(cat "$_web_tmp/run/hayato-capture/recording.pid" 2>/dev/null || true)
+		_web_file=$(cat "$_web_tmp/run/hayato-capture/recording.file" 2>/dev/null || true)
 	}
 	_web_stop() {
 		if [ -n "${_web_pid:-}" ]; then
 			env HOME="$_web_tmp/home" XDG_RUNTIME_DIR="$_web_tmp/run" \
 				PATH="$_web_tmp/bin:$PATH" \
-				lazyos menu capture --stop-wait "$_web_pid" "$_web_file" >/dev/null 2>&1 || true
+				hayato menu capture --stop-wait "$_web_pid" "$_web_file" >/dev/null 2>&1 || true
 		fi
 	}
-	printf 'audio=mic\nwebcam=on\n' >"$_web_tmp/home/.config/lazyos/record.conf"
+	printf 'audio=mic\nwebcam=on\n' >"$_web_tmp/home/.config/hayato/record.conf"
 	_web_start
 	if grep -qs -- '--audio=fake_mic' "$_web_tmp/argv.log" 2>/dev/null; then
 		ok "a microphone recording hands the default source to wf-recorder"
 	else
 		fail "a microphone recording did not pass --audio=<default source> to wf-recorder"
 	fi
-	if grep -qs -- 'lazyos-webcam' "$_web_tmp/mpv.argv" 2>/dev/null; then
-		ok "the webcam overlay starts as the lazyos-webcam window"
+	if grep -qs -- 'hayato-webcam' "$_web_tmp/mpv.argv" 2>/dev/null; then
+		ok "the webcam overlay starts as the hayato-webcam window"
 	else
-		fail "the webcam overlay did not start an mpv window with app_id lazyos-webcam"
+		fail "the webcam overlay did not start an mpv window with app_id hayato-webcam"
 	fi
-	_web_cam=$(cat "$_web_tmp/run/lazyos-capture/camera.pid" 2>/dev/null || true)
+	_web_cam=$(cat "$_web_tmp/run/hayato-capture/camera.pid" 2>/dev/null || true)
 	if [ -n "$_web_cam" ] && [ "$(cat "/proc/$_web_cam/comm" 2>/dev/null)" = "mpv" ]; then
 		ok "the recording saves the webcam overlay's own pid"
 	else
@@ -1994,13 +1994,13 @@ if [ -n "$_web_tmp" ]; then
 	_web_stop
 	sleep 0.3
 	_web_state=$(awk '{print $3}' "/proc/$_web_cam/stat" 2>/dev/null || true)
-	if [ -n "$_web_cam" ] && [ ! -e "$_web_tmp/run/lazyos-capture/camera.pid" ] &&
+	if [ -n "$_web_cam" ] && [ ! -e "$_web_tmp/run/hayato-capture/camera.pid" ] &&
 		{ [ -z "$_web_state" ] || [ "$_web_state" = "Z" ]; }; then
 		ok "Stop ends the webcam overlay and clears its pid"
 	else
 		fail "Stop left the webcam overlay running (pid=${_web_cam:-none}, state=${_web_state:-gone})"
 	fi
-	printf 'audio=system\nwebcam=off\n' >"$_web_tmp/home/.config/lazyos/record.conf"
+	printf 'audio=system\nwebcam=off\n' >"$_web_tmp/home/.config/hayato/record.conf"
 	rm -f "$_web_tmp/argv.log" "$_web_tmp/mpv.argv"
 	_web_start
 	if grep -qs -- '--audio=fake_sink.monitor' "$_web_tmp/argv.log" 2>/dev/null; then
@@ -2008,13 +2008,13 @@ if [ -n "$_web_tmp" ]; then
 	else
 		fail "system audio did not pass the default sink's .monitor source to wf-recorder"
 	fi
-	if [ ! -e "$_web_tmp/run/lazyos-capture/camera.pid" ]; then
+	if [ ! -e "$_web_tmp/run/hayato-capture/camera.pid" ]; then
 		ok "no camera starts when the webcam overlay is off"
 	else
 		fail "a recording with the webcam off still saved a camera pid"
 	fi
 	_web_stop
-	printf 'audio=off\nwebcam=off\n' >"$_web_tmp/home/.config/lazyos/record.conf"
+	printf 'audio=off\nwebcam=off\n' >"$_web_tmp/home/.config/hayato/record.conf"
 	rm -f "$_web_tmp/argv.log"
 	_web_start
 	if [ -n "${_web_pid:-}" ] && ! grep -qs -- '--audio=' "$_web_tmp/argv.log" 2>/dev/null; then
@@ -2030,10 +2030,10 @@ if [ -n "$_web_tmp" ]; then
 		exit 1
 	MPV
 	chmod +x "$_web_tmp/bin/mpv"
-	printf 'audio=off\nwebcam=on\n' >"$_web_tmp/home/.config/lazyos/record.conf"
+	printf 'audio=off\nwebcam=on\n' >"$_web_tmp/home/.config/hayato/record.conf"
 	: >"$_web_tmp/busy.log"
 	_web_start
-	if [ ! -e "$_web_tmp/run/lazyos-capture/recording.pid" ] &&
+	if [ ! -e "$_web_tmp/run/hayato-capture/recording.pid" ] &&
 		grep -qs 'did not start' "$_web_tmp/busy.log"; then
 		ok "a camera that exits fails the start instead of recording without an overlay"
 	else
@@ -2047,31 +2047,31 @@ fi
 # The daemon's half: with a live process named wf-recorder behind the state
 # file, a normal card is held back (the recorder would capture it) and a
 # critical one still draws; once the process is gone, both draw again.
-_rec_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-record.XXXXXX" 2>/dev/null || true)
-if [ -n "$_rec_tmp" ] && have lazyos-notify && [ -x /bin/sleep ]; then
-	mkdir -p "$_rec_tmp/lazyos-capture"
+_rec_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-record.XXXXXX" 2>/dev/null || true)
+if [ -n "$_rec_tmp" ] && have hayato-notify && [ -x /bin/sleep ]; then
+	mkdir -p "$_rec_tmp/hayato-capture"
 	cp /bin/sleep "$_rec_tmp/wf-recorder" 2>/dev/null || true
 	if [ -x "$_rec_tmp/wf-recorder" ]; then
 		"$_rec_tmp/wf-recorder" 30 &
 		_rec_pid=$!
-		printf '%s\n' "$_rec_pid" >"$_rec_tmp/lazyos-capture/recording.pid"
-		printf '%s\n' "$_rec_tmp/out.mp4" >"$_rec_tmp/lazyos-capture/recording.file"
+		printf '%s\n' "$_rec_pid" >"$_rec_tmp/hayato-capture/recording.pid"
+		printf '%s\n' "$_rec_tmp/out.mp4" >"$_rec_tmp/hayato-capture/recording.file"
 		sleep 0.1
-		_rec_normal=$(XDG_RUNTIME_DIR="$_rec_tmp" lazyos-notify --would-draw 2>/dev/null || true)
-		_rec_critical=$(XDG_RUNTIME_DIR="$_rec_tmp" lazyos-notify --would-draw --critical 2>/dev/null || true)
-		_rec_status=$(XDG_RUNTIME_DIR="$_rec_tmp" lazyos menu capture --status 2>/dev/null || true)
+		_rec_normal=$(XDG_RUNTIME_DIR="$_rec_tmp" hayato-notify --would-draw 2>/dev/null || true)
+		_rec_critical=$(XDG_RUNTIME_DIR="$_rec_tmp" hayato-notify --would-draw --critical 2>/dev/null || true)
+		_rec_status=$(XDG_RUNTIME_DIR="$_rec_tmp" hayato menu capture --status 2>/dev/null || true)
 		kill "$_rec_pid" 2>/dev/null || true
 		wait "$_rec_pid" 2>/dev/null || true
-		_rec_after=$(XDG_RUNTIME_DIR="$_rec_tmp" lazyos-notify --would-draw 2>/dev/null || true)
+		_rec_after=$(XDG_RUNTIME_DIR="$_rec_tmp" hayato-notify --would-draw 2>/dev/null || true)
 		if [ "$_rec_normal" = suppress ] && [ "$_rec_critical" = draw ] && [ "$_rec_after" = draw ]; then
 			ok "no card is drawn into a recording (critical ones still show; nothing is held back after it stops)"
 		else
-			fail "lazyos-notify would draw a card into a recording (normal=${_rec_normal:-?}, critical=${_rec_critical:-?}, after=${_rec_after:-?})"
+			fail "hayato-notify would draw a card into a recording (normal=${_rec_normal:-?}, critical=${_rec_critical:-?}, after=${_rec_after:-?})"
 		fi
 		if printf '%s\n' "$_rec_status" | grep -qs "recording.*$_rec_tmp/out.mp4"; then
-			ok "lazyos menu capture --status names the recorder and its file"
+			ok "hayato menu capture --status names the recorder and its file"
 		else
-			fail "lazyos menu capture --status did not report the live recorder: the bar and the check cannot see a capture"
+			fail "hayato menu capture --status did not report the live recorder: the bar and the check cannot see a capture"
 		fi
 	else
 		warn "could not copy /bin/sleep to a wf-recorder name: the card-in-recording probe was skipped"
@@ -2080,51 +2080,51 @@ if [ -n "$_rec_tmp" ] && have lazyos-notify && [ -x /bin/sleep ]; then
 fi
 
 # Screen sharing (Settings > Share this screen, and the root menu) is wayvnc
-# served on the loopback address (`lazyos menu vnc`, unit-tested in
+# served on the loopback address (`hayato menu vnc`, unit-tested in
 # `system::vnc::tests`). `--command` prints the exact wayvnc argv and the ssh
 # tunnel command without opening a window.
 _missing_vnc=""
 have wayvnc || _missing_vnc="$_missing_vnc wayvnc"
-[ -x "$HOME/.config/bin/lazyos-vnc" ] || _missing_vnc="$_missing_vnc bin/lazyos-vnc"
+[ -x "$HOME/.config/bin/hayato-vnc" ] || _missing_vnc="$_missing_vnc bin/hayato-vnc"
 if [ -z "$_missing_vnc" ]; then
-	ok "screen sharing complete (wayvnc, bin/lazyos-vnc)"
+	ok "screen sharing complete (wayvnc, bin/hayato-vnc)"
 else
-	fail "screen sharing incomplete:$_missing_vnc (wayvnc is the server, bin/lazyos-vnc is the menu)"
+	fail "screen sharing incomplete:$_missing_vnc (wayvnc is the server, bin/hayato-vnc is the menu)"
 fi
-_vnc_cmd=$(lazyos menu vnc --command 2>/dev/null || :)
+_vnc_cmd=$(hayato menu vnc --command 2>/dev/null || :)
 if [ -n "$_vnc_cmd" ]; then
 	_vnc_view=$(printf '%s\n' "$_vnc_cmd" | sed -n 's/^view: //p')
 	_vnc_control=$(printf '%s\n' "$_vnc_cmd" | sed -n 's/^control: //p')
 	if printf '%s' "$_vnc_view" | grep -qs -- '--disable-input'; then
 		ok "screen sharing defaults to read-only (wayvnc --disable-input)"
 	else
-		fail "lazyos menu vnc lost --disable-input from the default start: a viewer could type into this session"
+		fail "hayato menu vnc lost --disable-input from the default start: a viewer could type into this session"
 	fi
 	if [ -n "$_vnc_control" ] &&
 		! printf '%s' "$_vnc_control" | grep -qs -- '--disable-input'; then
 		ok "remote control is the explicit second start (no --disable-input)"
 	else
-		fail "lazyos menu vnc --command has no control line: remote control would have no way in"
+		fail "hayato menu vnc --command has no control line: remote control would have no way in"
 	fi
 	if printf '%s\n%s\n' "$_vnc_view" "$_vnc_control" | grep -qs '127\.0\.0\.1' &&
 		! printf '%s\n%s\n' "$_vnc_view" "$_vnc_control" | grep -qs '0\.0\.0\.0'; then
 		ok "both screen-sharing modes listen on the loopback address only"
 	else
-		fail "lazyos menu vnc does not bind 127.0.0.1 only: that is an unauthenticated desktop on the network"
+		fail "hayato menu vnc does not bind 127.0.0.1 only: that is an unauthenticated desktop on the network"
 	fi
 	if printf '%s\n' "$_vnc_cmd" | grep -qs 'ssh -L' &&
-		grep -qs 'ssh -L 5900:127.0.0.1:5900' /usr/share/doc/lazyos/05-system.md; then
+		grep -qs 'ssh -L 5900:127.0.0.1:5900' /usr/share/doc/hayato/05-system.md; then
 		ok "the ssh tunnel command is on the menu row and in the manual (5900, loopback)"
 	else
-		warn "the tunnel command is missing from lazyos menu vnc or from 05-system.md: the way in is undocumented"
+		warn "the tunnel command is missing from hayato menu vnc or from 05-system.md: the way in is undocumented"
 	fi
 fi
 # A row and its arm, in both menus: a row whose key has no arm closes the list
 # and does nothing, which is the quietest failure a menu can have.
-settings_runs lazyos-vnc &&
+settings_runs hayato-vnc &&
 	ok "Settings carries the Share this screen row" ||
-	fail "Settings (lazyos menu settings) has no Share this screen row: the only way in would be the root menu"
-menu_runs lazyos-vnc &&
+	fail "Settings (hayato menu settings) has no Share this screen row: the only way in would be the root menu"
+menu_runs hayato-vnc &&
 	ok "the root menu reaches Share this screen" ||
 	fail "the root menu has no Share this screen row"
 # The bar's eye is a module over a state file, so the two halves that can be
@@ -2152,9 +2152,9 @@ fi
 # the menu reports instead of guessing.
 _vnc_pid=$(pgrep -x wayvnc 2>/dev/null || true)
 if [ -n "$_vnc_pid" ]; then
-	_vnc_state=$("$HOME/.config/bin/lazyos-vnc" status 2>/dev/null | head -n 1 || true)
+	_vnc_state=$("$HOME/.config/bin/hayato-vnc" status 2>/dev/null | head -n 1 || true)
 	if [ "$_vnc_state" = off ]; then
-		warn "wayvnc is running but lazyos-vnc does not own it: the menu says off while the screen is being served (pid $_vnc_pid)"
+		warn "wayvnc is running but hayato-vnc does not own it: the menu says off while the screen is being served (pid $_vnc_pid)"
 	else
 		info "the screen is being shared: $_vnc_state"
 	fi
@@ -2170,7 +2170,7 @@ for _c in cliphist wl-paste wl-copy wtype; do
 	have "$_c" || _missing_clip="$_missing_clip $_c"
 done
 [ -r "$HOME/.config/emojis.tsv" ] || _missing_clip="$_missing_clip .config/emojis.tsv"
-for _s in lazyos-emoji lazyos-clip; do
+for _s in hayato-emoji hayato-clip; do
 	[ -x "$HOME/.config/bin/$_s" ] || _missing_clip="$_missing_clip bin/$_s"
 done
 if [ -z "$_missing_clip" ]; then
@@ -2421,7 +2421,7 @@ fi
 # The stale-session case exercised for real: no state directory, a focused
 # output from a fake swaymsg, and `off` still has to put the screen upright and
 # both inputs back. A private runtime directory keeps it away from the session.
-_tm_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-tablet-probe.XXXXXX" 2>/dev/null || true)
+_tm_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-tablet-probe.XXXXXX" 2>/dev/null || true)
 if [ -n "$_tm_tmp" ] && [ -x "$HOME/.config/bin/tablet-mode" ]; then
 	mkdir -p "$_tm_tmp/run" "$_tm_tmp/bin"
 	printf '%s\n' \
@@ -2441,7 +2441,7 @@ if [ -n "$_tm_tmp" ] && [ -x "$HOME/.config/bin/tablet-mode" ]; then
 		grep -qx 'output eDP-1 transform normal' "$_tm_log" &&
 		grep -qx 'input type:touchpad events enabled' "$_tm_log" &&
 		grep -qx 'input type:keyboard events enabled' "$_tm_log" &&
-		[ ! -d "$_tm_tmp/run/lazyos-tablet" ]; then
+		[ ! -d "$_tm_tmp/run/hayato-tablet" ]; then
 		ok "tablet-mode off repairs a missing state directory (rotation upright, both inputs back)"
 	else
 		fail "tablet-mode off did not restore the rotation or both inputs without a state directory (a killed session can leave the screen sideways and the keyboard off)"
@@ -2451,7 +2451,7 @@ fi
 # The rotation reference is optional - the built-in -Y table is the default - but a
 # file that does not parse is ignored in silence by orient(), which reads as "the
 # rotation keeps turning back to the old way" after a calibration that claimed to work.
-_calib_pose="${XDG_CONFIG_HOME:-$HOME/.config}/lazyos/tablet.conf"
+_calib_pose="${XDG_CONFIG_HOME:-$HOME/.config}/hayato/tablet.conf"
 if [ ! -f "$_calib_pose" ]; then
 	skip "no rotation calibration ($_calib_pose): the built-in -Y reference is in use"
 else
@@ -2465,7 +2465,7 @@ fi
 # running while the mode is off is either a leftover from a session that was
 # killed mid-mode or something starting it at login; either way it covers the
 # bottom of the screen for no reason.
-if [ ! -d "${XDG_RUNTIME_DIR:-/tmp}/lazyos-tablet" ]; then
+if [ ! -d "${XDG_RUNTIME_DIR:-/tmp}/hayato-tablet" ]; then
 	if pgrep -x wvkbd-mobintl >/dev/null 2>&1; then
 		warn "wvkbd-mobintl is running outside tablet mode (config.d/28-tablet.conf starts it on the switch only)"
 	fi
@@ -2475,13 +2475,13 @@ fi
 # write it (a window nobody saw would then never be tried again). The stub-foot
 # test uses only a temp directory, so it puts nothing on the real desktop.
 _welcome=""
-[ -x "$HOME/.config/bin/lazyos-welcome" ] || _welcome="$_welcome bin/lazyos-welcome"
+[ -x "$HOME/.config/bin/hayato-welcome" ] || _welcome="$_welcome bin/hayato-welcome"
 [ -r "$HOME/.config/sway/config.d/30-welcome.conf" ] ||
 	_welcome="$_welcome .config/sway/config.d/30-welcome.conf"
-grep -qs '^exec .*/lazyos-welcome' "$HOME/.config/sway/config.d/30-welcome.conf" 2>/dev/null ||
+grep -qs '^exec .*/hayato-welcome' "$HOME/.config/sway/config.d/30-welcome.conf" 2>/dev/null ||
 	_welcome="$_welcome 30-welcome.conf(no-exec)"
 if [ -z "$_welcome" ]; then
-	_welcome_text=$("$HOME/.config/bin/lazyos-welcome" --print 2>/dev/null || true)
+	_welcome_text=$("$HOME/.config/bin/hayato-welcome" --print 2>/dev/null || true)
 	_welcome_missing=""
 	for _k in 'Alt+Space' 'Alt+D' 'Search' 'Alt+Ctrl+F' 'Alt+Ctrl+T' 'Alt+Return' \
 		'Alt+Q' 'Alt+Escape' 'Alt+Ctrl+K'; do
@@ -2498,20 +2498,20 @@ else
 	fail "welcome window incomplete:$_welcome (the first boot shows no card)"
 fi
 
-_welcome_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-welcome.XXXXXX" 2>/dev/null || true)
-if [ -n "$_welcome_tmp" ] && [ -x "$HOME/.config/bin/lazyos-welcome" ]; then
+_welcome_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-welcome.XXXXXX" 2>/dev/null || true)
+if [ -n "$_welcome_tmp" ] && [ -x "$HOME/.config/bin/hayato-welcome" ]; then
 	printf '%s\n' '#!/bin/sh' 'printf "call\n" >>"$WELCOME_TEST_LOG"' 'exit "${WELCOME_TEST_RC:-0}"' >"$_welcome_tmp/foot"
 	chmod +x "$_welcome_tmp/foot"
 	_welcome_res=$(
 		export XDG_STATE_HOME="$_welcome_tmp/state" PATH="$_welcome_tmp:$PATH"
 		export WELCOME_TEST_LOG="$_welcome_tmp/calls"
-		WELCOME_TEST_RC=1 "$HOME/.config/bin/lazyos-welcome" >/dev/null 2>&1 || true
-		[ -f "$_welcome_tmp/state/lazyos/welcome" ] && printf 'fail-marker '
-		WELCOME_TEST_RC=0 "$HOME/.config/bin/lazyos-welcome" >/dev/null 2>&1 || true
-		[ "$(cat "$_welcome_tmp/state/lazyos/welcome" 2>/dev/null)" = "$(cat /etc/machine-id)" ] &&
+		WELCOME_TEST_RC=1 "$HOME/.config/bin/hayato-welcome" >/dev/null 2>&1 || true
+		[ -f "$_welcome_tmp/state/hayato/welcome" ] && printf 'fail-marker '
+		WELCOME_TEST_RC=0 "$HOME/.config/bin/hayato-welcome" >/dev/null 2>&1 || true
+		[ "$(cat "$_welcome_tmp/state/hayato/welcome" 2>/dev/null)" = "$(cat /etc/machine-id)" ] &&
 			printf 'marker-ok '
 		_welcome_before=$(wc -l <"$_welcome_tmp/calls")
-		"$HOME/.config/bin/lazyos-welcome" >/dev/null 2>&1 || true
+		"$HOME/.config/bin/hayato-welcome" >/dev/null 2>&1 || true
 		[ "$(wc -l <"$_welcome_tmp/calls")" = "$_welcome_before" ] &&
 			printf 'no-third-call'
 	)
@@ -2525,7 +2525,7 @@ if [ -n "$_welcome_tmp" ] && [ -x "$HOME/.config/bin/lazyos-welcome" ]; then
 fi
 
 # The manual is rendered with glow, and both the binary and the glamour style
-# are needed: without the style glow prints an error and exits, and lazyos-learn
+# are needed: without the style glow prints an error and exits, and hayato-learn
 # opens a foot window that closes immediately, which reads as "nothing happened".
 _glow=""
 have glow || _glow="$_glow glow"
@@ -2547,11 +2547,11 @@ if [ -r "$HOME/.config/glow/solarized.json" ] &&
 fi
 
 # The browser is the image's reader for what chafa cannot draw: a PDF, the HTML
-# file, a URL. lazyos-files and /usr/local/bin/xdg-open are the two things that
+# file, a URL. hayato-files and /usr/local/bin/xdg-open are the two things that
 # start it; without it they answer with a notification instead, which is easy to
 # miss.
 if have firefox-esr; then
-	ok "browser installed (firefox-esr), used by lazyos-files and xdg-open"
+	ok "browser installed (firefox-esr), used by hayato-files and xdg-open"
 else
 	fail "firefox-esr is missing: Files cannot open an image or a PDF and xdg-open fails"
 fi
@@ -2586,7 +2586,7 @@ else
 	skip "firefox-esr is not installed: browser policies skipped"
 fi
 # Thumbnails in the file browser: the file browser draws a row's picture through
-# lazyos-thumbnail, which is ffmpeg for images and video and pdftocairo for a
+# hayato-thumbnail, which is ffmpeg for images and video and pdftocairo for a
 # PDF's first page. A missing binary is silent - the row simply has no picture -
 # so the two tools are a FAIL; the cache directory (the browser's own, under
 # ~/.cache/thumbnails) only warns, because it is created on first use.
@@ -2621,15 +2621,15 @@ fi
 if [ -x /usr/local/bin/imv ]; then
 	ok "the imv short name resolves (/usr/local/bin/imv -> the package dispatcher)"
 else
-	fail "/usr/local/bin/imv is missing: lazyos-files and lazyos-view cannot start the viewer"
+	fail "/usr/local/bin/imv is missing: hayato-files and hayato-view cannot start the viewer"
 fi
 # imv has no on-screen help: the first picture of a session says its keys in one
 # notification. A missing executable bit or a dropped call is silent - the picture
 # simply opens with no hint.
-if [ -x "$HOME/.config/bin/lazyos-image-hint" ]; then
-	ok "the viewer keys are hinted once per session (lazyos-image-hint)"
+if [ -x "$HOME/.config/bin/hayato-image-hint" ]; then
+	ok "the viewer keys are hinted once per session (hayato-image-hint)"
 else
-	fail "bin/lazyos-image-hint is missing or not executable: imv opens with no key hint"
+	fail "bin/hayato-image-hint is missing or not executable: imv opens with no key hint"
 fi
 # mpv-mpris is a plugin file, not a program, so nothing else notices it: without
 # it the film plays and playerctl, the Media menu and the bar see no player.
@@ -2647,7 +2647,7 @@ fi
 # row falls back to Firefox (an .mkv then asks to be downloaded), so this is a
 # FAIL - the row claims to play something.
 if have mpv; then
-	ok "media player installed (mpv), what lazyos-files opens a video with"
+	ok "media player installed (mpv), what hayato-files opens a video with"
 else
 	fail "mpv is missing: a video in Files falls back to Firefox (chafa cannot decode a container)"
 fi
@@ -2688,22 +2688,22 @@ if have guvcview; then
 else
 	fail "guvcview is missing: the Camera row opens nothing - there is a camera and no window for it"
 fi
-if [ -x "$HOME/.config/bin/lazyos-camera" ]; then
-	ok "the camera wrapper runs (bin/lazyos-camera, executable)"
+if [ -x "$HOME/.config/bin/hayato-camera" ]; then
+	ok "the camera wrapper runs (bin/hayato-camera, executable)"
 else
-	fail "bin/lazyos-camera is missing or not executable: the Camera row and the launcher entry do nothing"
+	fail "bin/hayato-camera is missing or not executable: the Camera row and the launcher entry do nothing"
 fi
-if [ -r /usr/share/applications/org.lazyos.camera.desktop ]; then
-	ok "Camera is in the launcher (org.lazyos.camera.desktop)"
+if [ -r /usr/share/applications/org.hayato.camera.desktop ]; then
+	ok "Camera is in the launcher (org.hayato.camera.desktop)"
 else
-	fail "org.lazyos.camera.desktop is missing: the launcher has no Camera entry"
+	fail "org.hayato.camera.desktop is missing: the launcher has no Camera entry"
 fi
-if [ -r /usr/share/icons/LazyOS/48x48/apps/camera-web.png ]; then
-	ok "the Camera entry has its picture (camera-web in the LazyOS theme)"
+if [ -r /usr/share/icons/Hayato/48x48/apps/camera-web.png ]; then
+	ok "the Camera entry has its picture (camera-web in the Hayato theme)"
 else
-	fail "the LazyOS theme has no camera-web.png: the Camera launcher row is a hole"
+	fail "the Hayato theme has no camera-web.png: the Camera launcher row is a hole"
 fi
-if menu_runs lazyos-camera; then
+if menu_runs hayato-camera; then
 	ok "the root menu carries the Camera row (Alt+Space)"
 else
 	fail "the root menu lost its Camera row: Alt+Space cannot open the webcam"
@@ -2723,18 +2723,18 @@ if [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ] && have busctl; then
 	fi
 fi
 
-# Every row of the file browser carries an icon *name* the LazyOS theme has to
+# Every row of the file browser carries an icon *name* the Hayato theme has to
 # resolve; a missing PNG is a blank 32 px column with no log line anywhere.
 _missing_row_icons=""
 for _i in folder go-up view-hidden dialog-warning text-x-generic text-html \
 	application-pdf image-x-generic video-x-generic audio-x-generic \
 	application-x-executable package-x-generic x-office-document; do
-	[ -r "/usr/share/icons/LazyOS/48x48/apps/$_i.png" ] || _missing_row_icons="$_missing_row_icons $_i"
+	[ -r "/usr/share/icons/Hayato/48x48/apps/$_i.png" ] || _missing_row_icons="$_missing_row_icons $_i"
 done
 if [ -z "$_missing_row_icons" ]; then
-	ok "file browser icons present (the LazyOS theme has every row name)"
+	ok "file browser icons present (the Hayato theme has every row name)"
 else
-	warn "LazyOS theme is missing row icons:$_missing_row_icons (those rows lose the icon column)"
+	warn "Hayato theme is missing row icons:$_missing_row_icons (those rows lose the icon column)"
 fi
 
 # The GTK3 half of the palette. The GTK3 window this image ships is guvcview (the
@@ -2750,11 +2750,11 @@ if [ -r "$HOME/.config/gtk-3.0/gtk.css" ]; then
 else
 	warn "$HOME/.config/gtk-3.0/gtk.css is missing: a GTK3 window arrives in Adwaita's light grey"
 fi
-if grep -qs '^gtk-icon-theme-name=LazyOS' "$HOME/.config/gtk-3.0/settings.ini" &&
+if grep -qs '^gtk-icon-theme-name=Hayato' "$HOME/.config/gtk-3.0/settings.ini" &&
 	grep -qs '^gtk-application-prefer-dark-theme=1' "$HOME/.config/gtk-3.0/settings.ini"; then
-	ok "GTK3 settings name the LazyOS icons and a dark base (favnyr reads them too)"
+	ok "GTK3 settings name the Hayato icons and a dark base (favnyr reads them too)"
 else
-	warn "gtk-3.0/settings.ini does not select LazyOS + dark: favnyr's icon names do not resolve and GTK3 windows look foreign"
+	warn "gtk-3.0/settings.ini does not select Hayato + dark: favnyr's icon names do not resolve and GTK3 windows look foreign"
 fi
 # The GTK4 half is a different settings store, so the two files above reach
 # nothing here.  `papers` is the one GTK4/libadwaita window in the image, and it
@@ -2799,7 +2799,7 @@ if grep -rqs 'Ctrl+Shift+f exec .*favnyr' /etc/sway/config.d/; then
 else
 	fail "no 'Ctrl+Shift+f exec ...favnyr' binding in /etc/sway/config.d/: Alt+Ctrl+Shift+F does nothing"
 fi
-# Mounting removable media uses udisks2; both the file manager (favnyr) and lazyos-places
+# Mounting removable media uses udisks2; both the file manager (favnyr) and hayato-places
 # through /usr/bin/udisksctl to udisksd on the system bus. The check is the client
 # talking to the daemon (udisksctl status activates the D-Bus service), because
 # the package can be installed with the service missing from the bus.
@@ -2813,7 +2813,7 @@ else
 	fail "udisks2 is missing: an unprivileged session cannot mount a USB stick at all"
 fi
 # A plugged USB drive mounts itself: the udev rule wants
-# lazyos-automount@<dev>.service, and /usr/local/sbin/lazyos-automount mounts it
+# hayato-automount@<dev>.service, and /usr/local/sbin/hayato-automount mounts it
 # as the desktop user through udisksd, then says so in a notification. Nothing
 # stays resident, so the chain *is* the feature and every link fails silently:
 # the stick simply never appears, and there is no journal line anybody would
@@ -2822,9 +2822,9 @@ fi
 # mount) and the plugdev membership that rule matches by group - which is why
 # they are checked together.
 _am_missing=
-for _am_f in /etc/udev/rules.d/90-lazyos-automount.rules \
-	/etc/systemd/system/lazyos-automount@.service \
-	/usr/local/sbin/lazyos-automount; do
+for _am_f in /etc/udev/rules.d/90-hayato-automount.rules \
+	/etc/systemd/system/hayato-automount@.service \
+	/usr/local/sbin/hayato-automount; do
 	[ -r "$_am_f" ] || _am_missing="$_am_missing $_am_f"
 done
 # /etc/polkit-1/rules.d is 0750 root:polkitd, so the rule is read through sudo
@@ -2834,11 +2834,11 @@ done
 # cannot read it at all, and that is a SKIP below rather than a missing rule.
 _am_polkit=
 if [ "$PRIV" = yes ]; then
-	_am_polkit=$(sudo -n cat /etc/polkit-1/rules.d/49-lazyos-automount.rules 2>/dev/null || true)
+	_am_polkit=$(sudo -n cat /etc/polkit-1/rules.d/49-hayato-automount.rules 2>/dev/null || true)
 	[ -n "$_am_polkit" ] ||
-		_am_missing="$_am_missing /etc/polkit-1/rules.d/49-lazyos-automount.rules"
+		_am_missing="$_am_missing /etc/polkit-1/rules.d/49-hayato-automount.rules"
 fi
-[ -x /usr/local/sbin/lazyos-automount ] || _am_missing="$_am_missing lazyos-automount(!exec)"
+[ -x /usr/local/sbin/hayato-automount ] || _am_missing="$_am_missing hayato-automount(!exec)"
 if [ -z "$_am_missing" ]; then
 	ok "a plugged USB drive mounts itself (udev rule, unit, helper, polkit rule)"
 else
@@ -2847,24 +2847,24 @@ fi
 # The rule must stay USB-only: the eMMC and the microSD slot are the two disks
 # this machine boots from, and a rule that matched them would mount a partition
 # of the running system under /run/media.
-if grep -qs 'SUBSYSTEMS=="usb"' /etc/udev/rules.d/90-lazyos-automount.rules; then
+if grep -qs 'SUBSYSTEMS=="usb"' /etc/udev/rules.d/90-hayato-automount.rules; then
 	ok "auto-mount matches USB disks only (never the eMMC or the SD slot)"
 else
-	fail '90-lazyos-automount.rules lost SUBSYSTEMS=="usb": it would mount the internal disks too'
+	fail '90-hayato-automount.rules lost SUBSYSTEMS=="usb": it would mount the internal disks too'
 fi
-if grep -qs 'SYSTEMD_WANTS}+="lazyos-automount@%k.service"' /etc/udev/rules.d/90-lazyos-automount.rules; then
+if grep -qs 'SYSTEMD_WANTS}+="hayato-automount@%k.service"' /etc/udev/rules.d/90-hayato-automount.rules; then
 	ok "the udev rule wants the auto-mount unit"
 else
-	fail "the auto-mount udev rule does not want lazyos-automount@%k.service: a plug starts nothing"
+	fail "the auto-mount udev rule does not want hayato-automount@%k.service: a plug starts nothing"
 fi
 # A root mount of a vfat/exFAT filesystem is /run/media/root/<label> with uid=0,
 # i.e. a stick the person at the screen cannot write to: setpriv is the line that
 # makes the mount the user's.
-if grep -qs setpriv /usr/local/sbin/lazyos-automount &&
-	grep -qs 'udisksctl mount' /usr/local/sbin/lazyos-automount; then
+if grep -qs setpriv /usr/local/sbin/hayato-automount &&
+	grep -qs 'udisksctl mount' /usr/local/sbin/hayato-automount; then
 	ok "the auto-mount helper mounts as the session user (setpriv + udisksctl)"
 else
-	fail "lazyos-automount no longer mounts as the user: a vfat stick would be uid=0"
+	fail "hayato-automount no longer mounts as the user: a vfat stick would be uid=0"
 fi
 # The helper's own tools: setpriv drops to the account, findfs resolves the
 # UUID=/LABEL= specs it refuses to mount over, and udisksctl is the mount.
@@ -2881,7 +2881,7 @@ elif grep -qs 'filesystem-mount' <<<"$_am_polkit" &&
 	grep -qs "isInGroup('plugdev')" <<<"$_am_polkit"; then
 	ok "polkit lets the auto-mount helper mount a removable disk (plugdev)"
 else
-	fail "49-lazyos-automount.rules does not grant filesystem-mount to plugdev: udisksd answers auth_admin"
+	fail "49-hayato-automount.rules does not grant filesystem-mount to plugdev: udisksd answers auth_admin"
 fi
 # The account, not this process: the helper mounts with setpriv --init-groups,
 # which reads the group database, so a shell that predates the membership is not
@@ -2902,7 +2902,7 @@ fi
 if grep -q $'\tAuto-mount USB drives\t' <<<"$SETTINGS_ROWS"; then
 	ok "Settings has the auto-mount switch"
 else
-	fail "Settings (lazyos menu settings) lost the 'Auto-mount USB drives' row: the switch is unreachable"
+	fail "Settings (hayato menu settings) lost the 'Auto-mount USB drives' row: the switch is unreachable"
 fi
 # favnyr's removal action unmounts through udisksctl and, when udisks answers
 # that something holds the mount, runs `fuser -m <mountpoint>` to fill its
@@ -2934,17 +2934,17 @@ fi
 _missing=
 for _icon in folder user-home user-trash text-x-generic application-pdf \
 	image-x-generic drive-harddisk view-refresh edit-copy folder-new; do
-	[ -r /usr/share/icons/LazyOS/48x48/apps/"$_icon".png ] || _missing="$_missing $_icon"
+	[ -r /usr/share/icons/Hayato/48x48/apps/"$_icon".png ] || _missing="$_missing $_icon"
 done
 if [ -z "$_missing" ]; then
-	ok "the LazyOS theme carries every icon the file manager asks for"
+	ok "the Hayato theme carries every icon the file manager asks for"
 else
-	warn "the LazyOS theme has no icon for:$_missing (holes in favnyr's sidebar and icon view)"
+	warn "the Hayato theme has no icon for:$_missing (holes in favnyr's sidebar and icon view)"
 fi
-if [ -x "$HOME/.config/bin/lazyos-view" ]; then
-	ok "open-with handler installed (lazyos-view: bat, imv, papers, mpv, firefox-esr)"
+if [ -x "$HOME/.config/bin/hayato-view" ]; then
+	ok "open-with handler installed (hayato-view: bat, imv, papers, mpv, firefox-esr)"
 else
-	fail "bin/lazyos-view is missing or not executable: a double click in favnyr opens nothing"
+	fail "bin/hayato-view is missing or not executable: a double click in favnyr opens nothing"
 fi
 # The launcher entry is a shadow of the package's (same file name, so it replaces
 # Debian's "PCMan File Manager"): without it the launcher shows "Files" (the
@@ -2956,7 +2956,7 @@ else
 fi
 # `gio mime` resolves the association exactly like the application does, and it
 # is also a test of the .desktop entry itself: GIO drops an entry whose Exec
-# program does not exist, so a lazyos-view without its executable bit reads as
+# program does not exist, so a hayato-view without its executable bit reads as
 # "no default application" instead of as an error. LC_ALL=C so the label is the
 # one this greps for, not a translation.
 #
@@ -2967,7 +2967,7 @@ fi
 # the same variable: the desktop id, nothing else.
 _mime_default() { # MIME-TYPE
 	if have gio; then
-		# gio's line is `Default application for “image/png”: org.lazyos.view.desktop`
+		# gio's line is `Default application for “image/png”: org.hayato.view.desktop`
 		# (typographic quotes, and the type before the colon), or
 		# `No default applications for “...”` when there is none - the field
 		# after the last `: ` is the answer in the first shape and absent in
@@ -2980,10 +2980,10 @@ _mime_default() { # MIME-TYPE
 	fi
 }
 _mime=$(_mime_default image/png)
-if [ "$_mime" = org.lazyos.view.desktop ]; then
-	ok "a double click on an image reaches lazyos-view (mimeapps.list)"
+if [ "$_mime" = org.hayato.view.desktop ]; then
+	ok "a double click on an image reaches hayato-view (mimeapps.list)"
 else
-	warn "image/png defaults to '${_mime:-(nothing)}', not org.lazyos.view.desktop: a photo opens in the browser or nowhere"
+	warn "image/png defaults to '${_mime:-(nothing)}', not org.hayato.view.desktop: a photo opens in the browser or nowhere"
 fi
 # A document is papers' job, and the association is the half a package cannot
 # carry: papers ships org.gnome.Papers.desktop, and this file is what points
@@ -3016,7 +3016,7 @@ _model="$(ls "$HOME"/.local/share/whisper/ggml-*.bin 2>/dev/null | head -1)"
 	skip "no speech model yet: the dictation shortcut fetches tiny.en (78 MB) on first use"
 
 # The local model (Alt+Ctrl+M, the root menu's "Local model" row and the
-# launcher's org.lazyos.model.desktop): llama-cli runs a GGUF file with the flags
+# launcher's org.hayato.model.desktop): llama-cli runs a GGUF file with the flags
 # this machine was measured into. Every piece fails silently on its own - a
 # script without its execute bit is EACCES in the journal, a missing float rule
 # tiles the window, a missing icon drops the launcher row's icon column - so all
@@ -3024,29 +3024,29 @@ _model="$(ls "$HOME"/.local/share/whisper/ggml-*.bin 2>/dev/null | head -1)"
 # image: their absence is the SKIP further down, not a failure.
 _lm_missing=""
 have llama-cli || _lm_missing="$_lm_missing llama-cli"
-[ -x "$HOME/.config/bin/lazyos-model" ] ||
-	_lm_missing="$_lm_missing bin/lazyos-model(not executable)"
-[ -f "$HOME/.config/lazyos/models.sha256" ] ||
-	_lm_missing="$_lm_missing .config/lazyos/models.sha256(pins)"
-grep -qs 'app_id="lazyos-model"' /etc/sway/config.d/34-local-model.conf 2>/dev/null ||
+[ -x "$HOME/.config/bin/hayato-model" ] ||
+	_lm_missing="$_lm_missing bin/hayato-model(not executable)"
+[ -f "$HOME/.config/hayato/models.sha256" ] ||
+	_lm_missing="$_lm_missing .config/hayato/models.sha256(pins)"
+grep -qs 'app_id="hayato-model"' /etc/sway/config.d/34-local-model.conf 2>/dev/null ||
 	_lm_missing="$_lm_missing 34-local-model.conf(no-float-rule)"
-grep -qs 'bindsym \$mod+Ctrl+m exec .*/lazyos-model' \
+grep -qs 'bindsym \$mod+Ctrl+m exec .*/hayato-model' \
 	/etc/sway/config.d/24-keys.conf 2>/dev/null ||
 	_lm_missing="$_lm_missing 24-keys.conf(no-binding)"
-menu_runs lazyos-model ||
-	_lm_missing="$_lm_missing root-menu(no-row: lazyos menu --rows)"
-[ -r /usr/share/applications/org.lazyos.model.desktop ] ||
-	_lm_missing="$_lm_missing org.lazyos.model.desktop"
-[ -r /usr/share/icons/LazyOS/48x48/apps/dictate-model.png ] ||
+menu_runs hayato-model ||
+	_lm_missing="$_lm_missing root-menu(no-row: hayato menu --rows)"
+[ -r /usr/share/applications/org.hayato.model.desktop ] ||
+	_lm_missing="$_lm_missing org.hayato.model.desktop"
+[ -r /usr/share/icons/Hayato/48x48/apps/dictate-model.png ] ||
 	_lm_missing="$_lm_missing dictate-model.png"
 # `[ -t 0 ]` alone is not "a terminal somebody can see" in this session: sway's
 # `exec` inherits the VT the compositor was started on, so a model opened by a
 # key would have a tty on stdin, skip its own window and read the prompt from a
 # screen nobody is looking at - which reads as a key that does nothing (measured
-# here; lazyos-profile documents the same trap for the password prompt). The
+# here; hayato-profile documents the same trap for the password prompt). The
 # wrapper asks the foreground process group as well, and that line is the witness.
-grep -qs 'tpgid=' "$HOME/.config/bin/lazyos-model" 2>/dev/null ||
-	_lm_missing="$_lm_missing bin/lazyos-model(says-a-VT-is-a-terminal)"
+grep -qs 'tpgid=' "$HOME/.config/bin/hayato-model" 2>/dev/null ||
+	_lm_missing="$_lm_missing bin/hayato-model(says-a-VT-is-a-terminal)"
 if [ -z "$_lm_missing" ]; then
 	ok "local model ready (Alt+Ctrl+M, the root menu row, the launcher entry and its icon)"
 else
@@ -3057,8 +3057,8 @@ fi
 # cache (228 MiB at 4k context, which is the difference between fitting beside
 # the session and not). A wrapper edited back to -t 8 is not broken, it is 40%
 # slower, and nothing else would say so.
-if [ -x "$HOME/.config/bin/lazyos-model" ]; then
-	_lm_flags=$("$HOME/.config/bin/lazyos-model" --flags 2>/dev/null || true)
+if [ -x "$HOME/.config/bin/hayato-model" ]; then
+	_lm_flags=$("$HOME/.config/bin/hayato-model" --flags 2>/dev/null || true)
 	case $_lm_flags in
 	*"-t 4 "*) ok "the model runs on four threads (the A76 cluster)" ;;
 	*) warn "the local model is not on -t 4: llama.cpp's default (nproc) measured 6.67 tok/s against 11.19 on this chip" ;;
@@ -3071,11 +3071,11 @@ fi
 # A weight file that is present but does not match its pin is a FAIL: llama.cpp
 # would load it and answer from a corrupt model instead of refusing. The check
 # reads the whole file, so it is only run when there is something to read.
-_lm_count=$(ls "$HOME"/.local/share/lazyos/models/*.gguf 2>/dev/null | wc -l)
+_lm_count=$(ls "$HOME"/.local/share/hayato/models/*.gguf 2>/dev/null | wc -l)
 if [ "$_lm_count" -eq 0 ]; then
-	skip "no local model yet: 'lazyos-model --fetch' downloads Qwen3.5-0.8B (517 MB), checked against its pin"
-elif [ -x "$HOME/.config/bin/lazyos-model" ]; then
-	_lm_verify=$("$HOME/.config/bin/lazyos-model" --verify 2>&1)
+	skip "no local model yet: 'hayato-model --fetch' downloads Qwen3.5-0.8B (517 MB), checked against its pin"
+elif [ -x "$HOME/.config/bin/hayato-model" ]; then
+	_lm_verify=$("$HOME/.config/bin/hayato-model" --verify 2>&1)
 	if [ $? -eq 0 ]; then
 		ok "the local model matches its pinned SHA256 ($_lm_count file(s))"
 	else
@@ -3098,7 +3098,7 @@ grep -qs 'bindsym $mod+Ctrl+t exec .*/translate' \
 	_missing_translate="$_missing_translate 24-keys.conf(no-binding)"
 settings_runs 'translate config' ||
 	_missing_translate="$_missing_translate settings(no-row)"
-[ -r /usr/share/icons/LazyOS/48x48/apps/globe.png ] ||
+[ -r /usr/share/icons/Hayato/48x48/apps/globe.png ] ||
 	_missing_translate="$_missing_translate globe.png"
 if [ -z "$_missing_translate" ]; then
 	ok "translate ready (Alt+Ctrl+T: curl, jq, wl-paste, the binding, the Settings row, the globe icon)"
@@ -3109,7 +3109,7 @@ fi
 # a typo that would silently translate into the wrong language: it is asked of
 # the script itself, which is the same table the Settings menu draws.
 _target_code=$(sed -n 's/^[[:space:]]*target[[:space:]]*=[[:space:]]*//p' \
-	"$HOME/.config/lazyos/translate.conf" 2>/dev/null | tail -n 1)
+	"$HOME/.config/hayato/translate.conf" 2>/dev/null | tail -n 1)
 # The list is captured first: `translate --languages | cut | grep -q` would kill
 # the producer with SIGPIPE under pipefail and report a good code as unknown.
 _translate_langs=$("$HOME/.config/bin/translate" --languages 2>/dev/null |
@@ -3119,7 +3119,7 @@ if [ -z "$_target_code" ]; then
 elif grep -qx -- "$_target_code" <<<"$_translate_langs"; then
 	ok "translate target is '$_target_code', a language both engines take"
 else
-	fail "translate target '$_target_code' is not in the language table (~/.config/lazyos/translate.conf): the script falls back to English, so the setting does nothing"
+	fail "translate target '$_target_code' is not in the language table (~/.config/hayato/translate.conf): the script falls back to English, so the setting does nothing"
 fi
 # The endpoint is unofficial, so it is asked and not required: offline is SKIP,
 # and any other answer is a WARN because MyMemory may still be the answer.
@@ -3165,7 +3165,7 @@ if [ -n "$_hib_swap" ]; then
 	*) warn "disk swap $_hib_swap is active but the kernel command line has no resume=: hibernate would not resume" ;;
 	esac
 else
-	skip "no disk swap: hibernation needs a swap labelled lazyos_swap (see sway-hibernate)"
+	skip "no disk swap: hibernation needs a swap labelled hayato_swap (see sway-hibernate)"
 fi
 if [ -x "$HOME/.config/bin/sway-hibernate" ]; then
 	ok "bin/sway-hibernate is executable"
@@ -3204,17 +3204,17 @@ fi
 
 # Agents: the menu is a script; whether a CLI is installed is informational,
 # because installing one is the menu's own job.
-[ -x "$HOME/.config/bin/lazyos-agents" ] && ok "agents menu (lazyos-agents) is executable" ||
-	fail "bin/lazyos-agents is missing: Alt+Ctrl+Shift+A does nothing"
-# The agents menu draws the session's glyph rows natively via `lazyos menu agents`.
-if [ -L "$HOME/.config/bin/lazyos-agents" ] && [ "$(readlink -f "$HOME/.config/bin/lazyos-agents")" = "/usr/bin/lazyos" ]; then
-	ok "the agents menu draws the session's glyph rows (lazyos menu agents)"
+[ -x "$HOME/.config/bin/hayato-agents" ] && ok "agents menu (hayato-agents) is executable" ||
+	fail "bin/hayato-agents is missing: Alt+Ctrl+Shift+A does nothing"
+# The agents menu draws the session's glyph rows natively via `hayato menu agents`.
+if [ -L "$HOME/.config/bin/hayato-agents" ] && [ "$(readlink -f "$HOME/.config/bin/hayato-agents")" = "/usr/bin/hayato" ]; then
+	ok "the agents menu draws the session's glyph rows (hayato menu agents)"
 	ok "the agents menu asks the framework to render markup rows"
-elif [ -x "$HOME/.config/bin/lazyos-agents" ]; then
+elif [ -x "$HOME/.config/bin/hayato-agents" ]; then
 	ok "the agents menu draws the session's glyph rows"
 	ok "the agents menu asks the framework to render markup rows"
 else
-	fail "bin/lazyos-agents is missing"
+	fail "bin/hayato-agents is missing"
 fi
 _agent_bins=""
 for _a in claude codex opencode gemini copilot; do have "$_a" && _agent_bins="$_agent_bins $_a"; done
@@ -3243,76 +3243,76 @@ if [ -x "$_oc_bin" ]; then
 else
 	fail "OpenCode is missing from ~/.opencode/bin: the image ships it (tools/opencode/)"
 fi
-if [ -L "$HOME/.config/bin/lazyos-agents" ] && [ "$(readlink -f "$HOME/.config/bin/lazyos-agents")" = "/usr/bin/lazyos" ]; then
+if [ -L "$HOME/.config/bin/hayato-agents" ] && [ "$(readlink -f "$HOME/.config/bin/hayato-agents")" = "/usr/bin/hayato" ]; then
 	ok "the Agents menu puts ~/.opencode/bin on PATH"
-	ok "the agents menu starts a session with the default agent (lazyos-agents --default)"
+	ok "the agents menu starts a session with the default agent (hayato-agents --default)"
 else
-	if grep -qs '\.opencode/bin' "$HOME/.config/bin/lazyos-agents"; then
+	if grep -qs '\.opencode/bin' "$HOME/.config/bin/hayato-agents"; then
 		ok "the Agents menu puts ~/.opencode/bin on PATH"
 	else
-		fail "bin/lazyos-agents no longer adds ~/.opencode/bin: OpenCode's row becomes an install row"
+		fail "bin/hayato-agents no longer adds ~/.opencode/bin: OpenCode's row becomes an install row"
 	fi
 	# The root menu's AI group opens with the action an agent is for - a session -
 	# so the section is an action and a list, not only a list. It calls
-	# `lazyos-agents --default`, which starts the recorded default and falls back to
+	# `hayato-agents --default`, which starts the recorded default and falls back to
 	# OpenCode; both halves are asked because either one missing makes the row a
 	# no-op: a flag the script does not have exits 2 into the journal, and a row
 	# nobody draws is simply not there.
-	if grep -qs -- '--default' "$HOME/.config/bin/lazyos-agents"; then
-		ok "the agents menu starts a session with the default agent (lazyos-agents --default)"
+	if grep -qs -- '--default' "$HOME/.config/bin/hayato-agents"; then
+		ok "the agents menu starts a session with the default agent (hayato-agents --default)"
 	else
-		fail "bin/lazyos-agents lost --default: the AI group's Agent session row does nothing"
+		fail "bin/hayato-agents lost --default: the AI group's Agent session row does nothing"
 	fi
 fi
-menu_runs 'lazyos-agents --default' &&
+menu_runs 'hayato-agents --default' &&
 	ok "the root menu's AI group starts a session with the default agent" ||
 	fail "the root menu lost the Agent session row: its AI group can only open the list"
 
 # The Quake console (Alt+grave) is a window that lives in the scratchpad between
-# toggles, so "where is it" is the whole toggle: `lazyos quake --status` answers
+# toggles, so "where is it" is the whole toggle: `hayato quake --status` answers
 # from sway's tree and must say absent, hidden or visible. A stub swaymsg gives
 # the three answers without opening a window; the real command is asked first,
 # so a missing binary is the failure and not a missing session.
-if [ -x "$HOME/.config/bin/lazyos-quake" ]; then
-	ok "agent console (lazyos-quake) is executable"
-	_quake_tmp=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-quake.XXXXXX" 2>/dev/null || true)
+if [ -x "$HOME/.config/bin/hayato-quake" ]; then
+	ok "agent console (hayato-quake) is executable"
+	_quake_tmp=$(mktemp -d "${TMPDIR:-/tmp}/hayato-quake.XXXXXX" 2>/dev/null || true)
 	if [ -n "$_quake_tmp" ] && mkdir -p "$_quake_tmp/bin"; then
 		cat >"$_quake_tmp/bin/swaymsg" <<'SWAY'
 #!/bin/sh
-printf '%s\n' "$LAZYOS_QUAKE_TREE"
+printf '%s\n' "$HAYATO_QUAKE_TREE"
 SWAY
 		chmod 0755 "$_quake_tmp/bin/swaymsg"
 		_quake_ok=1
 		for _quake_want in absent hidden visible; do
 			case $_quake_want in
 			absent) _quake_tree='{"nodes":[],"floating_nodes":[]}' ;;
-			hidden) _quake_tree='{"nodes":[],"floating_nodes":[{"app_id":"lazyos-quake","visible":false}]}' ;;
-			visible) _quake_tree='{"nodes":[],"floating_nodes":[{"app_id":"lazyos-quake","visible":true}]}' ;;
+			hidden) _quake_tree='{"nodes":[],"floating_nodes":[{"app_id":"hayato-quake","visible":false}]}' ;;
+			visible) _quake_tree='{"nodes":[],"floating_nodes":[{"app_id":"hayato-quake","visible":true}]}' ;;
 			esac
-			_quake_got=$(PATH="$_quake_tmp/bin:$PATH" LAZYOS_QUAKE_TREE="$_quake_tree" \
-				lazyos quake --status 2>/dev/null || true)
+			_quake_got=$(PATH="$_quake_tmp/bin:$PATH" HAYATO_QUAKE_TREE="$_quake_tree" \
+				hayato quake --status 2>/dev/null || true)
 			[ "$_quake_got" = "$_quake_want" ] || _quake_ok=
 		done
 		rm -rf "$_quake_tmp"
 		if [ -n "$_quake_ok" ]; then
 			ok "the agent console reads absent, hidden and visible from sway's tree"
 		else
-			fail "lazyos quake --status does not report where the console is"
+			fail "hayato quake --status does not report where the console is"
 		fi
 	fi
 else
-	fail "bin/lazyos-quake is missing: Alt+grave does nothing"
+	fail "bin/hayato-quake is missing: Alt+grave does nothing"
 fi
 if [ -r /etc/sway/config.d/34-agent-console.conf ] &&
-	grep -qs 'app_id="lazyos-quake"' /etc/sway/config.d/34-agent-console.conf; then
+	grep -qs 'app_id="hayato-quake"' /etc/sway/config.d/34-agent-console.conf; then
 	ok "the agent console drops from the top (34-agent-console.conf)"
 else
 	fail "/etc/sway/config.d/34-agent-console.conf is missing: the console tiles or loses its geometry"
 fi
-if grep -qs 'bindsym $mod+grave exec .*lazyos-quake' /etc/sway/config.d/24-keys.conf 2>/dev/null; then
+if grep -qs 'bindsym $mod+grave exec .*hayato-quake' /etc/sway/config.d/24-keys.conf 2>/dev/null; then
 	ok "Alt+grave opens the agent console"
 else
-	fail "24-keys.conf lost Alt+grave -> lazyos-quake: the console has no key"
+	fail "24-keys.conf lost Alt+grave -> hayato-quake: the console has no key"
 fi
 if grep -qs 'bindsym $mod+Ctrl+grave scratchpad show' /etc/sway/config.d/24-keys.conf 2>/dev/null; then
 	ok "Alt+Ctrl+grave still shows the scratchpad"
@@ -3322,9 +3322,9 @@ fi
 
 # The Ask strip (spec 007) runs the agent once, in a process group of its own,
 # and ends the group - and anything that left it - when the answer is in or the
-# window closes. Every process it starts carries LAZYOS_ASK=<question id> in its
+# window closes. Every process it starts carries HAYATO_ASK=<question id> in its
 # environment, so one that outlived its question is findable: a process with the
-# mark whose `lazyos --ask-run <id>` is no longer running is an agent (or an
+# mark whose `hayato --ask-run <id>` is no longer running is an agent (or an
 # `opencode serve`) left resident by a question nobody is waiting for. The
 # environments readable here are this user's, which are the only ones the strip
 # can start.
@@ -3343,15 +3343,15 @@ done
 _ask_stray=
 for _ask_env in /proc/[0-9]*/environ; do
 	_ask_vars=$({ tr '\0' '\n' <"$_ask_env"; } 2>/dev/null) || continue
-	_ask_mark=$(grep -m1 '^LAZYOS_ASK=' <<<"$_ask_vars") || continue
-	_ask_id=${_ask_mark#LAZYOS_ASK=}
+	_ask_mark=$(grep -m1 '^HAYATO_ASK=' <<<"$_ask_vars") || continue
+	_ask_id=${_ask_mark#HAYATO_ASK=}
 	case " $_ask_live " in *" $_ask_id "*) continue ;; esac
 	_ask_pid=${_ask_env#/proc/}
 	_ask_pid=${_ask_pid%/environ}
 	_ask_stray="$_ask_stray $_ask_pid($(cat "/proc/$_ask_pid/comm" 2>/dev/null))"
 done
 if [ -z "$_ask_stray" ]; then
-	ok "no agent outlived an Ask question (no LAZYOS_ASK process without its --ask-run)"
+	ok "no agent outlived an Ask question (no HAYATO_ASK process without its --ask-run)"
 else
 	fail "an Ask question left processes behind:$_ask_stray (kill them; the strip should have)"
 fi
@@ -3363,10 +3363,10 @@ fi
 _missing_desktop=""
 for _d in wifi wifi-nmtui bluetooth audio-output power lock suspend \
 	screenshot-area capture lazygit tmux files emoji clipboard about menu ask install; do
-	[ -r "/usr/share/applications/org.lazyos.$_d.desktop" ] || _missing_desktop="$_missing_desktop $_d"
+	[ -r "/usr/share/applications/org.hayato.$_d.desktop" ] || _missing_desktop="$_missing_desktop $_d"
 done
-[ -r /usr/share/applications/org.lazyos.screensaver.desktop ] ||
-	_missing_desktop="$_missing_desktop lazyos-screensaver"
+[ -r /usr/share/applications/org.hayato.screensaver.desktop ] ||
+	_missing_desktop="$_missing_desktop hayato-screensaver"
 if [ -z "$_missing_desktop" ]; then
 	ok "launcher entries present (session actions, nmtui, lazygit, tmux, about)"
 else
@@ -3375,12 +3375,12 @@ fi
 # The root menu's entry is the one row whose Exec is a script in $HOME, not a
 # binary in $PATH. A .desktop whose Exec does not exist is silently dropped, so
 # the row is simply absent and nothing logs it.
-if [ -r /usr/share/applications/org.lazyos.menu.desktop ] &&
-	grep -qs '^Exec=.*bin/bar-menu$' /usr/share/applications/org.lazyos.menu.desktop &&
+if [ -r /usr/share/applications/org.hayato.menu.desktop ] &&
+	grep -qs '^Exec=.*bin/bar-menu$' /usr/share/applications/org.hayato.menu.desktop &&
 	[ -x "$HOME/.config/bin/bar-menu" ]; then
-	ok "the root menu has a launcher entry (LazyOS Menu -> bar-menu)"
+	ok "the root menu has a launcher entry (Hayato Menu -> bar-menu)"
 else
-	warn "org.lazyos.menu.desktop is missing or does not run an executable bar-menu"
+	warn "org.hayato.menu.desktop is missing or does not run an executable bar-menu"
 fi
 
 # waybar reads the backlight by device name and shows an empty module (with no
@@ -3410,10 +3410,10 @@ fi
 # terminal and the first launcher do not walk the trees.  A rebuilt theme that
 # did not regenerate its cache is the silent half: the launcher still opens, it
 # just scans 220 files before it draws.
-if [ -s /usr/share/icons/LazyOS/icon-theme.cache ]; then
+if [ -s /usr/share/icons/Hayato/icon-theme.cache ]; then
 	ok "the icon theme ships its cache (the first launcher scan is a read)"
 else
-	warn "/usr/share/icons/LazyOS/icon-theme.cache is missing: the first icon scan walks the theme (gtk-update-icon-cache -f /usr/share/icons/LazyOS)"
+	warn "/usr/share/icons/Hayato/icon-theme.cache is missing: the first icon scan walks the theme (gtk-update-icon-cache -f /usr/share/icons/Hayato)"
 fi
 if [ -d /var/cache/fontconfig ] && [ -n "$(ls -A /var/cache/fontconfig 2>/dev/null)" ]; then
 	ok "the system font cache exists (the first font lookup does not walk every face)"
@@ -3472,36 +3472,36 @@ fi
 # ---------------------------------------------------------------------------
 section "The framework"
 # ---------------------------------------------------------------------------
-# The session's Rust framework (docs/plan-ui.md): one `lazyos` binary that the
+# The session's Rust framework (docs/plan-ui.md): one `hayato` binary that the
 # bar helpers and legacy names become symlinks to. Spec 001 lands the binary, the dispatch,
 # the host and the terminal; every check below is what would otherwise fail
 # silently - a key that opens nothing because the binary is missing, a symlink
 # that points at a name the table does not carry, or a window that tiles because
 # its shape lost the rule that floats it.
-if have lazyos; then
-	ok "lazyos is installed ($(command -v lazyos))"
-	_fw_version=$(lazyos --version 2>/dev/null)
+if have hayato; then
+	ok "hayato is installed ($(command -v hayato))"
+	_fw_version=$(hayato --version 2>/dev/null)
 	_rev_version=$(sed -n 's/^version //p' /etc/debian-aarch64-revision 2>/dev/null)
 	if [ -n "$_fw_version" ] && [ -n "$_rev_version" ]; then
 		if [ "$_fw_version" = "$_rev_version" ]; then
-			ok "lazyos reports the version the image was built from ($_fw_version)"
+			ok "hayato reports the version the image was built from ($_fw_version)"
 		else
-			fail "lazyos reports $_fw_version but the image was built from $_rev_version (a stale /usr/bin/lazyos)"
+			fail "hayato reports $_fw_version but the image was built from $_rev_version (a stale /usr/bin/hayato)"
 		fi
 	else
 		skip "cannot compare the framework version (/etc/debian-aarch64-revision has no version)"
 	fi
-	_fw_help=$(lazyos --help 2>/dev/null)
+	_fw_help=$(hayato --help 2>/dev/null)
 	if grep -q '^  menu' <<<"$_fw_help"; then
-		ok "lazyos --help lists the menu"
+		ok "hayato --help lists the menu"
 	else
-		fail "lazyos --help does not list 'menu': the command table and the binary disagree"
+		fail "hayato --help does not list 'menu': the command table and the binary disagree"
 	fi
 	# The migrated set: every name the installer creates today must resolve and
 	# must belong to a command the help lists. This is the check that notices a
 	# renamed subcommand leaving a symlink pointing at nothing, which fails as
 	# "the key does nothing" in the session.
-	_fw_links=$(lazyos --symlinks 2>/dev/null)
+	_fw_links=$(hayato --symlinks 2>/dev/null)
 	if [ -n "$_fw_links" ]; then
 		while IFS='	' read -r _fw_name _fw_path; do
 			[ -n "$_fw_name" ] || continue
@@ -3509,26 +3509,26 @@ if have lazyos; then
 			# (bar-menu) is a link the UI tree carries in ~/.config/bin instead.
 			_fw_at=/usr/bin/$_fw_name
 			[ -e "$_fw_at" ] || [ -L "$_fw_at" ] || _fw_at=$HOME/.config/bin/$_fw_name
-			if [ -L "$_fw_at" ] && [ "$(readlink -f "$_fw_at")" = /usr/bin/lazyos ]; then
+			if [ -L "$_fw_at" ] && [ "$(readlink -f "$_fw_at")" = /usr/bin/hayato ]; then
 				if grep -q "^  $_fw_path" <<<"$_fw_help"; then
-					ok "$_fw_at -> lazyos $_fw_path"
+					ok "$_fw_at -> hayato $_fw_path"
 				else
 					fail "$_fw_at points at '$_fw_path', which --help does not list"
 				fi
 			else
-				fail "$_fw_name is missing from /usr/bin and ~/.config/bin, or does not resolve to the lazyos binary"
+				fail "$_fw_name is missing from /usr/bin and ~/.config/bin, or does not resolve to the hayato binary"
 			fi
 		done <<<"$_fw_links"
 	fi
 	# Spec 005: the task surface must be listed, because its symlink is what
-	# `lazyos task attach` keeps working after the window closed. The stop
+	# `hayato task attach` keeps working after the window closed. The stop
 	# contract itself (a stoppable task writes a stop line, a non-stoppable one
-	# does not) is a unit test in `lazyos-ui`; there are no task declarations in
+	# does not) is a unit test in `hayato-ui`; there are no task declarations in
 	# the shell yet, so there is nothing here to inspect.
 	if grep -q '^  task attach' <<<"$_fw_help"; then
-		ok "lazyos --help lists task attach (the task surface reattaches by id)"
+		ok "hayato --help lists task attach (the task surface reattaches by id)"
 	else
-		fail "lazyos --help does not list 'task attach': a closed task window cannot be reopened"
+		fail "hayato --help does not list 'task attach': a closed task window cannot be reopened"
 	fi
 
 	# Spec 007: the root menu is the binary's table now, and `bar-menu` (what
@@ -3538,12 +3538,12 @@ if have lazyos; then
 	# the Ask row this spec adds. A lost row is a documented keypress that
 	# answers nothing, so each one is a FAIL, named.
 	if grep -q '^  ask ' <<<"$_fw_help"; then
-		ok "lazyos --help lists ask (one question to the default agent)"
+		ok "hayato --help lists ask (one question to the default agent)"
 	else
-		fail "lazyos --help does not list 'ask': the Ask launcher entry opens nothing"
+		fail "hayato --help does not list 'ask': the Ask launcher entry opens nothing"
 	fi
 	if [ -z "$MENU_ROWS" ]; then
-		fail "lazyos menu --rows printed nothing: the root menu cannot be compared with bar-menu"
+		fail "hayato menu --rows printed nothing: the root menu cannot be compared with bar-menu"
 	else
 		_menu_lost=
 		for _menu_key in terminal files files-window grep places capture camera download \
@@ -3563,10 +3563,10 @@ if have lazyos; then
 			fail "the root menu has no Ask row: a question to the agent needs a terminal again"
 		fi
 	fi
-	if [ "$(readlink -f "$HOME/.config/bin/bar-menu" 2>/dev/null)" = "/usr/bin/lazyos" ]; then
+	if [ "$(readlink -f "$HOME/.config/bin/bar-menu" 2>/dev/null)" = "/usr/bin/hayato" ]; then
 		ok "~/.config/bin/bar-menu is the framework's root menu (Alt+Space, the bar's button)"
 	else
-		fail "~/.config/bin/bar-menu is not a link to /usr/bin/lazyos: Alt+Space opens something else"
+		fail "~/.config/bin/bar-menu is not a link to /usr/bin/hayato: Alt+Space opens something else"
 	fi
 
 	# The other direction: a link someone made by hand, pointing at the
@@ -3574,19 +3574,19 @@ if have lazyos; then
 	# truth and `--symlinks` is what the installer and this check both read.
 	for _fw_link in "$HOME"/.config/bin/*; do
 		[ -L "$_fw_link" ] || continue
-		[ "$(readlink -f "$_fw_link" 2>/dev/null)" = "/usr/bin/lazyos" ] || continue
+		[ "$(readlink -f "$_fw_link" 2>/dev/null)" = "/usr/bin/hayato" ] || continue
 		_fw_base=$(basename "$_fw_link")
 		if grep -q "^$_fw_base	" <<<"$_fw_links"; then
 			ok "~/.config/bin/$_fw_base is a framework symlink the table knows"
 		else
-			warn "~/.config/bin/$_fw_base points at lazyos but the command table does not list it"
+			warn "~/.config/bin/$_fw_base points at hayato but the command table does not list it"
 		fi
 	done
 
 	# And the reverse shadow: a *script* in ~/.config/bin whose name the table
 	# installs.  ~/.config/bin comes before /usr/bin in the session's PATH, so
 	# the port is present and unreachable - the old surface answers the key,
-	# which is exactly what `lazyos-media` and ten others did while the table
+	# which is exactly what `hayato-media` and ten others did while the table
 	# already called them installed.
 	_fw_scripted=
 	for _fw_file in "$HOME"/.config/bin/*; do
@@ -3611,43 +3611,43 @@ if have lazyos; then
 		apps window run keys learn about palette; do
 		_fw_port="menu $_fw_sub"
 		grep -qE "^  $_fw_port " <<<"$_fw_help" ||
-			fail "lazyos --help does not list \`$_fw_port\`: the surface is gone (spec 010-012)"
+			fail "hayato --help does not list \`$_fw_port\`: the surface is gone (spec 010-012)"
 	done
 	ok "every surface specs 010-012 port is a command (menu settings…power, media…dev, apps…palette)"
 
-	# Spec 017: the final 10 interactive surfaces ported to lazyos
+	# Spec 017: the final 10 interactive surfaces ported to hayato
 	for _fw_sub in net agents places clean kill download layout file-actions translate dictate; do
 		_fw_port="menu $_fw_sub"
 		grep -qE "^  $_fw_port " <<<"$_fw_help" ||
-			fail "lazyos --help does not list \`$_fw_port\`: the surface is gone (spec 017)"
+			fail "hayato --help does not list \`$_fw_port\`: the surface is gone (spec 017)"
 	done
 	ok "every surface spec 017 ports is a command (menu net…dictate)"
 
-	if lazyos menu net --status 2>/dev/null | grep -q '"class":'; then
-		ok "lazyos menu net --status returns valid JSON for waybar (spec 017)"
+	if hayato menu net --status 2>/dev/null | grep -q '"class":'; then
+		ok "hayato menu net --status returns valid JSON for waybar (spec 017)"
 	else
-		fail "lazyos menu net --status output is invalid (spec 017)"
+		fail "hayato menu net --status output is invalid (spec 017)"
 	fi
 
-	if lazyos menu clean --dry-run 2>/dev/null | grep -q 'trash:'; then
-		ok "lazyos menu clean --dry-run returns cache estimations (spec 017)"
+	if hayato menu clean --dry-run 2>/dev/null | grep -q 'trash:'; then
+		ok "hayato menu clean --dry-run returns cache estimations (spec 017)"
 	else
-		fail "lazyos menu clean --dry-run failed (spec 017)"
+		fail "hayato menu clean --dry-run failed (spec 017)"
 	fi
 
-	if lazyos menu places --rows 2>/dev/null | grep -q 'Home'; then
-		ok "lazyos menu places --rows prints places table (spec 017)"
+	if hayato menu places --rows 2>/dev/null | grep -q 'Home'; then
+		ok "hayato menu places --rows prints places table (spec 017)"
 	else
-		fail "lazyos menu places --rows failed (spec 017)"
+		fail "hayato menu places --rows failed (spec 017)"
 	fi
 
 	# Spec 020: frictionless, self-contained in-window UX & live window sizing.
-	# Interactive TUI modules in lazyos-cli must never call Card::send() or
-	# external `notify-send` while a TUI window is open, and `lazyos --glyphs`
+	# Interactive TUI modules in hayato-cli must never call Card::send() or
+	# external `notify-send` while a TUI window is open, and `hayato --glyphs`
 	# must include the half-block QR codepoints (U+2580, U+2584).
-	if [ -n "$DESKTOP_REPO" ] && [ -d "$DESKTOP_REPO/rust/crates/lazyos-cli/src/system" ]; then
+	if [ -n "$DESKTOP_REPO" ] && [ -d "$DESKTOP_REPO/rust/crates/hayato-cli/src/system" ]; then
 		_s020_toasts=$(grep -rnE '\.send\(|notify-send' \
-			"$DESKTOP_REPO/rust/crates/lazyos-cli/src/system/" \
+			"$DESKTOP_REPO/rust/crates/hayato-cli/src/system/" \
 			--exclude='dictate.rs' --exclude='translate.rs' \
 			--exclude='capture.rs' --exclude='colour.rs' \
 			--exclude='remind.rs' --exclude='notify.rs' \
@@ -3658,16 +3658,16 @@ if have lazyos; then
 			fail "interactive TUI surface still triggers external toast (spec 020): $(tr '\n' ' ' <<<"$_s020_toasts")"
 		fi
 	fi
-	_s020_glyphs=$(lazyos --glyphs 2>/dev/null || true)
+	_s020_glyphs=$(hayato --glyphs 2>/dev/null || true)
 	if grep -q '^U+2580' <<<"$_s020_glyphs" && grep -q '^U+2584' <<<"$_s020_glyphs"; then
-		ok "lazyos --glyphs declares half-block QR codepoints U+2580/U+2584 (spec 020)"
+		ok "hayato --glyphs declares half-block QR codepoints U+2580/U+2584 (spec 020)"
 	else
-		fail "lazyos --glyphs missing half-block QR codepoints U+2580/U+2584 (spec 020)"
+		fail "hayato --glyphs missing half-block QR codepoints U+2580/U+2584 (spec 020)"
 	fi
-	if [ -n "$DESKTOP_REPO" ] && [ -d "$DESKTOP_REPO/rust/crates/lazyos-cli/src/system" ]; then
+	if [ -n "$DESKTOP_REPO" ] && [ -d "$DESKTOP_REPO/rust/crates/hayato-cli/src/system" ]; then
 		_s020_strip_missing=""
 		for _m in net bluetooth clean colour audio kill remind notify clip learn about; do
-			grep -q 'ActionStrip' "$DESKTOP_REPO/rust/crates/lazyos-cli/src/system/$_m.rs" 2>/dev/null ||
+			grep -q 'ActionStrip' "$DESKTOP_REPO/rust/crates/hayato-cli/src/system/$_m.rs" 2>/dev/null ||
 				_s020_strip_missing="$_s020_strip_missing $_m"
 		done
 		if [ -z "$_s020_strip_missing" ]; then
@@ -3675,8 +3675,8 @@ if have lazyos; then
 		else
 			fail "menus missing ActionStrip action/result separation (spec 020):$_s020_strip_missing"
 		fi
-		if grep -q 'save_qr_png' "$DESKTOP_REPO/rust/crates/lazyos-cli/src/system/qr.rs" 2>/dev/null &&
-			grep -q -- '--action=stop=Stop & Transcribe' "$DESKTOP_REPO/rust/crates/lazyos-cli/src/system/dictate.rs" 2>/dev/null; then
+		if grep -q 'save_qr_png' "$DESKTOP_REPO/rust/crates/hayato-cli/src/system/qr.rs" 2>/dev/null &&
+			grep -q -- '--action=stop=Stop & Transcribe' "$DESKTOP_REPO/rust/crates/hayato-cli/src/system/dictate.rs" 2>/dev/null; then
 			ok "QR PNG saving and dictation push-to-talk/notification actions present (spec 020)"
 		else
 			fail "missing QR PNG saving or dictation notification actions (spec 020)"
@@ -3698,14 +3698,14 @@ if have lazyos; then
 		_fw_rest=${_fw_pair#*:}
 		_fw_cmd=${_fw_rest%:*}
 		_fw_want=${_fw_pair##*:}
-		if [ "$_fw_cmd" = "lazyos $_fw_want" ]; then
-			ok "\$$_fw_var runs \`lazyos $_fw_want\` (spec 012)"
+		if [ "$_fw_cmd" = "hayato $_fw_want" ]; then
+			ok "\$$_fw_var runs \`hayato $_fw_want\` (spec 012)"
 		else
-			fail "\$$_fw_var is '$_fw_cmd', not 'lazyos $_fw_want': the key still opens the old surface"
+			fail "\$$_fw_var is '$_fw_cmd', not 'hayato $_fw_want': the key still opens the old surface"
 		fi
 	done
 else
-	fail "lazyos is missing: every menu that becomes a symlink to it does nothing"
+	fail "hayato is missing: every menu that becomes a symlink to it does nothing"
 fi
 
 # The window shapes: the binary asks foot for its pixels, and only the
@@ -3713,11 +3713,11 @@ fi
 # menu opens as a tiled terminal that looks like the shell was replaced.
 _fw_sway=$(cat /etc/sway/config.d/*.conf "$HOME"/.config/sway/config.d/*.conf 2>/dev/null)
 for _fw_shape in pick task; do
-	if grep -q "for_window \[app_id=\"lazyos-$_fw_shape\"\] floating enable" <<<"$_fw_sway" &&
-		grep -q "for_window \[app_id=\"lazyos-$_fw_shape\"\] move position center" <<<"$_fw_sway"; then
-		ok "sway floats and centres lazyos-$_fw_shape"
+	if grep -q "for_window \[app_id=\"hayato-$_fw_shape\"\] floating enable" <<<"$_fw_sway" &&
+		grep -q "for_window \[app_id=\"hayato-$_fw_shape\"\] move position center" <<<"$_fw_sway"; then
+		ok "sway floats and centres hayato-$_fw_shape"
 	else
-		fail "sway has no floating/centre rule for app_id lazyos-$_fw_shape (the window tiles)"
+		fail "sway has no floating/centre rule for app_id hayato-$_fw_shape (the window tiles)"
 	fi
 done
 
@@ -3728,7 +3728,7 @@ done
 # nothing, which is the failure the old picker's alphabet already shipped once in another
 # surface.
 #
-# `lazyos --glyphs` prints both lists from the binary, one `U+XXXX<TAB>name` per
+# `hayato --glyphs` prints both lists from the binary, one `U+XXXX<TAB>name` per
 # line, and `--glyph-font` prints the pin the alphabet was filtered against, so
 # neither can drift from what a window actually draws.  Three things are
 # checked, and each reads as something else when it breaks:
@@ -3748,9 +3748,9 @@ done
 # purpose - `bt`, `wifi`, `bat`, `kbd`, `pad`, `=`, `qr`, `crop` - so the pin is
 # also asked which ones those are; a name that answered with a box would be the
 # bug this alphabet exists to prevent.
-if have lazyos && have fc-list; then
-	_fw_glyphs=$(lazyos --glyphs 2>/dev/null)
-	_fw_font=$(lazyos --glyph-font 2>/dev/null)
+if have hayato && have fc-list; then
+	_fw_glyphs=$(hayato --glyphs 2>/dev/null)
+	_fw_font=$(hayato --glyph-font 2>/dev/null)
 	_fw_total=$(printf '%s\n' "$_fw_glyphs" | awk 'NF { n++ } END { print n + 0 }')
 	_fw_family=$(sed -n 's/^family=//p' <<<"$_fw_font")
 	_fw_extra=$(sed -n 's/^extra=//p' <<<"$_fw_font")
@@ -3759,7 +3759,7 @@ if have lazyos && have fc-list; then
 	_fw_fallback=$(sed -n 's/^fallback=//p' <<<"$_fw_font")
 	_fw_text=$(sed -n 's/^text=//p' <<<"$_fw_font")
 	if [ "$_fw_total" -eq 0 ] || [ -z "$_fw_family" ] || [ -z "$_fw_pin" ]; then
-		fail "lazyos --glyphs/--glyph-font printed nothing: the binary predates the alphabet (spec 003)"
+		fail "hayato --glyphs/--glyph-font printed nothing: the binary predates the alphabet (spec 003)"
 	else
 		_fw_path=$(fc-match -f '%{file}' "$_fw_family" 2>/dev/null) || _fw_path=
 		_fw_families=$(fc-query --format='%{family}' "$_fw_path" 2>/dev/null | tr ',' '\n' | sed 's/^ *//')
@@ -3878,14 +3878,14 @@ if have lazyos && have fc-list; then
 fi
 
 # A command that draws its own frame is the first step back to thirty windows
-# with thirty shapes; the shell in lazyos-ui owns the header, the body and the
+# with thirty shapes; the shell in hayato-ui owns the header, the body and the
 # key bar.  This is the same grep the crate's own test runs, so a checkout
 # edited without the test suite is still caught on the device.
-if [ -n "$DESKTOP_REPO" ] && [ -d "$DESKTOP_REPO/rust/crates/lazyos-cli/src" ]; then
-	if grep -rqs 'ratatui::Frame\|&mut Frame' "$DESKTOP_REPO/rust/crates/lazyos-cli/src"; then
-		fail "a command in lazyos-cli draws its own Frame (the App shell owns the window)"
+if [ -n "$DESKTOP_REPO" ] && [ -d "$DESKTOP_REPO/rust/crates/hayato-cli/src" ]; then
+	if grep -rqs 'ratatui::Frame\|&mut Frame' "$DESKTOP_REPO/rust/crates/hayato-cli/src"; then
+		fail "a command in hayato-cli draws its own Frame (the App shell owns the window)"
 	else
-		ok "every command draws through the App shell (no Frame in lazyos-cli)"
+		ok "every command draws through the App shell (no Frame in hayato-cli)"
 	fi
 else
 	skip "no checkout: cannot confirm the commands draw through the shell"
@@ -3898,8 +3898,8 @@ fi
 #  1. a notify-send that names an application (-a) and no icon (-i): the card is
 #     text, and nothing logs it. One awk pass reads every script in ~/.config/bin
 #     and joins the continuation lines of a multi-line call;
-#  2. a name the binary asks for that the LazyOS theme does not draw: mako finds
-#     no file and shows a blank picture. `lazyos --icon-names` is the list the
+#  2. a name the binary asks for that the Hayato theme does not draw: mako finds
+#     no file and shows a blank picture. `hayato --icon-names` is the list the
 #     binary asks for, and the theme is asked for each name with a builtin test;
 #  3. mako's icon-path losing the theme root: every picture is blank, whatever
 #     the names say.
@@ -3917,48 +3917,48 @@ fi
 # A card about a written file is clickable: the sender names the file and the
 # daemon opens its folder in Files. The CLI and the busy result are the two
 # senders a script uses, so both must carry the hint.
-if lazyos notify --help 2>&1 | grep -qs -- '--open PATH'; then
-	ok "lazyos notify can name the file a click opens (--open PATH)"
+if hayato notify --help 2>&1 | grep -qs -- '--open PATH'; then
+	ok "hayato notify can name the file a click opens (--open PATH)"
 else
-	fail "lazyos notify has no --open PATH: a script cannot make its file card clickable"
+	fail "hayato notify has no --open PATH: a script cannot make its file card clickable"
 fi
-if grep -qs 'x-lazyos-open-path' "$HOME/.config/bin/busy"; then
+if grep -qs 'x-hayato-open-path' "$HOME/.config/bin/busy"; then
 	ok "a busy result carries the open-path hint for its written file"
 else
 	fail "busy does not pass the open-path hint: a saved-file result is not clickable"
 fi
-if grep -qs 'x-lazyos-open-path' "$HOME/.config/bin/lazyos-profile"; then
+if grep -qs 'x-hayato-open-path' "$HOME/.config/bin/hayato-profile"; then
 	ok "a saved profile or diagnostics card names its file for a click"
 else
-	fail "lazyos-profile does not pass the open-path hint: its saved card is not clickable"
+	fail "hayato-profile does not pass the open-path hint: its saved card is not clickable"
 fi
-if have lazyos-notify; then
-	ok "lazyos-notify resolves /usr/share/icons/LazyOS and Nerd Font glyphs natively"
-elif grep -qsE '^icon-path=([^ ]*:)?/usr/share/icons/LazyOS(:|$)' "$HOME/.config/mako/config"; then
-	ok "mako's icon-path names the LazyOS theme root (a notification draws its picture)"
+if have hayato-notify; then
+	ok "hayato-notify resolves /usr/share/icons/Hayato and Nerd Font glyphs natively"
+elif grep -qsE '^icon-path=([^ ]*:)?/usr/share/icons/Hayato(:|$)' "$HOME/.config/mako/config"; then
+	ok "mako's icon-path names the Hayato theme root (a notification draws its picture)"
 else
-	fail "~/.config/mako/config icon-path lost /usr/share/icons/LazyOS: every notification picture is blank"
+	fail "~/.config/mako/config icon-path lost /usr/share/icons/Hayato: every notification picture is blank"
 fi
-if have lazyos; then
-	_card_help=$(lazyos --help 2>/dev/null)
+if have hayato; then
+	_card_help=$(hayato --help 2>/dev/null)
 	if grep -q '^  notify' <<<"$_card_help"; then
-		ok "lazyos --help lists notify (a card from the command line, with the house rules)"
+		ok "hayato --help lists notify (a card from the command line, with the house rules)"
 	else
-		fail "lazyos --help does not list 'notify': scripts have no way to send a card with a picture"
+		fail "hayato --help does not list 'notify': scripts have no way to send a card with a picture"
 	fi
-	_card_names=$(lazyos --icon-names 2>/dev/null)
+	_card_names=$(hayato --icon-names 2>/dev/null)
 	if [ -z "$_card_names" ]; then
-		fail "lazyos --icon-names prints nothing: the notification pictures cannot be checked"
+		fail "hayato --icon-names prints nothing: the notification pictures cannot be checked"
 	else
 		_card_gone=
 		while IFS= read -r _card_name; do
 			[ -n "$_card_name" ] || continue
-			[ -f "/usr/share/icons/LazyOS/48x48/apps/$_card_name.png" ] || _card_gone="$_card_gone $_card_name"
+			[ -f "/usr/share/icons/Hayato/48x48/apps/$_card_name.png" ] || _card_gone="$_card_gone $_card_name"
 		done <<<"$_card_names"
 		if [ -z "$_card_gone" ]; then
-			ok "the LazyOS theme draws every picture a card can ask for ($(wc -l <<<"$_card_names") names)"
+			ok "the Hayato theme draws every picture a card can ask for ($(wc -l <<<"$_card_names") names)"
 		else
-			fail "the LazyOS theme draws no picture for:$_card_gone (a card that asks for it is text, and nothing logs it)"
+			fail "the Hayato theme draws no picture for:$_card_gone (a card that asks for it is text, and nothing logs it)"
 		fi
 	fi
 fi
@@ -3969,7 +3969,7 @@ fi
 # checkout, like every grep of the sources here.
 if [ -n "$DESKTOP_REPO" ] && [ -d "$DESKTOP_REPO/rust/crates" ]; then
 	_card_text=$(grep -rls --include='*.rs' 'no_icon()' "$DESKTOP_REPO/rust/crates" 2>/dev/null)
-	_card_text=$(grep -v -e '/lazyos-ui/src/card' -e '/tests/' -e '/lazyos-cli/src/notify\.rs$' <<<"$_card_text")
+	_card_text=$(grep -v -e '/hayato-ui/src/card' -e '/tests/' -e '/hayato-cli/src/notify\.rs$' <<<"$_card_text")
 	if [ -z "$_card_text" ]; then
 		ok "no Rust call site builds a card without a picture (no_icon() is only asked for explicitly)"
 	else
@@ -3985,33 +3985,33 @@ section "Games"
 # The library is data plus a WebKit window: the binary, the page, the sample
 # game and a scan that answers. The emulator stack (RetroArch and the cores) is
 # the next phase; this section does not pretend it is installed.
-if have lazyos-games; then
+if have hayato-games; then
 	ok "the game library is installed"
 	# The library spawns the host by name, so the first copy in PATH is the one
 	# that runs. A stale build left in /usr/local/bin once shadowed the
 	# installed one: its scan had no console zips, every launch answered "no
 	# game with id" into /dev/null, and the window just closed.
-	if [ -e /usr/local/bin/lazyos-games ]; then
-		fail "/usr/local/bin/lazyos-games exists: it comes before /usr/bin in PATH, shadows the installed host and swallows launches"
+	if [ -e /usr/local/bin/hayato-games ]; then
+		fail "/usr/local/bin/hayato-games exists: it comes before /usr/bin in PATH, shadows the installed host and swallows launches"
 	else
-		_games_host=$(command -v lazyos-games 2>/dev/null)
-		if [ "$_games_host" = "/usr/bin/lazyos-games" ]; then
+		_games_host=$(command -v hayato-games 2>/dev/null)
+		if [ "$_games_host" = "/usr/bin/hayato-games" ]; then
 			ok "the game host is the installed one ($_games_host)"
 		else
-			warn "lazyos-games resolves to ${_games_host:-nothing}, not /usr/bin/lazyos-games (a checkout earlier in PATH?)"
+			warn "hayato-games resolves to ${_games_host:-nothing}, not /usr/bin/hayato-games (a checkout earlier in PATH?)"
 		fi
 	fi
-	_games_json="$(lazyos-games --scan 2>/dev/null || true)"
+	_games_json="$(hayato-games --scan 2>/dev/null || true)"
 	if [ -z "$_games_json" ]; then
-		fail "lazyos-games --scan printed nothing (the library cannot list its games)"
+		fail "hayato-games --scan printed nothing (the library cannot list its games)"
 	elif ! printf '%s' "$_games_json" | jq -e . >/dev/null 2>&1; then
-		fail "lazyos-games --scan did not print JSON"
+		fail "hayato-games --scan did not print JSON"
 	else
 		_games_count=$(printf '%s' "$_games_json" | jq -r '.games | length' 2>/dev/null || echo 0)
 		ok "the library scan answers ($_games_count games)"
 		printf '%s' "$_games_json" | jq -e '.games | any(.kind == "web")' >/dev/null 2>&1 &&
-			ok "the sample LazyOS game is listed" ||
-			fail "no web game is installed under /usr/share/lazyos/games/web"
+			ok "the sample Hayato game is listed" ||
+			fail "no web game is installed under /usr/share/hayato/games/web"
 		printf '%s' "$_games_json" | jq -e '[.games[] | select(.kind == "retro" and (.core == null))] | length == 0' >/dev/null 2>&1 &&
 			ok "every retro row names a core" ||
 			fail "a retro row has no core (the library would not know what to run)"
@@ -4027,7 +4027,7 @@ if have lazyos-games; then
 	mkdir -p "$_zip_root/nes" "$_zip_root/psx"
 	head -c 2048 /dev/zero > "$_zip_root/nes/Zip Fixture (USA).zip"
 	head -c 2048 /dev/zero > "$_zip_root/psx/Zip Fixture.zip"
-	_zip_json=$(LAZYOS_GAMES_ROM_DIRS="$_zip_root" lazyos-games --scan 2>/dev/null || true)
+	_zip_json=$(HAYATO_GAMES_ROM_DIRS="$_zip_root" hayato-games --scan 2>/dev/null || true)
 	if printf '%s' "$_zip_json" |
 		jq -e '[.games[] | select(.title == "Zip Fixture" and .platform == "nes")] | length == 1' >/dev/null 2>&1; then
 		ok "a zip in its platform folder is a game"
@@ -4043,26 +4043,26 @@ if have lazyos-games; then
 	rm -rf "$_zip_root"
 	_games_missing=
 	for _games_file in \
-		/usr/share/lazyos/games/theme-default.css \
-		/usr/share/lazyos/games/web/snake/game.toml \
-		/usr/share/lazyos/games/web/snake/index.html
+		/usr/share/hayato/games/theme-default.css \
+		/usr/share/hayato/games/web/snake/game.toml \
+		/usr/share/hayato/games/web/snake/index.html
 	do
 		[ -r "$_games_file" ] || _games_missing="$_games_missing $_games_file"
 	done
 	[ -z "$_games_missing" ] &&
 		ok "the game theme and the sample game are installed" ||
 		fail "the games data is incomplete:$_games_missing"
-	if lazyos menu games --rows >/dev/null 2>&1; then
+	if hayato menu games --rows >/dev/null 2>&1; then
 		ok "the TUI library answers --rows"
 	else
-		fail "lazyos menu games --rows failed (the library screen is not reachable)"
+		fail "hayato menu games --rows failed (the library screen is not reachable)"
 	fi
-	if lazyos menu controller --rows >/dev/null 2>&1; then
+	if hayato menu controller --rows >/dev/null 2>&1; then
 		ok "the Controller screen answers --rows"
 	else
-		fail "lazyos menu controller --rows failed (the pad table is not reachable)"
+		fail "hayato menu controller --rows failed (the pad table is not reachable)"
 	fi
-	_controller_rows=$(lazyos menu controller --rows 2>/dev/null | wc -l)
+	_controller_rows=$(hayato menu controller --rows 2>/dev/null | wc -l)
 	if [ "${_controller_rows:-0}" -eq 16 ]; then
 		ok "the pad table has sixteen buttons"
 	else
@@ -4103,11 +4103,11 @@ if have lazyos-games; then
 	if have retroarch; then
 		_ra_version="$(retroarch --version 2>/dev/null | sed -n 's/^Version: //p' | head -n 1)"
 		ok "RetroArch is installed (${_ra_version:-version unknown})"
-		if [ -r /etc/lazyos/retroarch.cfg ] &&
-			grep -q '^video_driver = "wayland"' /etc/lazyos/retroarch.cfg; then
+		if [ -r /etc/hayato/retroarch.cfg ] &&
+			grep -q '^video_driver = "wayland"' /etc/hayato/retroarch.cfg; then
 			ok "the kiosk RetroArch overlay is the Wayland one"
 		else
-			fail "/etc/lazyos/retroarch.cfg is missing or is not the Wayland overlay"
+			fail "/etc/hayato/retroarch.cfg is missing or is not the Wayland overlay"
 		fi
 		_libretro_dir="$(ls -d /usr/lib/*/libretro 2>/dev/null | head -n 1)"
 		_cores_missing=
@@ -4159,16 +4159,16 @@ if have lazyos-games; then
 		else
 			fail "wtype is missing: the framework menus cannot be navigated with a gamepad"
 		fi
-		if pgrep -f 'lazyos gamepad' >/dev/null 2>&1; then
+		if pgrep -f 'hayato gamepad' >/dev/null 2>&1; then
 			ok "the gamepad mapper is running"
 		else
-			fail "lazyos gamepad is not running: the framework menus cannot be navigated with a gamepad"
+			fail "hayato gamepad is not running: the framework menus cannot be navigated with a gamepad"
 		fi
 	else
 		fail "retroarch is not installed (run scripts/build-retroarch.sh && core/scripts/install-retroarch.sh)"
 	fi
 else
-	fail "lazyos-games is not installed (run scripts/build-lazyos.sh && scripts/install-lazyos.sh)"
+	fail "hayato-games is not installed (run scripts/build-hayato.sh && scripts/install-hayato.sh)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -4176,15 +4176,15 @@ section "The theme engine"
 # ---------------------------------------------------------------------------
 # The palette lives in theme.toml and every surface is generated from it (spec
 # 004).  Four things are checked, and each is a failure that reads as something
-# else: no active theme means `lazyos theme next` has no place to start; a
+# else: no active theme means `hayato theme next` has no place to start; a
 # regeneration diff means a hand edit or a stale image, and the surface will
 # drift on the next switch; a missing header means the engine does not own that
 # file and would refuse to replace it; a missing binding means the keys that
 # switch the palette do nothing.
-if command -v lazyos >/dev/null 2>&1; then
-	_theme_current=$(lazyos theme current 2>/dev/null || true)
+if command -v hayato >/dev/null 2>&1; then
+	_theme_current=$(hayato theme current 2>/dev/null || true)
 	if [ -z "$_theme_current" ]; then
-		fail "no active theme (\`lazyos theme set solarized\` sets one)"
+		fail "no active theme (\`hayato theme set tokyo-night\` sets one)"
 	else
 		_theme_slug=${_theme_current%%	*}
 		_theme_name=${_theme_current#*	}
@@ -4194,14 +4194,14 @@ if command -v lazyos >/dev/null 2>&1; then
 		for _theme_file in \
 			.config/foot/foot.ini .config/waybar/style.css .config/mako/config \
 			.config/starship.toml \
-			.config/btop/themes/lazyos.theme .config/lazygit/config.yml \
-			.config/nvim/colors/lazyos.vim .config/lazyos/fzf.env \
-			.config/lazyos/games.css \
+			.config/btop/themes/hayato.theme .config/lazygit/config.yml \
+			.config/nvim/colors/hayato.vim .config/hayato/fzf.env \
+			.config/hayato/games.css \
 			.config/swaylock/config .config/sway/config.d/35-theme.conf
 		do
 			if [ ! -r "$HOME/$_theme_file" ]; then
 				_theme_missing="$_theme_missing $_theme_file"
-			elif ! head -n 1 "$HOME/$_theme_file" | grep -q "LazyOS theme:"; then
+			elif ! head -n 1 "$HOME/$_theme_file" | grep -q "Hayato theme:"; then
 				_theme_missing="$_theme_missing $_theme_file(no header)"
 			fi
 		done
@@ -4214,42 +4214,42 @@ if command -v lazyos >/dev/null 2>&1; then
 		# The regeneration witness: rendering again must reproduce the files
 		# that are installed, byte for byte.  The exit status is the answer;
 		# `--quiet` prints only the surfaces that differ.
-		if _theme_diff=$(lazyos theme diff --quiet 2>&1); then
+		if _theme_diff=$(hayato theme diff --quiet 2>&1); then
 			ok "every surface is byte-identical to a fresh render"
 		else
-			fail "regeneration differs on: $(printf '%s' "$_theme_diff" | head -n 1) (run \`lazyos theme set $_theme_slug\`)"
+			fail "regeneration differs on: $(printf '%s' "$_theme_diff" | head -n 1) (run \`hayato theme set $_theme_slug\`)"
 		fi
 	fi
 
-	if lazyos theme validate >/dev/null 2>&1; then
+	if hayato theme validate >/dev/null 2>&1; then
 		ok "every built-in theme parses and clears its contrast floor"
 	else
-		fail "a built-in theme does not parse or fails its contrast floor (\`lazyos theme validate\`)"
+		fail "a built-in theme does not parse or fails its contrast floor (\`hayato theme validate\`)"
 	fi
 else
-	skip "no lazyos binary: the theme engine is not installed"
+	skip "no hayato binary: the theme engine is not installed"
 fi
 
-# The two keys, parsed out of the configuration the way lazyos-keys parses them.
-_theme_keys=$(grep -rhs '^bindsym .*exec lazyos theme ' /etc/sway/config.d/*.conf "$HOME/.config/sway/config.d/"*.conf 2>/dev/null || true)
+# The two keys, parsed out of the configuration the way hayato-keys parses them.
+_theme_keys=$(grep -rhs '^bindsym .*exec hayato theme ' /etc/sway/config.d/*.conf "$HOME/.config/sway/config.d/"*.conf 2>/dev/null || true)
 for _theme_key in "theme next" "theme wallpaper next"; do
 	if printf '%s' "$_theme_keys" | grep -qF "$_theme_key"; then
-		ok "the binding for \`lazyos $_theme_key\` is present"
+		ok "the binding for \`hayato $_theme_key\` is present"
 	else
-		fail "no binding runs \`lazyos $_theme_key\` (Alt+Shift+T and Alt+Shift+W)"
+		fail "no binding runs \`hayato $_theme_key\` (Alt+Shift+T and Alt+Shift+W)"
 	fi
 done
 
-if lazyos menu theme --list >/dev/null 2>&1; then
-	ok "the visual theme picker is available (lazyos menu theme --list)"
+if hayato menu theme --list >/dev/null 2>&1; then
+	ok "the visual theme picker is available (hayato menu theme --list)"
 else
-	fail "lazyos menu theme query failed"
+	fail "hayato menu theme query failed"
 fi
 
 # ---------------------------------------------------------------------------
-section "The agent's tools (lazyos mcp)"
+section "The agent's tools (hayato mcp)"
 # ---------------------------------------------------------------------------
-# `lazyos mcp` (spec 008) is the desktop an agent can drive, and the manifest
+# `hayato mcp` (spec 008) is the desktop an agent can drive, and the manifest
 # is the witness of the one rule that matters: the AI proposes, the person
 # confirms. An apply-level tool (run a command, format, install, write a
 # partition, end the session) is never listed - the table refuses one at build
@@ -4258,15 +4258,15 @@ section "The agent's tools (lazyos mcp)"
 # initialize + tools/list over a pipe: neither is a tool call, so nothing is
 # run and nothing is logged.
 _mcp_refused="run format_apply install_apply swap_apply power_apply kpart_write partition_write"
-if have lazyos; then
-	if _mcp_tools=$(lazyos mcp --tools 2>&1); then
-		_mcp_version=$(lazyos mcp --version 2>/dev/null || :)
+if have hayato; then
+	if _mcp_tools=$(hayato mcp --tools 2>&1); then
+		_mcp_version=$(hayato mcp --version 2>/dev/null || :)
 		_mcp_head=$(head -n 1 <<<"$_mcp_tools")
 		_mcp_count=$(awk -F'\t' 'NR > 1 && NF >= 5 { n++ } END { print n + 0 }' <<<"$_mcp_tools")
-		ok "lazyos mcp serves $_mcp_count tools, manifest $_mcp_version"
+		ok "hayato mcp serves $_mcp_count tools, manifest $_mcp_version"
 		case "$_mcp_head" in
 		*" $_mcp_version "*) ;;
-		*) fail "lazyos mcp --tools and --version disagree ($_mcp_head / $_mcp_version)" ;;
+		*) fail "hayato mcp --tools and --version disagree ($_mcp_head / $_mcp_version)" ;;
 		esac
 		_mcp_bad=$(awk -F'\t' 'NR > 1 && $1 !~ /^(read|act|propose)$/ { print $1 ":" $2 }' <<<"$_mcp_tools")
 		for _mcp_name in $_mcp_refused; do
@@ -4276,7 +4276,7 @@ if have lazyos; then
 		if [ -z "$_mcp_bad" ]; then
 			ok "no apply-level tool is exposed (every tool is read, act or propose)"
 		else
-			fail "lazyos mcp exposes a tool it must refuse:$(tr '\n' ' ' <<<" $_mcp_bad")"
+			fail "hayato mcp exposes a tool it must refuse:$(tr '\n' ' ' <<<" $_mcp_bad")"
 		fi
 
 		# The protocol itself, not only the table: a server that prints its
@@ -4286,12 +4286,12 @@ if have lazyos; then
 			'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"check-system","version":"1"}}}' \
 			'{"jsonrpc":"2.0","method":"notifications/initialized"}' \
 			'{"jsonrpc":"2.0","id":2,"method":"tools/list"}' |
-			timeout 10 lazyos mcp 2>/dev/null) || _mcp_reply=
-		_mcp_listed=$(grep -o '"name":"[a-z_]*"' <<<"$_mcp_reply" | grep -cv '"name":"lazyos"') || :
+			timeout 10 hayato mcp 2>/dev/null) || _mcp_reply=
+		_mcp_listed=$(grep -o '"name":"[a-z_]*"' <<<"$_mcp_reply" | grep -cv '"name":"hayato"') || :
 		if [ "${_mcp_listed:-0}" -eq "$_mcp_count" ]; then
-			ok "lazyos mcp answers initialize and tools/list ($_mcp_listed tools)"
+			ok "hayato mcp answers initialize and tools/list ($_mcp_listed tools)"
 		else
-			fail "lazyos mcp did not answer the handshake with its $_mcp_count tools (got ${_mcp_listed:-0})"
+			fail "hayato mcp did not answer the handshake with its $_mcp_count tools (got ${_mcp_listed:-0})"
 		fi
 
 		# A propose tool is the real gated window, so the window has to exist:
@@ -4307,11 +4307,11 @@ if have lazyos; then
 			fail "a tool opens a window that is missing or not executable:$_mcp_gate"
 		fi
 	else
-		fail "lazyos mcp --tools failed: the agent has no desktop tools ($(head -n 1 <<<"$_mcp_tools"))"
+		fail "hayato mcp --tools failed: the agent has no desktop tools ($(head -n 1 <<<"$_mcp_tools"))"
 		_mcp_version=
 	fi
 else
-	skip "no lazyos binary: the agent's tools are not installed"
+	skip "no hayato binary: the agent's tools are not installed"
 	_mcp_version=
 fi
 
@@ -4326,7 +4326,7 @@ _mcp_conf="$HOME/.config/opencode/opencode.json"
 # not reported as missing on every machine that annotates its config.
 _mcp_reg=""
 if [ -r "$_mcp_conf" ] && have jq; then
-	_mcp_reg=$(jq -c '.mcp.lazyos | [.type, .command, (.enabled // true)]' "$_mcp_conf" 2>/dev/null) || _mcp_reg=""
+	_mcp_reg=$(jq -c '.mcp.hayato | [.type, .command, (.enabled // true)]' "$_mcp_conf" 2>/dev/null) || _mcp_reg=""
 	if [ -z "$_mcp_reg" ] && have python3; then
 		_mcp_reg=$(python3 - "$_mcp_conf" 2>/dev/null <<'PY'
 import json
@@ -4375,7 +4375,7 @@ def jsonc(text):
 
 
 doc = json.loads(jsonc(open(sys.argv[1]).read()))
-entry = (doc.get("mcp") or {}).get("lazyos") or {}
+entry = (doc.get("mcp") or {}).get("hayato") or {}
 print(json.dumps(
     [entry.get("type"), entry.get("command"), entry.get("enabled", True)],
     separators=(",", ":"),
@@ -4385,16 +4385,16 @@ PY
 	fi
 fi
 if [ ! -r "$_mcp_conf" ]; then
-	fail "~/.config/opencode/opencode.json is missing: OpenCode does not start lazyos mcp"
+	fail "~/.config/opencode/opencode.json is missing: OpenCode does not start hayato mcp"
 elif ! have jq; then
 	skip "no jq: cannot read the OpenCode registration"
-elif [ "$_mcp_reg" = '["local",["lazyos","mcp"],true]' ]; then
-	ok "OpenCode registers lazyos mcp as a local server"
+elif [ "$_mcp_reg" = '["local",["hayato","mcp"],true]' ]; then
+	ok "OpenCode registers hayato mcp as a local server"
 else
-	fail "opencode.json has no enabled local mcp.lazyos running [\"lazyos\",\"mcp\"]"
+	fail "opencode.json has no enabled local mcp.hayato running [\"hayato\",\"mcp\"]"
 fi
 _mcp_rules="$HOME/.config/opencode/AGENTS.md"
-_mcp_pin=$(sed -n 's/^lazyos-mcp manifest: //p' "$_mcp_rules" 2>/dev/null | head -n 1)
+_mcp_pin=$(sed -n 's/^hayato-mcp manifest: //p' "$_mcp_rules" 2>/dev/null | head -n 1)
 if [ -z "$_mcp_pin" ]; then
 	fail "~/.config/opencode/AGENTS.md is missing or names no manifest: the agent is not told the rules"
 elif [ -z "$_mcp_version" ]; then
@@ -4407,7 +4407,7 @@ fi
 
 # The manual is where a person learns what the agent may do on their desktop;
 # without the section the tiers are a rule only the agent was told.
-if grep -qs '^## The desktop the agent can drive' /usr/share/doc/lazyos/07-agents.md; then
+if grep -qs '^## The desktop the agent can drive' /usr/share/doc/hayato/07-agents.md; then
 	ok "07-agents.md explains what the agent can read, do and only propose"
 else
 	warn "07-agents.md lost § The desktop the agent can drive (the tiers are undocumented on the device)"
@@ -4418,15 +4418,15 @@ fi
 # one exit that cannot clean, and the next server sweeps it. A directory whose
 # server is gone and that nobody has swept yet is pictures nobody is using.
 _mcp_stale=
-for _mcp_dir in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/lazyos-mcp-[0-9]*; do
+for _mcp_dir in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/hayato-mcp-[0-9]*; do
 	[ -d "$_mcp_dir" ] || continue
-	_mcp_pid=${_mcp_dir##*lazyos-mcp-}
+	_mcp_pid=${_mcp_dir##*hayato-mcp-}
 	[ -d "/proc/$_mcp_pid" ] || _mcp_stale="$_mcp_stale $(basename "$_mcp_dir")"
 done
 if [ -z "$_mcp_stale" ]; then
 	ok "no screenshot outlived the server that took it"
 else
-	warn "screenshots left by a server that is gone:$_mcp_stale (the next lazyos mcp removes them)"
+	warn "screenshots left by a server that is gone:$_mcp_stale (the next hayato mcp removes them)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -4440,10 +4440,10 @@ if [ -r /etc/os-release ]; then
 	_os_id=$( (. /etc/os-release 2>/dev/null; printf '%s' "${ID:-}") )
 	_os_name=$( (. /etc/os-release 2>/dev/null; printf '%s' "${PRETTY_NAME:-}") )
 	_os_ver=$( (. /etc/os-release 2>/dev/null; printf '%s' "${VERSION_ID:-}") )
-	if [ "$_os_id" = lazyos ] && [[ $_os_name == LazyOS* ]]; then
+	if [ "$_os_id" = hayato ] && [[ $_os_name == Hayato* ]]; then
 		ok "os-release says $_os_name (ID=$_os_id)"
 	else
-		fail "/etc/os-release is not LazyOS (ID='${_os_id}', PRETTY_NAME='${_os_name}'): base-files may have restored its symlink"
+		fail "/etc/os-release is not Hayato (ID='${_os_id}', PRETTY_NAME='${_os_name}'): base-files may have restored its symlink"
 	fi
 	# The image's own record of what it was built from.  A hand edit of
 	# os-release is allowed; saying a different version than the build did is
@@ -4459,16 +4459,16 @@ fi
 # The desktop wears the brand's keyboard wallpaper and the lock screen the
 # session's own mountain photograph; a missing file leaves sway painting a flat
 # colour with no message.
-if [ -r "$HOME/Pictures/Wallpapers/lazyos.png" ]; then
+if [ -r "$HOME/Pictures/Wallpapers/hayato.png" ]; then
 	ok "desktop wallpaper present"
 else
-	fail "missing Pictures/Wallpapers/lazyos.png: the desktop falls back to a flat colour"
+	fail "missing Pictures/Wallpapers/hayato.png: the desktop falls back to a flat colour"
 fi
-if grep -rqs 'Pictures/Wallpapers/lazyos.png' /etc/sway/config "$HOME/.config/sway/config" \
+if grep -rqs 'Pictures/Wallpapers/hayato.png' /etc/sway/config "$HOME/.config/sway/config" \
 	/etc/sway/config.d "$HOME/.config/sway/config.d" 2>/dev/null; then
 	ok "sway paints the brand wallpaper"
 else
-	fail "sway does not name Pictures/Wallpapers/lazyos.png (output * bg)"
+	fail "sway does not name Pictures/Wallpapers/hayato.png (output * bg)"
 fi
 if [ -r "$HOME/Pictures/Wallpapers/mountains.jpg" ]; then
 	ok "lock screen wallpaper present"
@@ -4481,16 +4481,16 @@ else
 	warn "sway-lock no longer names mountains.jpg: the lock falls back to a flat colour"
 fi
 
-# The mark itself: the About entry asks for Icon=lazyos, and a theme without it
+# The mark itself: the About entry asks for Icon=hayato, and a theme without it
 # draws a hole where a picture should be, quietly.
 _missing_mark=""
-for _f in 48x48/apps/lazyos.png scalable/apps/lazyos.svg; do
-	[ -r "/usr/share/icons/LazyOS/$_f" ] || _missing_mark="$_missing_mark $_f"
+for _f in 48x48/apps/hayato.png scalable/apps/hayato.svg; do
+	[ -r "/usr/share/icons/Hayato/$_f" ] || _missing_mark="$_missing_mark $_f"
 done
 if [ -z "$_missing_mark" ]; then
-	ok "the theme carries the mark (lazyos.png, lazyos.svg)"
+	ok "the theme carries the mark (hayato.png, hayato.svg)"
 else
-	fail "the theme is missing the mark:$_missing_mark (About LazyOS shows a hole)"
+	fail "the theme is missing the mark:$_missing_mark (About Hayato shows a hole)"
 fi
 
 # The card the launcher's About row opens, and the logo fastfetch draws there.
@@ -4499,26 +4499,26 @@ if [ -r "$HOME/.config/fastfetch/config.jsonc" ]; then
 else
 	warn "no ~/.config/fastfetch/config.jsonc: About shows Debian's swirl"
 fi
-if [ -r "$HOME/.config/lazyos/wordmark.txt" ]; then
+if [ -r "$HOME/.config/hayato/wordmark.txt" ]; then
 	ok "fastfetch wordmark present"
 else
-	warn "no ~/.config/lazyos/wordmark.txt: fastfetch's logo has nothing to draw"
+	warn "no ~/.config/hayato/wordmark.txt: fastfetch's logo has nothing to draw"
 fi
 
 # The greeter and the virtual terminals are the first and the cheapest surfaces
 # a person sees, and both are files a later edit can quietly lose.
-if grep -qsE 'lazyos-greeter|lazy by design' /etc/greetd/config.toml 2>/dev/null ||
-	grep -qs 'lazy by design' /etc/lazyos/greeter.toml 2>/dev/null; then
-	ok "the greeter is configured for LazyOS"
+if grep -qsE 'hayato-greeter|light. fast. fun.' /etc/greetd/config.toml 2>/dev/null ||
+	grep -qs 'light. fast. fun.' /etc/hayato/greeter.toml 2>/dev/null; then
+	ok "the greeter is configured for Hayato"
 else
-	warn "the greeter configuration lost lazyos-greeter / branding"
+	warn "the greeter configuration lost hayato-greeter / branding"
 fi
-grep -qs 'LazyOS' /etc/issue 2>/dev/null &&
-	ok "virtual terminals greet LazyOS" ||
-	warn "/etc/issue does not name LazyOS"
+grep -qs 'Hayato' /etc/issue 2>/dev/null &&
+	ok "virtual terminals greet Hayato" ||
+	warn "/etc/issue does not name Hayato"
 
 # The rename was a clean break, so a surviving old name is a reference that was
-# missed.  Scoped to the shipped surfaces on purpose: ~/Dev/LazyOS carries the
+# missed.  Scoped to the shipped surfaces on purpose: ~/Dev/Hayato carries the
 # frozen release notes of the past, and reports/ is hardware evidence.
 _stale=$(ls /usr/share/applications/org.nureb.*.desktop 2>/dev/null || true)
 if [ -n "$_stale" ]; then
@@ -4526,8 +4526,8 @@ if [ -n "$_stale" ]; then
 else
 	ok "no org.nureb.* entries survive"
 fi
-_stale=$(grep -rlis 'nureb' /usr/share/applications /usr/share/icons/LazyOS \
-	/usr/share/doc/lazyos "$HOME/.config/bin" 2>/dev/null || true)
+_stale=$(grep -rlis 'nureb' /usr/share/applications /usr/share/icons/Hayato \
+	/usr/share/doc/hayato "$HOME/.config/bin" 2>/dev/null || true)
 if [ -n "$_stale" ]; then
 	warn "the old name still appears in: $(printf '%s\n' "$_stale" | sed -n '1,3p' | tr '\n' ' ')"
 fi
@@ -4577,20 +4577,20 @@ fi
 
 # old picker library retirement witness (spec 014):
 if [ ! -e "$HOME/.config/bin/lib-rofi.sh" ]; then
-	ok "the old picker library is retired (native lazyos glyph system in effect)"
+	ok "the old picker library is retired (native hayato glyph system in effect)"
 fi
 
 # The launcher shows application *images*, and Debian's Adwaita has none of this
-# session's names, so the image ships the small LazyOS theme (48x48 PNGs rendered
-# from the Font Awesome codepoints). Without it every org.lazyos.* row is a hole.
+# session's names, so the image ships the small Hayato theme (48x48 PNGs rendered
+# from the Font Awesome codepoints). Without it every org.hayato.* row is a hole.
 _icons=""
-[ -d /usr/share/icons/LazyOS ] || _icons="$_icons /usr/share/icons/LazyOS"
-[ -r /usr/share/icons/LazyOS/index.theme ] || _icons="$_icons LazyOS/index.theme"
+[ -d /usr/share/icons/Hayato ] || _icons="$_icons /usr/share/icons/Hayato"
+[ -r /usr/share/icons/Hayato/index.theme ] || _icons="$_icons Hayato/index.theme"
 _iconless=""
 # The session's own entries, plus the viewer packages': their Icon= is not their
 # binary name (imv asks for multimedia-photo-viewer, papers for org.gnome.Papers)
 # and Adwaita 51 has neither, so the same hole appears on those rows.
-for _d in /usr/share/applications/org.lazyos.*.desktop \
+for _d in /usr/share/applications/org.hayato.*.desktop \
 	/usr/share/applications/org.gnome.Papers.desktop \
 	/usr/share/applications/imv.desktop \
 	/usr/share/applications/mpv.desktop; do
@@ -4600,13 +4600,13 @@ for _d in /usr/share/applications/org.lazyos.*.desktop \
 		case $_line in Icon=*) _icon=${_line#Icon=}; break ;; esac
 	done <"$_d"
 	[ -n "$_icon" ] || continue
-	[ -r "/usr/share/icons/LazyOS/48x48/apps/$_icon.png" ] && continue
+	[ -r "/usr/share/icons/Hayato/48x48/apps/$_icon.png" ] && continue
 	# An application's own icon (hicolor, pixmaps) is fine too.
 	[ -n "$(find /usr/share/icons /usr/share/pixmaps -name "$_icon.*" 2>/dev/null | head -1)" ] && continue
 	_iconless="$_iconless $(basename "$_d" .desktop)=$_icon"
 done
 if [ -z "$_icons" ] && [ -z "$_iconless" ]; then
-	ok "launcher icons complete (LazyOS theme, every session entry resolves)"
+	ok "launcher icons complete (Hayato theme, every session entry resolves)"
 elif [ -z "$_icons" ]; then
 	fail "launcher entries without an icon:$_iconless (a hole in the launcher row)"
 else
@@ -4618,7 +4618,7 @@ fi
 # names too.  Missing ones are a blank 26 px column, not an error.
 _runless=""
 for _c in foot btop htop lazygit tmux nvim fzf rg bat eza mpv imv firefox-esr; do
-	[ -r "/usr/share/icons/LazyOS/48x48/apps/$_c.png" ] || _runless="$_runless $_c"
+	[ -r "/usr/share/icons/Hayato/48x48/apps/$_c.png" ] || _runless="$_runless $_c"
 done
 if [ -z "$_runless" ]; then
 	ok "command palette icons present (the run mode resolves binaries by name)"
@@ -4637,13 +4637,13 @@ section "Desktop Display & Audio Stack"
 # not survive a logout, so the menu saves one; a file the session's config does
 # not include is the same as none, and a Settings row that is gone leaves the
 # menu with no way in.
-_disp="$HOME/.config/bin/lazyos-display"
+_disp="$HOME/.config/bin/hayato-display"
 if [ -x "$_disp" ]; then
-	ok "lazyos-display is executable"
-	if settings_runs lazyos-display; then
+	ok "hayato-display is executable"
+	if settings_runs hayato-display; then
 		ok "Settings has the display arrangement row"
 	else
-		fail "Settings (lazyos menu settings) has no display arrangement row: the menu is unreachable"
+		fail "Settings (hayato menu settings) has no display arrangement row: the menu is unreachable"
 	fi
 	if grep -qs 'config\.d' "$HOME/.config/sway/config"; then
 		ok "the saved arrangement is read at login (config.d included)"
@@ -4665,7 +4665,7 @@ fi
 # with a stub swaymsg (the real one would change the session) via `--rows` and
 # `--status` (which run before the host and never open a window).
 if [ -x "$_disp" ]; then
-	_bt=$(mktemp -d "${TMPDIR:-/tmp}/lazyos-display.XXXXXX" 2>/dev/null || true)
+	_bt=$(mktemp -d "${TMPDIR:-/tmp}/hayato-display.XXXXXX" 2>/dev/null || true)
 	if [ -n "$_bt" ]; then
 		mkdir -p "$_bt/bin"
 		cat >"$_bt/bin/swaymsg" <<'SH'
@@ -4695,15 +4695,15 @@ fi
 # lets the last output be turned off (measured) - so the recovery has to be a
 # command, and both halves matter: a binding whose mode is gone does nothing,
 # and a mode nobody binds is unreachable with a black screen.
-if grep -qs 'lazyos-display --panel-on' /etc/sway/config.d/*.conf \
+if grep -qs 'hayato-display --panel-on' /etc/sway/config.d/*.conf \
 	"$HOME/.config/sway/config.d"/*.conf 2>/dev/null; then
 	ok "a key turns the internal panel back on with no picture (blind recovery)"
 else
-	fail "no binding runs 'lazyos-display --panel-on': a black screen has no way back"
+	fail "no binding runs 'hayato-display --panel-on': a black screen has no way back"
 fi
 case "$("$_disp" --panel-on --command 2>/dev/null)" in
 "swaymsg output eDP-1 enable"|"swaymsg output DSI-1 enable")
-	ok "lazyos-display --panel-on exists" ;;
+	ok "hayato-display --panel-on exists" ;;
 *)
 	fail "$_disp has no --panel-on mode: the recovery key would run nothing" ;;
 esac

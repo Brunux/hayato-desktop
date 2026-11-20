@@ -1,0 +1,21 @@
+[package]
+name = "hayato-theme"
+# The version the binary reports comes from the repository's VERSION file,
+# compiled in by hayato-cli; this one only satisfies cargo and never ships.
+version = "0.0.0"
+edition = "2024"
+description = "The Hayato session palette (spec 001 ships only the roles)"
+
+[dependencies]
+# theme.toml (spec 004): the format is TOML because it is what a person edits
+# and what the community themes will arrive in, and a hand-written parser would
+# be the "cheap to write, expensive to get right" half (escapes, arrays,
+# comments, spans). `toml` reports the offending line, which is what an unknown
+# key has to name.
+toml = "0.9"
+serde = { version = "1.0", features = ["derive"] }
+# Wallpaper generation (spec 013): gradient/geometric compositions with the
+# wordmark. `png` only: the one format we write for the wallpaper cache.
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+# Home directory for wallpaper cache
+dirs = "5.0"

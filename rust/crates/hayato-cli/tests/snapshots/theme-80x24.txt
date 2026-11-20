@@ -1,0 +1,24 @@
+Hayato · Theme & Appearance                                                     
+────────────────────────────────────────────────────────────────────────────────
+╭ Themes ──────────────────╮╭ Preview: Tokyo Night ────────────────────────────╮
+│ ▍   ● Tokyo …           ││  Tokyo Night (tokyo-nig[ ACTIVE SESSION THEME ]  │
+│     ○ Solari…           ││  by enkia / Folke                                │
+│     ○ Catppu…           ││                                                  │
+│     ○ Rose P…           ││  Desktop & Wallpaper Simulation                  │
+│     ○ Nord  n…          ││    Hayato      main  │   LazyNet   80%      │
+│     ○ Gruvbo…           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
+│     ○ Everfo…           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
+│     ○ Kanaga…           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
+│     ○ Dracula           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
+│     ○ One Da…           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
+│     ○ Hacker…           ││  Wallpaper: tokyo-night-sunset-lake.jpg (3 bund  │
+│     ○ Lumon  …          ││                                                  │
+│     ○ Matte …           ││  Terminal Palette (16 ANSI Swatches)             │
+│     ○ Omacon            ││   0    1    2    3    4    5    6    7           │
+│     ○ Catppu…           ││   8    9    10   11   12   13   14   15          │
+│     ○ Flexok…           ││                                                  │
+│                          ││  Semantic Roles                                  │
+│                          ││  ██ Accent: #7aa2f7  ██ Surface: #1f2335         │
+│                          ││  ██ Border: #7aa2f7  ██ Ok: #9ece6a              │
+╰──────────────────────────╯╰──██ Warn: #e0af68  ██ Danger: #f7768e  ──────────╯
+ [Enter]  apply   [↑↓]  preview   [w]  wallpaper   …               [Esc]  close 

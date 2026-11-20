@@ -1,0 +1,20 @@
+/* The games palette, before `hayato-theme` has written ~/.config/hayato/games.css.
+ * Tokyo Night, the session's default; the engine replaces this file's values
+ * with the active theme's on the next theme switch. */
+:root {
+  --bg: #1a1b26;
+  --surface: #24283b;
+  --surface-alt: #292e42;
+  --border: #3b4261;
+  --faint: #414868;
+  --dim: #565f89;
+  --text: #a9b1d6;
+  --strong: #c0caf5;
+  --accent: #7aa2f7;
+  --accent-alt: #7dcfff;
+  --ok: #9ece6a;
+  --warn: #e0af68;
+  --danger: #f7768e;
+  --info: #7aa2f7;
+  --selection: #292e42;
+}

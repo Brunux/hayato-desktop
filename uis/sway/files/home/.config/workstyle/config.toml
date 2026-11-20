@@ -27,7 +27,7 @@
 
 # foot windows that are not a shell: the first-boot card and
 # the popup terminals the bar opens (a log, the apt updater, nmtui, the QR code).
-"lazyos-welcome" = "\uf05a"    # f05a UI_I_INFO
+"hayato-welcome" = "\uf05a"    # f05a UI_I_INFO
 "popup" = "\uf120"             # f120 UI_I_TERM
 
 "firefox" = "\uf0ac"           # f0ac UI_I_GLOBE   (firefox-esr too)

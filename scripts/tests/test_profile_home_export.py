@@ -17,7 +17,7 @@ import unittest
 
 SCRIPT = (
     pathlib.Path(__file__).resolve().parents[2]
-    / "uis/sway/files/home/.config/bin/lazyos-profile"
+    / "uis/sway/files/home/.config/bin/hayato-profile"
 )
 
 
@@ -58,7 +58,7 @@ class HomeExportTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
 
-                archives = list(target.glob("lazyos-profile-*.tar.zst"))
+                archives = list(target.glob("hayato-profile-*.tar.zst"))
                 self.assertEqual(1, len(archives), "one archive is written")
                 listing = subprocess.run(
                     ["tar", "--zstd", "-tf", str(archives[0])],

@@ -1,0 +1,24 @@
+Hayato · Clipboard                                                              
+────────────────────────────────────────────────────────────────────────────────
+╭ History ─────────────────────────────────────────────────────────────────────╮
+│  ^S   Save newest image   ^X   Clear history (0)             [Tab] actions │
+│                                                                              │
+│  Clipboard history is empty · Esc backs out                                 │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│          ╭ Hayato ───────────────────────────────────────────────╮           │
+│          │                                                       │           │
+│          │              Nothing has been copied yet              │           │
+│          │                                                       │           │
+│          │          Copied text and images appear here           │           │
+│          │                                                       │           │
+│          │                                                       │           │
+│          │                                                       │           │
+│          ╰───────────────────────────────────────────────────────╯           │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  copy back   [Alt+1]  delete entry   [Ctrl+S]  save image  [Esc]  back 

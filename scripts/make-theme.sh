@@ -3,14 +3,14 @@
 #
 # This is a host tool like make-icons.sh and make-brand.sh: its output is
 # committed, because the image is staged from `git archive HEAD` and a host
-# without a built `lazyos` still has to build. The files it writes are the
-# solarized ones the session boots with; on the device, `lazyos theme set NAME`
+# without a built `hayato` still has to build. The files it writes are the
+# solarized ones the session boots with; on the device, `hayato theme set NAME`
 # is what rewrites them, from the same templates and the same engine.
 #
 #   scripts/make-theme.sh            # solarized, the default
 #   scripts/make-theme.sh catppuccin # a preview of another built-in
 #
-# The rendered files carry a header naming the theme, so `lazyos theme diff`
+# The rendered files carry a header naming the theme, so `hayato theme diff`
 # (and `check-system.sh`) can tell a hand edit from a stale image.
 set -eu
 
@@ -20,19 +20,19 @@ slug=${1:-solarized}
 # the default one, exactly like every other /home path in uis/sway/files.
 home=/home/brunux
 
-binary=${LAZYOS_BIN:-}
+binary=${HAYATO_BIN:-}
 if [ -z "$binary" ]; then
-	for candidate in "$repo/rust/target/release/lazyos" "$repo/rust/target/debug/lazyos"; do
+	for candidate in "$repo/rust/target/release/hayato" "$repo/rust/target/debug/hayato"; do
 		[ -x "$candidate" ] && binary=$candidate && break
 	done
 fi
 if [ -z "$binary" ]; then
-	binary=$(command -v lazyos 2>/dev/null || true)
+	binary=$(command -v hayato 2>/dev/null || true)
 fi
 if [ -z "$binary" ] || [ ! -x "$binary" ]; then
-	echo "make-theme: no lazyos binary found." >&2
-	echo "  build one with: cargo build --release -p lazyos-cli --manifest-path rust/Cargo.toml" >&2
-	echo "  or point LAZYOS_BIN at a built binary." >&2
+	echo "make-theme: no hayato binary found." >&2
+	echo "  build one with: cargo build --release -p hayato-cli --manifest-path rust/Cargo.toml" >&2
+	echo "  or point HAYATO_BIN at a built binary." >&2
 	exit 1
 fi
 

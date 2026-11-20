@@ -7,16 +7,16 @@
 # a compute driver, not a Vulkan graphics implementation.
 #
 # Usage: build-mupen64plus-next.sh
-# Output: $LAZYOS_STAGE/lazyos-libretro-mupen64plus-next_<rev>+lazyos1_<arch>.deb
+# Output: $HAYATO_STAGE/hayato-libretro-mupen64plus-next_<rev>+hayato1_<arch>.deb
 set -euo pipefail
 _here="$(cd "$(dirname "$0")" && pwd)"
 DESKTOP_DIR="${DESKTOP_DIR:-$(cd "$_here/.." && pwd)}"
-if [ -n "${LAZYOS_CORE_DIR:-}" ] && [ -f "$LAZYOS_CORE_DIR/scripts/lib.sh" ]; then
-	. "$LAZYOS_CORE_DIR/scripts/lib.sh"
+if [ -n "${HAYATO_CORE_DIR:-}" ] && [ -f "$HAYATO_CORE_DIR/scripts/lib.sh" ]; then
+	. "$HAYATO_CORE_DIR/scripts/lib.sh"
 elif [ -f "$_here/../../core/scripts/lib.sh" ]; then
 	. "$_here/../../core/scripts/lib.sh"
-elif [ -f "$_here/../../lazyos-core/scripts/lib.sh" ]; then
-	. "$_here/../../lazyos-core/scripts/lib.sh"
+elif [ -f "$_here/../../hayato-core/scripts/lib.sh" ]; then
+	. "$_here/../../hayato-core/scripts/lib.sh"
 else
 	. "$_here/lib-desktop.sh"
 fi
@@ -26,7 +26,7 @@ CORE_REV="$(tr -d ' \t\r\n' <"$CORE_DIR/version")"
 CORE_TARBALL="mupen64plus-next-$CORE_REV.tar.gz"
 CORE_URL="https://github.com/libretro/mupen64plus-libretro-nx/archive/$CORE_REV.tar.gz"
 CORE_SRC="$SRC_DIR/mupen64plus-libretro-nx-$CORE_REV"
-PACKAGING_REVISION="lazyos1"
+PACKAGING_REVISION="hayato1"
 PKG_VERSION="$CORE_REV+$PACKAGING_REVISION"
 DEB_ARCH="$(dpkg --print-architecture)"
 MULTIARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
@@ -61,12 +61,12 @@ SHLIBS_DIR="$WORK_DIR/mupen64plus-next-shlibs"
 rm -rf "$SHLIBS_DIR"
 mkdir -p "$SHLIBS_DIR/debian"
 cat >"$SHLIBS_DIR/debian/control" <<'EOF'
-Source: lazyos-libretro-mupen64plus-next
+Source: hayato-libretro-mupen64plus-next
 Section: games
 Priority: optional
-Maintainer: LazyOS <lazyos@localhost>
+Maintainer: Hayato <hayato@localhost>
 Standards-Version: 4.6.0
-Package: lazyos-libretro-mupen64plus-next
+Package: hayato-libretro-mupen64plus-next
 Architecture: any
 EOF
 SHLIBS="$(cd "$SHLIBS_DIR" && dpkg-shlibdeps -O "$PKG/usr/lib/$MULTIARCH/libretro/mupen64plus_next_libretro.so" 2>/dev/null |
@@ -76,10 +76,10 @@ INSTALLED_SIZE="$(du -sk "$PKG/usr" | cut -f1)"
 
 mkdir -p "$PKG/DEBIAN"
 cat >"$PKG/DEBIAN/control" <<EOF
-Package: lazyos-libretro-mupen64plus-next
+Package: hayato-libretro-mupen64plus-next
 Version: $PKG_VERSION
 Architecture: $DEB_ARCH
-Maintainer: LazyOS <lazyos@localhost>
+Maintainer: Hayato <hayato@localhost>
 Installed-Size: $INSTALLED_SIZE
 Depends: $SHLIBS
 Provides: libretro-core
@@ -87,12 +87,12 @@ Section: games
 Priority: optional
 Homepage: https://github.com/libretro/mupen64plus-libretro-nx
 Description: Mupen64Plus-Next libretro core (AArch64, GLES3)
- The N64 core the LazyOS games library launches. Built with the AArch64
+ The N64 core the Hayato games library launches. Built with the AArch64
  dynarec and GLideN64 on GLES3 for the Mali-G57 through Panfrost; N64 is the
  experimental platform in the library.
 EOF
 
-mkdir -p "$LAZYOS_STAGE"
-DEB="$LAZYOS_STAGE/lazyos-libretro-mupen64plus-next_${PKG_VERSION}_${DEB_ARCH}.deb"
+mkdir -p "$HAYATO_STAGE"
+DEB="$HAYATO_STAGE/hayato-libretro-mupen64plus-next_${PKG_VERSION}_${DEB_ARCH}.deb"
 dpkg-deb --build --root-owner-group "$PKG" "$DEB" >/dev/null
 log "mupen64plus-next $CORE_REV -> $DEB"

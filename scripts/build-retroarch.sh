@@ -4,23 +4,23 @@
 # Debian's retroarch is not used: its assets package hard-depends on
 # fonts-noto-extra (334 MB) and it links Qt5. This build is the same emulator
 # without Qt, assets, FFmpeg, Vulkan or the online updater; RGUI is the only
-# menu, and the LazyOS library is the UI that launches games.
+# menu, and the Hayato library is the UI that launches games.
 #
-# The package installs /usr/bin/retroarch and /etc/lazyos/retroarch.cfg (the
+# The package installs /usr/bin/retroarch and /etc/hayato/retroarch.cfg (the
 # --appendconfig overlay). The libretro cores are Debian packages from
 # uis/sway/packages.list; N64 is tools/mupen64plus-next/.
 #
 # Usage: build-retroarch.sh
-# Output: $LAZYOS_STAGE/retroarch_<version>+lazyos1_<arch>.deb
+# Output: $HAYATO_STAGE/retroarch_<version>+hayato1_<arch>.deb
 set -euo pipefail
 _here="$(cd "$(dirname "$0")" && pwd)"
 DESKTOP_DIR="${DESKTOP_DIR:-$(cd "$_here/.." && pwd)}"
-if [ -n "${LAZYOS_CORE_DIR:-}" ] && [ -f "$LAZYOS_CORE_DIR/scripts/lib.sh" ]; then
-	. "$LAZYOS_CORE_DIR/scripts/lib.sh"
+if [ -n "${HAYATO_CORE_DIR:-}" ] && [ -f "$HAYATO_CORE_DIR/scripts/lib.sh" ]; then
+	. "$HAYATO_CORE_DIR/scripts/lib.sh"
 elif [ -f "$_here/../../core/scripts/lib.sh" ]; then
 	. "$_here/../../core/scripts/lib.sh"
-elif [ -f "$_here/../../lazyos-core/scripts/lib.sh" ]; then
-	. "$_here/../../lazyos-core/scripts/lib.sh"
+elif [ -f "$_here/../../hayato-core/scripts/lib.sh" ]; then
+	. "$_here/../../hayato-core/scripts/lib.sh"
 else
 	. "$_here/lib-desktop.sh"
 fi
@@ -30,7 +30,7 @@ RETROARCH_VERSION="$(tr -d ' \t\r\n' <"$RETROARCH_DIR/version")"
 RETROARCH_TARBALL="retroarch-$RETROARCH_VERSION.tar.gz"
 RETROARCH_URL="https://github.com/libretro/RetroArch/archive/refs/tags/v$RETROARCH_VERSION.tar.gz"
 RETROARCH_SRC="$SRC_DIR/RetroArch-$RETROARCH_VERSION"
-PACKAGING_REVISION="lazyos1"
+PACKAGING_REVISION="hayato1"
 PKG_VERSION="$RETROARCH_VERSION+$PACKAGING_REVISION"
 DEB_ARCH="$(dpkg --print-architecture)"
 
@@ -75,9 +75,9 @@ rm -rf "$PKG"
 log "Staging RetroArch $PKG_VERSION"
 make -C "$RETROARCH_SRC" install DESTDIR="$PKG" >/dev/null
 # The upstream default config is not this image's contract: the library passes
-# /etc/lazyos/retroarch.cfg as an overlay instead.
+# /etc/hayato/retroarch.cfg as an overlay instead.
 rm -f "$PKG/etc/retroarch.cfg" "$PKG/usr/bin/retroarch-cg2glsl"
-install -Dm644 "$RETROARCH_DIR/retroarch.cfg" "$PKG/etc/lazyos/retroarch.cfg"
+install -Dm644 "$RETROARCH_DIR/retroarch.cfg" "$PKG/etc/hayato/retroarch.cfg"
 strip --strip-unneeded "$PKG/usr/bin/retroarch" 2>/dev/null || true
 
 # Debian's package name is `retroarch`; ours is the same name with a version
@@ -90,7 +90,7 @@ cat >"$SHLIBS_DIR/debian/control" <<'EOF'
 Source: retroarch
 Section: games
 Priority: optional
-Maintainer: LazyOS <lazyos@localhost>
+Maintainer: Hayato <hayato@localhost>
 Standards-Version: 4.6.0
 Package: retroarch
 Architecture: any
@@ -105,20 +105,20 @@ cat >"$PKG/DEBIAN/control" <<EOF
 Package: retroarch
 Version: $PKG_VERSION
 Architecture: $DEB_ARCH
-Maintainer: LazyOS <lazyos@localhost>
+Maintainer: Hayato <hayato@localhost>
 Installed-Size: $INSTALLED_SIZE
 Depends: $SHLIBS
 Provides: libretro-frontend
 Section: games
 Priority: optional
 Homepage: https://www.retroarch.com/
-Description: RetroArch for the LazyOS games library (slim build)
+Description: RetroArch for the Hayato games library (slim build)
  A Wayland/GLES build without Qt, assets, FFmpeg, Vulkan or the online
- updater. The LazyOS library passes one libretro core and one ROM; the
+ updater. The Hayato library passes one libretro core and one ROM; the
  in-game menu is RGUI in the session palette.
 EOF
 
-mkdir -p "$LAZYOS_STAGE"
-DEB="$LAZYOS_STAGE/retroarch_${PKG_VERSION}_${DEB_ARCH}.deb"
+mkdir -p "$HAYATO_STAGE"
+DEB="$HAYATO_STAGE/retroarch_${PKG_VERSION}_${DEB_ARCH}.deb"
 dpkg-deb --build --root-owner-group "$PKG" "$DEB" >/dev/null
 log "RetroArch $PKG_VERSION -> $DEB"

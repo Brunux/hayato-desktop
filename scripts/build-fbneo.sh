@@ -9,16 +9,16 @@
 # system directory.
 #
 # Usage: build-fbneo.sh
-# Output: $LAZYOS_STAGE/lazyos-libretro-fbneo_<rev>+lazyos1_<arch>.deb
+# Output: $HAYATO_STAGE/hayato-libretro-fbneo_<rev>+hayato1_<arch>.deb
 set -euo pipefail
 _here="$(cd "$(dirname "$0")" && pwd)"
 DESKTOP_DIR="${DESKTOP_DIR:-$(cd "$_here/.." && pwd)}"
-if [ -n "${LAZYOS_CORE_DIR:-}" ] && [ -f "$LAZYOS_CORE_DIR/scripts/lib.sh" ]; then
-	. "$LAZYOS_CORE_DIR/scripts/lib.sh"
+if [ -n "${HAYATO_CORE_DIR:-}" ] && [ -f "$HAYATO_CORE_DIR/scripts/lib.sh" ]; then
+	. "$HAYATO_CORE_DIR/scripts/lib.sh"
 elif [ -f "$_here/../../core/scripts/lib.sh" ]; then
 	. "$_here/../../core/scripts/lib.sh"
-elif [ -f "$_here/../../lazyos-core/scripts/lib.sh" ]; then
-	. "$_here/../../lazyos-core/scripts/lib.sh"
+elif [ -f "$_here/../../hayato-core/scripts/lib.sh" ]; then
+	. "$_here/../../hayato-core/scripts/lib.sh"
 else
 	. "$_here/lib-desktop.sh"
 fi
@@ -28,7 +28,7 @@ CORE_REV="$(tr -d ' \t\r\n' <"$CORE_DIR/version")"
 CORE_TARBALL="FBNeo-$CORE_REV.tar.gz"
 CORE_URL="https://github.com/libretro/FBNeo/archive/$CORE_REV.tar.gz"
 CORE_SRC="$SRC_DIR/FBNeo-$CORE_REV"
-PACKAGING_REVISION="lazyos1"
+PACKAGING_REVISION="hayato1"
 PKG_VERSION="$CORE_REV+$PACKAGING_REVISION"
 DEB_ARCH="$(dpkg --print-architecture)"
 MULTIARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
@@ -66,12 +66,12 @@ SHLIBS_DIR="$WORK_DIR/fbneo-shlibs"
 rm -rf "$SHLIBS_DIR"
 mkdir -p "$SHLIBS_DIR/debian"
 cat >"$SHLIBS_DIR/debian/control" <<'EOF'
-Source: lazyos-libretro-fbneo
+Source: hayato-libretro-fbneo
 Section: games
 Priority: optional
-Maintainer: LazyOS <lazyos@localhost>
+Maintainer: Hayato <hayato@localhost>
 Standards-Version: 4.6.0
-Package: lazyos-libretro-fbneo
+Package: hayato-libretro-fbneo
 Architecture: any
 EOF
 SHLIBS="$(cd "$SHLIBS_DIR" && dpkg-shlibdeps -O "$PKG/usr/lib/$MULTIARCH/libretro/fbneo_libretro.so" 2>/dev/null |
@@ -81,10 +81,10 @@ INSTALLED_SIZE="$(du -sk "$PKG/usr" | cut -f1)"
 
 mkdir -p "$PKG/DEBIAN"
 cat >"$PKG/DEBIAN/control" <<EOF
-Package: lazyos-libretro-fbneo
+Package: hayato-libretro-fbneo
 Version: $PKG_VERSION
 Architecture: $DEB_ARCH
-Maintainer: LazyOS <lazyos@localhost>
+Maintainer: Hayato <hayato@localhost>
 Installed-Size: $INSTALLED_SIZE
 Depends: $SHLIBS
 Provides: libretro-core
@@ -92,12 +92,12 @@ Section: games
 Priority: optional
 Homepage: https://github.com/libretro/FBNeo
 Description: FBNeo libretro core (all arcade boards)
- The arcade core the LazyOS games library launches for .zip romsets. Built
+ The arcade core the Hayato games library launches for .zip romsets. Built
  from the libretro FBNeo fork; it reads a MAME/FBNeo romset as it is and
  needs the board's BIOS zip in the system directory.
 EOF
 
-mkdir -p "$LAZYOS_STAGE"
-DEB="$LAZYOS_STAGE/lazyos-libretro-fbneo_${PKG_VERSION}_${DEB_ARCH}.deb"
+mkdir -p "$HAYATO_STAGE"
+DEB="$HAYATO_STAGE/hayato-libretro-fbneo_${PKG_VERSION}_${DEB_ARCH}.deb"
 dpkg-deb --build --root-owner-group "$PKG" "$DEB" >/dev/null
 log "FBNeo $CORE_REV -> $DEB"
