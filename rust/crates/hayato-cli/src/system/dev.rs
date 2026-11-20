@@ -1041,13 +1041,81 @@ pub fn menu(
 
         match action.as_str() {
             "restore" => {
-                let archives = DevScreen::list_archives();
+                let mut archives = DevScreen::list_archives();
                 if archives.is_empty() {
-                    banner = Some(
-                        "No exported profile found on mounted disks or ~/Downloads \u{00b7} mount a stick in Places first"
-                            .to_string(),
+                    // A stick that is plugged in but not mounted holds the
+                    // archive just as well, and a fresh boot leaves it
+                    // unmounted: offer the same disks Places offers, mount the
+                    // chosen one, and look again. `list-archives` can only see
+                    // mounted filesystems.
+                    let mountable: Vec<super::places::PlaceEntry> = super::places::collect_places()
+                        .into_iter()
+                        .filter(|place| place.key.starts_with("mount:"))
+                        .collect();
+                    if mountable.is_empty() {
+                        banner = Some(
+                            "No exported profile found on mounted disks or ~/Downloads \u{00b7} plug the stick in and open Places"
+                                .to_string(),
+                        );
+                        continue;
+                    }
+                    let rows: Vec<Row> = mountable
+                        .iter()
+                        .map(|place| {
+                            Row::new(&place.label)
+                                .glyph(Glyph::Disk)
+                                .detail("mount it, then look for a profile archive on it")
+                        })
+                        .collect();
+                    let keys: Vec<String> =
+                        mountable.iter().map(|place| place.key.clone()).collect();
+                    let mut mount_picker = Picker::new(
+                        "Restore a profile",
+                        vec![Question::choose(
+                            "No archive on a mounted disk",
+                            "A stick that is plugged in but not mounted can hold it \u{00b7} pick one to mount",
+                            rows,
+                            keys,
+                        )],
                     );
-                    continue;
+                    let m_code = crate::run_screen(
+                        terminal,
+                        design,
+                        "Restore a profile",
+                        &mut mount_picker,
+                    )?;
+                    if m_code != 0 {
+                        continue;
+                    }
+                    let Some(key) = mount_picker.answers().first().cloned() else {
+                        continue;
+                    };
+                    let dev = key.trim_start_matches("mount:").to_string();
+                    match std::process::Command::new("udisksctl")
+                        .args(["mount", "-b", &dev])
+                        .output()
+                    {
+                        Ok(res) if res.status.success() => {
+                            archives = DevScreen::list_archives();
+                        }
+                        Ok(res) => {
+                            banner = Some(format!(
+                                "Could not mount {dev}: {}",
+                                String::from_utf8_lossy(&res.stderr).trim()
+                            ));
+                            continue;
+                        }
+                        Err(error) => {
+                            banner = Some(format!("Could not mount {dev}: {error}"));
+                            continue;
+                        }
+                    }
+                    if archives.is_empty() {
+                        banner = Some(format!(
+                            "No exported profile found on {dev} after mounting it"
+                        ));
+                        continue;
+                    }
                 }
 
                 let rows: Vec<Row> = archives

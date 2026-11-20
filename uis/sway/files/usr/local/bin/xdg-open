@@ -28,6 +28,11 @@ case ${1:-} in
 	exit 2
 	;;
 *://* | mailto:*)
+	# The person's choice, not this script's: hayato-browser reads
+	# `xdg-settings get default-web-browser`, which Settings writes.
+	if [ -n "${HOME:-}" ] && [ -x "$HOME/.config/bin/hayato-browser" ]; then
+		exec "$HOME/.config/bin/hayato-browser" "$1"
+	fi
 	exec firefox-esr "$1"
 	;;
 *)
@@ -39,6 +44,9 @@ case ${1:-} in
 	# the session's bin directory (root, an ssh session) still gets the browser.
 	if [ -n "${HOME:-}" ] && [ -x "$HOME/.config/bin/hayato-view" ]; then
 		exec "$HOME/.config/bin/hayato-view" "$path"
+	fi
+	if [ -n "${HOME:-}" ] && [ -x "$HOME/.config/bin/hayato-browser" ]; then
+		exec "$HOME/.config/bin/hayato-browser" "file://$path"
 	fi
 	exec firefox-esr "file://$path"
 	;;

@@ -361,6 +361,11 @@ Add a probe when a new state is introduced.
   (rsync filters are first-match): the image builds the font cache once, and dropping it made the
   first window walk every font directory on the installed disk. `install-emmc.sh` carries the same
   pair.
+- **The browser is one indirection.** `~/.config/bin/hayato-browser` is the only reader of
+  `xdg-settings get default-web-browser` (what Settings writes); the `$mod+Shift+Return` key, the
+  `/usr/local/bin/xdg-open` shim, `system::portal` and Files' browser fallback all go through it.
+  Never bind a key or spawn a browser by name again: `firefox-esr` is the image's last resort, not
+  the choice, and a literal there silently ignores Settings.
 - Guard optional hardware resume hooks in Sway configs (e.g., `[ -x /usr/local/bin/hayato-dp-resume ]`),
   and detect both `eDP-*` and `DSI-*` internal panel outputs dynamically in `system::display`.
 

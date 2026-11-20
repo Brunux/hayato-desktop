@@ -2586,14 +2586,35 @@ fi
 # start it; without it they answer with a notification instead, which is easy to
 # miss.
 if have firefox-esr; then
-	ok "browser installed (firefox-esr), used by hayato-files and xdg-open"
+	ok "browser installed (firefox-esr is the image's fallback)"
 else
-	fail "firefox-esr is missing: Files cannot open an image or a PDF and xdg-open fails"
+	fail "firefox-esr is missing: Files cannot open an image or a PDF and xdg-open has no fallback"
 fi
 if [ -x /usr/local/bin/xdg-open ]; then
 	ok "xdg-open shim is installed (URLs and paths go to the browser)"
 else
 	fail "/usr/local/bin/xdg-open is missing: ctrl+click in foot and URL-printing tools fail"
+fi
+# The browser is a choice, not a literal: the key, xdg-open and Files all go
+# through hayato-browser, which reads what Settings wrote.
+if [ -x "$HOME/.config/bin/hayato-browser" ]; then
+	ok "hayato-browser is installed (one place reads the default browser)"
+	_default_browser=$(xdg-settings get default-web-browser 2>/dev/null || true)
+	_browser_print=$("$HOME/.config/bin/hayato-browser" --print 2>/dev/null || true)
+	if [ -n "$_default_browser" ] && [ "$_browser_print" = "$_default_browser" ]; then
+		ok "the browser key follows the default ($_default_browser)"
+	elif [ -z "$_default_browser" ] && [ -n "$_browser_print" ]; then
+		ok "no default browser is set; the key falls back to $_browser_print"
+	else
+		fail "hayato-browser would launch ${_browser_print:-nothing}, the default is ${_default_browser:-nothing}"
+	fi
+else
+	fail "bin/hayato-browser is missing: the browser key and xdg-open name firefox-esr whatever Settings says"
+fi
+if grep -rqs 'exec hayato-browser' /etc/sway/config /etc/sway/config.d "$HOME/.config/sway/config" "$HOME/.config/sway/config.d" 2>/dev/null; then
+	ok "the browser key starts hayato-browser"
+else
+	fail "no sway drop-in binds the browser key to hayato-browser: it still names one program"
 fi
 
 # Spec 015: Browser optimization (vertical tabs, compact density, zero Marionette daemons)

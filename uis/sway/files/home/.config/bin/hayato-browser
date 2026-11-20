@@ -1,0 +1,52 @@
+#!/bin/sh
+# The person's default web browser, with an optional URL.
+#
+# The browser used to be named literally in three places - the
+# `$mod+Shift+Return` key, the /usr/local/bin/xdg-open shim and Files'
+# browser fallback - so choosing LibreWolf in Settings changed the MIME
+# database and nothing else: the key and xdg-open still started firefox-esr.
+# This is the one place that reads the choice. `xdg-settings` is what
+# Settings writes, and `gio` launches the desktop file the same way the
+# session would.
+#
+#   hayato-browser URL      open the URL in the default browser
+#   hayato-browser          open the browser with no page
+#   hayato-browser --print  the desktop id it would launch (the witness)
+
+set -eu
+
+default_id() {
+	_id=$(xdg-settings get default-web-browser 2>/dev/null || true)
+	[ -n "$_id" ] || _id=$(xdg-mime query default x-scheme-handler/https 2>/dev/null || true)
+	printf '%s' "$_id"
+}
+
+case ${1:-} in
+--print)
+	_id=$(default_id)
+	printf '%s\n' "${_id:-firefox-esr.desktop}"
+	exit 0
+	;;
+esac
+
+url=${1:-}
+if [ -n "$url" ]; then
+	# gio applies the same default handler the MIME database names. Calling
+	# xdg-open here would come back to this helper.
+	if command -v gio >/dev/null 2>&1 && gio open "$url"; then
+		exit 0
+	fi
+	exec firefox-esr "$url"
+fi
+
+_id=$(default_id)
+if [ -n "$_id" ] && command -v gio >/dev/null 2>&1; then
+	for _dir in "${XDG_DATA_HOME:-$HOME/.local/share}" /usr/local/share /usr/share; do
+		if [ -f "$_dir/applications/$_id" ]; then
+			exec gio launch "$_dir/applications/$_id"
+		fi
+	done
+fi
+# No choice, or the chosen desktop file is gone: the image always ships this
+# one, so the key still opens a browser instead of doing nothing.
+exec firefox-esr

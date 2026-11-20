@@ -874,8 +874,10 @@ environment until it is closed.
   `~/.gnupg` may still be holding it. `gpgconf --kill gpg-agent` and try again.
 * **The archive is not in the list.** The restore lists every
   `*-profile-*.tar.zst*` on a mounted filesystem, so an archive exported under
-  the product's older name is found too. If the stick itself is missing, the
-  four reasons in **Export my profile** above say which one it is.
+  the product's older name is found too. A stick that is plugged in but not
+  mounted - a fresh boot leaves it that way - appears as **Mount …**: pick it,
+  and the restore mounts it and looks again. If no disk is offered, the four
+  reasons in **Export my profile** above say which one it is.
 * **The wrong archive was restored.** The restore wrote the profile that was
   there before to
   `~/.cache/hayato/backups/profile-before-restore-<date>.tar.zst`; extract it
