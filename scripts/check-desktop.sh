@@ -2599,6 +2599,13 @@ fi
 # through hayato-browser, which reads what Settings wrote.
 if [ -x "$HOME/.config/bin/hayato-browser" ]; then
 	ok "hayato-browser is installed (one place reads the default browser)"
+	# The image ships firefox-esr and names it for http/https; a fresh account
+	# has no user override, so the key and xdg-open open the shipped browser.
+	if grep -qs '^x-scheme-handler/https=firefox-esr.desktop' /etc/xdg/mimeapps.list; then
+		ok "the image's default browser is firefox-esr (the shipped one)"
+	else
+		fail "/etc/xdg/mimeapps.list does not name firefox-esr for https: a fresh install has no default browser"
+	fi
 	_default_browser=$(xdg-settings get default-web-browser 2>/dev/null || true)
 	_browser_print=$("$HOME/.config/bin/hayato-browser" --print 2>/dev/null || true)
 	if [ -n "$_default_browser" ] && [ "$_browser_print" = "$_default_browser" ]; then
