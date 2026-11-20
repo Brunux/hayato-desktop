@@ -615,7 +615,10 @@ including them would abort the archive with `Permission denied`. It writes
   encrypted file straight onto the destination (`hayato-profile-...tar.zst.gpg`),
   so exporting even a full home folder uses no multi-gigabyte staging copy on local
   storage and never writes plaintext tar data onto the stick. A trap removes any
-  partial file on cancel or `Ctrl-C`.
+  partial file on cancel or `Ctrl-C`. The compression is deliberately light
+  (`zstd -1`) and `gpg` is told not to compress again: a profile is mostly
+  pictures, models and wine prefixes, where a heavier setting spends minutes to
+  save nothing, while the text half still shrinks by about half.
 * **It is a tar, not a copy of the files**, because the disks this menu is
   pointed at are usually exFAT (that is what **Format a disk** writes): exFAT
   has no permission bits and no symlinks, so a plain copy would leave
