@@ -94,15 +94,24 @@ enum GlyphState {
     Locked(usize),
 }
 
-fn hero_letter_state(idx: usize, tick: u32, reduced_motion: bool) -> GlyphState {
+fn mix64(mut x: u64) -> u64 {
+    x = x.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    x ^ (x >> 31)
+}
+
+fn hero_letter_state(idx: usize, tick: u32, seed: u64, reduced_motion: bool) -> GlyphState {
     if reduced_motion {
         return GlyphState::Locked(idx);
     }
-    // Word is already formed on entry; keep a subtle periodic single-letter glitch pulse.
+    // Word is already formed on entry; periodically glitch a pseudo-random letter & glyph.
     let cycle = tick % 42;
-    let target = ((tick / 42) as usize) % PIXEL_LETTERS.len();
+    let bucket = (tick / 42) as u64;
+    let h = mix64(seed ^ bucket.wrapping_mul(0x9e37_79b9_7f4a_7c15));
+    let target = (h as usize) % PIXEL_LETTERS.len();
     if tick >= 18 && idx == target && cycle < 2 {
-        let g = ((tick as usize) + idx) % PIXEL_GLITCHES.len();
+        let g = (mix64(h ^ (tick as u64)) as usize) % PIXEL_GLITCHES.len();
         GlyphState::Glitch(g)
     } else {
         GlyphState::Locked(idx)
@@ -142,6 +151,7 @@ fn draw_pixel_hero(
     y: u16,
     design: &Design,
     tick: u32,
+    seed: u64,
     reduced_motion: bool,
 ) {
     // 6 letters * 5 cols + 5 gaps * 1 col + 1 gap + 4-col pixel underscore = 40 cols
@@ -155,7 +165,7 @@ fn draw_pixel_hero(
 
     for i in 0..PIXEL_LETTERS.len() {
         let lx = base_x + (i as u16) * 6;
-        match hero_letter_state(i, tick, reduced_motion) {
+        match hero_letter_state(i, tick, seed, reduced_motion) {
             GlyphState::Glitch(g) => {
                 draw_pixel_glyph(buf, lx, y, &PIXEL_GLITCHES[g], glitch_style);
             }
@@ -182,6 +192,7 @@ fn draw_compact_hero(
     y: u16,
     design: &Design,
     tick: u32,
+    seed: u64,
     reduced_motion: bool,
 ) {
     // "Hayato" (6 cols) + 1 space + underscore cursor (1 col) = 8 cols
@@ -197,7 +208,7 @@ fn draw_compact_hero(
         .add_modifier(Modifier::BOLD);
 
     for i in 0..COMPACT_LETTERS.len() {
-        let (sym, st) = match hero_letter_state(i, tick, reduced_motion) {
+        let (sym, st) = match hero_letter_state(i, tick, seed, reduced_motion) {
             GlyphState::Glitch(g) => (COMPACT_GLITCHES[g], glitch_style),
             GlyphState::Locked(idx) => (COMPACT_LETTERS[idx], locked_style),
         };
@@ -412,6 +423,7 @@ pub struct GreeterScreen {
     last_blink: Instant,
     anim_tick: u32,
     last_anim: Instant,
+    glitch_seed: u64,
 
     focus: Focus,
     mode: Mode,
@@ -557,6 +569,10 @@ impl GreeterScreen {
             last_blink: Instant::now(),
             anim_tick: 0,
             last_anim: Instant::now(),
+            glitch_seed: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos() as u64,
             focus,
             mode: Mode::Login,
             strip,
@@ -1188,6 +1204,7 @@ impl Screen for GreeterScreen {
                     y0 + 3,
                     ctx.design,
                     self.anim_tick,
+                    self.glitch_seed,
                     hero_reduced,
                 );
             } else {
@@ -1197,6 +1214,7 @@ impl Screen for GreeterScreen {
                     y0 + 3,
                     ctx.design,
                     self.anim_tick,
+                    self.glitch_seed,
                     hero_reduced,
                 );
             }
@@ -2084,18 +2102,45 @@ mod tests {
 
     #[test]
     fn pixel_hero_animation_phases_and_reduced_motion() {
+        let seed = 0x1234_5678_9abc_def0;
         for idx in 0..PIXEL_LETTERS.len() {
-            assert_eq!(hero_letter_state(idx, 0, true), GlyphState::Locked(idx));
-            assert_eq!(hero_letter_state(idx, 42, true), GlyphState::Locked(idx));
+            assert_eq!(
+                hero_letter_state(idx, 0, seed, true),
+                GlyphState::Locked(idx)
+            );
+            assert_eq!(
+                hero_letter_state(idx, 42, seed, true),
+                GlyphState::Locked(idx)
+            );
             // Word starts already formed on entry even when motion is enabled.
-            assert_eq!(hero_letter_state(idx, 0, false), GlyphState::Locked(idx));
+            assert_eq!(
+                hero_letter_state(idx, 0, seed, false),
+                GlyphState::Locked(idx)
+            );
         }
-        // Periodic hacker glitch pulse triggers at tick 42 for letter 1, settles by tick 44.
-        assert!(matches!(
-            hero_letter_state(1, 42, false),
-            GlyphState::Glitch(_)
-        ));
-        assert_eq!(hero_letter_state(1, 44, false), GlyphState::Locked(1));
+        // Each 42-tick bucket glitches exactly one pseudo-random letter for 2 ticks,
+        // and different buckets pick varied letters rather than a fixed slot.
+        let mut seen = [false; PIXEL_LETTERS.len()];
+        for bucket in 1..=12u32 {
+            let tick = bucket * 42;
+            let mut glitched = None;
+            for idx in 0..PIXEL_LETTERS.len() {
+                if matches!(
+                    hero_letter_state(idx, tick, seed, false),
+                    GlyphState::Glitch(_)
+                ) {
+                    assert!(glitched.is_none(), "only one letter glitches per bucket");
+                    glitched = Some(idx);
+                    seen[idx] = true;
+                }
+                assert_eq!(
+                    hero_letter_state(idx, tick + 2, seed, false),
+                    GlyphState::Locked(idx)
+                );
+            }
+            assert!(glitched.is_some());
+        }
+        assert!(seen.iter().filter(|&&v| v).count() >= 3);
     }
 
     #[test]
