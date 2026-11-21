@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use hayato_ui::app::{BodyCtx, Outcome, Screen};
 use hayato_ui::design::{ColorRole, Design, TextStyle};
 use hayato_ui::widgets::{
-    BRAILLE_SPINNER, Input, KeyHint, ListAction, ListState, Row, draw_card, draw_gauge, put,
+    BRAILLE_SPINNER, Input, KeyHint, ListAction, ListState, Row, draw_card, draw_gauge_with, put,
     put_trunc,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -2521,7 +2521,7 @@ impl InstallerScreen {
         // The gauge draws the percentage itself (`put_percent`); the label is
         // the phase only, or the number appears twice beside the bar.
         let gauge_label = self.worker_state.phase_name.clone();
-        draw_gauge(
+        draw_gauge_with(
             buf,
             Rect {
                 x: card.x + 2,
@@ -2532,6 +2532,7 @@ impl InstallerScreen {
             design,
             pct,
             &gauge_label,
+            ColorRole::Ok,
         );
         y += 2;
 
@@ -3105,5 +3106,63 @@ mod tests {
             1,
             "the percentage is drawn twice: {row}"
         );
+    }
+
+    #[test]
+    fn the_progress_gauge_stays_green_past_seventy_and_ninety_percent() {
+        let design = Design::solarized();
+        let ok = design.color(ColorRole::Ok);
+        assert_ne!(ok, design.color(ColorRole::Warn));
+        assert_ne!(ok, design.color(ColorRole::Danger));
+
+        for percent in [40u8, 75, 95, 100] {
+            let mut scr = InstallerScreen::from_preflight_isolated(
+                mock_preflight(BootType::Depthcharge),
+                true,
+            );
+            scr.step = WizardStep::Progress;
+            scr.worker_state.percent = percent;
+            scr.worker_state.phase_name = "Copying the system".to_string();
+
+            let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+            terminal
+                .draw(|f| {
+                    let area = f.area();
+                    let mut ctx = BodyCtx {
+                        area,
+                        buf: f.buffer_mut(),
+                        design: &design,
+                    };
+                    scr.draw(&mut ctx);
+                })
+                .unwrap();
+            let buf = terminal.backend().buffer();
+
+            let gauge_y = (0..30)
+                .find(|&y| {
+                    let line: String = (0..100).map(|x| buf[(x, y)].symbol()).collect();
+                    line.contains('\u{2588}') && line.contains('%')
+                })
+                .unwrap_or_else(|| panic!("missing gauge row at {percent}%"));
+
+            let mut filled_cells = 0usize;
+            let mut percent_cells = 0usize;
+            for x in 0..100 {
+                let cell = &buf[(x, gauge_y)];
+                match cell.symbol() {
+                    "\u{2588}" => {
+                        filled_cells += 1;
+                        assert_eq!(cell.fg, ok, "filled cell changed color at {percent}%");
+                    }
+                    "%" => {
+                        percent_cells += 1;
+                        assert_eq!(cell.fg, ok, "percent sign changed color at {percent}%");
+                    }
+                    _ => {}
+                }
+            }
+            assert!(filled_cells > 0, "no filled bar cells at {percent}%");
+            assert_eq!(percent_cells, 1, "expected one % cell at {percent}%");
+        }
     }
 }

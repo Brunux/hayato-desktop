@@ -47,8 +47,8 @@ pub use widgets::{
     ActionItem, ActionNotice, ActionRunner, ActionStrip, ActionStripEvent, BRAILLE_SPINNER,
     Confirm, ConfirmAction, Header, Input, InputAction, KeyHint, ListAction, ListState, LogPane,
     QrCode, Row, Tier, centered, draw_badge, draw_card, draw_card_with, draw_empty, draw_failure,
-    draw_filter_bar, draw_gauge, draw_header, draw_keybar, draw_progress, draw_qr, draw_scrollbar,
-    draw_signal_bars, list_layout, signal_bars,
+    draw_filter_bar, draw_gauge, draw_gauge_with, draw_header, draw_keybar, draw_progress, draw_qr,
+    draw_scrollbar, draw_signal_bars, list_layout, signal_bars,
 };
 
 /// A buffer as text, one line per row, for tests that want to read the screen

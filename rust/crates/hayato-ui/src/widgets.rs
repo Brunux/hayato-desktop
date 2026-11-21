@@ -1563,14 +1563,12 @@ pub fn put_percent(buf: &mut Buffer, x: u16, y: u16, value: f64, style: Style) -
     put(buf, x, y, "%", 1, style)
 }
 
-/// A bar with end caps: `▕████░░░░▕  42% battery`.
+/// A bar with end caps: `▕████░░░░▕  42% battery` colored by utilization
+/// (`Ok` < 70%, `Warn` 70–89%, `Danger` >= 90%).
 ///
 /// The label is reserved before the bar is measured, or a wide gauge eats the
 /// word that says what the number means (80 columns of bar and `b…`).
 pub fn draw_gauge(buf: &mut Buffer, area: Rect, design: &Design, value: f64, label: &str) {
-    if area.width < 12 || area.height == 0 {
-        return;
-    }
     let value = value.clamp(0.0, 1.0);
     let role = if value >= 0.9 {
         ColorRole::Danger
@@ -1579,6 +1577,25 @@ pub fn draw_gauge(buf: &mut Buffer, area: Rect, design: &Design, value: f64, lab
     } else {
         ColorRole::Ok
     };
+    draw_gauge_with(buf, area, design, value, label, role);
+}
+
+/// A bar with end caps drawn in a caller-specified [`ColorRole`].
+///
+/// Use this for completion progress bars (where 70%+ is normal progress, not a
+/// capacity warning) while keeping [`draw_gauge`] for resource utilization.
+pub fn draw_gauge_with(
+    buf: &mut Buffer,
+    area: Rect,
+    design: &Design,
+    value: f64,
+    label: &str,
+    role: ColorRole,
+) {
+    if area.width < 12 || area.height == 0 {
+        return;
+    }
+    let value = value.clamp(0.0, 1.0);
     let style = Style::default().fg(design.color(role));
     let empty = Style::default().fg(design.color(ColorRole::SurfaceAlt));
     let label_room = (UnicodeWidthStr::width(label) as u16).min(area.width / 3);
