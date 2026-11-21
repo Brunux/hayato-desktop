@@ -685,6 +685,13 @@ impl InstallerScreen {
         self.worker_run = WorkerRun::Idle;
         self.update_keybar();
     }
+
+    fn trigger_reboot(&self) -> Outcome {
+        if !self.config.dry_run {
+            let _ = crate::menu::run_session(crate::menu::SessionAction::Reboot);
+        }
+        Outcome::Done(hayato_ui::app::exit::OK)
+    }
 }
 
 fn path_exists(p: &str) -> bool {
@@ -949,10 +956,7 @@ impl Screen for InstallerScreen {
             }
             50 if self.step == WizardStep::Complete => {
                 self.complete_focus = CompleteFocus::Reboot;
-                if !self.config.dry_run {
-                    let _ = Command::new("systemctl").arg("reboot").spawn();
-                }
-                Outcome::Done(hayato_ui::app::exit::OK)
+                self.trigger_reboot()
             }
             51 if self.step == WizardStep::Complete => {
                 self.complete_focus = CompleteFocus::Exit;
@@ -1016,8 +1020,8 @@ impl Screen for InstallerScreen {
                     Outcome::Consumed
                 }
                 KeyCode::Enter => {
-                    if self.complete_focus == CompleteFocus::Reboot && !self.config.dry_run {
-                        let _ = Command::new("systemctl").arg("reboot").spawn();
+                    if self.complete_focus == CompleteFocus::Reboot {
+                        return self.trigger_reboot();
                     }
                     Outcome::Done(hayato_ui::app::exit::OK)
                 }
@@ -3164,5 +3168,27 @@ mod tests {
             assert!(filled_cells > 0, "no filled bar cells at {percent}%");
             assert_eq!(percent_cells, 1, "expected one % cell at {percent}%");
         }
+    }
+
+    #[test]
+    fn complete_step_reboot_and_exit_actions_return_cleanly_in_dry_run() {
+        let design = Design::solarized();
+        let mut scr =
+            InstallerScreen::from_preflight_isolated(mock_preflight(BootType::Depthcharge), true);
+        scr.step = WizardStep::Complete;
+        scr.complete_focus = CompleteFocus::Reboot;
+        assert_eq!(
+            scr.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &design),
+            Outcome::Done(hayato_ui::app::exit::OK)
+        );
+        assert_eq!(scr.click(Some(50)), Outcome::Done(hayato_ui::app::exit::OK));
+        assert_eq!(scr.click(Some(51)), Outcome::Done(hayato_ui::app::exit::OK));
+        assert_eq!(
+            crate::menu::session_attempts(crate::menu::SessionAction::Reboot),
+            vec![
+                vec!["systemctl", "reboot"],
+                vec!["sudo", "-n", "systemctl", "reboot"],
+            ]
+        );
     }
 }

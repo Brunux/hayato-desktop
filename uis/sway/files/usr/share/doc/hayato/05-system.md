@@ -441,8 +441,10 @@ keeping all key bindings, the root menu (*Install Hayato*), and `org.hayato.inst
    streaming `rsync --info=progress2` progress, pausing `swayidle`, and enforcing the `first_write`
    cancellation lock once GPT partitioning begins (`Esc` detaches while the worker finishes in background).
 6. **Completion**:
-   Writes `/etc/hayato/installation` last, verifies root ext4 cleanly with `e2fsck -f -n`, and
-   displays boot instructions tailored to Depthcharge, UEFI (`systemd-boot`), or `extlinux`.
+   Writes `/etc/hayato/installation` last, verifies root ext4 cleanly with `e2fsck -f -n`,
+   displays boot instructions tailored to Depthcharge, UEFI (`systemd-boot`), or `extlinux`, and
+   offers `[ Reboot System Now ]` (running the detached session reboot chain with `sudo -n systemctl reboot`
+   fallback) or `[ Stay in Live Session ]`.
 
 ## Kernel Updates & In-Place `.deb` Upgrades
 

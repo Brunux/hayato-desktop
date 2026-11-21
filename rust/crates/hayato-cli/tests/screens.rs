@@ -344,7 +344,7 @@ fn greeter() -> Box<dyn Screen> {
         auth_marker: None,
         theme_slug: "solarized".into(),
         theme: load_theme_by_slug("solarized").unwrap(),
-        greeting: "Hayato \u{00b7} light. fast. fun.".into(),
+        greeting: "light. fast. fun.".into(),
         backend: Backend::Preview,
         preview: true,
         density: Density::Normal,

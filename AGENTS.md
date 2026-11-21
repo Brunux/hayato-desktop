@@ -45,7 +45,7 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
 6. **Generated glyph & icon tables**:
    - Glyph codepoints (`Symbols Nerd Font Mono` + `Font Awesome 6 Free Solid` + `Font Awesome 6 Brands Regular`, avoiding Codicons `ea60..ec1e` stripped in Debian `fonts-nerd-symbols 3.4.0+dfsg2-1`): edit `scripts/make-glyphs.sh`, never hand-edit `glyphs/table.rs`.
    - `hayato-notify` (`FontRenderer`) loads both `SymbolsNerdFontMono` and `Font Awesome 6` (`Solid`/`Brands`) and resolves UI glyph codepoints via `hayato_ui::Glyph`.
-   - Greeter console power buttons (`^Z`/`^R`/`^P`) invoke `systemctl <verb> -i` with stdio redirected (never inheriting raw TTY over Ratatui), authorized for local active `_greetd` via `/etc/polkit-1/rules.d/49-hayato-greeter-power.rules`.
+   - Greeter console power buttons (`^Z`/`^R`/`^P`) invoke `systemctl <verb> -i` with stdio redirected (never inheriting raw TTY over Ratatui), authorized for local active `_greetd` via `/etc/polkit-1/rules.d/49-hayato-greeter-power.rules`. `GreeterScreen` suppresses the top `Header` band and rule (`Header::default()`), keeps a single centered `Hayato` hero label (no `z_` or `_` suffix) above clock/date and `light. fast. fun.`, renders empty input placeholders, omits the session summary row and `Session` action pill from the login card, and keeps the bottom keybar to `[Enter] sign in`, `[Tab] fields`, and `[Esc] clear/close` without duplicating the card's `ActionStrip` shortcuts.
    - PNG app/notification icons: edit `scripts/make-icons.sh` tables and regenerate PNGs.
    - Brand SVGs -> PNGs: `scripts/make-brand.sh` (outputs `brand/apple-touch-icon.png`, wallpapers, wordmark).
    - Theme templates: edit `rust/crates/hayato-theme/templates/` + `scripts/make-theme.sh` (Waybar outer end spacing lives in `.modules-left` / `.modules-right` to match `config.jsonc` `spacing: 4`, keeping edge pills inset cleanly even when terminal modules are hidden).
@@ -353,8 +353,8 @@ Add a probe when a new state is introduced.
   evaluates power via sysfs `type`/`scope` (recognizing ChromeOS `USB` / `Mains` PD chargers and
   ignoring `Device`-scoped stylus batteries), enforces `check_machine_safety` before writes in both TUI
   pre-flight and headless `apply`, spawns detached root work via `sudo -n setsid systemd-inhibit ... apply --stdin --state-dir /run/hayato-install`
-  with secrets passed solely over stdin, enforces the `first_write` cancel gate, and writes `/etc/hayato/installation`
-  last. `core/scripts/install-emmc.sh` stays intact only as a Hayato manual/debug fallback.
+  with secrets passed solely over stdin, enforces the `first_write` cancel gate, writes `/etc/hayato/installation`
+  last, and triggers `[ Reboot System Now ]` on completion via `menu::run_session(SessionAction::Reboot)` (detached `setsid` `systemctl reboot` with `sudo -n systemctl reboot` fallback, never a child tied to the exiting `foot` PTY). `core/scripts/install-emmc.sh` stays intact only as a Hayato manual/debug fallback.
 - When desktop binaries invoke `hayato-core` system scripts (`install-boot.sh`, `backup-system.sh`),
   resolve `/usr/libexec/hayato/<script>` first, then `$HAYATO_CORE_DIR/scripts/`, then umbrella/sibling fallbacks.
 - The installer's `rsync` excludes `/var/cache/*` but includes `/var/cache/fontconfig/**` first

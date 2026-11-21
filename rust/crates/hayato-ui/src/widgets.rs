@@ -127,6 +127,9 @@ pub fn draw_header(buf: &mut Buffer, area: Rect, design: &Design, header: &Heade
         return;
     }
     fill(buf, area, design.style(TextStyle::Body));
+    if header.title.is_empty() && header.subtitle.is_none() && header.status.is_none() {
+        return;
+    }
     let mut x = put(
         buf,
         area.x,

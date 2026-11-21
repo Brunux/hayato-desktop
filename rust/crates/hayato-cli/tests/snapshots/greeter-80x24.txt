@@ -1,24 +1,24 @@
-Hayato · Greeter · Preview (hayato)                                             
-────────────────────────────────────────────────────────────────────────────────
                                                                                 
-                                  z_  Hayato_                                   
+                                                                                
+                                                                                
+                                     Hayato                                     
                           18:30:00 · Sun, 15 Nov 2026                           
                                                                                 
-                           Hayato · light. fast. fun.                           
+                               light. fast. fun.                                
                                                                                 
  ╭ Sign in ───────────────────────────────────────────────────────────────────╮ 
  │   User       brunux     + Other                                           │ 
  │                                                                            │ 
- │   Password ▍type password                                                 │ 
- │                                                                            │ 
- │   Sway (Wayland)                                        Solarized Dark   │ 
+ │   Password ▍                                                              │ 
  │                                                                            │ 
  │ Preview mode: enter any text to simulate sign-in ("wrong" tests error)     │ 
  │                                                                            │ 
  │                                                                            │ 
  │                                                                            │ 
  │                                                                            │ 
- │  ^S   Session   ^T   Theme   ^Z   Sleep   ^R   Reboot    [Tab] actions │ 
+ │                                                                            │ 
+ │                                                                            │ 
+ │  ^T   Theme   ^Z   Sleep   ^R   Reboot   ^P ⏻  Shut down                │ 
  ╰────────────────────────────────────────────────────────────────────────────╯ 
                                                                                 
- [Enter]  sign in   [Tab]  fields   [^S]  session   [^T]  theme    [Esc]  close 
+ [Enter]  sign in   [Tab]  fields   [Esc]  close                                

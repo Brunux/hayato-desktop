@@ -21,7 +21,6 @@ use hayato_ui::widgets::{
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
-use ratatui::text::Span;
 
 use super::ipc::{AuthMessageType, AuthOutcome, Backend, SessionLaunch};
 use super::{GreeterConfig, GreeterState, SessionEntry, UserEntry, load_theme_by_slug};
@@ -113,8 +112,6 @@ struct HitRects {
     user_count: usize,
     username_box: Option<Rect>,
     password_box: Option<Rect>,
-    session_pill: Option<Rect>,
-    theme_pill: Option<Rect>,
     strip_row: Option<Rect>,
     confirm_cancel: Option<Rect>,
     confirm_yes: Option<Rect>,
@@ -128,26 +125,12 @@ impl Default for HitRects {
             user_count: 0,
             username_box: None,
             password_box: None,
-            session_pill: None,
-            theme_pill: None,
             strip_row: None,
             confirm_cancel: None,
             confirm_yes: None,
             picker_list: None,
         }
     }
-}
-
-enum HitTarget {
-    UserPill(usize),
-    UsernameBox,
-    PasswordBox,
-    SessionPill,
-    ThemePill,
-    StripAction(&'static str),
-    ConfirmCancel,
-    ConfirmYes,
-    PickerRow(usize),
 }
 
 pub struct GreeterSetup {
@@ -353,25 +336,14 @@ impl GreeterScreen {
 
         let strip = Self::build_strip(setup.preview, show_power_actions);
 
-        let header_sub = if setup.preview {
-            format!("Greeter \u{00b7} Preview ({hostname})")
-        } else {
-            format!("Greeter \u{00b7} {hostname}")
-        };
-
-        let mut keybar_main = vec![
+        let keybar_main = vec![
             KeyHint::new("Enter", "sign in"),
             KeyHint::new("Tab", "fields"),
-            KeyHint::new("^S", "session"),
-            KeyHint::new("^T", "theme"),
+            KeyHint::new(
+                "Esc",
+                if setup.preview { "close" } else { "clear" },
+            ),
         ];
-        if setup.preview {
-            keybar_main.push(KeyHint::new("^G", "settings"));
-        }
-        keybar_main.push(KeyHint::new(
-            "Esc",
-            if setup.preview { "close" } else { "clear" },
-        ));
 
         Self {
             users: setup.users,
@@ -414,7 +386,7 @@ impl GreeterScreen {
             preview: setup.preview,
             density: setup.density,
             reduced_motion: setup.reduced_motion,
-            header: Header::new("Hayato").subtitle(header_sub),
+            header: Header::default(),
             keybar_main,
             keybar_picker: vec![
                 KeyHint::new("Enter", "select"),
@@ -444,16 +416,10 @@ impl GreeterScreen {
         self.date_str = date.into();
         self.hostname = hostname.into();
         self.clock_fixed = true;
-        self.header = Header::new("Hayato").subtitle(if self.preview {
-            format!("Greeter \u{00b7} Preview ({})", self.hostname)
-        } else {
-            format!("Greeter \u{00b7} {}", self.hostname)
-        });
     }
 
     fn build_strip(preview: bool, show_power_actions: bool) -> ActionStrip {
         let mut items = vec![
-            ActionItem::new("session", "^S", "Session").glyph(Glyph::Window),
             ActionItem::new("theme", "^T", "Theme").glyph(Glyph::Theme),
         ];
         if show_power_actions {
@@ -982,32 +948,19 @@ impl Screen for GreeterScreen {
         // Hero clock & Hayato mark
         {
             let mut y = hero_area.y;
-            let brand_spans = [
-                Span::styled(
-                    "z",
-                    Style::default()
-                        .fg(ctx.design.color(ColorRole::Accent))
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    "_",
-                    Style::default()
-                        .fg(ctx.design.color(ColorRole::Warn))
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    "  Hayato_",
-                    Style::default()
-                        .fg(ctx.design.color(ColorRole::Text))
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ];
-            let mut bx = hero_area.x + hero_area.width.saturating_sub(11) / 2;
-            for sp in brand_spans {
-                let w = sp.content.len() as u16;
-                put(ctx.buf, bx, y, &sp.content, w, sp.style);
-                bx += w;
-            }
+            let brand = "Hayato";
+            let bw = brand.len() as u16;
+            let bx = hero_area.x + hero_area.width.saturating_sub(bw) / 2;
+            put(
+                ctx.buf,
+                bx,
+                y,
+                brand,
+                bw,
+                Style::default()
+                    .fg(ctx.design.color(ColorRole::Text))
+                    .add_modifier(Modifier::BOLD),
+            );
             y += 1;
 
             if y < hero_area.bottom() {
@@ -1060,7 +1013,6 @@ impl Screen for GreeterScreen {
         }
 
         // Main Bento login card
-        let active_session = self.active_session();
         let inner = draw_card_with(
             ctx.buf,
             bento_area,
@@ -1212,7 +1164,7 @@ impl Screen for GreeterScreen {
                 box_rect,
                 ctx.buf,
                 ctx.design,
-                "username",
+                "",
                 user_focused,
                 self.cursor_blink_on,
                 ColorRole::Bg,
@@ -1262,11 +1214,7 @@ impl Screen for GreeterScreen {
                     pass_rect,
                     ctx.buf,
                     ctx.design,
-                    if self.auth_prompt.is_challenge() {
-                        "type PAM response"
-                    } else {
-                        "type password"
-                    },
+                    "",
                     pass_focused,
                     self.cursor_blink_on,
                     ColorRole::Bg,
@@ -1291,51 +1239,7 @@ impl Screen for GreeterScreen {
             y += 2;
         }
 
-        // 4. Session + Theme summary row
-        if y + 2 < inner.bottom() {
-            let win_glyph = Glyph::Window.cell();
-            put(
-                ctx.buf,
-                inner.x,
-                y,
-                win_glyph,
-                2,
-                Style::default()
-                    .fg(ctx.design.color(ColorRole::AccentAlt))
-                    .bg(bg_surface),
-            );
-            let sess_text = format!("{} ({})", active_session.name, active_session.kind.label());
-            let sess_w = (sess_text.chars().count() as u16 + 2).min(inner.width / 2);
-            let sess_rect = Rect::new(inner.x + 3, y, sess_w, 1);
-            put_trunc(
-                ctx.buf,
-                sess_rect.x,
-                y,
-                &sess_text,
-                sess_rect.width,
-                ctx.design.style(TextStyle::Body).bg(bg_surface),
-            );
-            hits.session_pill = Some(sess_rect);
-
-            let theme_badge = format!("{}  {}", Glyph::Theme.cell(), self.theme.name);
-            let theme_w = (theme_badge.chars().count() as u16 + 2).min(inner.width / 2);
-            let theme_x = inner.right().saturating_sub(theme_w);
-            if theme_x > sess_rect.right() + 1 {
-                let theme_rect = Rect::new(theme_x, y, theme_w, 1);
-                put_trunc(
-                    ctx.buf,
-                    theme_rect.x,
-                    y,
-                    &theme_badge,
-                    theme_rect.width,
-                    ctx.design.style(TextStyle::Dim).bg(bg_surface),
-                );
-                hits.theme_pill = Some(theme_rect);
-            }
-            y += 2;
-        }
-
-        // 5. Status / Spinner / PAM error banner
+        // 4. Status / Spinner / PAM error banner
         let strip_y = inner.bottom().saturating_sub(1);
         if y < strip_y {
             if self.runner.is_running() {
@@ -1448,16 +1352,6 @@ impl Screen for GreeterScreen {
                 return Some(21);
             }
         }
-        if let Some(r) = hits.session_pill {
-            if r.contains((x, y).into()) {
-                return Some(22);
-            }
-        }
-        if let Some(r) = hits.theme_pill {
-            if r.contains((x, y).into()) {
-                return Some(23);
-            }
-        }
         if let Some(strip_area) = hits.strip_row {
             if let Some(idx) = self.strip.hit_index(strip_area, x, y) {
                 return Some(300 + idx);
@@ -1534,8 +1428,6 @@ impl Screen for GreeterScreen {
                 self.strip.set_focused(false);
                 Outcome::Consumed
             }
-            22 => self.trigger_action("session"),
-            23 => self.trigger_action("theme"),
             x if (10..100).contains(&x) => {
                 self.select_user(x - 10);
                 self.strip.set_focused(false);
@@ -1944,7 +1836,7 @@ mod tests {
             auth_marker: None,
             theme_slug: "solarized".into(),
             theme,
-            greeting: "Hayato \u{00b7} light. fast. fun.".into(),
+            greeting: "light. fast. fun.".into(),
             backend: Backend::Preview,
             preview,
             density: Density::Normal,
@@ -2047,9 +1939,13 @@ mod tests {
     fn renders_cleanly_at_80x24_and_152x45() {
         let mut scr = test_screen(true);
         let small = render_text(&mut scr, 80, 24);
+        assert!(small.contains("Hayato"));
         assert!(small.contains("18:30:00"));
         assert!(small.contains("brunux"));
-        assert!(small.contains("Sway"));
+        assert!(small.contains("Theme"));
+        assert!(!small.contains("z_"));
+        assert!(!small.contains("Hayato_"));
+        assert!(!small.contains("Sway (Wayland)"));
 
         let large = render_text(&mut scr, 152, 45);
         assert!(large.contains("18:30:00"));

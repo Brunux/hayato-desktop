@@ -753,9 +753,11 @@ centered, cached at `~/.cache/hayato/wallpapers/`. The first wallpaper is what
 `hayato-greeter` (`/usr/bin/hayato-greeter --session`), a native Ratatui login
 surface running fullscreen in `foot` over a minimal `sway` + theme wallpaper
 backdrop (with automatic VT7 console fallback if Wayland cannot start). It
-automatically picks up the active user theme (and lets you cycle all 16 themes
-live with **F4** or **Ctrl+T**, switch sessions with **F2** / **Ctrl+S**, or
-trigger Sleep / Reboot / Shut down with Cancel-first confirmation). To preview
+centers a single `Hayato` hero title, clock/date, and tagline above a clean
+`Sign in` card (no top window header band, session summary box, or input
+placeholder hints), automatically picks up the active user theme, and lets you
+cycle all 16 themes live with **F4** or **Ctrl+T**, or trigger Sleep / Reboot /
+Shut down with Cancel-first confirmation. To preview
 it inside an open session without logging out, run `hayato greeter --preview`
 (press **Esc** to close, or **Ctrl+G** / **F9** / **Settings** to tweak defaults live);
 to revert to raw VT7 fallback in `/etc/greetd/config.toml`,

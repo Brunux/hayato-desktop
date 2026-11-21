@@ -25,7 +25,7 @@ use crate::term;
 
 pub const DEFAULT_STATE_DIR: &str = "/var/lib/hayato/greeter";
 pub const DEFAULT_CONFIG_FILE: &str = "/etc/hayato/greeter.toml";
-pub const DEFAULT_GREETING: &str = "Hayato \u{00b7} light. fast. fun.";
+pub const DEFAULT_GREETING: &str = "light. fast. fun.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserEntry {
@@ -455,7 +455,7 @@ pub fn format_greeter_config(cfg: &GreeterConfig) -> String {
             toml_escape(greeting.trim())
         ));
     } else {
-        out.push_str("# greeting = \"Hayato \\u00b7 light. fast. fun.\"\n");
+        out.push_str("# greeting = \"light. fast. fun.\"\n");
     }
     if let Some(session) = cfg
         .default_session
@@ -1013,7 +1013,7 @@ pub fn menu(
             config: cfg,
         });
 
-        let code = App::new(Header::new("Hayato").subtitle("Greeter"))
+        let code = App::new(Header::default())
             .design(initial_design)
             .screen(&mut scr)
             .run(terminal)

@@ -1,5 +1,3 @@
-Hayato · Greeter · Preview (hayato)                                                                                                                     
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                         
                                                                                                                                                         
                                                                                                                                                         
@@ -9,17 +7,17 @@ Hayato · Greeter · Preview (hayato)
                                                                                                                                                         
                                                                                                                                                         
                                                                                                                                                         
-                                                                      z_  Hayato_                                                                       
+                                                                                                                                                        
+                                                                                                                                                        
+                                                                         Hayato                                                                         
                                                               18:30:00 · Sun, 15 Nov 2026                                                               
                                                                                                                                                         
-                                                               Hayato · light. fast. fun.                                                               
+                                                                   light. fast. fun.                                                                    
                                                                                                                                                         
                    ╭ Sign in ───────────────────────────────────────────────────────────────────────────────────────────────────────╮                   
                    │   User       brunux     + Other                                                                               │                   
                    │                                                                                                                │                   
-                   │   Password ▍type password                                                                                     │                   
-                   │                                                                                                                │                   
-                   │   Sway (Wayland)                                                                            Solarized Dark   │                   
+                   │   Password ▍                                                                                                  │                   
                    │                                                                                                                │                   
                    │ Preview mode: enter any text to simulate sign-in ("wrong" tests error)                                         │                   
                    │                                                                                                                │                   
@@ -30,7 +28,9 @@ Hayato · Greeter · Preview (hayato)
                    │                                                                                                                │                   
                    │                                                                                                                │                   
                    │                                                                                                                │                   
-                   │  ^S   Session   ^T   Theme   ^Z   Sleep   ^R   Reboot   ^P ⏻  Shut down   ^G   Settings     [Tab] actions │                   
+                   │                                                                                                                │                   
+                   │                                                                                                                │                   
+                   │  ^T   Theme   ^Z   Sleep   ^R   Reboot   ^P ⏻  Shut down   ^G   Settings                     [Tab] actions │                   
                    ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯                   
                                                                                                                                                         
                                                                                                                                                         
@@ -42,4 +42,4 @@ Hayato · Greeter · Preview (hayato)
                                                                                                                                                         
                                                                                                                                                         
                                                                                                                                                         
- [Enter]  sign in   [Tab]  fields   [^S]  session   [^T]  theme   [^G]  settings   [Esc]  close                                                         
+ [Enter]  sign in   [Tab]  fields   [Esc]  close                                                                                                        
