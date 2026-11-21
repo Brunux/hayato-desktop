@@ -751,8 +751,9 @@ centered, cached at `~/.cache/hayato/wallpapers/`. The first wallpaper is what
 
 **The greeter and lock screen are themed.** At boot, `greetd` launches
 `hayato-greeter` (`/usr/bin/hayato-greeter --session`), a native Ratatui login
-surface running fullscreen in `foot` over a minimal `sway` + theme wallpaper
-backdrop (with automatic VT7 console fallback if Wayland cannot start). It
+surface running fullscreen in `foot` over a minimal `sway` compositor with a
+solid theme background (no per-boot wallpaper generation or handoff flash, with
+automatic VT7 console fallback if Wayland cannot start). It
 centers a minimalist `HH:MM` clock, date, and single `Hayato` wordmark above a
 tight, border-only login card (user pills + password box with no placeholder
 hints or idle filler text) and a single quiet action row underneath (**Ctrl+T**

@@ -13,7 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use hayato_theme::{SURFACES, Theme, builtin, store, wallpaper};
+use hayato_theme::{SURFACES, Theme, builtin, store};
 use hayato_ui::{App, Design, Header};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -646,7 +646,7 @@ pub fn render_greeter_foot_ini(theme: &Theme, slug: &str) -> Result<String, Stri
         .ok_or_else(|| "foot template missing from hayato-theme".to_string())?;
     let mut rendered = store::render_surface(foot_surface, theme, slug, "/var/lib/hayato/greeter")?;
     rendered = rendered.replace("pad=6x6", "pad=16x16");
-    rendered = rendered.replace("alpha=0.87", "alpha=0.88\nalpha-mode=all");
+    rendered = rendered.replace("alpha=0.87", "alpha=1.0");
     rendered = rendered.replace("size=11", "size=13");
     rendered = rendered.replace("size=12", "size=14");
     Ok(rendered)
@@ -712,32 +712,15 @@ pub fn prepare_session_assets(
     fs::write(&foot_ini_path, foot_body)
         .map_err(|e| format!("write {}: {e}", foot_ini_path.display()))?;
 
-    let wallpaper_path = runtime_dir.join(format!("wallpaper-{theme_slug}.png"));
-    let wp = match wallpaper::generate_wallpaper(
-        theme,
-        theme_slug,
-        wallpaper::DEFAULT_WIDTH,
-        wallpaper::DEFAULT_HEIGHT,
-    ) {
-        Ok(wp) => {
-            if fs::write(&wallpaper_path, &wp.data).is_ok() {
-                Some(wallpaper_path)
-            } else {
-                None
-            }
-        }
-        Err(_) => None,
-    };
-
     let sway_conf_path = runtime_dir.join("sway.conf");
-    let sway_body = render_greeter_sway_conf(&foot_ini_path, wp.as_deref(), theme, exe);
+    let sway_body = render_greeter_sway_conf(&foot_ini_path, None, theme, exe);
     fs::write(&sway_conf_path, sway_body)
         .map_err(|e| format!("write {}: {e}", sway_conf_path.display()))?;
 
     Ok(PreparedSession {
         foot_ini: foot_ini_path,
         sway_conf: sway_conf_path,
-        wallpaper: wp,
+        wallpaper: None,
         theme_slug: theme_slug.to_string(),
     })
 }
@@ -1136,9 +1119,11 @@ DesktopNames=sway;wlroots;swayfx
             prepare_session_assets(tmp.path(), "solarized", &theme, "/usr/bin/hayato").unwrap();
         assert!(prep.foot_ini.is_file());
         assert!(prep.sway_conf.is_file());
+        assert!(prep.wallpaper.is_none());
         let foot_text = fs::read_to_string(&prep.foot_ini).unwrap();
-        assert!(foot_text.contains("alpha-mode=all"));
+        assert!(foot_text.contains("alpha=1.0"));
         let sway_text = fs::read_to_string(&prep.sway_conf).unwrap();
+        assert!(sway_text.contains("solid_color"));
         assert!(sway_text.contains("fullscreen enable"));
         assert!(sway_text.contains("hayato-greeter"));
     }
