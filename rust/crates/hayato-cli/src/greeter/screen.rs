@@ -412,6 +412,7 @@ pub struct GreeterScreen {
     remember_user: bool,
     remember_session: bool,
     follow_user_theme: bool,
+    show_clock: bool,
     show_power_actions: bool,
     open_settings: bool,
 
@@ -450,6 +451,7 @@ impl GreeterScreen {
         let remember_session = cfg.remember_session;
         let clock_24h = cfg.clock_24h;
         let follow_user_theme = cfg.follow_user_theme;
+        let show_clock = cfg.show_clock;
         let show_power_actions = cfg.show_power_actions;
 
         let mut selected_user = if setup.users.is_empty() {
@@ -556,6 +558,7 @@ impl GreeterScreen {
             remember_user,
             remember_session,
             follow_user_theme,
+            show_clock,
             show_power_actions,
             open_settings: false,
             username_input,
@@ -601,13 +604,15 @@ impl GreeterScreen {
     }
 
     fn build_strip(show_power_actions: bool) -> ActionStrip {
-        let mut items = vec![ActionItem::new("theme", "^T", "").glyph(Glyph::Theme)];
-        if show_power_actions {
-            items.push(ActionItem::new("sleep", "^Z", "").glyph(Glyph::Moon));
-            items.push(ActionItem::new("reboot", "^R", "").glyph(Glyph::Reboot));
-            items.push(ActionItem::new("poweroff", "^P", "").glyph(Glyph::Power));
+        if !show_power_actions {
+            return ActionStrip::new(Vec::new());
         }
-        ActionStrip::new(items)
+        ActionStrip::new(vec![
+            ActionItem::new("theme", "^T", "").glyph(Glyph::Theme),
+            ActionItem::new("sleep", "^Z", "").glyph(Glyph::Moon),
+            ActionItem::new("reboot", "^R", "").glyph(Glyph::Reboot),
+            ActionItem::new("poweroff", "^P", "").glyph(Glyph::Power),
+        ])
     }
 
     fn refresh_strip(&mut self) {
@@ -1156,7 +1161,11 @@ impl Screen for GreeterScreen {
             }
         };
 
-        let strip_block_h: u16 = if in_modal { 0 } else { 2 };
+        let strip_block_h: u16 = if in_modal || !self.show_power_actions {
+            0
+        } else {
+            2
+        };
         let total_h = hero_h + card_h + strip_block_h;
         let top_y = area.y + area.height.saturating_sub(total_h) / 2;
         let card_x = area.x + (area.width - card_w) / 2;
@@ -1410,14 +1419,33 @@ impl Screen for GreeterScreen {
 
         // 3. Single quiet icon-only ActionStrip centered below the card
         let strip_y = card_area.bottom() + 1;
-        if strip_y < area.bottom() {
-            let strip_w = if self.show_power_actions { 27 } else { 8 };
-            let w = strip_w.min(area.width.saturating_sub(2));
+        if self.show_power_actions && strip_y < area.bottom() {
+            let w = 27u16.min(area.width.saturating_sub(2));
             let sx = area.x + area.width.saturating_sub(w) / 2;
             let strip_area = Rect::new(sx, strip_y, w, 1);
             self.strip
                 .render_on(strip_area, ctx.buf, ctx.design, ColorRole::Bg);
             hits.strip_row = Some(strip_area);
+        }
+
+        // 4. Optional quiet date & time tucked in the bottom-right corner
+        if self.show_clock && area.height >= 4 && area.width >= 30 {
+            let y_br = area.bottom() - 1;
+            let date_w = self.date_str.chars().count() as u16;
+            let sep = " \u{00b7} ";
+            let sep_w = 3u16;
+            let clock_w = self.clock_str.chars().count() as u16;
+            let total_w = date_w + sep_w + clock_w;
+            if total_w + 4 <= area.width {
+                let x0 = area.right() - 2 - total_w;
+                let dim = ctx.design.style(TextStyle::Dim);
+                let time_style = Style::default()
+                    .fg(ctx.design.color(ColorRole::Text))
+                    .add_modifier(Modifier::BOLD);
+                let col = put(ctx.buf, x0, y_br, &self.date_str, date_w, dim);
+                let col = put(ctx.buf, col, y_br, sep, sep_w, dim);
+                put(ctx.buf, col, y_br, &self.clock_str, clock_w, time_style);
+            }
         }
 
         *self.hits.borrow_mut() = hits;
@@ -1737,37 +1765,48 @@ impl Screen for GreeterScreen {
 
         // Field cycle with Tab / BackTab
         let pills = self.pills_visible();
+        let has_strip = self.show_power_actions;
         if matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
             let reverse = key.code == KeyCode::BackTab;
-            self.focus = match (self.focus, reverse, pills, self.using_other_user()) {
-                (Focus::Password, false, _, _) => {
+            self.focus = match (
+                self.focus,
+                reverse,
+                pills,
+                self.using_other_user(),
+                has_strip,
+            ) {
+                (Focus::Password, false, _, _, true) => {
                     self.strip.set_focused(true);
                     Focus::Strip
                 }
-                (Focus::Strip, false, true, _) => {
+                (Focus::Password, false, true, _, false) => Focus::Users,
+                (Focus::Password, false, false, _, false) => Focus::Username,
+                (Focus::Strip, false, true, _, _) => {
                     self.strip.set_focused(false);
                     Focus::Users
                 }
-                (Focus::Strip, false, false, _) => {
+                (Focus::Strip, false, false, _, _) => {
                     self.strip.set_focused(false);
                     Focus::Username
                 }
-                (Focus::Users, false, _, true) => Focus::Username,
-                (Focus::Users, false, _, false) => Focus::Password,
-                (Focus::Username, false, _, _) => Focus::Password,
-                (Focus::Password, true, _, true) => Focus::Username,
-                (Focus::Password, true, true, false) => Focus::Users,
-                (Focus::Password, true, false, false) => Focus::Username,
-                (Focus::Username, true, true, _) => Focus::Users,
-                (Focus::Username, true, false, _) => {
+                (Focus::Users, false, _, true, _) => Focus::Username,
+                (Focus::Users, false, _, false, _) => Focus::Password,
+                (Focus::Username, false, _, _, _) => Focus::Password,
+                (Focus::Password, true, _, true, _) => Focus::Username,
+                (Focus::Password, true, true, false, _) => Focus::Users,
+                (Focus::Password, true, false, false, _) => Focus::Username,
+                (Focus::Username, true, true, _, _) => Focus::Users,
+                (Focus::Username, true, false, _, true) => {
                     self.strip.set_focused(true);
                     Focus::Strip
                 }
-                (Focus::Users, true, _, _) => {
+                (Focus::Username, true, false, _, false) => Focus::Password,
+                (Focus::Users, true, _, _, true) => {
                     self.strip.set_focused(true);
                     Focus::Strip
                 }
-                (Focus::Strip, true, _, _) => {
+                (Focus::Users, true, _, _, false) => Focus::Password,
+                (Focus::Strip, true, _, _, _) => {
                     self.strip.set_focused(false);
                     Focus::Password
                 }
@@ -1835,8 +1874,10 @@ impl Screen for GreeterScreen {
                     Outcome::Consumed
                 }
                 KeyCode::Down => {
-                    self.focus = Focus::Strip;
-                    self.strip.set_focused(true);
+                    if self.show_power_actions {
+                        self.focus = Focus::Strip;
+                        self.strip.set_focused(true);
+                    }
                     Outcome::Consumed
                 }
                 KeyCode::Enter => {
@@ -2053,8 +2094,8 @@ mod tests {
         let mut scr = test_screen(true);
         let small = render_text(&mut scr, 80, 24);
         assert!(small.contains("Hayato"));
-        assert!(!small.contains("18:30"));
-        assert!(!small.contains("Nov 2026"));
+        assert!(small.contains("18:30"));
+        assert!(small.contains("Nov 2026"));
         assert!(small.contains("brunux"));
         assert!(small.contains("^T"));
         assert!(small.contains("^P"));
@@ -2067,8 +2108,8 @@ mod tests {
         assert!(!small.contains("^G"));
 
         let large = render_text(&mut scr, 152, 45);
-        assert!(!large.contains("18:30"));
-        assert!(!large.contains("Nov 2026"));
+        assert!(large.contains("18:30"));
+        assert!(large.contains("Nov 2026"));
         assert!(large.contains("\u{2588}"));
         assert!(large.contains("^T"));
         assert!(large.contains("^P"));
@@ -2124,6 +2165,7 @@ mod tests {
         let cfg = GreeterConfig {
             show_user_pills: false,
             remember_user: false,
+            show_clock: false,
             show_power_actions: false,
             ..Default::default()
         };
@@ -2131,7 +2173,9 @@ mod tests {
         assert_eq!(scr.focus, Focus::Username);
         let out = render_text(&mut scr, 100, 30);
         assert!(!out.contains("+ Other"));
-        assert!(out.contains("^T"));
+        assert!(!out.contains("18:30"));
+        assert!(!out.contains("Nov 2026"));
+        assert!(!out.contains("^T"));
         assert!(!out.contains("^P"));
         assert!(!out.contains("Theme"));
         assert!(!out.contains("Shut down"));

@@ -358,12 +358,21 @@ impl GreeterSettingsScreen {
                 };
                 self.persist(msg);
             }
+            "show_clock" => {
+                self.config.show_clock = !self.config.show_clock;
+                let msg = if self.config.show_clock {
+                    "Date & time shown on greeter"
+                } else {
+                    "Date & time hidden on greeter"
+                };
+                self.persist(msg);
+            }
             "show_power_actions" => {
                 self.config.show_power_actions = !self.config.show_power_actions;
                 let msg = if self.config.show_power_actions {
-                    "Power actions shown on greeter"
+                    "Action buttons shown on greeter"
                 } else {
-                    "Power actions hidden on greeter"
+                    "Action buttons hidden on greeter"
                 };
                 self.persist(msg);
             }
@@ -1041,10 +1050,18 @@ fn build_setting_rows(cfg: &GreeterConfig) -> Vec<Row> {
                 "hidden \u{00b7} username text box only"
             })
             .value("show_user_pills"),
-        Row::new("Power buttons")
+        Row::new("Date & time")
+            .glyph(Glyph::Clock)
+            .detail(if cfg.show_clock {
+                "shown \u{00b7} bottom-right corner"
+            } else {
+                "hidden"
+            })
+            .value("show_clock"),
+        Row::new("Action buttons")
             .glyph(Glyph::Power)
             .detail(if cfg.show_power_actions {
-                "shown \u{00b7} Sleep, Reboot, Shut down"
+                "shown \u{00b7} Theme, Sleep, Reboot, Shut down"
             } else {
                 "hidden"
             })
@@ -1181,7 +1198,12 @@ mod tests {
         scr.key(key(KeyCode::Char(' ')), &design);
         assert!(!scr.config().show_user_pills);
 
-        // Move to Row 3: Power buttons -> toggle off.
+        // Move to Row 3: Date & time -> toggle off.
+        scr.key(key(KeyCode::Down), &design);
+        scr.key(key(KeyCode::Enter), &design);
+        assert!(!scr.config().show_clock);
+
+        // Move to Row 4: Action buttons -> toggle off.
         scr.key(key(KeyCode::Down), &design);
         scr.key(key(KeyCode::Enter), &design);
         assert!(!scr.config().show_power_actions);
@@ -1189,6 +1211,7 @@ mod tests {
         let disk = load_greeter_config(&cfg_path);
         assert!(!disk.follow_user_theme);
         assert!(!disk.show_user_pills);
+        assert!(!disk.show_clock);
         assert!(!disk.show_power_actions);
     }
 

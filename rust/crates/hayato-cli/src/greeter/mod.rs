@@ -351,6 +351,7 @@ pub struct GreeterConfig {
     pub remember_user: bool,
     pub remember_session: bool,
     pub clock_24h: bool,
+    pub show_clock: bool,
     pub show_power_actions: bool,
 }
 
@@ -365,6 +366,7 @@ impl Default for GreeterConfig {
             remember_user: true,
             remember_session: true,
             clock_24h: true,
+            show_clock: true,
             show_power_actions: true,
         }
     }
@@ -422,6 +424,11 @@ pub fn parse_greeter_config(text: &str) -> GreeterConfig {
                     cfg.clock_24h = b;
                 }
             }
+            "show_clock" | "clock" => {
+                if let Some(b) = parse_bool_val(val) {
+                    cfg.show_clock = b;
+                }
+            }
             "show_power_actions" | "power_actions" => {
                 if let Some(b) = parse_bool_val(val) {
                     cfg.show_power_actions = b;
@@ -473,6 +480,7 @@ pub fn format_greeter_config(cfg: &GreeterConfig) -> String {
     out.push_str(&format!("remember_user = {}\n", cfg.remember_user));
     out.push_str(&format!("remember_session = {}\n", cfg.remember_session));
     out.push_str(&format!("clock_24h = {}\n", cfg.clock_24h));
+    out.push_str(&format!("show_clock = {}\n", cfg.show_clock));
     out.push_str(&format!(
         "show_power_actions = {}\n",
         cfg.show_power_actions
@@ -1141,6 +1149,7 @@ DesktopNames=sway;wlroots;swayfx
             remember_user: false,
             remember_session: false,
             clock_24h: false,
+            show_clock: false,
             show_power_actions: false,
         };
         save_greeter_config(&cfg_path, &cfg).unwrap();
