@@ -1,4 +1,4 @@
-"""Unit tests for the Hayato Plymouth boot splash assets and generator."""
+"""Unit tests for the Hayato pixel-hacker Plymouth boot splash assets and generator."""
 
 from __future__ import annotations
 
@@ -29,13 +29,22 @@ def _png_size(data: bytes) -> tuple[int, int, int]:
 
 
 class PlymouthThemeTests(unittest.TestCase):
-    def test_cursor_and_bar_generators_produce_valid_rgba_pngs(self) -> None:
+    def test_pixel_generators_produce_valid_rgba_pngs(self) -> None:
         mod = _load_module()
-        cw, ch, ctype = _png_size(mod.render_cursor_png())
+        lw, lh, ltype = _png_size(
+            mod.render_bitmap_png(mod.LETTER_BITMAPS["H"], mod.FG_RGB)
+        )
+        self.assertEqual((lw, lh, ltype), (mod.LETTER_W, mod.LETTER_H, 6))
+
+        cw, ch, ctype = _png_size(
+            mod.render_solid_block_png(mod.CURSOR_W, mod.CURSOR_H, mod.CURSOR_RGB)
+        )
         self.assertEqual((cw, ch, ctype), (mod.CURSOR_W, mod.CURSOR_H, 6))
 
-        bw, bh, btype = _png_size(mod.render_bar_png())
-        self.assertEqual((bw, bh, btype), (mod.BAR_W, mod.BAR_H, 6))
+        dw, dh, dtype = _png_size(
+            mod.render_solid_block_png(mod.DOT_SIZE, mod.DOT_SIZE, mod.DOT_LIT_RGB)
+        )
+        self.assertEqual((dw, dh, dtype), (mod.DOT_SIZE, mod.DOT_SIZE, 6))
 
     def test_committed_theme_files_and_manifest_are_complete(self) -> None:
         mod = _load_module()
@@ -60,14 +69,21 @@ class PlymouthThemeTests(unittest.TestCase):
         for idx in range(len(mod.WORD)):
             p = theme_dir / f"letter-{idx}.png"
             self.assertTrue(p.is_file(), f"missing {p}")
-            w, h, _ = _png_size(p.read_bytes())
-            self.assertEqual((w, h), (mod.LETTER_W, mod.LETTER_H))
+            w, h, ctype = _png_size(p.read_bytes())
+            self.assertEqual((w, h, ctype), (mod.LETTER_W, mod.LETTER_H, 6))
+
+        for idx in range(len(mod.GLITCH_BITMAPS)):
+            p = theme_dir / f"glitch-{idx}.png"
+            self.assertTrue(p.is_file(), f"missing {p}")
+            w, h, ctype = _png_size(p.read_bytes())
+            self.assertEqual((w, h, ctype), (mod.LETTER_W, mod.LETTER_H, 6))
 
         cw, ch, ctype = _png_size((theme_dir / "cursor.png").read_bytes())
         self.assertEqual((cw, ch, ctype), (mod.CURSOR_W, mod.CURSOR_H, 6))
 
-        bw, bh, btype = _png_size((theme_dir / "bar.png").read_bytes())
-        self.assertEqual((bw, bh, btype), (mod.BAR_W, mod.BAR_H, 6))
+        for dot_name in ("dot-dim.png", "dot-lit.png"):
+            dw, dh, dtype = _png_size((theme_dir / dot_name).read_bytes())
+            self.assertEqual((dw, dh, dtype), (mod.DOT_SIZE, mod.DOT_SIZE, 6))
 
 
 if __name__ == "__main__":

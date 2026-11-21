@@ -1,4 +1,4 @@
-# Hayato minimalist animated boot splash (Plymouth script plugin)
+# Hayato minimalist pixel-hacker animated boot splash (Plymouth script plugin)
 # Matches Tokyo Night (#1a1b26) so handoff into hayato-greeter is seamless.
 
 Window.SetBackgroundTopColor(0.102, 0.106, 0.149);
@@ -6,10 +6,10 @@ Window.SetBackgroundBottomColor(0.102, 0.106, 0.149);
 
 screen_w = Window.GetWidth();
 screen_h = Window.GetHeight();
-center_x = screen_w / 2;
-center_y = screen_h / 2;
+center_x = Window.GetX() + (screen_w / 2);
+center_y = Window.GetY() + (screen_h / 2);
 
-# Load wordmark letter sprites: H a y a t o
+# Load crisp pixel-art wordmark sprites: H a y a t o
 letter_count = 6;
 for (i = 0; i < letter_count; i++) {
     letter_img[i] = Image("letter-" + i + ".png");
@@ -17,139 +17,153 @@ for (i = 0; i < letter_count; i++) {
     letter_spr[i].SetZ(10);
 }
 
+# Load cyan pixel decode/glitch glyphs: 0 1 # / = +
+glitch_count = 6;
+for (g = 0; g < glitch_count; g++) {
+    glitch_img[g] = Image("glitch-" + g + ".png");
+}
+
+# Signature orange pixel block cursor
 cursor_img = Image("cursor.png");
 cursor_spr = Sprite(cursor_img);
 cursor_spr.SetZ(20);
 
-bar_img = Image("bar.png");
-bar_spr = Sprite(bar_img);
-bar_spr.SetZ(5);
+# Minimalist 12-dot pixel scanner row underneath
+dot_count = 12;
+dot_dim_img = Image("dot-dim.png");
+dot_lit_img = Image("dot-lit.png");
 
 letter_w = letter_img[0].GetWidth();
 letter_h = letter_img[0].GetHeight();
 cursor_w = cursor_img.GetWidth();
 cursor_h = cursor_img.GetHeight();
-bar_w = bar_img.GetWidth();
-bar_h = bar_img.GetHeight();
+dot_size = dot_dim_img.GetWidth();
 
-# Layout: center the 6-letter wordmark + trailing cursor slightly above midpoint
-letter_step = letter_w - 6;
+# Layout: crisp monospace pixel grid centered on screen
+letter_gap = 12;
+letter_step = letter_w + letter_gap;
 word_w = letter_step * (letter_count - 1) + letter_w;
-total_w = word_w + cursor_w + 4;
+total_w = word_w + letter_gap + cursor_w;
 base_x = center_x - (total_w / 2);
-base_y = center_y - (letter_h / 2) - 8;
+base_y = center_y - (letter_h / 2) - 10;
 
-# Baseline of the letters inside the 92px glyph canvas sits at y=70
-cursor_y = base_y + 70 - cursor_h + 4;
-bar_y = base_y + letter_h + 14;
-bar_min_x = base_x;
-bar_max_x = base_x + word_w - bar_w;
+# Cursor aligns with rows 0..6 of the 8-row pixel glyph grid
+cursor_y = base_y;
 
-# Optional subtle status message below the bar (e.g., fsck / updates)
+# 12 pixel dots centered underneath the wordmark
+dot_step = 18;
+dots_w = dot_step * (dot_count - 1) + dot_size;
+dots_x = center_x - (dots_w / 2);
+dots_y = base_y + letter_h + 22;
+
+for (d = 0; d < dot_count; d++) {
+    dot_spr[d] = Sprite(dot_dim_img);
+    dot_spr[d].SetX(dots_x + (d * dot_step));
+    dot_spr[d].SetY(dots_y);
+    dot_spr[d].SetZ(5);
+    dot_spr[d].SetOpacity(0.0);
+}
+
+# Optional subtle status message below the pixel bar
 message_spr = Sprite();
 message_spr.SetZ(30);
 
 mode = Plymouth.GetMode();
 is_shutdown = (mode == "shutdown" || mode == "reboot");
 
-# Animation clock (Plymouth calls refresh_callback at ~50 Hz)
 tick = 0;
 if (is_shutdown) {
-    # Skip type-in on shutdown/reboot; start directly in calm breathing state
-    tick = 45;
+    tick = 50;
 }
 
-# Initial placement so frame 0 is clean
+# Initial placement
 for (i = 0; i < letter_count; i++) {
     letter_x[i] = base_x + (i * letter_step);
     letter_spr[i].SetX(letter_x[i]);
+    letter_spr[i].SetY(base_y);
     if (is_shutdown) {
-        letter_spr[i].SetY(base_y);
+        letter_spr[i].SetImage(letter_img[i]);
         letter_spr[i].SetOpacity(1.0);
     } else {
-        letter_spr[i].SetY(base_y + 18);
         letter_spr[i].SetOpacity(0.0);
     }
 }
-cursor_spr.SetX(base_x + word_w + 4);
+cursor_spr.SetX(base_x);
 cursor_spr.SetY(cursor_y);
 cursor_spr.SetOpacity(1.0);
-bar_spr.SetX(bar_min_x);
-bar_spr.SetY(bar_y);
-bar_spr.SetOpacity(0.0);
 
 fun refresh_callback() {
     tick++;
 
-    # Phase 1: playful typed-in hop (letters enter every 5 ticks = 100ms)
-    typed_count = 0;
+    # Phase 1 (ticks 0..47, ~0.95s):
+    # Each letter scrambles through cyan pixel hex/hacker glyphs for 8 ticks,
+    # then snaps into crisp white pixel H-a-y-a-t-o left-to-right.
     for (i = 0; i < letter_count; i++) {
-        start_t = i * 5;
-        dt = tick - start_t;
-        if (dt <= 0) {
-            letter_spr[i].SetOpacity(0.0);
-            letter_spr[i].SetY(base_y + 18);
-        } else if (dt < 14) {
-            typed_count = i + 1;
-            # Normalized progress p in (0..1)
-            p = dt / 14.0;
-            # Smooth fade-in over first half of hop
-            op = p * 2.2;
-            if (op > 1.0) op = 1.0;
-            letter_spr[i].SetOpacity(op);
-            # Springy arc: rises from +18px, overshoots to -6px, lands at 0
-            # y_offset = 18*(1-p)^2 - 14*sin(pi*p)*(1-p)
-            inv = 1.0 - p;
-            hop = (18.0 * inv * inv) - (14.0 * Math.Sin(3.14159265 * p) * inv);
-            letter_spr[i].SetY(base_y + hop);
-        } else {
-            typed_count = i + 1;
-            letter_spr[i].SetOpacity(1.0);
+        lock_t = 12 + (i * 6);
+        appear_t = i * 4;
 
-            # Phase 2: periodic gentle wingbeat wave across H-a-y-a-t-o
-            wave_cycle = (tick - 45) % 95;
-            if (tick >= 45 && !is_shutdown) {
-                wt = wave_cycle - (i * 4);
-                if (wt > 0 && wt < 18) {
-                    wp = wt / 18.0;
-                    lift = -7.0 * Math.Sin(3.14159265 * wp);
-                    letter_spr[i].SetY(base_y + lift);
-                } else {
-                    letter_spr[i].SetY(base_y);
-                }
+        if (tick < appear_t) {
+            letter_spr[i].SetOpacity(0.0);
+        } else if (tick < lock_t) {
+            # Rapid pixel decode scramble
+            g_idx = (Math.Int(tick / 2) + (i * 2)) % glitch_count;
+            letter_spr[i].SetImage(glitch_img[g_idx]);
+            letter_spr[i].SetOpacity(1.0);
+        } else {
+            # Locked crisp pixel letter, with a brief 2-tick hacker glitch pulse every ~1.6s
+            glitch_cycle = (tick - 50) % 82;
+            target_i = Math.Int((tick - 50) / 82) % letter_count;
+            if (tick >= 50 && !is_shutdown && i == target_i && glitch_cycle >= 0 && glitch_cycle < 3) {
+                g_idx = (tick + i) % glitch_count;
+                letter_spr[i].SetImage(glitch_img[g_idx]);
             } else {
-                letter_spr[i].SetY(base_y);
+                letter_spr[i].SetImage(letter_img[i]);
             }
+            letter_spr[i].SetOpacity(1.0);
         }
     }
 
-    # Cursor tracks active typing slot during Phase 1, then breathes after 'o'
-    if (tick < 34) {
-        slot = Math.Int(tick / 5);
-        if (slot > letter_count) slot = letter_count;
+    # Cursor steps across active cell during decode, then sharp square-wave terminal blink
+    if (tick < 44) {
+        slot = Math.Int((tick - 6) / 6);
+        if (slot < 0) slot = 0;
         if (slot < letter_count) {
-            cursor_spr.SetX(letter_x[slot] + 4);
+            cursor_spr.SetX(letter_x[slot]);
         } else {
-            cursor_spr.SetX(base_x + word_w + 4);
+            cursor_spr.SetX(base_x + word_w + letter_gap);
         }
         cursor_spr.SetOpacity(1.0);
-        bar_spr.SetOpacity(0.0);
     } else {
-        cursor_spr.SetX(base_x + word_w + 4);
-        # Smooth breathing pulse (0.28 .. 1.0)
-        pulse = 0.64 + 0.36 * Math.Cos((tick - 34) * 0.11);
-        cursor_spr.SetOpacity(pulse);
-
-        # Cyan accent bar fades in and glides smoothly back and forth
-        bar_fade = (tick - 34) / 15.0;
-        if (bar_fade > 1.0) bar_fade = 1.0;
-        if (is_shutdown) {
-            bar_spr.SetOpacity(0.35);
+        cursor_spr.SetX(base_x + word_w + letter_gap);
+        # Crisp retro terminal square-wave blink (~500ms on / 500ms off)
+        blink_phase = Math.Int((tick - 44) / 16) % 2;
+        if (blink_phase == 0) {
+            cursor_spr.SetOpacity(1.0);
         } else {
-            bar_spr.SetOpacity(0.85 * bar_fade);
+            cursor_spr.SetOpacity(0.15);
         }
-        glide = 0.5 - 0.5 * Math.Cos((tick - 34) * 0.055);
-        bar_spr.SetX(bar_min_x + (bar_max_x - bar_min_x) * glide);
+    }
+
+    # Minimalist 12-dot pixel scanner bar sweeps back and forth in discrete steps
+    if (tick >= 20) {
+        step_period = (dot_count - 1) * 2;
+        raw_pos = Math.Int((tick - 20) / 3) % step_period;
+        if (raw_pos < dot_count) {
+            head = raw_pos;
+        } else {
+            head = step_period - raw_pos;
+        }
+        for (d = 0; d < dot_count; d++) {
+            dist = d - head;
+            if (dist < 0) dist = -dist;
+            if (dist <= 1 && !is_shutdown) {
+                dot_spr[d].SetImage(dot_lit_img);
+                dot_spr[d].SetOpacity(1.0);
+            } else {
+                dot_spr[d].SetImage(dot_dim_img);
+                dot_spr[d].SetOpacity(0.9);
+            }
+        }
     }
 }
 
@@ -157,10 +171,10 @@ Plymouth.SetRefreshFunction(refresh_callback);
 
 fun message_callback(text) {
     if (text && text != "") {
-        img = Image.Text(text, 0.55, 0.59, 0.72, 1.0, "JetBrains Mono 11");
+        img = Image.Text(text, 0.55, 0.59, 0.72, 1.0, "monospace 11");
         message_spr.SetImage(img);
         message_spr.SetX(center_x - img.GetWidth() / 2);
-        message_spr.SetY(bar_y + 24);
+        message_spr.SetY(dots_y + 24);
         message_spr.SetOpacity(0.85);
     } else {
         message_spr.SetOpacity(0.0);
@@ -190,12 +204,13 @@ fun display_normal_callback() {
 Plymouth.SetDisplayNormalFunction(display_normal_callback);
 
 fun quit_callback() {
-    # Hold the clean dark frame during handoff to greetd
     for (i = 0; i < letter_count; i++) {
         letter_spr[i].SetOpacity(0.0);
     }
     cursor_spr.SetOpacity(0.0);
-    bar_spr.SetOpacity(0.0);
+    for (d = 0; d < dot_count; d++) {
+        dot_spr[d].SetOpacity(0.0);
+    }
     message_spr.SetOpacity(0.0);
 }
 
