@@ -507,8 +507,24 @@ impl Screen for QrScreen {
                 input.render(field, ctx.buf, ctx.design, "text or URL\u{2026}");
             }
             QrMode::Menu => {
-                draw_card(ctx.buf, ctx.area, ctx.design, Some("The code"), true);
-                let (filter, rows) = super::pick::list_layout(ctx.area);
+                let (left, right) = if ctx.area.width >= 100 {
+                    let gap = 1u16;
+                    let left_w = ((u32::from(ctx.area.width) * 50) / 100).max(46) as u16;
+                    let right_w = ctx.area.width.saturating_sub(left_w + gap);
+                    (
+                        Rect::new(ctx.area.x, ctx.area.y, left_w, ctx.area.height),
+                        Some(Rect::new(
+                            ctx.area.x + left_w + gap,
+                            ctx.area.y,
+                            right_w,
+                            ctx.area.height,
+                        )),
+                    )
+                } else {
+                    (ctx.area, None)
+                };
+                draw_card(ctx.buf, left, ctx.design, Some("The code"), true);
+                let (filter, rows) = super::pick::list_layout(left);
                 put_trunc(
                     ctx.buf,
                     filter.x,
@@ -518,6 +534,62 @@ impl Screen for QrScreen {
                     ctx.design.style(TextStyle::Dim),
                 );
                 self.rows_height.set(rows.height);
+                if let Some(right_area) = right {
+                    draw_card(
+                        ctx.buf,
+                        right_area,
+                        ctx.design,
+                        Some("QR Studio Deck"),
+                        false,
+                    );
+                    let r_in = Rect::new(
+                        right_area.x + 2,
+                        right_area.y + 1,
+                        right_area.width.saturating_sub(4),
+                        right_area.height.saturating_sub(2),
+                    );
+                    if r_in.width >= 16 && r_in.height >= 8 {
+                        let dim = ctx.design.style(TextStyle::Dim);
+                        let body = ctx.design.style(TextStyle::Body);
+                        let accent = ratatui::style::Style::default()
+                            .fg(ctx.design.color(ColorRole::Accent))
+                            .add_modifier(ratatui::style::Modifier::BOLD);
+                        let mut ry = r_in.y;
+                        put_trunc(ctx.buf, r_in.x, ry, "QR GENERATOR", r_in.width, accent);
+                        ry += 2;
+                        put_trunc(
+                            ctx.buf,
+                            r_in.x,
+                            ry,
+                            &format!("Wi-Fi     {}", self.wifi_detail),
+                            r_in.width,
+                            body,
+                        );
+                        ry += 2;
+                        for line in [
+                            "Renders crisp Unicode half-block QR codes",
+                            "directly in the terminal with zero temp files.",
+                            "",
+                            "While viewing a QR code:",
+                            "  s / Ctrl+S   Save PNG to ~/Pictures/Screenshots",
+                            "  c / Ctrl+C   Copy raw payload to clipboard",
+                            "  o / Ctrl+O   Open saved PNG",
+                        ] {
+                            if ry >= r_in.bottom().saturating_sub(1) {
+                                break;
+                            }
+                            let st = if line.starts_with("While") {
+                                accent
+                            } else if line.starts_with("  ") {
+                                body
+                            } else {
+                                dim
+                            };
+                            put_trunc(ctx.buf, r_in.x, ry, line, r_in.width, st);
+                            ry += 1;
+                        }
+                    }
+                }
                 self.list.render(rows, ctx.buf, ctx.design, true);
             }
         }

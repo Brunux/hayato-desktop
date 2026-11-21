@@ -15,12 +15,14 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+use hayato_ui::widgets::put_trunc;
 use hayato_ui::{
-    BodyCtx, Design, Glyph, Header, Input, InputAction, KeyHint, ListAction, ListState, Outcome,
-    Row, Screen, TextStyle, draw_card,
+    BodyCtx, ColorRole, Design, Glyph, Header, Input, InputAction, KeyHint, ListAction, ListState,
+    Outcome, Row, Screen, TextStyle, draw_card,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
 
 use crate::system::{have, missing, print, say};
 
@@ -432,8 +434,9 @@ impl KeysScreen {
 
 impl Screen for KeysScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Bindings"), true);
-        let (filter, rows) = Self::list_layout(ctx.area);
+        let (left, right) = Self::split_panes(ctx.area);
+        draw_card(ctx.buf, left, ctx.design, Some("Bindings"), true);
+        let (filter, rows) = Self::list_layout(left);
         hayato_ui::widgets::draw_filter_bar(
             ctx.buf,
             filter,
@@ -445,6 +448,9 @@ impl Screen for KeysScreen {
         );
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
+        if let Some(right_area) = right {
+            self.draw_inspector(ctx.buf, right_area, ctx.design);
+        }
     }
 
     fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
@@ -505,7 +511,8 @@ impl Screen for KeysScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        let (_, rows) = Self::list_layout(area);
+        let (left, _) = Self::split_panes(area);
+        let (_, rows) = Self::list_layout(left);
         self.list.hit_row(rows, x, y, design)
     }
 
@@ -519,6 +526,103 @@ impl Screen for KeysScreen {
 }
 
 impl KeysScreen {
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 56) / 100).max(52) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn draw_inspector(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
+        draw_card(buf, area, design, Some("Shortcut Inspector"), false);
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        if inner.width < 16 || inner.height < 8 {
+            return;
+        }
+        let dim = design.style(TextStyle::Dim);
+        let body = design.style(TextStyle::Body);
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        let ok = Style::default().fg(design.color(ColorRole::Ok));
+
+        let Some(idx) = self.list.selected_index() else {
+            return;
+        };
+        let Some(b) = self.filtered.get(idx) else {
+            return;
+        };
+        let mut y = inner.y;
+        let cat = if b.category.is_empty() {
+            "SWAY BINDING"
+        } else {
+            b.category.as_str()
+        };
+        put_trunc(buf, inner.x, y, cat, inner.width, accent);
+        y += 1;
+        put_trunc(
+            buf,
+            inner.x,
+            y,
+            &format!("[ {} ]", b.keys),
+            inner.width,
+            design.style(TextStyle::Title).add_modifier(Modifier::BOLD),
+        );
+        y += 2;
+        if let Some(mode) = &b.mode {
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                &format!("Mode      {mode}"),
+                inner.width,
+                dim,
+            );
+            y += 1;
+        }
+        put_trunc(buf, inner.x, y, "Description", inner.width, accent);
+        y += 1;
+        put_trunc(buf, inner.x, y, &b.description, inner.width, body);
+        y += 2;
+        put_trunc(buf, inner.x, y, "Sway Command", inner.width, accent);
+        y += 1;
+        let w = usize::from(inner.width.max(1));
+        let chars: Vec<char> = b.command.chars().collect();
+        for chunk in chars.chunks(w) {
+            if y >= inner.bottom().saturating_sub(2) {
+                break;
+            }
+            let s: String = chunk.iter().collect();
+            put_trunc(buf, inner.x, y, &s, inner.width, ok);
+            y += 1;
+        }
+        put_trunc(
+            buf,
+            inner.x,
+            inner.bottom().saturating_sub(1),
+            "Enter copies command to clipboard",
+            inner.width,
+            dim,
+        );
+    }
+
     fn list_layout(area: Rect) -> (Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,

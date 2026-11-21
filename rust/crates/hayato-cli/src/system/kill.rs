@@ -9,14 +9,17 @@
 use std::cell::Cell;
 use std::process::Command;
 
+use hayato_ui::widgets::put_trunc;
 use hayato_ui::{
-    ActionItem, ActionStrip, ActionStripEvent, BodyCtx, Confirm, ConfirmAction, Design, Glyph,
-    Header, KeyHint, ListAction, ListState, Outcome, Row, Screen, draw_card, draw_filter_bar,
+    ActionItem, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Confirm, ConfirmAction, Design,
+    Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row, Screen, TextStyle, draw_card,
+    draw_filter_bar, draw_gauge,
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
 
 use super::out;
 
@@ -113,6 +116,7 @@ enum KillMode {
 pub struct KillScreen {
     self_pid: u32,
     procs: Vec<ProcessRecord>,
+    sys_mem: Option<(u64, u64)>,
     strip: ActionStrip,
     list: ListState,
     mode: KillMode,
@@ -131,6 +135,7 @@ impl KillScreen {
         let mut screen = Self {
             self_pid,
             procs: Vec::new(),
+            sys_mem: None,
             strip,
             list: ListState::new().with_empty("no matching processes"),
             mode: KillMode::List,
@@ -153,6 +158,7 @@ impl KillScreen {
             out(&["ps", "-eo", "pid=,rss=,pcpu=,comm=", "--sort=-rss"]).unwrap_or_default();
         self.procs = parse_ps_table(&ps_out, self.self_pid);
         let sys_mem = read_system_mem();
+        self.sys_mem = sys_mem;
         let total_mem_kb = sys_mem.map(|(_, t)| t).unwrap_or(0);
         let rows: Vec<Row> = self
             .procs
@@ -207,6 +213,123 @@ impl KillScreen {
             }
         });
         self.header = Header::new("Hayato").subtitle("Processes").status(status);
+    }
+
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 56) / 100).max(52) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn draw_inspector(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
+        draw_card(buf, area, design, Some("Process Inspector"), false);
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        if inner.width < 16 || inner.height < 8 {
+            return;
+        }
+        let dim = design.style(TextStyle::Dim);
+        let body = design.style(TextStyle::Body);
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        let mut y = inner.y;
+
+        if let Some((used_kb, total_kb)) = self.sys_mem {
+            let pct = if total_kb > 0 {
+                (used_kb as f64 / total_kb as f64).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            put_trunc(buf, inner.x, y, "SYSTEM MEMORY", inner.width, accent);
+            y += 1;
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                &format!("{} / {}", format_mem_kb(used_kb), format_mem_kb(total_kb)),
+                inner.width,
+                body,
+            );
+            y += 1;
+            let pct_label = format!("{:.0}%", pct * 100.0);
+            draw_gauge(
+                buf,
+                Rect::new(inner.x, y, inner.width.min(36), 1),
+                design,
+                pct,
+                &pct_label,
+            );
+            y += 2;
+        }
+
+        if let Some(idx) = self.list.selected_index()
+            && let Some(p) = self.procs.get(idx)
+        {
+            put_trunc(buf, inner.x, y, "SELECTED PROCESS", inner.width, accent);
+            y += 1;
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                &p.comm,
+                inner.width,
+                design.style(TextStyle::Title).add_modifier(Modifier::BOLD),
+            );
+            y += 1;
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                &format!("PID       {}", p.pid),
+                inner.width,
+                body,
+            );
+            y += 1;
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                &format!("Memory    {}", format_mem_kb(p.rss_kb)),
+                inner.width,
+                body,
+            );
+            y += 1;
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                &format!("CPU       {:.1}%", p.cpu_pct),
+                inner.width,
+                body,
+            );
+        }
+
+        put_trunc(
+            buf,
+            inner.x,
+            inner.bottom().saturating_sub(1),
+            "Enter sends SIGTERM · prompts for SIGKILL if stubborn",
+            inner.width,
+            dim,
+        );
     }
 
     fn layout(area: Rect) -> (Rect, Rect, Rect) {
@@ -284,8 +407,9 @@ impl Screen for KillScreen {
                 confirm.render(ctx.area, ctx.buf, ctx.design);
             }
             KillMode::List => {
-                draw_card(ctx.buf, ctx.area, ctx.design, Some("By memory"), true);
-                let (strip, filter, rows) = Self::layout(ctx.area);
+                let (left, right) = Self::split_panes(ctx.area);
+                draw_card(ctx.buf, left, ctx.design, Some("By memory"), true);
+                let (strip, filter, rows) = Self::layout(left);
                 self.strip.render(strip, ctx.buf, ctx.design);
                 let hint = self.status_note.as_deref().unwrap_or(
                     "Enter sends SIGTERM \u{00b7} type to filter \u{00b7} Ctrl+R refreshes",
@@ -302,6 +426,9 @@ impl Screen for KillScreen {
                 self.rows_height.set(rows.height);
                 self.list
                     .render(rows, ctx.buf, ctx.design, !self.strip.is_focused());
+                if let Some(right_area) = right {
+                    self.draw_inspector(ctx.buf, right_area, ctx.design);
+                }
             }
         }
     }
@@ -396,7 +523,8 @@ impl Screen for KillScreen {
         if !matches!(self.mode, KillMode::List) {
             return None;
         }
-        let (strip, _, rows) = Self::layout(area);
+        let (left, _) = Self::split_panes(area);
+        let (strip, _, rows) = Self::layout(left);
         if let Some(idx) = self.strip.hit_index(strip, x, y) {
             return Some(10_000 + idx);
         }

@@ -15,15 +15,23 @@
 //! It is **not stoppable**, like an apt install: a kill in the middle of
 //! `mkfs` leaves a disk with half a filesystem, which is worse than waiting.
 
+use std::cell::Cell;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use hayato_ui::{Design, Glyph, Task, TaskView};
+use hayato_ui::widgets::{put, put_trunc};
+use hayato_ui::{
+    BodyCtx, ColorRole, Confirm, ConfirmAction, Design, Glyph, Header, KeyHint, ListAction,
+    ListState, Outcome, Row, Screen, Task, TaskView, TextStyle, draw_card, draw_empty,
+};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
 
 use super::disk::{self, Disk, Facts};
-use super::pick::{Picker, Question, row};
+use super::pick::{Question, row};
 use super::step::{self, Failed, Step};
 use super::{missing, out};
 
@@ -141,7 +149,395 @@ pub fn questions(found: &[Disk]) -> Vec<Question> {
     ]
 }
 
-/// `hayato menu format` (`hayato-format`): the window, then the steps in a TaskView.
+enum FormatMode {
+    Select,
+    Confirm {
+        dev: String,
+        fs: &'static str,
+        confirm: Confirm,
+    },
+}
+
+/// Safe Disk Formatter Studio screen.
+pub struct FormatScreen {
+    disks: Vec<Disk>,
+    fs_idx: usize,
+    list: ListState,
+    mode: FormatMode,
+    header: Header,
+    keybar: Vec<KeyHint>,
+    rows_height: Cell<u16>,
+    banner: Option<String>,
+    pub confirmed: Option<(String, String)>,
+}
+
+impl FormatScreen {
+    pub fn new() -> Self {
+        let mut screen = Self {
+            disks: Vec::new(),
+            fs_idx: 0,
+            list: ListState::new().with_empty("no removable disks available"),
+            mode: FormatMode::Select,
+            header: Header::new("Hayato").subtitle("Format Studio"),
+            keybar: vec![
+                KeyHint::new("Enter", "format disk"),
+                KeyHint::new("Tab", "exFAT / ext4"),
+                KeyHint::new("Ctrl+R", "rescan"),
+                KeyHint::new("Esc", "close"),
+            ],
+            rows_height: Cell::new(16),
+            banner: None,
+            confirmed: None,
+        };
+        screen.rescan();
+        screen
+    }
+
+    fn rescan(&mut self) {
+        let listing = out(&["lsblk", "-dnro", "NAME,SIZE,MODEL,TRAN"]).unwrap_or_default();
+        let facts = Facts::from_machine();
+        self.disks = disk::candidates(&listing, &facts);
+        let rows: Vec<Row> = self
+            .disks
+            .iter()
+            .map(|d| {
+                let tran = d.tran.as_deref().unwrap_or("removable");
+                Row::new(format!("/dev/{}", d.name))
+                    .glyph(Glyph::Disk)
+                    .detail(format!("{} · {tran}", d.model))
+                    .value(d.size.clone())
+            })
+            .collect();
+        self.list.set_rows(rows);
+        self.header =
+            Header::new("Hayato")
+                .subtitle("Format Studio")
+                .status(if self.disks.is_empty() {
+                    "No unmounted removable disks · plug one in and press Ctrl+R".into()
+                } else {
+                    format!(
+                        "{} removable candidate{} · system & mounted disks excluded",
+                        self.disks.len(),
+                        if self.disks.len() == 1 { "" } else { "s" }
+                    )
+                });
+    }
+
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 48) / 100).max(46) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn left_layout(area: Rect) -> (Rect, Rect) {
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        let fs_bar = Rect::new(inner.x, inner.y, inner.width, 2.min(inner.height));
+        let rows = Rect::new(
+            inner.x,
+            inner.y.saturating_add(3).min(inner.bottom()),
+            inner.width,
+            inner.height.saturating_sub(3),
+        );
+        (fs_bar, rows)
+    }
+
+    fn selected_disk(&self) -> Option<&Disk> {
+        let idx = self.list.selected_index()?;
+        self.disks.get(idx)
+    }
+
+    fn open_confirm(&mut self) {
+        let Some(d) = self.selected_disk().cloned() else {
+            self.rescan();
+            self.banner = Some("Rescanned removable disks".into());
+            return;
+        };
+        let dev = format!("/dev/{}", d.name);
+        let fs = FILESYSTEMS[self.fs_idx];
+        let confirm = Confirm::new(
+            format!("Erase {dev}?"),
+            format!(
+                "{dev} ({}, {}) — ALL DATA WILL BE LOST · formatted as {fs} (label {LABEL})",
+                d.model, d.size
+            ),
+        )
+        .with_options(&["Cancel", "Erase & Format"]);
+        self.mode = FormatMode::Confirm { dev, fs, confirm };
+    }
+
+    fn draw_inspector(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
+        draw_card(buf, area, design, Some("Safety & Plan"), false);
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        if inner.width < 16 || inner.height < 8 {
+            return;
+        }
+        let dim = design.style(TextStyle::Dim);
+        let body = design.style(TextStyle::Body);
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        let warn = Style::default()
+            .fg(design.color(ColorRole::Warn))
+            .add_modifier(Modifier::BOLD);
+        let fs = FILESYSTEMS[self.fs_idx];
+        let mut y = inner.y;
+
+        if let Some(d) = self.selected_disk() {
+            let dev = format!("/dev/{}", d.name);
+            let part = disk::partition(&dev);
+            put_trunc(buf, inner.x, y, "TARGET DEVICE", inner.width, warn);
+            y += 1;
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                &format!("{dev}  ({})", d.size),
+                inner.width,
+                design.style(TextStyle::Title).add_modifier(Modifier::BOLD),
+            );
+            y += 1;
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                &format!("Model      {}", d.model),
+                inner.width,
+                body,
+            );
+            y += 2;
+            put_trunc(buf, inner.x, y, "Execution Plan", inner.width, accent);
+            y += 1;
+            for step in [
+                format!("1. Fresh GPT partition table on {dev}"),
+                format!("2. Single primary partition {part} (1MiB..100%)"),
+                format!("3. Format {part} as {fs} (label {LABEL})"),
+            ] {
+                if y >= inner.bottom().saturating_sub(5) {
+                    break;
+                }
+                put_trunc(buf, inner.x, y, &step, inner.width, body);
+                y += 1;
+            }
+            y += 1;
+        } else {
+            put_trunc(buf, inner.x, y, "NO CANDIDATES FOUND", inner.width, accent);
+            y += 2;
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                "Plug in an unmounted USB stick or SD card and press Ctrl+R.",
+                inner.width,
+                body,
+            );
+            y += 2;
+        }
+
+        if y < inner.bottom().saturating_sub(3) {
+            put_trunc(buf, inner.x, y, "Safety Guards", inner.width, accent);
+            y += 1;
+            for g in [
+                "• Internal & root disks are never listed",
+                "• Mounted partitions are excluded automatically",
+                "• ChromeOS kernel partitions are protected",
+            ] {
+                if y >= inner.bottom().saturating_sub(1) {
+                    break;
+                }
+                put_trunc(buf, inner.x, y, g, inner.width, dim);
+                y += 1;
+            }
+        }
+        put_trunc(
+            buf,
+            inner.x,
+            inner.bottom().saturating_sub(1),
+            "Tab switches exFAT/ext4 · Enter asks confirmation first",
+            inner.width,
+            dim,
+        );
+    }
+}
+
+impl Default for FormatScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Screen for FormatScreen {
+    fn draw(&mut self, ctx: &mut BodyCtx) {
+        if let FormatMode::Confirm { confirm, .. } = &self.mode {
+            confirm.render(ctx.area, ctx.buf, ctx.design);
+            return;
+        }
+        let (left, right) = Self::split_panes(ctx.area);
+        draw_card(ctx.buf, left, ctx.design, Some("Removable Disks"), true);
+        let (fs_bar, rows) = Self::left_layout(left);
+        let accent = Style::default()
+            .fg(ctx.design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        let dim = ctx.design.style(TextStyle::Dim);
+        let exfat_st = if self.fs_idx == 0 { accent } else { dim };
+        let ext4_st = if self.fs_idx == 1 { accent } else { dim };
+        let x1 = put(
+            ctx.buf,
+            fs_bar.x,
+            fs_bar.y,
+            if self.fs_idx == 0 {
+                "[ ● exFAT · universal ]"
+            } else {
+                "  ○ exFAT · universal  "
+            },
+            fs_bar.width,
+            exfat_st,
+        );
+        put_trunc(
+            ctx.buf,
+            x1 + 1,
+            fs_bar.y,
+            if self.fs_idx == 1 {
+                "[ ● ext4 · Linux ]"
+            } else {
+                "  ○ ext4 · Linux  "
+            },
+            fs_bar.right().saturating_sub(x1 + 1),
+            ext4_st,
+        );
+        if fs_bar.height >= 2 {
+            let note = self
+                .banner
+                .as_deref()
+                .unwrap_or("Tab toggles filesystem · Ctrl+R rescans · Enter formats");
+            put_trunc(ctx.buf, fs_bar.x, fs_bar.y + 1, note, fs_bar.width, dim);
+        }
+
+        self.rows_height.set(rows.height);
+        if self.disks.is_empty() {
+            draw_empty(
+                ctx.buf,
+                rows,
+                ctx.design,
+                "No removable disks available",
+                "Plug in an unmounted USB stick or SD card, then press Ctrl+R",
+            );
+        } else {
+            self.list.render(rows, ctx.buf, ctx.design, true);
+        }
+
+        if let Some(right_area) = right {
+            self.draw_inspector(ctx.buf, right_area, ctx.design);
+        }
+    }
+
+    fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
+        if key.kind != KeyEventKind::Press {
+            return Outcome::Continue;
+        }
+        if let FormatMode::Confirm { dev, fs, confirm } = &mut self.mode {
+            match confirm.handle(key) {
+                ConfirmAction::Chosen(1) => {
+                    let dev = dev.clone();
+                    let fs = (*fs).to_string();
+                    self.mode = FormatMode::Select;
+                    self.confirmed = Some((dev, fs));
+                    return Outcome::Done(hayato_ui::app::exit::OK);
+                }
+                ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                    self.mode = FormatMode::Select;
+                }
+                ConfirmAction::None => {}
+            }
+            return Outcome::Consumed;
+        }
+
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('r') | KeyCode::Char('R'))
+        {
+            self.rescan();
+            self.banner = Some("Rescanned removable disks".into());
+            return Outcome::Consumed;
+        }
+
+        match key.code {
+            KeyCode::Esc => return Outcome::Done(hayato_ui::app::exit::ESCAPE),
+            KeyCode::Tab | KeyCode::BackTab | KeyCode::Left | KeyCode::Right => {
+                self.fs_idx = (self.fs_idx + 1) % FILESYSTEMS.len();
+                return Outcome::Consumed;
+            }
+            KeyCode::Enter => {
+                self.open_confirm();
+                return Outcome::Consumed;
+            }
+            _ => {}
+        }
+        match self.list.handle(key, self.rows_height.get(), design) {
+            ListAction::Activated(_) => {
+                self.open_confirm();
+                Outcome::Consumed
+            }
+            _ => Outcome::Continue,
+        }
+    }
+
+    fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        if matches!(self.mode, FormatMode::Confirm { .. }) {
+            return None;
+        }
+        let (left, _) = Self::split_panes(area);
+        let (_, rows) = Self::left_layout(left);
+        self.list.hit_row(rows, x, y, design)
+    }
+
+    fn click(&mut self, row: Option<usize>) -> Outcome {
+        if let Some(r) = row {
+            self.list.set_cursor(r);
+            self.open_confirm();
+            return Outcome::Consumed;
+        }
+        Outcome::Continue
+    }
+
+    fn keybar(&self) -> Option<&[KeyHint]> {
+        Some(&self.keybar)
+    }
+
+    fn header(&self) -> Option<&Header> {
+        Some(&self.header)
+    }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some(match self.mode {
+            FormatMode::Select => "format.select",
+            FormatMode::Confirm { .. } => "format.confirm",
+        })
+    }
+}
+
+/// `hayato menu format` (`hayato-format`): Safe Disk Formatter Studio, then TaskView.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
@@ -153,41 +549,16 @@ pub fn menu(
         ));
     }
 
-    let found = loop {
-        let listing = out(&["lsblk", "-dnro", "NAME,SIZE,MODEL,TRAN"]).unwrap_or_default();
-        let facts = Facts::from_machine();
-        let candidates = disk::candidates(&listing, &facts);
-        if !candidates.is_empty() {
-            break candidates;
-        }
-        let mut empty_picker = Picker::new(
-            "Format a disk",
-            vec![Question::choose(
-                "No removable disks available",
-                disk::NOTHING,
-                vec![row(
-                    "Rescan removable disks",
-                    "plug in an unmounted USB stick or SD card and press Enter",
-                    Glyph::Sync,
-                )],
-                vec!["rescan".to_string()],
-            )],
-        );
-        let code = crate::run_screen(terminal, design, "Format a disk", &mut empty_picker)?;
-        if code != 0 {
-            return Ok(code);
-        }
-    };
-
-    let mut picker = Picker::new("Format a disk", questions(&found));
-    let code = crate::run_screen(terminal, design, "Format a disk", &mut picker)?;
+    let mut screen = FormatScreen::new();
+    let code = crate::run_screen(terminal, design, "Format a disk", &mut screen)?;
     if code != 0 {
         return Ok(code);
     }
-    let answers = picker.answers().clone();
-    let (Some(dev), Some(fs)) = (answers.first(), answers.get(1)) else {
+    let Some((dev, fs)) = screen.confirmed.take() else {
         return Ok(1);
     };
+    let dev = &dev;
+    let fs = &fs;
 
     let name = dev.trim_start_matches("/dev/");
     let now = Facts::from_machine();

@@ -23,11 +23,20 @@
 //! reached in the clear unless the network itself is encrypted. Nothing here
 //! touches IPv6 DNS (`ipv6.dns`), which the same nmcli line could set.
 
-use hayato_ui::{Card, Design, Glyph, Urgency};
+use std::cell::Cell;
+
+use hayato_ui::widgets::put_trunc;
+use hayato_ui::{
+    BodyCtx, ColorRole, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row,
+    Screen, TextStyle, draw_card,
+};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
 
-use super::pick::{Picker, Question, row};
+use super::pick::{Picker, Question};
 use super::{out, sudo};
 
 /// What the menu needs before it offers anything.
@@ -91,7 +100,320 @@ pub fn status() -> String {
     )
 }
 
-/// `hayato menu dns` (`hayato-dns`): the DNS picker.
+const RESOLVERS: &[(&str, &str, &str)] = &[
+    (
+        "Automatic (DHCP)",
+        "",
+        "Uses the DNS servers handed out by your router or ISP.",
+    ),
+    (
+        "Cloudflare",
+        "1.1.1.1,1.0.0.1",
+        "Fast global anycast resolver focused on speed and privacy.",
+    ),
+    (
+        "Google",
+        "8.8.8.8,8.8.4.4",
+        "Reliable high-availability public DNS with DNSSEC validation.",
+    ),
+    (
+        "Quad9",
+        "9.9.9.9,149.112.112.112",
+        "Non-profit resolver blocking known phishing and malware domains.",
+    ),
+    (
+        "AdGuard",
+        "94.140.14.14,94.140.15.15",
+        "Blocks ads, trackers, and analytics domains at the DNS layer.",
+    ),
+];
+
+/// DNS Resolver Studio screen.
+pub struct DnsScreen {
+    con: String,
+    dev: String,
+    current: String,
+    ignore_auto: bool,
+    keys: Vec<String>,
+    list: ListState,
+    banner: Option<String>,
+    header: Header,
+    keybar: Vec<KeyHint>,
+    rows_height: Cell<u16>,
+    pub chosen: Option<String>,
+}
+
+impl DnsScreen {
+    pub fn new(
+        con: String,
+        dev: String,
+        current: String,
+        ignore_auto: bool,
+        banner: Option<String>,
+    ) -> Self {
+        let mut rows = Vec::new();
+        let mut keys = Vec::new();
+        for (name, servers, _) in RESOLVERS {
+            let in_use = if servers.is_empty() {
+                !ignore_auto
+            } else {
+                ignore_auto && current == servers.replace(',', " ")
+            };
+            let detail = if servers.is_empty() {
+                if current.is_empty() {
+                    "network DHCP default".to_string()
+                } else {
+                    current.clone()
+                }
+            } else {
+                (*servers).to_string()
+            };
+            let mut r = Row::new(*name).glyph(Glyph::Cloud).detail(detail);
+            if in_use {
+                r = r.value("● in use");
+            }
+            rows.push(r);
+            keys.push(if servers.is_empty() {
+                "automatic".into()
+            } else {
+                format!("dns:{servers}")
+            });
+        }
+        rows.push(
+            Row::new("Custom IPv4 servers…")
+                .glyph(Glyph::Search)
+                .detail("comma or space separated IPv4 addresses"),
+        );
+        keys.push("custom".into());
+
+        let mut list = ListState::new();
+        list.set_rows(rows);
+
+        Self {
+            header: Header::new("Hayato")
+                .subtitle("DNS Studio")
+                .status(format!("{con} ({dev})")),
+            con,
+            dev,
+            current,
+            ignore_auto,
+            keys,
+            list,
+            banner,
+            keybar: vec![KeyHint::new("Enter", "apply"), KeyHint::new("Esc", "close")],
+            rows_height: Cell::new(14),
+            chosen: None,
+        }
+    }
+
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 50) / 100).max(46) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn draw_inspector(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
+        draw_card(buf, area, design, Some("Resolver Inspector"), false);
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        if inner.width < 16 || inner.height < 8 {
+            return;
+        }
+        let dim = design.style(TextStyle::Dim);
+        let body = design.style(TextStyle::Body);
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+
+        let mut y = inner.y;
+        put_trunc(buf, inner.x, y, "ACTIVE CONNECTION", inner.width, accent);
+        y += 1;
+        put_trunc(
+            buf,
+            inner.x,
+            y,
+            &format!("{} ({})", self.con, self.dev),
+            inner.width,
+            design.style(TextStyle::Title).add_modifier(Modifier::BOLD),
+        );
+        y += 1;
+        put_trunc(
+            buf,
+            inner.x,
+            y,
+            &format!(
+                "Current   {}",
+                if self.current.is_empty() {
+                    "automatic (DHCP)"
+                } else {
+                    self.current.as_str()
+                }
+            ),
+            inner.width,
+            body,
+        );
+        y += 1;
+        put_trunc(
+            buf,
+            inner.x,
+            y,
+            &format!(
+                "Mode      {}",
+                if self.ignore_auto {
+                    "Static (ignore DHCP DNS)"
+                } else {
+                    "Automatic (DHCP)"
+                }
+            ),
+            inner.width,
+            dim,
+        );
+        y += 2;
+
+        if let Some(idx) = self.list.selected_index() {
+            put_trunc(buf, inner.x, y, "Selected Preset", inner.width, accent);
+            y += 1;
+            if let Some((name, servers, desc)) = RESOLVERS.get(idx) {
+                put_trunc(buf, inner.x, y, name, inner.width, body);
+                y += 1;
+                if !servers.is_empty() {
+                    put_trunc(buf, inner.x, y, servers, inner.width, dim);
+                    y += 1;
+                }
+                put_trunc(buf, inner.x, y + 1, desc, inner.width, dim);
+            } else {
+                put_trunc(
+                    buf,
+                    inner.x,
+                    y,
+                    "Enter custom comma or space separated IPv4 resolvers.",
+                    inner.width,
+                    dim,
+                );
+            }
+        }
+
+        if let Some(note) = &self.banner {
+            put_trunc(
+                buf,
+                inner.x,
+                inner.bottom().saturating_sub(1),
+                note,
+                inner.width,
+                Style::default().fg(design.color(ColorRole::Ok)),
+            );
+        }
+    }
+
+    fn activate(&mut self) -> Outcome {
+        if let Some(idx) = self.list.selected_index()
+            && let Some(k) = self.keys.get(idx)
+        {
+            self.chosen = Some(k.clone());
+            return Outcome::Done(hayato_ui::app::exit::OK);
+        }
+        Outcome::Continue
+    }
+}
+
+impl Screen for DnsScreen {
+    fn draw(&mut self, ctx: &mut BodyCtx) {
+        let (left, right) = Self::split_panes(ctx.area);
+        draw_card(ctx.buf, left, ctx.design, Some("Resolvers"), true);
+        let inner = Rect::new(
+            left.x + 2,
+            left.y + 1,
+            left.width.saturating_sub(4),
+            left.height.saturating_sub(2),
+        );
+        let default_note = format!("On {} ({}) · Enter applies", self.con, self.dev);
+        let note = self.banner.as_deref().unwrap_or(&default_note);
+        put_trunc(
+            ctx.buf,
+            inner.x,
+            inner.y,
+            note,
+            inner.width,
+            ctx.design.style(TextStyle::Dim),
+        );
+        let rows = Rect::new(
+            inner.x,
+            inner.y.saturating_add(2).min(inner.bottom()),
+            inner.width,
+            inner.height.saturating_sub(2),
+        );
+        self.rows_height.set(rows.height);
+        self.list.render(rows, ctx.buf, ctx.design, true);
+        if let Some(right_area) = right {
+            self.draw_inspector(ctx.buf, right_area, ctx.design);
+        }
+    }
+
+    fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
+        if key.kind != KeyEventKind::Press {
+            return Outcome::Continue;
+        }
+        match key.code {
+            KeyCode::Esc => return Outcome::Done(hayato_ui::app::exit::ESCAPE),
+            KeyCode::Enter => return self.activate(),
+            _ => {}
+        }
+        match self.list.handle(key, self.rows_height.get(), design) {
+            ListAction::Activated(_) => self.activate(),
+            _ => Outcome::Continue,
+        }
+    }
+
+    fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        let (left, _) = Self::split_panes(area);
+        let rows = Rect::new(
+            left.x + 2,
+            left.y + 3,
+            left.width.saturating_sub(4),
+            left.height.saturating_sub(4),
+        );
+        self.list.hit_row(rows, x, y, design)
+    }
+
+    fn click(&mut self, row: Option<usize>) -> Outcome {
+        if let Some(r) = row {
+            self.list.set_cursor(r);
+            return self.activate();
+        }
+        Outcome::Continue
+    }
+
+    fn keybar(&self) -> Option<&[KeyHint]> {
+        Some(&self.keybar)
+    }
+
+    fn header(&self) -> Option<&Header> {
+        Some(&self.header)
+    }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some("dns.studio")
+    }
+}
+
+/// `hayato menu dns` (`hayato-dns`): DNS Resolver Studio.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
@@ -126,7 +448,6 @@ pub fn menu(
             }
         };
 
-        // What is in use right now, and how it got there.
         let current = out(&["nmcli", "-g", "IP4.DNS", "device", "show", &dev]).unwrap_or_default();
         let current = current.lines().collect::<Vec<_>>().join(" ");
         let auto = out(&[
@@ -138,78 +459,22 @@ pub fn menu(
             &con,
         ])
         .unwrap_or_default();
-        let auto = if auto.trim() == "no" { "no" } else { "yes" };
+        let ignore_auto = auto.trim() != "no";
 
-        let mut rows = Vec::new();
-        let mut keys = Vec::new();
-
-        // Automatic (DHCP)
-        if auto == "no" && current.is_empty() {
-            rows.push(
-                row("Automatic (the network)", "no static servers", Glyph::Cloud).value("● in use"),
-            );
-        } else if auto == "no" && !current.is_empty() {
-            rows.push(row("Automatic (the network)", &current, Glyph::Cloud).value("● in use"));
-        } else {
-            rows.push(row(
-                "Automatic (the network)",
-                "what DHCP hands out",
-                Glyph::Cloud,
-            ));
-        }
-        keys.push("automatic".to_string());
-
-        // Preset resolvers
-        let resolvers = [
-            ("Cloudflare", "1.1.1.1,1.0.0.1"),
-            ("Google", "8.8.8.8,8.8.4.4"),
-            ("Quad9", "9.9.9.9,149.112.112.112"),
-            ("AdGuard", "94.140.14.14,94.140.15.15"),
-        ];
-        for (name, servers) in resolvers {
-            let servers_space = servers.replace(',', " ");
-            let in_use = auto == "yes" && current == servers_space;
-            let mut r = row(name, servers, Glyph::Cloud);
-            if in_use {
-                r = r.value("● in use");
-            }
-            rows.push(r);
-            keys.push(format!("dns:{servers}"));
-        }
-
-        // Custom
-        rows.push(row(
-            "Type the servers",
-            "comma or space separated IPv4 addresses",
-            Glyph::Search,
-        ));
-        keys.push("custom".to_string());
-
-        let note = status_note.clone().unwrap_or_else(|| {
-            format!(
-                "On {} ({}) · now: {}",
-                con,
-                dev,
-                if current.is_empty() {
-                    "automatic".to_string()
-                } else {
-                    current
-                }
-            )
-        });
-
-        let mut picker = Picker::new("DNS", vec![Question::choose("DNS", note, rows, keys)]);
-
-        let code = crate::run_screen(terminal, design, "DNS", &mut picker)?;
+        let mut screen = DnsScreen::new(
+            con.clone(),
+            dev.clone(),
+            current,
+            ignore_auto,
+            status_note.take(),
+        );
+        let code = crate::run_screen(terminal, design, "DNS", &mut screen)?;
         if code != 0 {
             return Ok(code);
         }
-
-        let answers = picker.answers();
-        if answers.is_empty() {
+        let Some(key) = screen.chosen.take() else {
             return Ok(1);
-        }
-        let key = &answers[0];
+        };
 
         let servers = match key.as_str() {
             "automatic" => String::new(),
