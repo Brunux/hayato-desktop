@@ -27,7 +27,6 @@ use super::{GreeterConfig, GreeterState, SessionEntry, UserEntry, load_theme_by_
 
 const MAX_USER_PILLS: usize = 6;
 const ANIM_FRAME_MS: u64 = 60;
-const PIXEL_DOT_COUNT: usize = 12;
 
 /// 5x8 pixel-art bitmaps matching the Plymouth boot splash (`H`, `a`, `y`, `a`, `t`, `o`).
 /// Each byte encodes 5 columns in bits 4..=0 (bit 4 = leftmost pixel).
@@ -67,7 +66,6 @@ const COMPACT_GLITCHES: [&str; 6] = ["0", "1", "#", "/", "=", "+"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GlyphState {
-    Hidden,
     Glitch(usize),
     Locked(usize),
 }
@@ -76,23 +74,14 @@ fn hero_letter_state(idx: usize, tick: u32, reduced_motion: bool) -> GlyphState 
     if reduced_motion {
         return GlyphState::Locked(idx);
     }
-    let appear_t = (idx as u32) * 2;
-    let lock_t = 6 + (idx as u32) * 3;
-    if tick < appear_t {
-        GlyphState::Hidden
-    } else if tick < lock_t {
-        let g = ((tick as usize) + idx * 2) % PIXEL_GLITCHES.len();
+    // Word is already formed on entry; keep a subtle periodic single-letter glitch pulse.
+    let cycle = tick % 42;
+    let target = ((tick / 42) as usize) % PIXEL_LETTERS.len();
+    if tick >= 18 && idx == target && cycle < 2 {
+        let g = ((tick as usize) + idx) % PIXEL_GLITCHES.len();
         GlyphState::Glitch(g)
     } else {
-        let elapsed = tick.saturating_sub(28);
-        let cycle = elapsed % 42;
-        let target = ((elapsed / 42) as usize) % PIXEL_LETTERS.len();
-        if tick >= 28 && idx == target && cycle < 2 {
-            let g = ((tick as usize) + idx) % PIXEL_GLITCHES.len();
-            GlyphState::Glitch(g)
-        } else {
-            GlyphState::Locked(idx)
-        }
+        GlyphState::Locked(idx)
     }
 }
 
@@ -131,8 +120,8 @@ fn draw_pixel_hero(
     tick: u32,
     reduced_motion: bool,
 ) {
-    // 6 letters * 5 cols + 5 gaps * 1 col + 1 gap + 2-col block cursor = 38 cols
-    const TOTAL_W: u16 = 38;
+    // 6 letters * 5 cols + 5 gaps * 1 col + 1 gap + 4-col pixel underscore = 40 cols
+    const TOTAL_W: u16 = 40;
     let base_x = area.x + area.width.saturating_sub(TOTAL_W) / 2;
 
     let locked_style = Style::default().fg(design.color(ColorRole::Text));
@@ -143,7 +132,6 @@ fn draw_pixel_hero(
     for i in 0..PIXEL_LETTERS.len() {
         let lx = base_x + (i as u16) * 6;
         match hero_letter_state(i, tick, reduced_motion) {
-            GlyphState::Hidden => {}
             GlyphState::Glitch(g) => {
                 draw_pixel_glyph(buf, lx, y, &PIXEL_GLITCHES[g], glitch_style);
             }
@@ -153,61 +141,13 @@ fn draw_pixel_hero(
         }
     }
 
-    // Orange/Warn pixel block cursor (2 cols x 3.5 terminal rows = 7 pixel rows)
-    let (cursor_x, cursor_on) = if reduced_motion {
-        (base_x + 36, true)
-    } else if tick < 24 {
-        let slot = ((tick.saturating_sub(3)) / 3) as usize;
-        let cx = if slot < PIXEL_LETTERS.len() {
-            base_x + (slot as u16) * 6
-        } else {
-            base_x + 36
-        };
-        (cx, true)
-    } else {
-        let blink_on = ((tick - 24) / 8).is_multiple_of(2);
-        (base_x + 36, blink_on)
-    };
+    // Horizontal pixel underscore cursor (_) aligned on row 6 (top half of terminal row 3)
+    let cursor_on = reduced_motion || (tick / 8).is_multiple_of(2);
     let cstyle = if cursor_on { cursor_style } else { cursor_dim };
-    for row in 0..4u16 {
-        let sym = if row < 3 { "\u{2588}" } else { "\u{2580}" };
-        for dx in 0..2u16 {
-            if let Some(cell) = buf.cell_mut((cursor_x + dx, y + row)) {
-                cell.set_symbol(sym).set_style(cstyle);
-            }
-        }
-    }
-
-    // Minimalist 12-dot pixel scanner row underneath
-    let scanner_y = y + 4;
-    if scanner_y < area.bottom() {
-        let dots_w = (PIXEL_DOT_COUNT as u16) * 2 - 1;
-        let dots_x = area.x + area.width.saturating_sub(dots_w) / 2;
-        let lit_style = Style::default().fg(design.color(ColorRole::Accent));
-        let dim_style = Style::default().fg(design.color(ColorRole::Border));
-
-        let head: Option<isize> = if reduced_motion || tick < 10 {
-            None
-        } else {
-            let period = (PIXEL_DOT_COUNT - 1) * 2;
-            let pos = (((tick - 10) / 2) as usize) % period;
-            Some(if pos < PIXEL_DOT_COUNT {
-                pos as isize
-            } else {
-                (period - pos) as isize
-            })
-        };
-
-        for d in 0..PIXEL_DOT_COUNT {
-            let is_lit = head.is_some_and(|h| (d as isize - h).abs() <= 1);
-            let (sym, st) = if is_lit {
-                ("\u{25aa}", lit_style) // ▪
-            } else {
-                ("\u{00b7}", dim_style) // ·
-            };
-            if let Some(cell) = buf.cell_mut((dots_x + (d as u16) * 2, scanner_y)) {
-                cell.set_symbol(sym).set_style(st);
-            }
+    let cursor_x = base_x + 36;
+    for dx in 0..4u16 {
+        if let Some(cell) = buf.cell_mut((cursor_x + dx, y + 3)) {
+            cell.set_symbol("\u{2580}").set_style(cstyle); // ▀
         }
     }
 }
@@ -220,7 +160,7 @@ fn draw_compact_hero(
     tick: u32,
     reduced_motion: bool,
 ) {
-    // "Hayato" (6 cols) + 1 space + block cursor (1 col) = 8 cols
+    // "Hayato" (6 cols) + 1 space + underscore cursor (1 col) = 8 cols
     let bx = area.x + area.width.saturating_sub(8) / 2;
     let locked_style = Style::default()
         .fg(design.color(ColorRole::Text))
@@ -228,20 +168,21 @@ fn draw_compact_hero(
     let glitch_style = Style::default()
         .fg(design.color(ColorRole::Accent))
         .add_modifier(Modifier::BOLD);
-    let cursor_style = Style::default().fg(design.color(ColorRole::Warn));
+    let cursor_style = Style::default()
+        .fg(design.color(ColorRole::Warn))
+        .add_modifier(Modifier::BOLD);
 
     for i in 0..COMPACT_LETTERS.len() {
         let (sym, st) = match hero_letter_state(i, tick, reduced_motion) {
-            GlyphState::Hidden => (" ", locked_style),
             GlyphState::Glitch(g) => (COMPACT_GLITCHES[g], glitch_style),
             GlyphState::Locked(idx) => (COMPACT_LETTERS[idx], locked_style),
         };
         put(buf, bx + i as u16, y, sym, 1, st);
     }
 
-    let cursor_on = reduced_motion || tick < 24 || ((tick - 24) / 8).is_multiple_of(2);
+    let cursor_on = reduced_motion || (tick / 8).is_multiple_of(2);
     if cursor_on {
-        put(buf, bx + 7, y, "\u{2588}", 1, cursor_style);
+        put(buf, bx + 7, y, "_", 1, cursor_style);
     }
 }
 
@@ -1154,8 +1095,8 @@ impl Screen for GreeterScreen {
         }
 
         let in_modal = !matches!(self.mode, Mode::Login);
-        let use_pixel_hero = area.height >= 26 && area.width >= 42;
-        let hero_h: u16 = if use_pixel_hero { 9 } else { 5 };
+        let use_pixel_hero = area.height >= 26 && area.width >= 44;
+        let hero_h: u16 = if use_pixel_hero { 8 } else { 5 };
         let has_status = self.runner.is_running() || self.status.is_some();
 
         // Compute tight card geometry fitted to content (or expanded for modals).
@@ -2102,18 +2043,13 @@ mod tests {
     fn pixel_hero_animation_phases_and_reduced_motion() {
         for idx in 0..PIXEL_LETTERS.len() {
             assert_eq!(hero_letter_state(idx, 0, true), GlyphState::Locked(idx));
-            assert_eq!(hero_letter_state(idx, 10, true), GlyphState::Locked(idx));
+            assert_eq!(hero_letter_state(idx, 42, true), GlyphState::Locked(idx));
+            // Word starts already formed on entry even when motion is enabled.
+            assert_eq!(hero_letter_state(idx, 0, false), GlyphState::Locked(idx));
         }
-        // Letter 0 scrambles on tick 0, locks by tick 6.
-        assert!(matches!(hero_letter_state(0, 0, false), GlyphState::Glitch(_)));
-        assert_eq!(hero_letter_state(0, 6, false), GlyphState::Locked(0));
-        // Letter 5 is hidden at tick 0, scrambles at tick 12, locks by tick 21.
-        assert_eq!(hero_letter_state(5, 0, false), GlyphState::Hidden);
-        assert!(matches!(hero_letter_state(5, 12, false), GlyphState::Glitch(_)));
-        assert_eq!(hero_letter_state(5, 21, false), GlyphState::Locked(5));
-        // Periodic hacker glitch pulse triggers at tick 28 for letter 0, settles by tick 30.
-        assert!(matches!(hero_letter_state(0, 28, false), GlyphState::Glitch(_)));
-        assert_eq!(hero_letter_state(0, 30, false), GlyphState::Locked(0));
+        // Periodic hacker glitch pulse triggers at tick 42 for letter 1, settles by tick 44.
+        assert!(matches!(hero_letter_state(1, 42, false), GlyphState::Glitch(_)));
+        assert_eq!(hero_letter_state(1, 44, false), GlyphState::Locked(1));
     }
 
     #[test]

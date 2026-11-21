@@ -37,14 +37,9 @@ class PlymouthThemeTests(unittest.TestCase):
         self.assertEqual((lw, lh, ltype), (mod.LETTER_W, mod.LETTER_H, 6))
 
         cw, ch, ctype = _png_size(
-            mod.render_solid_block_png(mod.CURSOR_W, mod.CURSOR_H, mod.CURSOR_RGB)
+            mod.render_bitmap_png(mod.CURSOR_BITMAP, mod.CURSOR_RGB)
         )
         self.assertEqual((cw, ch, ctype), (mod.CURSOR_W, mod.CURSOR_H, 6))
-
-        dw, dh, dtype = _png_size(
-            mod.render_solid_block_png(mod.DOT_SIZE, mod.DOT_SIZE, mod.DOT_LIT_RGB)
-        )
-        self.assertEqual((dw, dh, dtype), (mod.DOT_SIZE, mod.DOT_SIZE, 6))
 
     def test_committed_theme_files_and_manifest_are_complete(self) -> None:
         mod = _load_module()
@@ -81,9 +76,8 @@ class PlymouthThemeTests(unittest.TestCase):
         cw, ch, ctype = _png_size((theme_dir / "cursor.png").read_bytes())
         self.assertEqual((cw, ch, ctype), (mod.CURSOR_W, mod.CURSOR_H, 6))
 
-        for dot_name in ("dot-dim.png", "dot-lit.png"):
-            dw, dh, dtype = _png_size((theme_dir / dot_name).read_bytes())
-            self.assertEqual((dw, dh, dtype), (mod.DOT_SIZE, mod.DOT_SIZE, 6))
+        for removed in ("bar.png", "dot-dim.png", "dot-lit.png"):
+            self.assertFalse((theme_dir / removed).exists(), f"stale asset {removed}")
 
 
 if __name__ == "__main__":

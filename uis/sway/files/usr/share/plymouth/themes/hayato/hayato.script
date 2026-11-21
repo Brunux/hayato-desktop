@@ -23,21 +23,15 @@ for (g = 0; g < glitch_count; g++) {
     glitch_img[g] = Image("glitch-" + g + ".png");
 }
 
-# Signature orange pixel block cursor
+# Signature orange pixel underscore cursor (_)
 cursor_img = Image("cursor.png");
 cursor_spr = Sprite(cursor_img);
 cursor_spr.SetZ(20);
-
-# Minimalist 12-dot pixel scanner row underneath
-dot_count = 12;
-dot_dim_img = Image("dot-dim.png");
-dot_lit_img = Image("dot-lit.png");
 
 letter_w = letter_img[0].GetWidth();
 letter_h = letter_img[0].GetHeight();
 cursor_w = cursor_img.GetWidth();
 cursor_h = cursor_img.GetHeight();
-dot_size = dot_dim_img.GetWidth();
 
 # Layout: crisp monospace pixel grid centered on screen
 letter_gap = 12;
@@ -45,26 +39,12 @@ letter_step = letter_w + letter_gap;
 word_w = letter_step * (letter_count - 1) + letter_w;
 total_w = word_w + letter_gap + cursor_w;
 base_x = center_x - (total_w / 2);
-base_y = center_y - (letter_h / 2) - 10;
+base_y = center_y - (letter_h / 2);
 
-# Cursor aligns with rows 0..6 of the 8-row pixel glyph grid
-cursor_y = base_y;
+# Underscore cursor aligns cleanly with row 6 (baseline of the 8-row pixel glyph grid)
+cursor_y = base_y + (6 * cursor_h);
 
-# 12 pixel dots centered underneath the wordmark
-dot_step = 18;
-dots_w = dot_step * (dot_count - 1) + dot_size;
-dots_x = center_x - (dots_w / 2);
-dots_y = base_y + letter_h + 22;
-
-for (d = 0; d < dot_count; d++) {
-    dot_spr[d] = Sprite(dot_dim_img);
-    dot_spr[d].SetX(dots_x + (d * dot_step));
-    dot_spr[d].SetY(dots_y);
-    dot_spr[d].SetZ(5);
-    dot_spr[d].SetOpacity(0.0);
-}
-
-# Optional subtle status message below the pixel bar
+# Optional subtle status message below the wordmark
 message_spr = Sprite();
 message_spr.SetZ(30);
 
@@ -96,7 +76,7 @@ fun refresh_callback() {
     tick++;
 
     # Phase 1 (ticks 0..47, ~0.95s):
-    # Each letter scrambles through cyan pixel hex/hacker glyphs for 8 ticks,
+    # Each letter scrambles through cyan pixel hex/hacker glyphs,
     # then snaps into crisp white pixel H-a-y-a-t-o left-to-right.
     for (i = 0; i < letter_count; i++) {
         lock_t = 12 + (i * 6);
@@ -105,7 +85,6 @@ fun refresh_callback() {
         if (tick < appear_t) {
             letter_spr[i].SetOpacity(0.0);
         } else if (tick < lock_t) {
-            # Rapid pixel decode scramble
             g_idx = (Math.Int(tick / 2) + (i * 2)) % glitch_count;
             letter_spr[i].SetImage(glitch_img[g_idx]);
             letter_spr[i].SetOpacity(1.0);
@@ -123,7 +102,7 @@ fun refresh_callback() {
         }
     }
 
-    # Cursor steps across active cell during decode, then sharp square-wave terminal blink
+    # Underscore cursor steps across active cell during decode, then sharp square-wave blink
     if (tick < 44) {
         slot = Math.Int((tick - 6) / 6);
         if (slot < 0) slot = 0;
@@ -135,34 +114,11 @@ fun refresh_callback() {
         cursor_spr.SetOpacity(1.0);
     } else {
         cursor_spr.SetX(base_x + word_w + letter_gap);
-        # Crisp retro terminal square-wave blink (~500ms on / 500ms off)
         blink_phase = Math.Int((tick - 44) / 16) % 2;
         if (blink_phase == 0) {
             cursor_spr.SetOpacity(1.0);
         } else {
             cursor_spr.SetOpacity(0.15);
-        }
-    }
-
-    # Minimalist 12-dot pixel scanner bar sweeps back and forth in discrete steps
-    if (tick >= 20) {
-        step_period = (dot_count - 1) * 2;
-        raw_pos = Math.Int((tick - 20) / 3) % step_period;
-        if (raw_pos < dot_count) {
-            head = raw_pos;
-        } else {
-            head = step_period - raw_pos;
-        }
-        for (d = 0; d < dot_count; d++) {
-            dist = d - head;
-            if (dist < 0) dist = -dist;
-            if (dist <= 1 && !is_shutdown) {
-                dot_spr[d].SetImage(dot_lit_img);
-                dot_spr[d].SetOpacity(1.0);
-            } else {
-                dot_spr[d].SetImage(dot_dim_img);
-                dot_spr[d].SetOpacity(0.9);
-            }
         }
     }
 }
@@ -174,7 +130,7 @@ fun message_callback(text) {
         img = Image.Text(text, 0.55, 0.59, 0.72, 1.0, "monospace 11");
         message_spr.SetImage(img);
         message_spr.SetX(center_x - img.GetWidth() / 2);
-        message_spr.SetY(dots_y + 24);
+        message_spr.SetY(base_y + letter_h + 24);
         message_spr.SetOpacity(0.85);
     } else {
         message_spr.SetOpacity(0.0);
@@ -208,9 +164,6 @@ fun quit_callback() {
         letter_spr[i].SetOpacity(0.0);
     }
     cursor_spr.SetOpacity(0.0);
-    for (d = 0; d < dot_count; d++) {
-        dot_spr[d].SetOpacity(0.0);
-    }
     message_spr.SetOpacity(0.0);
 }
 

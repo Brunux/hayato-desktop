@@ -4,8 +4,7 @@
 Outputs into desktop/uis/sway/files/usr/share/plymouth/themes/hayato/:
   - letter-0.png .. letter-5.png : pixel-art H, a, y, a, t, o in #c0caf5
   - glitch-0.png .. glitch-5.png : pixel-art decode glyphs in #7dcfff
-  - cursor.png                   : #ff9e64 Hayato orange solid pixel block cursor
-  - dot-dim.png, dot-lit.png     : 8x8 pixel scanner dots (#292e42 / #7dcfff)
+  - cursor.png                   : #ff9e64 Hayato orange pixel underscore cursor
 
 Pure Python (no ffmpeg/PIL required) and import-safe: generation only runs under main().
 """
@@ -21,9 +20,7 @@ WORD = "Hayato"
 BG_HEX = "#1a1b26"
 FG_RGB = (0xC0, 0xCA, 0xF5)      # #c0caf5 locked pixel letters
 GLITCH_RGB = (0x7D, 0xCF, 0xFF)  # #7dcfff cyan decode/glitch glyphs
-CURSOR_RGB = (0xFF, 0x9E, 0x64)  # #ff9e64 signature orange block cursor
-DOT_DIM_RGB = (0x29, 0x2E, 0x42) # #292e42 dim pixel track
-DOT_LIT_RGB = (0x7D, 0xCF, 0xFF) # #7dcfff active pixel scanner
+CURSOR_RGB = (0xFF, 0x9E, 0x64)  # #ff9e64 signature orange underscore cursor
 
 PIXEL_SCALE = 8
 GRID_W = 5
@@ -32,9 +29,7 @@ LETTER_W = GRID_W * PIXEL_SCALE  # 40 px
 LETTER_H = GRID_H * PIXEL_SCALE  # 64 px
 
 CURSOR_W = 4 * PIXEL_SCALE       # 32 px
-CURSOR_H = 7 * PIXEL_SCALE       # 56 px
-
-DOT_SIZE = PIXEL_SCALE           # 8 px
+CURSOR_H = PIXEL_SCALE           # 8 px (1 pixel row high, baseline-aligned)
 
 # 5x8 pixel bitmaps (row 0..6 main body, row 7 descender)
 LETTER_BITMAPS: dict[str, tuple[str, ...]] = {
@@ -154,6 +149,8 @@ GLITCH_BITMAPS: tuple[tuple[str, ...], ...] = (
     ),
 )
 
+CURSOR_BITMAP: tuple[str, ...] = ("####",)
+
 THEME_DIR = (
     Path(__file__).resolve().parent.parent
     / "uis"
@@ -222,25 +219,13 @@ def render_bitmap_png(
     return encode_rgba_png(width, height, rows)
 
 
-def render_solid_block_png(
-    width: int,
-    height: int,
-    rgb: tuple[int, int, int],
-    alpha: int = 255,
-) -> bytes:
-    """Render a razor-sharp solid pixel rectangle in RGBA PNG format."""
-    r, g, b = rgb
-    row = bytes((r, g, b, alpha)) * width
-    return encode_rgba_png(width, height, [row] * height)
-
-
 def generate_theme_assets(out_dir: Path = THEME_DIR) -> list[Path]:
     """Generate all pixel-art PNG sprite assets for the Hayato Plymouth theme."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    # Remove legacy bar.png if present from earlier smooth theme
-    legacy_bar = out_dir / "bar.png"
-    if legacy_bar.exists():
-        legacy_bar.unlink()
+    for legacy in ("bar.png", "dot-dim.png", "dot-lit.png"):
+        p = out_dir / legacy
+        if p.exists():
+            p.unlink()
 
     written: list[Path] = []
     for idx, ch in enumerate(WORD):
@@ -254,16 +239,8 @@ def generate_theme_assets(out_dir: Path = THEME_DIR) -> list[Path]:
         written.append(p)
 
     cursor_path = out_dir / "cursor.png"
-    cursor_path.write_bytes(render_solid_block_png(CURSOR_W, CURSOR_H, CURSOR_RGB))
+    cursor_path.write_bytes(render_bitmap_png(CURSOR_BITMAP, CURSOR_RGB))
     written.append(cursor_path)
-
-    dot_dim_path = out_dir / "dot-dim.png"
-    dot_dim_path.write_bytes(render_solid_block_png(DOT_SIZE, DOT_SIZE, DOT_DIM_RGB))
-    written.append(dot_dim_path)
-
-    dot_lit_path = out_dir / "dot-lit.png"
-    dot_lit_path.write_bytes(render_solid_block_png(DOT_SIZE, DOT_SIZE, DOT_LIT_RGB))
-    written.append(dot_lit_path)
 
     return written
 
