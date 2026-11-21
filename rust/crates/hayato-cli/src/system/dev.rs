@@ -33,11 +33,19 @@ pub struct DevEntry {
 }
 
 /// Developer action.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DevAction {
+    HealthCheck,
+    Logs,
+    Mcp,
+    Report,
+    AptRepo,
+    SshGit,
+    GreeterPreview,
+    ReloadDesktop,
+    OpenConfig,
     Export,
     Restore,
-    Report,
 }
 
 /// Archive entry for restore.
@@ -52,8 +60,10 @@ pub struct ArchiveEntry {
 
 /// The dev screen state.
 pub struct DevScreen {
-    entries: Vec<DevEntry>,
+    /// Parallel to rows in `list`: `Some(action)` for selectable items, `None` for headings.
+    row_actions: Vec<Option<DevAction>>,
     list: ListState,
+    banner: String,
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
@@ -61,42 +71,159 @@ pub struct DevScreen {
 
 impl DevScreen {
     pub fn new() -> Self {
-        let entries = vec![
-            DevEntry {
-                icon: "box".to_string(),
-                label: "Export my profile".to_string(),
-                detail: "keys, configs and optional home folder, encrypted · to a disk".to_string(),
-                action: DevAction::Export,
-            },
-            DevEntry {
-                icon: "undo".to_string(),
-                label: "Restore a profile".to_string(),
-                detail: "from an exported archive · the current files are backed up first"
-                    .to_string(),
-                action: DevAction::Restore,
-            },
-            DevEntry {
-                icon: "bug".to_string(),
-                label: "Save a diagnostics bundle".to_string(),
-                detail: "the system report and this boot's journal, for a bug report".to_string(),
-                action: DevAction::Report,
-            },
+        Self::with_banner(
+            "Type to filter · health checks, logs, APT, MCP, desktop tools & profile backups",
+        )
+    }
+
+    pub fn with_banner(banner: impl Into<String>) -> Self {
+        let items: Vec<(Option<&str>, Option<DevEntry>)> = vec![
+            (Some("Health & Debugging"), None),
+            (
+                None,
+                Some(DevEntry {
+                    icon: "chip".to_string(),
+                    label: "Run system health check".to_string(),
+                    detail: "check-system.sh · 10-core, 20-device, 30-desktop witnesses"
+                        .to_string(),
+                    action: DevAction::HealthCheck,
+                }),
+            ),
+            (
+                None,
+                Some(DevEntry {
+                    icon: "terminal".to_string(),
+                    label: "Inspect boot & session logs".to_string(),
+                    detail: "journalctl · this boot errors, previous boot, kernel, Sway"
+                        .to_string(),
+                    action: DevAction::Logs,
+                }),
+            ),
+            (
+                None,
+                Some(DevEntry {
+                    icon: "code".to_string(),
+                    label: "Inspect MCP tools & status".to_string(),
+                    detail: "hayato mcp --tools · 18 agent tools & OpenCode registration"
+                        .to_string(),
+                    action: DevAction::Mcp,
+                }),
+            ),
+            (
+                None,
+                Some(DevEntry {
+                    icon: "bug".to_string(),
+                    label: "Save a diagnostics bundle".to_string(),
+                    detail: "the system report and this boot's journal, for a bug report"
+                        .to_string(),
+                    action: DevAction::Report,
+                }),
+            ),
+            (Some("Packages & Identity"), None),
+            (
+                None,
+                Some(DevEntry {
+                    icon: "download".to_string(),
+                    label: "Hayato APT repository".to_string(),
+                    detail: "Cloudsmith debian/forky · status, enable, disable, apt update"
+                        .to_string(),
+                    action: DevAction::AptRepo,
+                }),
+            ),
+            (
+                None,
+                Some(DevEntry {
+                    icon: "key".to_string(),
+                    label: "SSH keys & Git identity".to_string(),
+                    detail: "copy ~/.ssh/*.pub to clipboard · view git user & email".to_string(),
+                    action: DevAction::SshGit,
+                }),
+            ),
+            (Some("Desktop & UI Dev"), None),
+            (
+                None,
+                Some(DevEntry {
+                    icon: "eye".to_string(),
+                    label: "Preview login greeter".to_string(),
+                    detail: "hayato greeter --preview · test themes & layout without rebooting"
+                        .to_string(),
+                    action: DevAction::GreeterPreview,
+                }),
+            ),
+            (
+                None,
+                Some(DevEntry {
+                    icon: "computer".to_string(),
+                    label: "Reload desktop services".to_string(),
+                    detail: "swaymsg reload · restart waybar and hayato-notify".to_string(),
+                    action: DevAction::ReloadDesktop,
+                }),
+            ),
+            (
+                None,
+                Some(DevEntry {
+                    icon: "box".to_string(),
+                    label: "Open config & repo folders".to_string(),
+                    detail: "~/.config/hayato, ~/.config/sway, /etc/hayato, ~/Dev/Hayato"
+                        .to_string(),
+                    action: DevAction::OpenConfig,
+                }),
+            ),
+            (Some("Profile Backup"), None),
+            (
+                None,
+                Some(DevEntry {
+                    icon: "box".to_string(),
+                    label: "Export my profile".to_string(),
+                    detail: "keys, configs and optional home folder, encrypted · to a disk"
+                        .to_string(),
+                    action: DevAction::Export,
+                }),
+            ),
+            (
+                None,
+                Some(DevEntry {
+                    icon: "undo".to_string(),
+                    label: "Restore a profile".to_string(),
+                    detail: "from an exported archive · the current files are backed up first"
+                        .to_string(),
+                    action: DevAction::Restore,
+                }),
+            ),
         ];
 
-        let mut list = ListState::new().with_empty("no actions").ranked();
-        list.set_rows(entries.iter().map(Self::entry_row).collect());
+        let mut rows = Vec::with_capacity(items.len());
+        let mut row_actions = Vec::with_capacity(items.len());
+        for (heading, entry) in items {
+            if let Some(title) = heading {
+                rows.push(Row::heading(title));
+                row_actions.push(None);
+            } else if let Some(e) = entry {
+                rows.push(Self::entry_row(&e));
+                row_actions.push(Some(e.action));
+            }
+        }
+
+        let mut list = ListState::new().with_empty("no matching developer actions");
+        list.set_rows(rows);
 
         Self {
-            entries,
+            row_actions,
             list,
+            banner: banner.into(),
             header: Header::new("Hayato").subtitle("Developer"),
             keybar: vec![
-                KeyHint::new("Enter", "select"),
+                KeyHint::new("Enter", "open"),
+                KeyHint::new("type", "filter"),
                 KeyHint::new("\u{2191}\u{2193}", "move"),
                 KeyHint::new("Esc", "close"),
             ],
             rows_height: Cell::new(20),
         }
+    }
+
+    pub fn action_at(&self, index: usize) -> Option<DevAction> {
+        self.row_actions.get(index).copied().flatten()
     }
 
     pub fn profile_bin() -> std::path::PathBuf {
@@ -133,6 +260,7 @@ impl DevScreen {
             "eye" => Glyph::Eye,
             "code" => Glyph::Code,
             "computer" => Glyph::Desktop,
+            "download" => Glyph::Download,
             _ => Glyph::Info,
         }
     }
@@ -205,13 +333,17 @@ impl DevScreen {
 
 impl Screen for DevScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Actions"), true);
+        draw_card(ctx.buf, ctx.area, ctx.design, Some("Developer tools"), true);
         let (filter, rows) = Self::list_layout(ctx.area);
-        ctx.buf.set_string(
-            filter.x,
-            filter.y,
-            "The archive carries ~/.ssh and ~/.gnupg · the passphrase protects it",
-            ctx.design.style(TextStyle::Dim),
+        let total = self.row_actions.iter().filter(|a| a.is_some()).count();
+        hayato_ui::widgets::draw_filter_bar(
+            ctx.buf,
+            filter,
+            ctx.design,
+            self.list.filter(),
+            &self.banner,
+            self.list.len(),
+            total,
         );
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
@@ -229,8 +361,17 @@ impl Screen for DevScreen {
                     return Outcome::Done(selected as i32);
                 }
             }
-            KeyCode::Esc => return Outcome::Done(hayato_ui::app::exit::ESCAPE),
+            KeyCode::Esc => {
+                if !self.list.filter().is_empty() {
+                    self.list.set_filter("");
+                    return Outcome::Consumed;
+                }
+                return Outcome::Done(hayato_ui::app::exit::ESCAPE);
+            }
             _ => {}
+        }
+        if self.list.type_filter(key) {
+            return Outcome::Consumed;
         }
         let _ = self.list.handle(key, rows_height, design);
         Outcome::Continue
@@ -981,66 +1122,505 @@ pub fn build_export_args(
     args
 }
 
-/// `hayato menu dev` (`hayato-dev`): developer profile tools.
-pub fn menu(
-    terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
-    design: &Design,
-) -> Result<i32, crate::Failure> {
-    let profile_bin = DevScreen::profile_bin();
+fn resolve_system_helper(name: &str, libexec_name: &str) -> Option<PathBuf> {
+    for cand in [
+        format!("/usr/sbin/{name}"),
+        format!("/usr/local/sbin/{name}"),
+        format!("/usr/libexec/hayato/{libexec_name}"),
+    ] {
+        let p = PathBuf::from(cand);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AptStatusSummary {
+    enabled: bool,
+    suite: String,
+    keyring: String,
+}
+
+fn parse_apt_status(output: &str) -> AptStatusSummary {
+    let mut enabled = false;
+    let mut suite = "forky".to_string();
+    let mut keyring = "unknown".to_string();
+    for line in output.lines() {
+        if let Some((k, v)) = line.split_once('=') {
+            match k.trim() {
+                "enabled" => enabled = matches!(v.trim(), "yes" | "true" | "1"),
+                "suite" => suite = v.trim().to_string(),
+                "keyring" => keyring = v.trim().to_string(),
+                _ => {}
+            }
+        }
+    }
+    AptStatusSummary {
+        enabled,
+        suite,
+        keyring,
+    }
+}
+
+fn collect_ssh_pubkeys(home: &Path) -> Vec<(String, String, PathBuf)> {
+    let ssh_dir = home.join(".ssh");
+    let mut keys = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&ssh_dir) else {
+        return keys;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("pub") {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let detail = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| text.lines().next().map(str::to_string))
+            .map(|line| {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                match parts.as_slice() {
+                    [kind, _, comment, ..] => format!("{kind} · {comment}"),
+                    [kind, ..] => (*kind).to_string(),
+                    _ => "public key".to_string(),
+                }
+            })
+            .unwrap_or_else(|| "public key".to_string());
+        keys.push((name, detail, path));
+    }
+    keys.sort_by(|a, b| a.0.cmp(&b.0));
+    keys
+}
+
+fn read_git_identity() -> String {
+    let read = |key: &str| {
+        std::process::Command::new("git")
+            .args(["config", "--global", "--get", key])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty())
+    };
+    match (read("user.name"), read("user.email")) {
+        (Some(n), Some(e)) => format!("Git: {n} <{e}>"),
+        (Some(n), None) => format!("Git: {n} (no email set)"),
+        (None, Some(e)) => format!("Git: <{e}> (no name set)"),
+        (None, None) => "Git: user.name / user.email not configured".to_string(),
+    }
+}
+
+fn collect_dev_folders(home: &Path) -> Vec<(String, String, PathBuf)> {
+    let candidates = [
+        ("Hayato config", home.join(".config/hayato")),
+        ("Sway config", home.join(".config/sway")),
+        ("Waybar config", home.join(".config/waybar")),
+        ("Session helpers", home.join(".config/bin")),
+        ("System /etc/hayato", PathBuf::from("/etc/hayato")),
+        ("Hayato source repo", home.join("Dev/Hayato")),
+    ];
+    candidates
+        .into_iter()
+        .filter(|(_, p)| p.is_dir())
+        .map(|(label, p)| (label.to_string(), p.display().to_string(), p))
+        .collect()
+}
+
+fn check_profile_deps(profile_bin: &Path) -> Result<(), String> {
     let profile_exists = profile_bin.exists() || have("hayato-profile");
     let mut needed = vec!["wl-copy", "sudo", "tar", "gpg", "zstd"];
     if !profile_exists {
         needed.push("hayato-profile");
     }
     if let Some(said) = missing(&needed) {
-        return Err(crate::Failure::new(
-            "Developer",
-            format!("{said} (hayato-profile, wl-clipboard, sudo, tar, gnupg, zstd)"),
+        return Err(format!(
+            "{said} (hayato-profile, wl-clipboard, sudo, tar, gnupg, zstd)"
         ));
     }
+    Ok(())
+}
 
+/// `hayato menu dev` (`hayato-dev`): Hayato developer workbench.
+pub fn menu(
+    terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
+    design: &Design,
+) -> Result<i32, crate::Failure> {
+    let profile_bin = DevScreen::profile_bin();
+    let home = std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/root"));
     let mut banner: Option<String> = None;
 
     loop {
         let note = banner.take().unwrap_or_else(|| {
-            "The archive carries ~/.ssh and ~/.gnupg \u{00b7} the passphrase protects it"
+            "Type to filter · health checks, logs, APT, MCP, desktop tools & profile backups"
                 .to_string()
         });
-        let mut main_picker = Picker::new(
-            "Developer",
-            vec![Question::choose(
-                "Developer",
-                note,
-                vec![
-                    Row::new("Export my profile").glyph(Glyph::Box).detail(
-                        "keys, configs and optional home folder, encrypted \u{00b7} to a disk",
-                    ),
-                    Row::new("Restore a profile").glyph(Glyph::Undo).detail(
-                        "from an exported archive \u{00b7} the current files are backed up first",
-                    ),
-                    Row::new("Save a diagnostics bundle")
-                        .glyph(Glyph::Bug)
-                        .detail("the system report and this boot's journal, for a bug report"),
-                ],
-                vec![
-                    "export".to_string(),
-                    "restore".to_string(),
-                    "report".to_string(),
-                ],
-            )],
-        );
-
-        let code = crate::run_screen(terminal, design, "Developer", &mut main_picker)?;
-        if code != 0 {
+        let mut dev_screen = DevScreen::with_banner(note);
+        let code = crate::run_screen(terminal, design, "Developer", &mut dev_screen)?;
+        if code < 0 {
             return Ok(code);
         }
-
-        let Some(action) = main_picker.answers().first().cloned() else {
-            return Ok(1);
+        let Some(action) = dev_screen.action_at(code as usize) else {
+            return Ok(0);
         };
 
-        match action.as_str() {
-            "restore" => {
+        match action {
+            DevAction::HealthCheck => {
+                let Some(bin) = resolve_system_helper("check-system.sh", "check-system.sh") else {
+                    banner = Some(
+                        "check-system.sh not found in /usr/sbin or /usr/libexec/hayato".to_string(),
+                    );
+                    continue;
+                };
+                let tag = format!("dev-check-{}", std::process::id());
+                let task = Task::start_steps(
+                    &tag,
+                    "System health check",
+                    vec!["Run check-system.sh (10-core, 20-device, 30-desktop)".to_string()],
+                    true,
+                    vec![vec![bin.to_string_lossy().to_string()]],
+                )
+                .map_err(|e| crate::Failure::new("Developer", e.to_string()))?;
+                let mut view = TaskView::new(task);
+                let _ = crate::run_screen(terminal, design, "System health check", &mut view)?;
+            }
+            DevAction::Logs => {
+                let mut log_picker = Picker::new(
+                    "Inspect logs",
+                    vec![Question::choose(
+                        "Inspect logs",
+                        "journalctl output opens in-window · Escape goes back",
+                        vec![
+                            Row::new("This boot errors")
+                                .glyph(Glyph::Bug)
+                                .detail("journalctl -b -p err..emerg -n 200"),
+                            Row::new("Previous boot errors")
+                                .glyph(Glyph::Clock)
+                                .detail("journalctl -b -1 -p err..emerg -n 200"),
+                            Row::new("Kernel messages (dmesg)")
+                                .glyph(Glyph::Chip)
+                                .detail("journalctl -b -k -n 200"),
+                            Row::new("User session & Sway logs")
+                                .glyph(Glyph::Desktop)
+                                .detail("journalctl --user -b -n 200"),
+                        ],
+                        vec![
+                            "boot-err".to_string(),
+                            "prev-err".to_string(),
+                            "kernel".to_string(),
+                            "user".to_string(),
+                        ],
+                    )],
+                );
+                let l_code = crate::run_screen(terminal, design, "Inspect logs", &mut log_picker)?;
+                if l_code != 0 {
+                    continue;
+                }
+                let Some(which) = log_picker.answers().first().cloned() else {
+                    continue;
+                };
+                let (title, argv): (&str, Vec<String>) = match which.as_str() {
+                    "boot-err" => (
+                        "This boot errors",
+                        vec![
+                            "journalctl".into(),
+                            "-b".into(),
+                            "-p".into(),
+                            "err..emerg".into(),
+                            "--no-pager".into(),
+                            "-n".into(),
+                            "200".into(),
+                        ],
+                    ),
+                    "prev-err" => (
+                        "Previous boot errors",
+                        vec![
+                            "journalctl".into(),
+                            "-b".into(),
+                            "-1".into(),
+                            "-p".into(),
+                            "err..emerg".into(),
+                            "--no-pager".into(),
+                            "-n".into(),
+                            "200".into(),
+                        ],
+                    ),
+                    "kernel" => (
+                        "Kernel messages",
+                        vec![
+                            "journalctl".into(),
+                            "-b".into(),
+                            "-k".into(),
+                            "--no-pager".into(),
+                            "-n".into(),
+                            "200".into(),
+                        ],
+                    ),
+                    _ => (
+                        "User session logs",
+                        vec![
+                            "journalctl".into(),
+                            "--user".into(),
+                            "-b".into(),
+                            "--no-pager".into(),
+                            "-n".into(),
+                            "200".into(),
+                        ],
+                    ),
+                };
+                let tag = format!("dev-logs-{}", std::process::id());
+                let task =
+                    Task::start_steps(&tag, title, vec![format!("Read {title}")], true, vec![argv])
+                        .map_err(|e| crate::Failure::new("Developer", e.to_string()))?;
+                let mut view = TaskView::new(task);
+                let _ = crate::run_screen(terminal, design, title, &mut view)?;
+            }
+            DevAction::Mcp => {
+                let opencode_cfg = home.join(".config/opencode/opencode.json");
+                let mut steps = vec!["List hayato mcp --tools manifest".to_string()];
+                let mut commands = vec![vec!["hayato".into(), "mcp".into(), "--tools".into()]];
+                if opencode_cfg.exists() {
+                    steps.push("Inspect OpenCode MCP registration".to_string());
+                    commands.push(vec![
+                        "cat".into(),
+                        opencode_cfg.to_string_lossy().to_string(),
+                    ]);
+                }
+                let tag = format!("dev-mcp-{}", std::process::id());
+                let task = Task::start_steps(&tag, "Hayato MCP manifest", steps, true, commands)
+                    .map_err(|e| crate::Failure::new("Developer", e.to_string()))?;
+                let mut view = TaskView::new(task);
+                let _ = crate::run_screen(terminal, design, "Hayato MCP manifest", &mut view)?;
+            }
+            DevAction::AptRepo => {
+                let Some(apt_bin) = resolve_system_helper("hayato-apt", "hayato-apt.sh") else {
+                    banner = Some(
+                        "hayato-apt not found in /usr/sbin or /usr/libexec/hayato".to_string(),
+                    );
+                    continue;
+                };
+                let status_out = std::process::Command::new(&apt_bin)
+                    .arg("status")
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::null())
+                    .output()
+                    .ok()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                    .unwrap_or_default();
+                let st = parse_apt_status(&status_out);
+                let status_line = format!(
+                    "Cloudsmith APT: {} · suite: {} · keyring: {}",
+                    if st.enabled { "enabled" } else { "disabled" },
+                    st.suite,
+                    st.keyring
+                );
+                let mut apt_picker = Picker::new(
+                    "Hayato APT repository",
+                    vec![Question::choose(
+                        "Hayato APT repository",
+                        status_line,
+                        vec![
+                            Row::new("Enable Cloudsmith APT")
+                                .glyph(Glyph::Download)
+                                .detail(
+                                    "sudo hayato-apt enable · enables signed debian/forky repo",
+                                ),
+                            Row::new("Disable Cloudsmith APT")
+                                .glyph(Glyph::Undo)
+                                .detail("sudo hayato-apt disable · keeps local keyring intact"),
+                            Row::new("Refresh package lists (apt update)")
+                                .glyph(Glyph::Terminal)
+                                .detail("sudo apt update"),
+                        ],
+                        vec![
+                            "enable".to_string(),
+                            "disable".to_string(),
+                            "update".to_string(),
+                        ],
+                    )],
+                );
+                let a_code =
+                    crate::run_screen(terminal, design, "Hayato APT repository", &mut apt_picker)?;
+                if a_code != 0 {
+                    continue;
+                }
+                let Some(choice) = apt_picker.answers().first().cloned() else {
+                    continue;
+                };
+                let (title, argv): (&str, Vec<String>) = match choice.as_str() {
+                    "enable" => (
+                        "Enable Cloudsmith APT",
+                        vec![
+                            "sudo".into(),
+                            apt_bin.to_string_lossy().to_string(),
+                            "enable".into(),
+                        ],
+                    ),
+                    "disable" => (
+                        "Disable Cloudsmith APT",
+                        vec![
+                            "sudo".into(),
+                            apt_bin.to_string_lossy().to_string(),
+                            "disable".into(),
+                        ],
+                    ),
+                    _ => (
+                        "Update APT lists",
+                        vec!["sudo".into(), "apt".into(), "update".into()],
+                    ),
+                };
+                let tag = format!("dev-apt-{}", std::process::id());
+                let task =
+                    Task::start_steps(&tag, title, vec![title.to_string()], false, vec![argv])
+                        .map_err(|e| crate::Failure::new("Developer", e.to_string()))?;
+                let mut view = TaskView::new(task);
+                let _ = crate::run_screen(terminal, design, title, &mut view)?;
+            }
+            DevAction::SshGit => {
+                let git_line = read_git_identity();
+                let pubkeys = collect_ssh_pubkeys(&home);
+                if pubkeys.is_empty() {
+                    banner = Some(format!("{git_line} · no ~/.ssh/*.pub keys found"));
+                    continue;
+                }
+                let rows: Vec<Row> = pubkeys
+                    .iter()
+                    .map(|(name, detail, _)| Row::new(name).glyph(Glyph::Key).detail(detail))
+                    .collect();
+                let keys: Vec<String> = pubkeys
+                    .iter()
+                    .map(|(_, _, p)| p.to_string_lossy().to_string())
+                    .collect();
+                let mut key_picker = Picker::new(
+                    "SSH keys & Git identity",
+                    vec![Question::choose(
+                        "SSH keys & Git identity",
+                        format!("{git_line} · Enter copies the public key to clipboard"),
+                        rows,
+                        keys,
+                    )],
+                );
+                let k_code = crate::run_screen(
+                    terminal,
+                    design,
+                    "SSH keys & Git identity",
+                    &mut key_picker,
+                )?;
+                if k_code != 0 {
+                    continue;
+                }
+                if let Some(path_str) = key_picker.answers().first() {
+                    if let Ok(contents) = std::fs::read_to_string(path_str) {
+                        if let Ok(mut child) = std::process::Command::new("wl-copy")
+                            .stdin(std::process::Stdio::piped())
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .spawn()
+                        {
+                            if let Some(mut stdin) = child.stdin.take() {
+                                use std::io::Write;
+                                let _ = stdin.write_all(contents.as_bytes());
+                            }
+                            let _ = child.wait();
+                            let fname = Path::new(path_str)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| path_str.clone());
+                            banner = Some(format!("Copied {fname} to clipboard"));
+                        }
+                    }
+                }
+            }
+            DevAction::GreeterPreview => {
+                let preview_args = vec!["--preview".to_string()];
+                let _ = crate::greeter::menu(&preview_args, terminal, design)?;
+                banner = Some("Returned from greeter preview".to_string());
+            }
+            DevAction::ReloadDesktop => {
+                let _ = std::process::Command::new("swaymsg")
+                    .arg("reload")
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+                let _ = std::process::Command::new("pkill")
+                    .args(["-x", "waybar"])
+                    .status();
+                let _ = std::process::Command::new("pkill")
+                    .args(["-x", "hayato-notify"])
+                    .status();
+                let _ = std::process::Command::new("swaymsg")
+                    .args(["exec", "waybar"])
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+                let _ = std::process::Command::new("swaymsg")
+                    .args(["exec", "hayato-notify"])
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+                banner = Some("Reloaded Sway, Waybar & hayato-notify".to_string());
+            }
+            DevAction::OpenConfig => {
+                let folders = collect_dev_folders(&home);
+                if folders.is_empty() {
+                    banner = Some("No Hayato config or repo folders found".to_string());
+                    continue;
+                }
+                let rows: Vec<Row> = folders
+                    .iter()
+                    .map(|(label, detail, _)| Row::new(label).glyph(Glyph::Box).detail(detail))
+                    .collect();
+                let keys: Vec<String> = folders
+                    .iter()
+                    .map(|(_, _, p)| p.to_string_lossy().to_string())
+                    .collect();
+                let mut dir_picker = Picker::new(
+                    "Open config & repo folders",
+                    vec![Question::choose(
+                        "Open config & repo folders",
+                        "Opens the folder in Files · Escape goes back",
+                        rows,
+                        keys,
+                    )],
+                );
+                let d_code = crate::run_screen(
+                    terminal,
+                    design,
+                    "Open config & repo folders",
+                    &mut dir_picker,
+                )?;
+                if d_code != 0 {
+                    continue;
+                }
+                if let Some(dir) = dir_picker.answers().first() {
+                    let _ = std::process::Command::new("hayato-files")
+                        .args(["--", dir])
+                        .env_remove("HAYATO_UI")
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn();
+                    return Ok(0);
+                }
+            }
+            DevAction::Restore => {
+                if let Err(msg) = check_profile_deps(&profile_bin) {
+                    banner = Some(msg);
+                    continue;
+                }
                 let mut archives = DevScreen::list_archives();
                 if archives.is_empty() {
                     // A stick that is plugged in but not mounted holds the
@@ -1229,7 +1809,11 @@ pub fn menu(
                     return crate::run_screen(terminal, design, "Restore a profile", &mut view);
                 }
             }
-            "export" => 'export_pick: loop {
+            DevAction::Export => 'export_pick: loop {
+                if let Err(msg) = check_profile_deps(&profile_bin) {
+                    banner = Some(msg);
+                    break 'export_pick;
+                }
                 let (target_rows, target_keys) = collect_targets();
                 let mut target_picker = Picker::new(
                     "Export the profile to",
@@ -1311,7 +1895,11 @@ pub fn menu(
                 let mut view = TaskView::new(task);
                 return crate::run_screen(terminal, design, "Export my profile", &mut view);
             },
-            "report" => {
+            DevAction::Report => {
+                if let Err(msg) = check_profile_deps(&profile_bin) {
+                    banner = Some(msg);
+                    continue;
+                }
                 let (target_rows, target_keys) = collect_targets();
                 let mut target_picker = Picker::new(
                     "Save the diagnostics bundle to",
@@ -1362,7 +1950,6 @@ pub fn menu(
                     );
                 }
             }
-            _ => return Ok(0),
         }
     }
 }
@@ -1533,5 +2120,52 @@ mod tests {
         assert!(screen.include_home);
         assert_eq!(screen.click(Some(2)), Outcome::Consumed);
         assert!(!screen.include_home);
+    }
+
+    #[test]
+    fn dev_screen_maps_grouped_actions_and_skips_headings() {
+        let screen = DevScreen::new();
+        // Index 0 is the "Health & Debugging" heading, index 1 is HealthCheck.
+        assert_eq!(screen.action_at(0), None);
+        assert_eq!(screen.action_at(1), Some(DevAction::HealthCheck));
+        assert_eq!(screen.action_at(2), Some(DevAction::Logs));
+        assert_eq!(screen.action_at(3), Some(DevAction::Mcp));
+        assert_eq!(screen.action_at(4), Some(DevAction::Report));
+        // Index 5 is "Packages & Identity" heading.
+        assert_eq!(screen.action_at(5), None);
+        assert_eq!(screen.action_at(6), Some(DevAction::AptRepo));
+        assert_eq!(screen.action_at(7), Some(DevAction::SshGit));
+    }
+
+    #[test]
+    fn apt_status_parses_enabled_suite_and_keyring() {
+        let st = parse_apt_status(
+            "enabled=yes\nuri=https://dl.cloudsmith.io/public/hayato/hayato/deb/debian\nsuite=forky\nkeyring=present\n",
+        );
+        assert!(st.enabled);
+        assert_eq!(st.suite, "forky");
+        assert_eq!(st.keyring, "present");
+
+        let off = parse_apt_status("enabled=no\nsuite=forky\nkeyring=missing\n");
+        assert!(!off.enabled);
+        assert_eq!(off.keyring, "missing");
+    }
+
+    #[test]
+    fn collect_ssh_pubkeys_reads_pub_files_only() {
+        let tmp = std::env::temp_dir().join(format!("hayato-dev-ssh-{}", std::process::id()));
+        let ssh = tmp.join(".ssh");
+        std::fs::create_dir_all(&ssh).unwrap();
+        std::fs::write(ssh.join("id_ed25519"), "PRIVATE").unwrap();
+        std::fs::write(
+            ssh.join("id_ed25519.pub"),
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest bruno@hayato\n",
+        )
+        .unwrap();
+        let keys = collect_ssh_pubkeys(&tmp);
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].0, "id_ed25519.pub");
+        assert_eq!(keys[0].1, "ssh-ed25519 · bruno@hayato");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

@@ -1,24 +1,24 @@
 Hayato · Developer                                                              
 ────────────────────────────────────────────────────────────────────────────────
-╭ Actions ─────────────────────────────────────────────────────────────────────╮
-│ The archive carries ~/.ssh and ~/.gnupg · the passphrase protects it         │
+╭ Developer tools ─────────────────────────────────────────────────────────────╮
+│  Type to filter · health checks, logs, APT, MCP, desktop tools & … 15 / 11  │
 │                                                                              │
-│ ▍   Export my profile  keys, configs and optional home folder, encrypted ·… │
-│     Restore a profile  from an exported archive · the current files are ba… │
+│  Health & Debugging  ─────────────────────────────────────────────────────   │
+│ ▍   Run system health check  check-system.sh · 10-core, 20-device, 30-desk… │
+│     Inspect boot & session logs  journalctl · this boot errors, previous b… │
+│     Inspect MCP tools & status  hayato mcp --tools · 18 agent tools & Open… │
 │     Save a diagnostics bundle  the system report and this boot's journal, … │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
+│  Packages & Identity  ────────────────────────────────────────────────────   │
+│     Hayato APT repository  Cloudsmith debian/forky · status, enable, disab… │
+│     SSH keys & Git identity  copy ~/.ssh/*.pub to clipboard · view git use… │
+│  Desktop & UI Dev  ───────────────────────────────────────────────────────   │
+│     Preview login greeter  hayato greeter --preview · test themes & layout… │
+│     Reload desktop services  swaymsg reload · restart waybar and hayato-no… │
+│     Open config & repo folders  ~/.config/hayato, ~/.config/sway, /etc/hay… │
+│  Profile Backup  ─────────────────────────────────────────────────────────   │
+│     Export my profile  keys, configs and optional home folder, encrypted ·… │
+│     Restore a profile  from an exported archive · the current files are ba… │
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- [Enter]  select   [↑↓]  move   [Esc]  close                                    
+ [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close                     
