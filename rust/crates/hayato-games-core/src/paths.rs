@@ -73,19 +73,23 @@ pub fn system_games() -> PathBuf {
     if installed.is_dir() {
         return installed;
     }
-    // A checkout: the binary lives in `rust/target/<profile>/`, so the data is
-    // a few levels up. The path is resolved at run time on purpose: baking
-    // `CARGO_MANIFEST_DIR` into the binary ships the builder's home directory
-    // (and whatever the checkout was called) inside every copy of the program.
-    if let Ok(exe) = std::env::current_exe() {
-        for root in exe.ancestors().skip(1).take(6) {
-            let candidate = root.join("crates/hayato-games/data");
-            if candidate.is_dir() {
-                return candidate;
-            }
-        }
+    // A checkout: the binary lives in `rust/target/<profile>/` (or deeper when
+    // CI places test binaries under `target/debug/build/<pkg>/<hash>/out/`),
+    // so the data is several levels up. Resolved at run time so baking
+    // `CARGO_MANIFEST_DIR` never leaks the builder's checkout path.
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(candidate) = checkout_games_data(&exe)
+    {
+        return candidate;
     }
     installed
+}
+
+fn checkout_games_data(exe: &Path) -> Option<PathBuf> {
+    exe.ancestors()
+        .skip(1)
+        .map(|root| root.join("crates/hayato-games/data"))
+        .find(|candidate| candidate.is_dir())
 }
 
 /// The folders scanned for ROMs: `~/Games` unless `HAYATO_GAMES_ROM_DIRS`
@@ -154,5 +158,16 @@ mod tests {
             "unexpected system data directory: {}",
             path.display()
         );
+    }
+
+    #[test]
+    fn checkout_data_resolves_from_deep_cargo_build_out_layout() {
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tmp.path().join("rust/crates/hayato-games/data");
+        std::fs::create_dir_all(&data).unwrap();
+        let exe = tmp.path().join(
+            "rust/target/debug/build/hayato-cli/aa50a0c63e4db3a2/out/hayato_cli-aa50a0c63e4db3a2",
+        );
+        assert_eq!(checkout_games_data(&exe), Some(data));
     }
 }

@@ -537,6 +537,23 @@ impl GamesScreen {
         let visible = usize::from(area.height / CARD_HEIGHT).max(1);
         let cursor = self.list.cursor();
         let count = self.list.visible_len();
+        if count == 0 {
+            let hint = "Put a ROM in ~/Games and press s";
+            let y = area.y + area.height / 2;
+            buf.set_string(
+                area.x,
+                y.saturating_sub(1),
+                &art::fit("No games in this view", usize::from(area.width)),
+                design.style(TextStyle::Title),
+            );
+            buf.set_string(
+                area.x,
+                y,
+                &art::fit(hint, usize::from(area.width)),
+                design.style(TextStyle::Dim),
+            );
+            return;
+        }
         let mut scroll = self.scroll.get();
         if cursor < scroll {
             scroll = cursor;
@@ -1745,6 +1762,18 @@ mod tests {
                 assert!(text.contains("No games in this view"));
             }
         }
+    }
+
+    #[test]
+    fn the_empty_shelf_says_no_games_in_a_narrow_window() {
+        let mut screen = all_tab();
+        screen.list.set_filter("zzzzzzzzzz");
+        assert!(screen.selected_game().is_none());
+        let text = render(&mut screen, 90, 30);
+        assert!(
+            text.contains("No games in this view"),
+            "missing empty-view text:\n{text}"
+        );
     }
 
     /// A screen on the All tab, cursor at the top, no filter: the layout tests
