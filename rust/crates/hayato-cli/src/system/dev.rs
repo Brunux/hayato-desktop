@@ -335,8 +335,9 @@ impl DevScreen {
 
 impl Screen for DevScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Developer tools"), true);
-        let (filter, rows) = Self::list_layout(ctx.area);
+        let (left, right) = Self::split_panes(ctx.area);
+        draw_card(ctx.buf, left, ctx.design, Some("Developer tools"), true);
+        let (filter, rows) = Self::list_layout(left);
         let total = self.row_actions.iter().filter(|a| a.is_some()).count();
         let visible = if self.list.filter().is_empty() {
             total
@@ -354,6 +355,10 @@ impl Screen for DevScreen {
         );
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
+
+        if let Some(right_area) = right {
+            self.draw_inspector(ctx.buf, right_area, ctx.design);
+        }
     }
 
     fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
@@ -409,7 +414,8 @@ impl Screen for DevScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        let (_, rows) = Self::list_layout(area);
+        let (left, _) = Self::split_panes(area);
+        let (_, rows) = Self::list_layout(left);
         self.list.hit_row(rows, x, y, design)
     }
 
@@ -422,7 +428,277 @@ impl Screen for DevScreen {
     }
 }
 
+struct DevInspectorInfo {
+    category: &'static str,
+    title: &'static str,
+    command: &'static str,
+    summary: &'static str,
+    highlights: &'static [&'static str],
+    paths: &'static [&'static str],
+    safety: &'static str,
+}
+
+fn inspector_for(action: DevAction) -> DevInspectorInfo {
+    match action {
+        DevAction::HealthCheck => DevInspectorInfo {
+            category: "HEALTH & DEBUGGING",
+            title: "Run system health check",
+            command: "check-system.sh",
+            summary: "Executes the full 3-layer Hayato runtime witness suite in an in-window TaskView.",
+            highlights: &[
+                "10-core.sh   Rootfs, boot backend, APT & systemd services",
+                "20-device.sh Kernel, firmware, audio, display & board quirks",
+                "30-desktop.sh SwayFX, Waybar, theme files, glyphs & hayato CLI",
+            ],
+            paths: &["/usr/libexec/hayato/check/", "/usr/sbin/check-system.sh"],
+            safety: "Read-only diagnostic run · safe to run at any time",
+        },
+        DevAction::Logs => DevInspectorInfo {
+            category: "HEALTH & DEBUGGING",
+            title: "Inspect boot & session logs",
+            command: "journalctl -b -p err / --user",
+            summary: "Quick-filter systemd journal streams without memorizing journalctl flags.",
+            highlights: &[
+                "This boot errors & warnings (priority err..emerg)",
+                "Previous boot crash trail (-b -1)",
+                "Kernel dmesg ring buffer & Wayland/Sway user session",
+            ],
+            paths: &["/run/log/journal", "/var/log/journal"],
+            safety: "Read-only · opens inside in-window log viewer",
+        },
+        DevAction::Mcp => DevInspectorInfo {
+            category: "HEALTH & DEBUGGING",
+            title: "Inspect MCP tools & status",
+            command: "hayato mcp --tools",
+            summary: "Audits the read/propose-only Model Context Protocol server and agent registration.",
+            highlights: &[
+                "Lists all 18 built-in Hayato MCP tools & schemas",
+                "Checks OpenCode & local agent MCP server registration",
+                "Verifies read-only / propose-only safety boundary",
+            ],
+            paths: &["~/.config/opencode/opencode.json", "hayato mcp"],
+            safety: "Read-only · MCP server never mutates host state directly",
+        },
+        DevAction::Report => DevInspectorInfo {
+            category: "HEALTH & DEBUGGING",
+            title: "Save a diagnostics bundle",
+            command: "hayato-profile report",
+            summary: "Packages hardware facts, system report, and this boot's journal into a shareable archive.",
+            highlights: &[
+                "Captures check-system.sh output & hardware summary",
+                "Includes current boot journal & Sway output topology",
+                "Writes cleanly to removable media or ~/Downloads",
+            ],
+            paths: &["~/Downloads/", "/run/media/"],
+            safety: "Sanitized bundle · review before sharing publicly",
+        },
+        DevAction::AptRepo => DevInspectorInfo {
+            category: "PACKAGES & IDENTITY",
+            title: "Hayato APT repository",
+            command: "sudo hayato-apt status | enable | disable",
+            summary: "Manages the signed Cloudsmith debian/forky APT repository for Hayato updates.",
+            highlights: &[
+                "Inspects enabled status, suite, URI & GPG keyring",
+                "One-click enable / disable with polkit/sudo elevation",
+                "Runs apt-get update inside an in-window TaskView",
+            ],
+            paths: &[
+                "/etc/apt/sources.list.d/hayato.list",
+                "/usr/share/keyrings/hayato-archive-keyring.gpg",
+            ],
+            safety: "Signed APT metadata · requires sudo to toggle",
+        },
+        DevAction::SshGit => DevInspectorInfo {
+            category: "PACKAGES & IDENTITY",
+            title: "SSH keys & Git identity",
+            command: "ls ~/.ssh/*.pub · git config --global",
+            summary: "Inspects your local SSH public keys and global Git author configuration.",
+            highlights: &[
+                "Lists ~/.ssh/*.pub keys with algorithm & comment",
+                "One-click copy any public key to Wayland clipboard",
+                "Displays active git user.name, user.email & signing",
+            ],
+            paths: &["~/.ssh/", "~/.gitconfig"],
+            safety: "Public keys only · private keys are never read or copied",
+        },
+        DevAction::GreeterPreview => DevInspectorInfo {
+            category: "DESKTOP & UI DEV",
+            title: "Preview login greeter",
+            command: "hayato greeter --preview",
+            summary: "Launches an interactive sandboxed preview of the Hayato login greeter.",
+            highlights: &[
+                "Test pixel-hacker wordmark, theme palettes & clock layout",
+                "Verify power strip & user pills without logging out",
+                "Runs against mock Preview backend (zero greetd IPC)",
+            ],
+            paths: &["~/.config/hayato/greeter.conf", "/etc/hayato/greeter.conf"],
+            safety: "Sandboxed preview · cannot lock or sign out your session",
+        },
+        DevAction::ReloadDesktop => DevInspectorInfo {
+            category: "DESKTOP & UI DEV",
+            title: "Reload desktop services",
+            command: "swaymsg reload · waybar · hayato-notify",
+            summary: "Hot-reloads Sway configuration and restarts Waybar and notification cards cleanly.",
+            highlights: &[
+                "Applies updated Sway keybindings, gaps & window rules",
+                "Restarts Waybar with refreshed CSS & module configs",
+                "Restarts hayato-notify daemon with active theme",
+            ],
+            paths: &["~/.config/sway/", "~/.config/waybar/"],
+            safety: "Non-destructive · open windows & terminals stay running",
+        },
+        DevAction::OpenConfig => DevInspectorInfo {
+            category: "DESKTOP & UI DEV",
+            title: "Open config & repo folders",
+            command: "hayato menu files <dir>",
+            summary: "Jump straight into Hayato configuration directories or local source checkouts.",
+            highlights: &[
+                "~/.config/hayato  Theme, greeter, notify & app configs",
+                "~/.config/sway    Compositor rules & display overrides",
+                "/etc/hayato       System defaults & APT configuration",
+                "~/Dev/Hayato      Local umbrella repository checkout",
+            ],
+            paths: &["~/.config/hayato", "~/.config/sway", "/etc/hayato"],
+            safety: "Opens in Hayato Files browser",
+        },
+        DevAction::Export => DevInspectorInfo {
+            category: "PROFILE BACKUP",
+            title: "Export my profile",
+            command: "hayato-profile export",
+            summary: "Creates an encrypted portable backup of your keys, configs, and optional home files.",
+            highlights: &[
+                "Interactive scope picker (configs, SSH/GPG keys, home)",
+                "Passphrase-encrypted archive before writing to disk",
+                "Targets USB drives or ~/Downloads with progress TaskView",
+            ],
+            paths: &["~/.config/", "~/.ssh/", "~/Downloads/"],
+            safety: "Encrypted archive · store your passphrase safely",
+        },
+        DevAction::Restore => DevInspectorInfo {
+            category: "PROFILE BACKUP",
+            title: "Restore a profile",
+            command: "hayato-profile restore",
+            summary: "Restores a previously exported encrypted Hayato profile archive.",
+            highlights: &[
+                "Auto-discovers archives on USB drives and ~/Downloads",
+                "Shows archive size, timestamp & included scope before restore",
+                "Backs up current files automatically before overwriting",
+            ],
+            paths: &["~/Downloads/", "/run/media/"],
+            safety: "Backs up existing configs first · asks passphrase & confirmation",
+        },
+    }
+}
+
 impl DevScreen {
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 50) / 100).max(48) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn draw_inspector(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
+        draw_card(buf, area, design, Some("Workbench Inspector"), false);
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        if inner.width < 16 || inner.height < 8 {
+            return;
+        }
+        let action = self
+            .list
+            .selected_index()
+            .and_then(|idx| self.action_at(idx))
+            .unwrap_or(DevAction::HealthCheck);
+        let info = inspector_for(action);
+
+        let dim = design.style(TextStyle::Dim);
+        let body = design.style(TextStyle::Body);
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        let title_style = design.style(TextStyle::Title).add_modifier(Modifier::BOLD);
+        let ok_style = Style::default().fg(design.color(ColorRole::Ok));
+
+        let mut y = inner.y;
+        put_trunc(buf, inner.x, y, info.category, inner.width, accent);
+        y += 1;
+        put_trunc(buf, inner.x, y, info.title, inner.width, title_style);
+        y += 2;
+
+        // Command pill
+        let cmd_line = format!("$ {}", info.command);
+        put_trunc(buf, inner.x, y, &cmd_line, inner.width, ok_style);
+        y += 2;
+
+        // Summary (word-wrapped)
+        let w = usize::from(inner.width.max(1));
+        let chars: Vec<char> = info.summary.chars().collect();
+        for chunk in chars.chunks(w) {
+            if y >= inner.bottom().saturating_sub(4) {
+                break;
+            }
+            let s: String = chunk.iter().collect();
+            put_trunc(buf, inner.x, y, &s, inner.width, body);
+            y += 1;
+        }
+        y += 1;
+
+        // Highlights
+        if y < inner.bottom().saturating_sub(4) {
+            put_trunc(buf, inner.x, y, "What it does", inner.width, accent);
+            y += 1;
+            for item in info.highlights {
+                if y >= inner.bottom().saturating_sub(4) {
+                    break;
+                }
+                let line = format!("• {item}");
+                put_trunc(buf, inner.x, y, &line, inner.width, body);
+                y += 1;
+            }
+            y += 1;
+        }
+
+        // Paths
+        if y < inner.bottom().saturating_sub(3) {
+            put_trunc(buf, inner.x, y, "Paths", inner.width, accent);
+            y += 1;
+            for p in info.paths {
+                if y >= inner.bottom().saturating_sub(2) {
+                    break;
+                }
+                put_trunc(buf, inner.x, y, p, inner.width, dim);
+                y += 1;
+            }
+        }
+
+        // Safety footer
+        put_trunc(
+            buf,
+            inner.x,
+            inner.bottom().saturating_sub(1),
+            info.safety,
+            inner.width,
+            dim,
+        );
+    }
+
     fn list_layout(area: Rect) -> (Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
