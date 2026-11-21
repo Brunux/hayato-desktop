@@ -32,33 +32,57 @@ const ANIM_FRAME_MS: u64 = 60;
 /// Each byte encodes 5 columns in bits 4..=0 (bit 4 = leftmost pixel).
 const PIXEL_LETTERS: [[u8; 8]; 6] = [
     // H
-    [0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001, 0b00000],
+    [
+        0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001, 0b00000,
+    ],
     // a
-    [0b00000, 0b00000, 0b01110, 0b00001, 0b01111, 0b10001, 0b01111, 0b00000],
+    [
+        0b00000, 0b00000, 0b01110, 0b00001, 0b01111, 0b10001, 0b01111, 0b00000,
+    ],
     // y
-    [0b00000, 0b00000, 0b10001, 0b10001, 0b10001, 0b01111, 0b00001, 0b01110],
+    [
+        0b00000, 0b00000, 0b10001, 0b10001, 0b10001, 0b01111, 0b00001, 0b01110,
+    ],
     // a
-    [0b00000, 0b00000, 0b01110, 0b00001, 0b01111, 0b10001, 0b01111, 0b00000],
+    [
+        0b00000, 0b00000, 0b01110, 0b00001, 0b01111, 0b10001, 0b01111, 0b00000,
+    ],
     // t
-    [0b00000, 0b00100, 0b11111, 0b00100, 0b00100, 0b00100, 0b00011, 0b00000],
+    [
+        0b00000, 0b00100, 0b11111, 0b00100, 0b00100, 0b00100, 0b00011, 0b00000,
+    ],
     // o
-    [0b00000, 0b00000, 0b01110, 0b10001, 0b10001, 0b10001, 0b01110, 0b00000],
+    [
+        0b00000, 0b00000, 0b01110, 0b10001, 0b10001, 0b10001, 0b01110, 0b00000,
+    ],
 ];
 
 /// 5x8 pixel-art decode/glitch glyphs (`0`, `1`, `#`, `/`, `=`, `+`).
 const PIXEL_GLITCHES: [[u8; 8]; 6] = [
     // 0
-    [0b00000, 0b01110, 0b10011, 0b10101, 0b11001, 0b01110, 0b00000, 0b00000],
+    [
+        0b00000, 0b01110, 0b10011, 0b10101, 0b11001, 0b01110, 0b00000, 0b00000,
+    ],
     // 1
-    [0b00000, 0b00100, 0b01100, 0b00100, 0b00100, 0b01110, 0b00000, 0b00000],
+    [
+        0b00000, 0b00100, 0b01100, 0b00100, 0b00100, 0b01110, 0b00000, 0b00000,
+    ],
     // #
-    [0b00000, 0b01010, 0b11111, 0b01010, 0b11111, 0b01010, 0b00000, 0b00000],
+    [
+        0b00000, 0b01010, 0b11111, 0b01010, 0b11111, 0b01010, 0b00000, 0b00000,
+    ],
     // /
-    [0b00000, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b00000, 0b00000],
+    [
+        0b00000, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b00000, 0b00000,
+    ],
     // =
-    [0b00000, 0b00000, 0b11111, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
+    [
+        0b00000, 0b00000, 0b11111, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000,
+    ],
     // +
-    [0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000, 0b00000],
+    [
+        0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000, 0b00000,
+    ],
 ];
 
 const COMPACT_LETTERS: [&str; 6] = ["H", "a", "y", "a", "t", "o"];
@@ -1158,9 +1182,23 @@ impl Screen for GreeterScreen {
 
             let hero_reduced = ctx.design.reduced_motion() || self.clock_fixed;
             if use_pixel_hero {
-                draw_pixel_hero(ctx.buf, area, y0 + 3, ctx.design, self.anim_tick, hero_reduced);
+                draw_pixel_hero(
+                    ctx.buf,
+                    area,
+                    y0 + 3,
+                    ctx.design,
+                    self.anim_tick,
+                    hero_reduced,
+                );
             } else {
-                draw_compact_hero(ctx.buf, area, y0 + 3, ctx.design, self.anim_tick, hero_reduced);
+                draw_compact_hero(
+                    ctx.buf,
+                    area,
+                    y0 + 3,
+                    ctx.design,
+                    self.anim_tick,
+                    hero_reduced,
+                );
             }
         }
 
@@ -2048,7 +2086,10 @@ mod tests {
             assert_eq!(hero_letter_state(idx, 0, false), GlyphState::Locked(idx));
         }
         // Periodic hacker glitch pulse triggers at tick 42 for letter 1, settles by tick 44.
-        assert!(matches!(hero_letter_state(1, 42, false), GlyphState::Glitch(_)));
+        assert!(matches!(
+            hero_letter_state(1, 42, false),
+            GlyphState::Glitch(_)
+        ));
         assert_eq!(hero_letter_state(1, 44, false), GlyphState::Locked(1));
     }
 
