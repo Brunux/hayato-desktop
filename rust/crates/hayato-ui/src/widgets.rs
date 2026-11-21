@@ -2378,16 +2378,20 @@ impl ActionItem {
     }
 
     fn pill_width(&self) -> u16 {
+        let l_w = UnicodeWidthStr::width(self.label.as_str()) as u16;
         let g_w = self
             .glyph
             .map(|g| {
                 let w = UnicodeWidthStr::width(g.cell()) as u16;
-                w + if w <= 1 { 2 } else { 1 }
+                if l_w == 0 {
+                    w
+                } else {
+                    w + if w <= 1 { 2 } else { 1 }
+                }
             })
             .unwrap_or(0);
         let k_w = UnicodeWidthStr::width(self.key) as u16;
-        let l_w = UnicodeWidthStr::width(self.label.as_str()) as u16;
-        // " [key] [glyph  ]label "
+        // " [key] [glyph[  ]]label "
         1 + k_w + 1 + g_w + l_w + 1
     }
 }
@@ -2575,17 +2579,21 @@ impl ActionStrip {
             if let Some(g) = item.glyph {
                 let gw = UnicodeWidthStr::width(g.cell()) as u16;
                 col = put(buf, col, y, g.cell(), 4, label_style);
-                let gap = if gw <= 1 { "  " } else { " " };
-                col = put(buf, col, y, gap, gap.len() as u16, label_style);
+                if !item.label.is_empty() {
+                    let gap = if gw <= 1 { "  " } else { " " };
+                    col = put(buf, col, y, gap, gap.len() as u16, label_style);
+                }
             }
-            put(
-                buf,
-                col,
-                y,
-                &item.label,
-                (x + w).saturating_sub(col + 1),
-                label_style,
-            );
+            if !item.label.is_empty() {
+                put(
+                    buf,
+                    col,
+                    y,
+                    &item.label,
+                    (x + w).saturating_sub(col + 1),
+                    label_style,
+                );
+            }
             x += w + 1;
         }
         let hint = if self.focused {

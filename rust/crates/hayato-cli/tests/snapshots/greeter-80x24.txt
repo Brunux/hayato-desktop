@@ -16,7 +16,7 @@
                  │                                            │                 
                  ╰────────────────────────────────────────────╯                 
                                                                                 
-   ^T   Theme   ^Z   Sleep   ^R   Reboot   ^P ⏻  Shut down    [Tab] actions  
+                           ^T    ^Z    ^R    ^P ⏻                            
                                                                                 
                                                                                 
                                                                                 

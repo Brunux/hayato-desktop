@@ -599,11 +599,11 @@ impl GreeterScreen {
     }
 
     fn build_strip(show_power_actions: bool) -> ActionStrip {
-        let mut items = vec![ActionItem::new("theme", "^T", "Theme").glyph(Glyph::Theme)];
+        let mut items = vec![ActionItem::new("theme", "^T", "").glyph(Glyph::Theme)];
         if show_power_actions {
-            items.push(ActionItem::new("sleep", "^Z", "Sleep").glyph(Glyph::Moon));
-            items.push(ActionItem::new("reboot", "^R", "Reboot").glyph(Glyph::Reboot));
-            items.push(ActionItem::new("poweroff", "^P", "Shut down").glyph(Glyph::Power));
+            items.push(ActionItem::new("sleep", "^Z", "").glyph(Glyph::Moon));
+            items.push(ActionItem::new("reboot", "^R", "").glyph(Glyph::Reboot));
+            items.push(ActionItem::new("poweroff", "^P", "").glyph(Glyph::Power));
         }
         ActionStrip::new(items)
     }
@@ -1423,10 +1423,10 @@ impl Screen for GreeterScreen {
             }
         }
 
-        // 3. Single quiet ActionStrip centered below the card
+        // 3. Single quiet icon-only ActionStrip centered below the card
         let strip_y = card_area.bottom() + 1;
         if strip_y < area.bottom() {
-            let strip_w = if self.show_power_actions { 76 } else { 30 };
+            let strip_w = if self.show_power_actions { 27 } else { 8 };
             let w = strip_w.min(area.width.saturating_sub(2));
             let sx = area.x + area.width.saturating_sub(w) / 2;
             let strip_area = Rect::new(sx, strip_y, w, 1);
@@ -2063,7 +2063,10 @@ mod tests {
         assert!(small.contains("Hayato"));
         assert!(small.contains("18:30"));
         assert!(small.contains("brunux"));
-        assert!(small.contains("Theme"));
+        assert!(small.contains("^T"));
+        assert!(small.contains("^P"));
+        assert!(!small.contains("Theme"));
+        assert!(!small.contains("Shut down"));
         assert!(!small.contains("z_"));
         assert!(!small.contains("Hayato_"));
         assert!(!small.contains("Sway (Wayland)"));
@@ -2073,7 +2076,9 @@ mod tests {
         let large = render_text(&mut scr, 152, 45);
         assert!(large.contains("18:30"));
         assert!(large.contains("\u{2588}"));
-        assert!(large.contains("Shut down"));
+        assert!(large.contains("^T"));
+        assert!(large.contains("^P"));
+        assert!(!large.contains("Shut down"));
         assert!(!large.contains("Settings"));
     }
 
@@ -2105,7 +2110,9 @@ mod tests {
         assert_eq!(scr.focus, Focus::Username);
         let out = render_text(&mut scr, 100, 30);
         assert!(!out.contains("+ Other"));
-        assert!(out.contains("Theme"));
+        assert!(out.contains("^T"));
+        assert!(!out.contains("^P"));
+        assert!(!out.contains("Theme"));
         assert!(!out.contains("Shut down"));
         assert!(!out.contains("Settings"));
     }
