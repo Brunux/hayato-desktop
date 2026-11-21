@@ -253,6 +253,22 @@ impl Screen for WindowScreen {
                     }
                 }
             }
+            KeyCode::Delete => {
+                if let Some(selected) = self.list.selected_index() {
+                    if let Some(window) = self.filtered.get(selected).cloned() {
+                        self.close_window(&window);
+                        return Outcome::Continue;
+                    }
+                }
+            }
+            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if let Some(selected) = self.list.selected_index() {
+                    if let Some(window) = self.filtered.get(selected).cloned() {
+                        self.close_window(&window);
+                        return Outcome::Continue;
+                    }
+                }
+            }
             KeyCode::Char('1') if key.modifiers.contains(KeyModifiers::ALT) => {
                 if let Some(selected) = self.list.selected_index() {
                     if let Some(window) = self.filtered.get(selected).cloned() {
@@ -261,7 +277,14 @@ impl Screen for WindowScreen {
                     }
                 }
             }
-            KeyCode::Esc => return Outcome::Done(hayato_ui::app::exit::ESCAPE),
+            KeyCode::Esc => {
+                if !self.input.text().is_empty() {
+                    self.input.clear();
+                    self.filter_windows();
+                    return Outcome::Consumed;
+                }
+                return Outcome::Done(hayato_ui::app::exit::ESCAPE);
+            }
             _ => {}
         }
         match self.list.handle(key, rows_height, design) {

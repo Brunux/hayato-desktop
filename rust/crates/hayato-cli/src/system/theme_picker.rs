@@ -427,7 +427,14 @@ impl Screen for ThemePickerScreen {
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
         let left_w = ((area.width as u32 * 34) / 100).clamp(28, 38) as u16;
         let left_rect = Rect::new(area.x, area.y, left_w, area.height);
-        self.list.hit_row(left_rect, x, y, design)
+        let filter_offset = if self.list.filter().is_empty() { 0 } else { 1 };
+        let rows_area = Rect::new(
+            left_rect.x + 1,
+            left_rect.y + 1 + filter_offset,
+            left_rect.width.saturating_sub(2),
+            left_rect.height.saturating_sub(2 + filter_offset),
+        );
+        self.list.hit_row(rows_area, x, y, design)
     }
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
@@ -507,26 +514,35 @@ impl Screen for ThemePickerScreen {
         let text_color = hayato_ui::design::color(theme_roles.text.0);
         let dim_color = hayato_ui::design::color(theme_roles.dim.0);
 
+        // Status Badge (compact on narrow panes so it never collides with the theme title)
+        let status_badge = if selected.slug == self.active_slug {
+            if pw < 52 {
+                "[ ACTIVE ]"
+            } else {
+                "[ ACTIVE SESSION THEME ]"
+            }
+        } else if self.phase.is_peeking() && selected.slug == self.original_slug {
+            if pw < 52 {
+                "[ ORIGINAL ]"
+            } else {
+                "[ ORIGINAL THEME ]"
+            }
+        } else {
+            "[ AVAILABLE ]"
+        };
+        let badge_w = status_badge.len() as u16;
+        let title_max_w = pw.saturating_sub(badge_w + 1);
         let name_style = Style::default()
             .fg(accent_color)
             .add_modifier(Modifier::BOLD);
-        put(
+        put_trunc(
             ctx.buf,
             px,
             py,
             &format!("{} ({})", selected.theme.name, selected.slug),
-            pw,
+            title_max_w,
             name_style,
         );
-
-        // Status Badge
-        let status_badge = if selected.slug == self.active_slug {
-            "[ ACTIVE SESSION THEME ]"
-        } else if self.phase.is_peeking() && selected.slug == self.original_slug {
-            "[ ORIGINAL THEME ]"
-        } else {
-            "[ AVAILABLE ]"
-        };
         let badge_style = if selected.slug == self.active_slug {
             Style::default()
                 .fg(hayato_ui::design::color(theme_roles.ok.0))
@@ -534,8 +550,8 @@ impl Screen for ThemePickerScreen {
         } else {
             ctx.design.style(TextStyle::Dim)
         };
-        let badge_x = (px + pw).saturating_sub(status_badge.len() as u16);
-        put(ctx.buf, badge_x, py, status_badge, pw, badge_style);
+        let badge_x = (px + pw).saturating_sub(badge_w);
+        put(ctx.buf, badge_x, py, status_badge, badge_w, badge_style);
         py += 1;
 
         // Author & source
@@ -668,8 +684,11 @@ impl Screen for ThemePickerScreen {
         }
         py += 2;
 
-        // 4. Key Semantic UI Roles
-        put(
+        // 4. Key Semantic UI Roles (guarded against right_card.bottom() so 80x24 never overwrites border)
+        if py + 1 >= right_card.bottom() {
+            return;
+        }
+        put_trunc(
             ctx.buf,
             px,
             py,
@@ -690,24 +709,34 @@ impl Screen for ThemePickerScreen {
 
         cx = px;
         for (name, hex) in role_pills {
+            if py >= right_card.bottom() {
+                break;
+            }
             let col = hayato_ui::design::color(hex.0);
             let block_style = Style::default().fg(col);
+            let label = format!("{name}: {}  ", hex.hashed());
+            let total_pill_w = 3 + label.len() as u16;
+            if cx > px && cx + total_pill_w > px + pw {
+                cx = px;
+                py += 1;
+                if py >= right_card.bottom() {
+                    break;
+                }
+            }
             put(ctx.buf, cx, py, "\u{2588}\u{2588} ", 3, block_style);
             cx += 3;
             let text_style = ctx.design.style(TextStyle::Code);
-            let label = format!("{name}: {}  ", hex.hashed());
-            let len = label.len() as u16;
-            put(ctx.buf, cx, py, &label, len, text_style);
-            cx += len;
-            if cx + 18 > px + pw {
-                cx = px;
-                py += 1;
-            }
+            let avail = (px + pw).saturating_sub(cx);
+            put_trunc(ctx.buf, cx, py, &label, avail, text_style);
+            cx += label.len() as u16;
         }
         py += 2;
 
         // 5. Contrast & Accessibility Scorecard
-        put(
+        if py + 1 >= right_card.bottom() {
+            return;
+        }
+        put_trunc(
             ctx.buf,
             px,
             py,
@@ -717,8 +746,10 @@ impl Screen for ThemePickerScreen {
         );
         py += 1;
 
-        let text_verdict = if selected.contrast_text >= 4.5 {
+        let text_verdict = if selected.contrast_text >= 7.0 {
             "AAA PASS"
+        } else if selected.contrast_text >= 4.5 {
+            "AA PASS"
         } else {
             "FAIL"
         };

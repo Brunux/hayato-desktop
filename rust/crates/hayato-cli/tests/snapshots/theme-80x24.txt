@@ -1,7 +1,7 @@
 Hayato · Theme & Appearance                                                     
 ────────────────────────────────────────────────────────────────────────────────
 ╭ Themes ──────────────────╮╭ Preview: Tokyo Night ────────────────────────────╮
-│ ▍   ● Tokyo …           ││  Tokyo Night (tokyo-nig[ ACTIVE SESSION THEME ]  │
+│ ▍   ● Tokyo …           ││  Tokyo Night (tokyo-night)           [ ACTIVE ]  │
 │     ○ Solari…           ││  by enkia / Folke                                │
 │     ○ Catppu…           ││                                                  │
 │     ○ Rose P…           ││  Desktop & Wallpaper Simulation                  │
@@ -20,5 +20,5 @@ Hayato · Theme & Appearance
 │                          ││  Semantic Roles                                  │
 │                          ││  ██ Accent: #7aa2f7  ██ Surface: #1f2335         │
 │                          ││  ██ Border: #7aa2f7  ██ Ok: #9ece6a              │
-╰──────────────────────────╯╰──██ Warn: #e0af68  ██ Danger: #f7768e  ──────────╯
+╰──────────────────────────╯╰──────────────────────────────────────────────────╯
  [Enter]  apply   [↑↓]  preview   [w]  wallpaper   …               [Esc]  close 

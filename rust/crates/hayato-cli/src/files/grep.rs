@@ -284,7 +284,7 @@ impl GrepScreen {
             Mode::Results => vec![
                 KeyHint::new("Enter", "open at the line"),
                 KeyHint::new("Ctrl+N", "new search"),
-                KeyHint::new("Esc", "close"),
+                KeyHint::new("Esc", "back"),
             ],
             Mode::Viewing(_) => vec![
                 KeyHint::new("PgUp/PgDn", "scroll"),
@@ -350,8 +350,7 @@ impl GrepScreen {
             });
         });
         self.header = Header::new("Hayato")
-            .subtitle("Search inside files")
-            .subtitle(query.clone())
+            .subtitle(format!("Search inside files · {query}"))
             .status("searching…");
         self.query = query.clone();
         self.mode = Mode::Running(Running { child, rx, query });

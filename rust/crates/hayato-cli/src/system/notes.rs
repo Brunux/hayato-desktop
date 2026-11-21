@@ -646,6 +646,33 @@ impl Screen for NotesScreen {
         }
     }
 
+    fn click(&mut self, row: Option<usize>) -> Outcome {
+        if self.mode != Mode::List {
+            return Outcome::Continue;
+        }
+        if let Some(visible) = row {
+            self.list.set_cursor(visible);
+            self.refresh_preview();
+            if let Some(index) = self.list.selected_index() {
+                return self.activate(index);
+            }
+        }
+        Outcome::Continue
+    }
+
+    fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        if self.mode != Mode::List {
+            return None;
+        }
+        let inner = Rect {
+            x: area.x + 2,
+            y: area.y + 1,
+            width: area.width.saturating_sub(4),
+            height: area.height.saturating_sub(2),
+        };
+        self.list.hit_row(panes(inner).list, x, y, design)
+    }
+
     fn keybar(&self) -> Option<&[KeyHint]> {
         Some(match self.mode {
             Mode::List => &self.keybar,

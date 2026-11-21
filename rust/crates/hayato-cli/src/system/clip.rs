@@ -191,8 +191,10 @@ impl Screen for ClipScreen {
             }
         }
         let rows_height = self.rows_height.get();
-        let is_alt1 = key.code == KeyCode::Char('1') && key.modifiers.contains(KeyModifiers::ALT);
-        if is_alt1 {
+        let is_delete = key.code == KeyCode::Delete
+            || (key.code == KeyCode::Char('d') && key.modifiers.contains(KeyModifiers::CONTROL))
+            || (key.code == KeyCode::Char('1') && key.modifiers.contains(KeyModifiers::ALT));
+        if is_delete {
             if let Some(index) = self.list.selected_index() {
                 if index < self.entries.len() {
                     let deleted = std::process::Command::new("sh")
@@ -267,18 +269,8 @@ impl Screen for ClipScreen {
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
         let (strip, _, rows) = Self::list_layout(area);
-        if y == strip.y && x >= strip.x && x < strip.right() {
-            let mut col = strip.x;
-            for (idx, item) in self.strip.items().iter().enumerate() {
-                let w = 4
-                    + item.key.len() as u16
-                    + item.label.len() as u16
-                    + item.glyph.map(|_| 2).unwrap_or(0);
-                if x >= col && x < col + w {
-                    return Some(10_000 + idx);
-                }
-                col += w + 1;
-            }
+        if let Some(idx) = self.strip.hit_index(strip, x, y) {
+            return Some(10_000 + idx);
         }
         self.list.hit_row(rows, x, y, design)
     }

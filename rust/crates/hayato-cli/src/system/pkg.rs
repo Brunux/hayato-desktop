@@ -338,7 +338,12 @@ impl Screen for PkgScreen {
             return;
         }
 
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Packages"), true);
+        let card_title = match &self.stage {
+            PkgStage::Query => "Search",
+            PkgStage::Results => "Results",
+            PkgStage::Installing(_) => "Installing",
+        };
+        draw_card(ctx.buf, ctx.area, ctx.design, Some(card_title), true);
 
         match &self.stage {
             PkgStage::Query => {
@@ -463,6 +468,7 @@ impl Screen for PkgScreen {
         if matches!(self.stage, PkgStage::Query) {
             if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
                 && !key.modifiers.contains(KeyModifiers::CONTROL)
+                && !key.modifiers.contains(KeyModifiers::ALT)
             {
                 let _ = self.input.handle(key);
                 return Outcome::Consumed;
@@ -481,7 +487,13 @@ impl Screen for PkgScreen {
                     }
                     return Outcome::Consumed;
                 }
-                KeyCode::Esc => return Outcome::Done(hayato_ui::app::exit::ESCAPE),
+                KeyCode::Esc => {
+                    if !self.input.text().is_empty() {
+                        self.input.clear();
+                        return Outcome::Consumed;
+                    }
+                    return Outcome::Done(hayato_ui::app::exit::ESCAPE);
+                }
                 _ => {
                     let _ = self.quick_list.handle(key, self.rows_height.get(), design);
                 }
@@ -504,6 +516,7 @@ impl Screen for PkgScreen {
             }
             if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
                 && !key.modifiers.contains(KeyModifiers::CONTROL)
+                && !key.modifiers.contains(KeyModifiers::ALT)
             {
                 self.list.type_filter(key);
                 return Outcome::Consumed;

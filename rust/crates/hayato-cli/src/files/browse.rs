@@ -484,6 +484,10 @@ impl Screen for FilesScreen {
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
         match key.code {
+            KeyCode::Esc if !self.list.filter().is_empty() => {
+                self.list.set_filter("");
+                return Outcome::Consumed;
+            }
             KeyCode::Tab => return self.actions(),
             KeyCode::Char('1') if alt => return self.actions(),
             KeyCode::Char('h') if control => {

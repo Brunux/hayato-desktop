@@ -164,7 +164,7 @@ impl Screen for EmojiScreen {
         } else if let Some(note) = &self.status_note {
             note.as_str()
         } else {
-            "Enter inserts at cursor · Alt+1 copies only · type to filter"
+            "Enter inserts at cursor · Ctrl+Y copies only · type to filter"
         };
         draw_filter_bar(
             ctx.buf,
@@ -172,7 +172,7 @@ impl Screen for EmojiScreen {
             ctx.design,
             self.list.filter(),
             msg,
-            self.list.len(),
+            self.list.visible_len(),
             self.emojis.len(),
         );
         self.rows_height.set(rows.height);
@@ -183,9 +183,11 @@ impl Screen for EmojiScreen {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
         }
-        let is_alt1 = key.code == KeyCode::Char('1') && key.modifiers.contains(KeyModifiers::ALT);
+        let is_copy_only = (key.code == KeyCode::Char('y')
+            && key.modifiers.contains(KeyModifiers::CONTROL))
+            || (key.code == KeyCode::Char('1') && key.modifiers.contains(KeyModifiers::ALT));
         let rows_height = self.rows_height.get();
-        if is_alt1 {
+        if is_copy_only {
             if let Some(index) = self.list.selected_index() {
                 return self.insert_emoji(index, true);
             }

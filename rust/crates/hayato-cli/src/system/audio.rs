@@ -557,18 +557,8 @@ impl Screen for AudioScreen {
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
         let (_, strip, _, rows) = Self::layout(area);
-        if y == strip.y && x >= strip.x && x < strip.right() {
-            let mut col = strip.x;
-            for (idx, item) in self.strip.items().iter().enumerate() {
-                let w = 4
-                    + item.key.len() as u16
-                    + item.label.len() as u16
-                    + item.glyph.map(|_| 2).unwrap_or(0);
-                if x >= col && x < col + w {
-                    return Some(10_000 + idx);
-                }
-                col += w + 1;
-            }
+        if let Some(idx) = self.strip.hit_index(strip, x, y) {
+            return Some(10_000 + idx);
         }
         self.list.hit_row(rows, x, y, design)
     }

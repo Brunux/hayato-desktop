@@ -546,8 +546,8 @@ impl Screen for RemindScreen {
         match self.mode {
             RemindMode::List => {
                 let (strip, _, rows) = Self::layout(area);
-                if y == strip.y && x >= strip.x && x < strip.right() {
-                    return Some(10_000);
+                if let Some(idx) = self.strip.hit_index(strip, x, y) {
+                    return Some(10_000 + idx);
                 }
                 self.list.hit_row(rows, x, y, design)
             }

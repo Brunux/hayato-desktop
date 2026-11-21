@@ -434,28 +434,15 @@ impl Screen for KeysScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Bindings"), true);
         let (filter, rows) = Self::list_layout(ctx.area);
-        let x = ctx.buf.set_string(
-            filter.x,
-            filter.y,
-            &format!("{} ", Glyph::Search.cell()),
-            ctx.design.style(TextStyle::Title),
+        hayato_ui::widgets::draw_filter_bar(
+            ctx.buf,
+            filter,
+            ctx.design,
+            self.input.text(),
+            "type to filter bindings...",
+            self.filtered.len(),
+            self.bindings.len(),
         );
-        let x = filter.x + 1 + Glyph::Search.cell().len() as u16;
-        if self.input.text().is_empty() {
-            ctx.buf.set_string(
-                x,
-                filter.y,
-                "type to filter bindings...",
-                ctx.design.style(TextStyle::Dim),
-            );
-        } else {
-            ctx.buf.set_string(
-                x,
-                filter.y,
-                self.input.text(),
-                ctx.design.style(TextStyle::Body),
-            );
-        }
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
     }
@@ -467,6 +454,7 @@ impl Screen for KeysScreen {
         let rows_height = self.rows_height.get();
         if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
             && !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
         {
             let _ = self.input.handle(key);
             self.filter_bindings();
@@ -481,7 +469,14 @@ impl Screen for KeysScreen {
                     }
                 }
             }
-            KeyCode::Esc => return Outcome::Done(hayato_ui::app::exit::ESCAPE),
+            KeyCode::Esc => {
+                if !self.input.text().is_empty() {
+                    self.input.clear();
+                    self.filter_bindings();
+                    return Outcome::Consumed;
+                }
+                return Outcome::Done(hayato_ui::app::exit::ESCAPE);
+            }
             _ => {}
         }
         match self.list.handle(key, rows_height, design) {

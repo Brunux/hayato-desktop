@@ -386,6 +386,7 @@ impl Screen for AppsScreen {
         // Handle input
         if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
             && !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
         {
             let action = self.input.handle(key);
             if action == hayato_ui::InputAction::Changed {
@@ -403,7 +404,14 @@ impl Screen for AppsScreen {
                     }
                 }
             }
-            KeyCode::Esc => return Outcome::Done(hayato_ui::app::exit::ESCAPE),
+            KeyCode::Esc => {
+                if !self.input.text().is_empty() {
+                    self.input.clear();
+                    self.filter_entries();
+                    return Outcome::Consumed;
+                }
+                return Outcome::Done(hayato_ui::app::exit::ESCAPE);
+            }
             _ => {}
         }
         match self.list.handle(key, rows_height, design) {

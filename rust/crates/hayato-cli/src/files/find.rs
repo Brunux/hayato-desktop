@@ -322,6 +322,10 @@ impl Screen for FindScreen {
             }
             return Outcome::Consumed;
         }
+        if key.code == KeyCode::Esc && !self.list.filter().is_empty() {
+            self.list.set_filter("");
+            return Outcome::Consumed;
+        }
         let typed = matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
             && !control
             && !key.modifiers.contains(KeyModifiers::ALT);
@@ -344,6 +348,12 @@ impl Screen for FindScreen {
     fn click(&mut self, row: Option<usize>) -> Outcome {
         if let Some(visible) = row {
             self.list.set_cursor(visible);
+            if let Some(index) = self.list.selected_index() {
+                if let Some(path) = self.paths.get(index) {
+                    self.chosen = Some(Chosen::Open(self.root.join(path)));
+                    return Outcome::Done(hayato_ui::app::exit::OK);
+                }
+            }
         }
         Outcome::Continue
     }

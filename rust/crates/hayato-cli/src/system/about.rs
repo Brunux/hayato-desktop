@@ -673,7 +673,7 @@ impl Screen for AboutScreen {
                     ctx.design,
                     self.list.filter(),
                     note,
-                    self.list.len(),
+                    self.list.visible_len(),
                     self.facts.len(),
                 );
                 self.rows_height.set(rows.height);

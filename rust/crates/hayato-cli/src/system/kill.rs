@@ -20,14 +20,53 @@ use ratatui::layout::Rect;
 
 use super::out;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ProcessRecord {
     pub pid: u32,
     pub rss_kb: u64,
+    pub cpu_pct: f32,
     pub comm: String,
 }
 
-/// Parse `ps -eo pid=,rss=,comm= --sort=-rss` output.
+/// Format KiB as a crisp human-readable memory string (`512 KB`, `248 MB`, `1.4 GB`).
+pub fn format_mem_kb(kb: u64) -> String {
+    if kb >= 1024 * 1024 {
+        format!("{:.1} GB", kb as f64 / (1024.0 * 1024.0))
+    } else if kb >= 1024 {
+        format!("{} MB", kb / 1024)
+    } else {
+        format!("{kb} KB")
+    }
+}
+
+/// Parse `/proc/meminfo` into `(used_kb, total_kb)`.
+pub fn parse_meminfo(raw: &str) -> Option<(u64, u64)> {
+    let mut total = None;
+    let mut available = None;
+    for line in raw.lines() {
+        if let Some(rest) = line.strip_prefix("MemTotal:") {
+            total = rest
+                .split_whitespace()
+                .next()
+                .and_then(|s| s.parse::<u64>().ok());
+        } else if let Some(rest) = line.strip_prefix("MemAvailable:") {
+            available = rest
+                .split_whitespace()
+                .next()
+                .and_then(|s| s.parse::<u64>().ok());
+        }
+    }
+    let total = total?;
+    let avail = available.unwrap_or(0).min(total);
+    Some((total.saturating_sub(avail), total))
+}
+
+fn read_system_mem() -> Option<(u64, u64)> {
+    let raw = std::fs::read_to_string("/proc/meminfo").ok()?;
+    parse_meminfo(&raw)
+}
+
+/// Parse `ps -eo pid=,rss=,pcpu=,comm= --sort=-rss` (or legacy 3-col `pid=,rss=,comm=`) output.
 pub fn parse_ps_table(raw: &str, self_pid: u32) -> Vec<ProcessRecord> {
     let mut procs = Vec::new();
     for line in raw.lines() {
@@ -42,9 +81,22 @@ pub fn parse_ps_table(raw: &str, self_pid: u32) -> Vec<ProcessRecord> {
             continue;
         }
         let rss_kb = parts[1].parse::<u64>().unwrap_or(0);
-        let comm = parts[2..].join(" ");
+        let (cpu_pct, comm) = if parts.len() >= 4 {
+            if let Ok(cpu) = parts[2].parse::<f32>() {
+                (cpu, parts[3..].join(" "))
+            } else {
+                (0.0, parts[2..].join(" "))
+            }
+        } else {
+            (0.0, parts[2..].join(" "))
+        };
 
-        procs.push(ProcessRecord { pid, rss_kb, comm });
+        procs.push(ProcessRecord {
+            pid,
+            rss_kb,
+            cpu_pct,
+            comm,
+        });
     }
     procs
 }
@@ -97,18 +149,36 @@ impl KillScreen {
     }
 
     fn reload(&mut self, preserve: bool) {
-        let ps_out = out(&["ps", "-eo", "pid=,rss=,comm=", "--sort=-rss"]).unwrap_or_default();
+        let ps_out =
+            out(&["ps", "-eo", "pid=,rss=,pcpu=,comm=", "--sort=-rss"]).unwrap_or_default();
         self.procs = parse_ps_table(&ps_out, self.self_pid);
+        let sys_mem = read_system_mem();
+        let total_mem_kb = sys_mem.map(|(_, t)| t).unwrap_or(0);
         let rows: Vec<Row> = self
             .procs
             .iter()
             .take(60)
             .map(|p| {
-                let mb = p.rss_kb / 1024;
+                let mem_str = format_mem_kb(p.rss_kb);
+                let value = if total_mem_kb > 0 {
+                    let pct = (p.rss_kb as f64 / total_mem_kb as f64) * 100.0;
+                    if pct >= 0.1 {
+                        format!("{mem_str} ({pct:.1}%)")
+                    } else {
+                        mem_str
+                    }
+                } else {
+                    mem_str
+                };
+                let detail = if p.cpu_pct >= 0.1 {
+                    format!("pid {} \u{00b7} {:.1}% CPU", p.pid, p.cpu_pct)
+                } else {
+                    format!("pid {}", p.pid)
+                };
                 Row::new(&p.comm)
                     .glyph(Glyph::Bug)
-                    .detail(format!("pid {}", p.pid))
-                    .value(format!("{mb} MB"))
+                    .detail(detail)
+                    .value(value)
             })
             .collect();
         if preserve {
@@ -117,10 +187,24 @@ impl KillScreen {
             self.list.set_rows(rows);
         }
         let status = self.status_note.clone().unwrap_or_else(|| {
-            format!(
-                "{} user processes \u{00b7} Enter sends SIGTERM",
-                self.list.len()
-            )
+            if let Some((used_kb, total_kb)) = sys_mem {
+                let pct = if total_kb > 0 {
+                    (used_kb as f64 / total_kb as f64 * 100.0).round() as u64
+                } else {
+                    0
+                };
+                format!(
+                    "RAM {} / {} ({pct}%) \u{00b7} {} processes",
+                    format_mem_kb(used_kb),
+                    format_mem_kb(total_kb),
+                    self.list.len()
+                )
+            } else {
+                format!(
+                    "{} user processes \u{00b7} Enter sends SIGTERM",
+                    self.list.len()
+                )
+            }
         });
         self.header = Header::new("Hayato").subtitle("Processes").status(status);
     }
@@ -313,14 +397,17 @@ impl Screen for KillScreen {
             return None;
         }
         let (strip, _, rows) = Self::layout(area);
-        if y == strip.y && x >= strip.x && x < strip.right() {
-            return Some(10_000);
+        if let Some(idx) = self.strip.hit_index(strip, x, y) {
+            return Some(10_000 + idx);
         }
         self.list.hit_row(rows, x, y, design)
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {
-        Some(&self.keybar)
+        match self.mode {
+            KillMode::List => Some(&self.keybar),
+            KillMode::ConfirmKill { .. } => None,
+        }
     }
 
     fn header(&self) -> Option<&Header> {
@@ -362,5 +449,15 @@ mod tests {
         assert_eq!(procs[0].comm, "foot");
         assert_eq!(procs[1].pid, 200);
         assert_eq!(procs[1].comm, "rustc");
+    }
+
+    #[test]
+    fn format_mem_kb_and_meminfo_render_cleanly() {
+        assert_eq!(format_mem_kb(512), "512 KB");
+        assert_eq!(format_mem_kb(256 * 1024), "256 MB");
+        assert_eq!(format_mem_kb(2 * 1024 * 1024), "2.0 GB");
+
+        let meminfo = "MemTotal:        4000000 kB\nMemFree:          500000 kB\nMemAvailable:    1500000 kB\n";
+        assert_eq!(parse_meminfo(meminfo), Some((2_500_000, 4_000_000)));
     }
 }

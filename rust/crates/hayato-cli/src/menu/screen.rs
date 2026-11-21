@@ -564,15 +564,21 @@ impl Screen for MenuScreen {
         let rows_height = self.rows_height.get();
         let outcome = match &mut self.mode {
             Mode::List => {
-                let typed = matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-                    && !key.modifiers.contains(KeyModifiers::CONTROL);
-                if typed {
-                    self.list.type_filter(key);
-                    Outcome::Continue
+                if key.code == KeyCode::Esc && !self.list.filter().is_empty() {
+                    self.list.set_filter("");
+                    Outcome::Consumed
                 } else {
-                    match self.list.handle(key, rows_height, design) {
-                        ListAction::Activated(index) => self.activate(index),
-                        _ => Outcome::Continue,
+                    let typed = matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
+                        && !key.modifiers.contains(KeyModifiers::CONTROL)
+                        && !key.modifiers.contains(KeyModifiers::ALT);
+                    if typed {
+                        self.list.type_filter(key);
+                        Outcome::Continue
+                    } else {
+                        match self.list.handle(key, rows_height, design) {
+                            ListAction::Activated(index) => self.activate(index),
+                            _ => Outcome::Continue,
+                        }
                     }
                 }
             }

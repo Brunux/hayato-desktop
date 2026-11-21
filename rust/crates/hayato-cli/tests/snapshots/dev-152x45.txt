@@ -1,7 +1,7 @@
 Hayato · Developer                                                                                                                                      
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ Developer tools ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  Type to filter · health checks, logs, APT, MCP, desktop tools & profile backups                                                           15 / 11  │
+│  Type to filter · health checks, logs, APT, MCP, desktop tools & profile backups                                                           11 / 11  │
 │                                                                                                                                                      │
 │  Health & Debugging  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────   │
 │ ▍   Run system health check  check-system.sh · 10-core, 20-device, 30-desktop witnesses                                                             │

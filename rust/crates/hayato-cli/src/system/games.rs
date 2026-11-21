@@ -1240,9 +1240,7 @@ impl Screen for GamesScreen {
             Mode::Manual(_) => return self.manual_key(key),
             Mode::Library => {}
         }
-        let typing = self.list.filter().is_empty()
-            && !key.modifiers.contains(KeyModifiers::CONTROL)
-            && !key.modifiers.contains(KeyModifiers::ALT);
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
             KeyCode::Left => {
                 self.cycle_tab(-1);
@@ -1259,23 +1257,23 @@ impl Screen for GamesScreen {
                 }
                 return Outcome::Done(hayato_ui::app::exit::ESCAPE);
             }
-            KeyCode::Char('f') if typing => {
+            KeyCode::Char('f') if ctrl => {
                 self.toggle_favorite();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('s') if typing => {
+            KeyCode::Char('s') if ctrl => {
                 self.reload();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('m') if typing => {
+            KeyCode::Char('m') if ctrl => {
                 self.open_manual();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('o') if typing => {
+            KeyCode::Char('o') if ctrl => {
                 self.open_options();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('r') if typing => {
+            KeyCode::Char('r') if ctrl => {
                 self.reveal();
                 return Outcome::Consumed;
             }
@@ -1639,11 +1637,18 @@ mod tests {
         let mut screen = GamesScreen::new();
         let design = Design::for_session(None);
         let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let ctrl = |letter| KeyEvent::new(KeyCode::Char(letter), KeyModifiers::CONTROL);
 
         assert!(matches!(screen.mode, Mode::Library));
         assert_eq!(screen.phase(), Some("list"));
 
+        // Bare 'm' now filters (so you can search "Mario" or "Metroid"); Ctrl+M opens manual.
         screen.key(key(KeyCode::Char('m')), &design);
+        assert_eq!(screen.list.filter(), "m");
+        screen.key(key(KeyCode::Esc), &design);
+        assert_eq!(screen.list.filter(), "");
+
+        screen.key(ctrl('m'), &design);
         assert!(matches!(screen.mode, Mode::Manual(_)));
         assert_eq!(screen.phase(), Some("manual"));
 
@@ -1690,8 +1695,9 @@ mod tests {
         let mut screen = GamesScreen::new();
         let design = Design::for_session(None);
         let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let ctrl = |letter| KeyEvent::new(KeyCode::Char(letter), KeyModifiers::CONTROL);
 
-        screen.key(key(KeyCode::Char('o')), &design);
+        screen.key(ctrl('o'), &design);
         assert!(matches!(screen.mode, Mode::Options(_)));
         assert_eq!(screen.phase(), Some("options"));
         assert_eq!(screen.keybar().map(<[KeyHint]>::len), Some(3));

@@ -1970,6 +1970,11 @@ impl Input {
         Self::default()
     }
 
+    pub fn clear(&mut self) {
+        self.text.clear();
+        self.cursor = 0;
+    }
+
     pub fn with_text(text: impl Into<String>) -> Self {
         let text = text.into();
         let cursor = text.len();

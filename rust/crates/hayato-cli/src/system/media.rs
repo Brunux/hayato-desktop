@@ -220,8 +220,15 @@ impl Screen for MediaScreen {
                 } else {
                     active.title.as_str()
                 };
-                ctx.buf
-                    .set_string(x, h.y, title, ctx.design.style(TextStyle::Title));
+                let title_avail = (h.x + h.width).saturating_sub(x);
+                hayato_ui::widgets::put_trunc(
+                    ctx.buf,
+                    x,
+                    h.y,
+                    title,
+                    title_avail,
+                    ctx.design.style(TextStyle::Title),
+                );
                 if h.height >= 2 {
                     let sub = if !active.artist.is_empty() && !active.album.is_empty() {
                         format!("{} · {} ({})", active.artist, active.album, active.name)
@@ -230,8 +237,14 @@ impl Screen for MediaScreen {
                     } else {
                         active.name.clone()
                     };
-                    ctx.buf
-                        .set_string(h.x, h.y + 1, sub, ctx.design.style(TextStyle::Dim));
+                    hayato_ui::widgets::put_trunc(
+                        ctx.buf,
+                        h.x,
+                        h.y + 1,
+                        &sub,
+                        h.width,
+                        ctx.design.style(TextStyle::Dim),
+                    );
                 }
             } else {
                 let mut x = draw_badge(
@@ -243,10 +256,13 @@ impl Screen for MediaScreen {
                     ColorRole::Border,
                 );
                 x += 2;
-                ctx.buf.set_string(
+                let avail = (h.x + h.width).saturating_sub(x);
+                hayato_ui::widgets::put_trunc(
+                    ctx.buf,
                     x,
                     h.y,
                     "No MPRIS media player active",
+                    avail,
                     ctx.design.style(TextStyle::Dim),
                 );
             }
@@ -255,14 +271,14 @@ impl Screen for MediaScreen {
         let note = self
             .status_note
             .as_deref()
-            .unwrap_or("Enter acts on player or transport · r refreshes");
+            .unwrap_or("Enter acts on player or transport · Ctrl+R refreshes");
         draw_filter_bar(
             ctx.buf,
             filter,
             ctx.design,
             self.list.filter(),
             note,
-            self.list.len(),
+            self.list.visible_len(),
             self.list.len(),
         );
         self.rows_height.set(rows.height);
@@ -282,7 +298,7 @@ impl Screen for MediaScreen {
                 }
                 return Outcome::Done(hayato_ui::app::exit::ESCAPE);
             }
-            KeyCode::Char('r') if self.list.filter().is_empty() => {
+            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.reload();
                 self.status_note = Some("Refreshed player status".to_string());
                 return Outcome::Continue;

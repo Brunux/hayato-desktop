@@ -62,6 +62,7 @@ pub struct ArchiveEntry {
 pub struct DevScreen {
     /// Parallel to rows in `list`: `Some(action)` for selectable items, `None` for headings.
     row_actions: Vec<Option<DevAction>>,
+    pub selected: Option<DevAction>,
     list: ListState,
     banner: String,
     header: Header,
@@ -209,6 +210,7 @@ impl DevScreen {
 
         Self {
             row_actions,
+            selected: None,
             list,
             banner: banner.into(),
             header: Header::new("Hayato").subtitle("Developer"),
@@ -336,13 +338,18 @@ impl Screen for DevScreen {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Developer tools"), true);
         let (filter, rows) = Self::list_layout(ctx.area);
         let total = self.row_actions.iter().filter(|a| a.is_some()).count();
+        let visible = if self.list.filter().is_empty() {
+            total
+        } else {
+            self.list.visible_len()
+        };
         hayato_ui::widgets::draw_filter_bar(
             ctx.buf,
             filter,
             ctx.design,
             self.list.filter(),
             &self.banner,
-            self.list.len(),
+            visible,
             total,
         );
         self.rows_height.set(rows.height);
@@ -357,8 +364,13 @@ impl Screen for DevScreen {
         let rows_height = self.rows_height.get();
         match key.code {
             KeyCode::Enter => {
-                if let Some(selected) = self.list.selected_index() {
-                    return Outcome::Done(selected as i32);
+                if let Some(action) = self
+                    .list
+                    .selected_index()
+                    .and_then(|idx| self.action_at(idx))
+                {
+                    self.selected = Some(action);
+                    return Outcome::Done(0);
                 }
             }
             KeyCode::Esc => {
@@ -366,11 +378,15 @@ impl Screen for DevScreen {
                     self.list.set_filter("");
                     return Outcome::Consumed;
                 }
+                self.selected = None;
                 return Outcome::Done(hayato_ui::app::exit::ESCAPE);
             }
             _ => {}
         }
-        if self.list.type_filter(key) {
+        if !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
+            && self.list.type_filter(key)
+        {
             return Outcome::Consumed;
         }
         let _ = self.list.handle(key, rows_height, design);
@@ -380,8 +396,13 @@ impl Screen for DevScreen {
     fn click(&mut self, row: Option<usize>) -> Outcome {
         if let Some(row) = row {
             self.list.set_cursor(row);
-            if let Some(index) = self.list.selected_index() {
-                return Outcome::Done(index as i32);
+            if let Some(action) = self
+                .list
+                .selected_index()
+                .and_then(|idx| self.action_at(idx))
+            {
+                self.selected = Some(action);
+                return Outcome::Done(0);
             }
         }
         Outcome::Continue
@@ -1266,10 +1287,10 @@ pub fn menu(
         });
         let mut dev_screen = DevScreen::with_banner(note);
         let code = crate::run_screen(terminal, design, "Developer", &mut dev_screen)?;
-        if code < 0 {
+        if code != 0 {
             return Ok(code);
         }
-        let Some(action) = dev_screen.action_at(code as usize) else {
+        let Some(action) = dev_screen.selected else {
             return Ok(0);
         };
 
@@ -2120,6 +2141,19 @@ mod tests {
         assert!(screen.include_home);
         assert_eq!(screen.click(Some(2)), Outcome::Consumed);
         assert!(!screen.include_home);
+    }
+
+    #[test]
+    fn dev_screen_escape_does_not_trigger_health_check() {
+        let mut screen = DevScreen::new();
+        let design = Design::solarized().with_reduced_motion(true);
+        let out = screen.key(key(KeyCode::Esc), &design);
+        assert_eq!(out, Outcome::Done(hayato_ui::app::exit::ESCAPE));
+        assert_eq!(screen.selected, None);
+
+        let out = screen.key(key(KeyCode::Enter), &design);
+        assert_eq!(out, Outcome::Done(0));
+        assert_eq!(screen.selected, Some(DevAction::HealthCheck));
     }
 
     #[test]

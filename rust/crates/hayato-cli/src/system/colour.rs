@@ -409,8 +409,8 @@ impl Screen for ColourScreen {
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
         let (_, strip, _, rows) = Self::layout(area);
-        if y == strip.y && x >= strip.x && x < strip.right() {
-            return Some(10_000);
+        if let Some(idx) = self.strip.hit_index(strip, x, y) {
+            return Some(10_000 + idx);
         }
         self.list.hit_row(rows, x, y, design)
     }

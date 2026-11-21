@@ -214,7 +214,7 @@ impl Screen for CaptureScreen {
             ctx.design,
             self.list.filter(),
             "type to filter · Enter runs · Escape closes",
-            self.list.len(),
+            self.list.visible_len(),
             self.keys.len(),
         );
         self.rows_height.set(rows.height);
@@ -227,14 +227,22 @@ impl Screen for CaptureScreen {
         }
         let rows_height = self.rows_height.get();
         match key.code {
-            KeyCode::Esc => return Outcome::Done(hayato_ui::app::exit::ESCAPE),
+            KeyCode::Esc => {
+                if !self.list.filter().is_empty() {
+                    self.list.set_filter("");
+                    return Outcome::Consumed;
+                }
+                return Outcome::Done(hayato_ui::app::exit::ESCAPE);
+            }
             KeyCode::Enter => {
                 if let Some(index) = self.list.selected_index() {
                     return self.activate(index);
                 }
             }
             KeyCode::Char(_) | KeyCode::Backspace
-                if !key.modifiers.contains(KeyModifiers::CONTROL) && self.list.type_filter(key) =>
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                    && self.list.type_filter(key) =>
             {
                 return Outcome::Continue;
             }

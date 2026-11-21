@@ -1,4 +1,4 @@
-Hayato · (                                           ripgrep refused the search
+Hayato · Search inside files · (                     ripgrep refused the search
 ────────────────────────────────────────────────────────────────────────────────
 
 

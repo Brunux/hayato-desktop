@@ -212,24 +212,25 @@ impl Screen for RunScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         draw_card(ctx.buf, ctx.area, ctx.design, Some("Commands"), true);
         let (filter, rows) = Self::list_layout(ctx.area);
-        let x = ctx.buf.set_string(
+        ctx.buf.set_string(
             filter.x,
             filter.y,
-            &format!("{} ", Glyph::Terminal.cell()),
+            format!("{} ", Glyph::Terminal.cell()),
             ctx.design.style(TextStyle::Title),
         );
-        let x = filter.x + 1 + Glyph::Terminal.cell().len() as u16;
+        let x = filter.x + 2;
         let room = filter.right().saturating_sub(x);
         let input_text = self.input.text();
         if input_text.is_empty() {
-            ctx.buf.set_string(
+            hayato_ui::widgets::put_trunc(
+                ctx.buf,
                 x,
                 filter.y,
                 "type a command...",
+                room,
                 ctx.design.style(TextStyle::Dim),
             );
         } else {
-            // Check if command exists on PATH
             let first_word = input_text.split_whitespace().next().unwrap_or("");
             let exists = self.commands.iter().any(|c| c.name == first_word);
             let style = if exists {
@@ -237,14 +238,17 @@ impl Screen for RunScreen {
             } else {
                 ctx.design.style(TextStyle::Danger)
             };
-            ctx.buf.set_string(x, filter.y, input_text, style);
+            hayato_ui::widgets::put_trunc(ctx.buf, x, filter.y, input_text, room, style);
             if !exists {
-                let warn_x = x + input_text.len() as u16 + 2;
-                if warn_x < filter.right() {
-                    ctx.buf.set_string(
+                let warn_x = x + input_text.chars().count() as u16 + 2;
+                let warn_room = filter.right().saturating_sub(warn_x);
+                if warn_room >= 6 {
+                    hayato_ui::widgets::put_trunc(
+                        ctx.buf,
                         warn_x,
                         filter.y,
                         "⚠ not on PATH",
+                        warn_room,
                         ctx.design.style(TextStyle::Danger),
                     );
                 }
@@ -261,6 +265,7 @@ impl Screen for RunScreen {
         let rows_height = self.rows_height.get();
         if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
             && !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
         {
             let _ = self.input.handle(key);
             self.filter_commands();
@@ -280,16 +285,29 @@ impl Screen for RunScreen {
                     return Outcome::Continue;
                 }
                 let first_word = input_text.split_whitespace().next().unwrap_or("");
-                let cmd = self.commands.iter().find(|c| c.name == first_word).cloned();
-                if let Some(cmd) = cmd {
+                if let Some(cmd) = self.commands.iter().find(|c| c.name == first_word).cloned() {
                     self.run_command(&cmd, in_foot);
+                } else if !input_text.contains(' ') {
+                    if let Some(selected) = self.list.selected_index() {
+                        if let Some(cmd) = self.filtered.get(selected).cloned() {
+                            self.run_command(&cmd, in_foot);
+                            return Outcome::Done(hayato_ui::app::exit::OK);
+                        }
+                    }
+                    self.run_unknown(&input_text, in_foot);
                 } else {
-                    // Unknown command - show confirmation
                     self.run_unknown(&input_text, in_foot);
                 }
                 return Outcome::Done(hayato_ui::app::exit::OK);
             }
-            KeyCode::Esc => return Outcome::Done(hayato_ui::app::exit::ESCAPE),
+            KeyCode::Esc => {
+                if !self.input.text().is_empty() {
+                    self.input.clear();
+                    self.filter_commands();
+                    return Outcome::Consumed;
+                }
+                return Outcome::Done(hayato_ui::app::exit::ESCAPE);
+            }
             _ => {}
         }
         match self.list.handle(key, rows_height, design) {

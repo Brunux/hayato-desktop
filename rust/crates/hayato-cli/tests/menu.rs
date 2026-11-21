@@ -377,8 +377,10 @@ fn escape_closes_with_exit_one_and_writes_nothing() {
     let home = Home::new("escape");
     let mut screen = MenuScreen::new(setup(&home, Surface::Root, None));
     let mut keys = typed("wif");
+    // First Escape clears the active filter; second Escape closes the window.
     keys.push(press(KeyCode::Esc));
-    assert_eq!(drive(&mut screen, &keys), Outcome::Done(1));
+    assert_eq!(drive(&mut screen, &keys), Outcome::Continue);
+    assert_eq!(drive(&mut screen, &[press(KeyCode::Esc)]), Outcome::Done(1));
     assert_eq!(screen.chosen, None);
     assert!(
         !home.state().exists(),
@@ -402,14 +404,15 @@ fn a_stray_enter_on_power_runs_nothing() {
         assert_eq!(screen.chosen, None, "row {row}: Cancel is the first answer");
     }
 
-    // Escape backs out one level at a time: confirm → power list → menu, and
-    // only then closes the window.
+    // Escape backs out one level at a time: confirm → power list → menu (clears
+    // the "power" filter first), and only then closes the window.
     let mut screen = MenuScreen::new(setup(&home, Surface::Root, None));
     let mut keys = typed("power");
     keys.push(press(KeyCode::Enter));
     keys.extend((0..3).map(|_| press(KeyCode::Down)));
     keys.extend([
         press(KeyCode::Enter),
+        press(KeyCode::Esc),
         press(KeyCode::Esc),
         press(KeyCode::Esc),
     ]);
