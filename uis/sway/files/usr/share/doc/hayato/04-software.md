@@ -766,11 +766,12 @@ add `--tty` to `/usr/bin/hayato-greeter --session --tty`.
 Defaults for the boot greeter live in `/etc/hayato/greeter.toml` and can be
 configured interactively from **Settings → Login screen (Greeter)**, the root
 menu (`Greeter settings`), `hayato menu greeter`, or `hayato greeter settings`:
-toggle whether the greeter follows the last user's active theme or uses a fixed
-default theme across all 16 palettes, show or hide user account pills, enable
-or disable remembering the last username/session, set the default desktop session,
-switch between 24-hour and 12-hour clock formatting, show or hide power buttons,
-and customize the greeting banner. The lock screen
+the action buttons (`Preview`, `Reset defaults`, `Done`) sit at the top above
+the defaults summary and settings list to toggle whether the greeter follows
+the last user's active theme or uses a fixed default theme across all 16
+palettes, show or hide user account pills, enable or disable remembering the
+last username, switch between 24-hour and 12-hour clock formatting, show or
+hide power buttons, and customize the greeting banner. The lock screen
 (`swaylock`) uses the theme's colours for its indicator ring and the theme's
 wallpaper as its background image.
 

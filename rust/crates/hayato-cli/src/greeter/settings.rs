@@ -195,8 +195,6 @@ impl GreeterSettingsScreen {
             keybar_main: vec![
                 KeyHint::new("Enter", "toggle / edit"),
                 KeyHint::new("Tab", "actions"),
-                KeyHint::new("^P", "preview"),
-                KeyHint::new("^R", "reset"),
                 KeyHint::new("Esc", "back"),
             ],
             keybar_picker: vec![
@@ -435,9 +433,8 @@ impl GreeterSettingsScreen {
                 "pills off"
             };
             let clock_txt = if self.config.clock_24h { "24h" } else { "12h" };
-            let session_txt = self.config.default_session.as_deref().unwrap_or("Auto");
             let summary = format!(
-                "{pills_txt} \u{00b7} clock {clock_txt} \u{00b7} session {session_txt} \u{00b7} {}",
+                "{pills_txt} \u{00b7} clock {clock_txt} \u{00b7} {}",
                 self.config_path.display()
             );
             put_trunc(
@@ -674,12 +671,17 @@ impl Screen for GreeterSettingsScreen {
             SettingsMode::Main => {}
         }
 
-        let summary_h = if area.height >= 16 { 4 } else { 3 };
-        let summary_area = Rect::new(area.x, area.y, area.width, summary_h);
+        let strip_rect = Rect::new(area.x + 1, area.y, area.width.saturating_sub(2), 1);
+        self.strip.render(strip_rect, ctx.buf, ctx.design);
+        hits.strip = Some(strip_rect);
+
+        let summary_y = area.y + 2;
+        let summary_h = if area.height >= 18 { 4 } else { 3 };
+        let summary_area = Rect::new(area.x, summary_y, area.width, summary_h);
         self.draw_summary_card(summary_area, ctx);
 
-        let body_y = area.y + summary_h + 1;
-        let footer_h = if self.status.is_some() { 3 } else { 2 };
+        let body_y = summary_y + summary_h + 1;
+        let footer_h = if self.status.is_some() { 2 } else { 0 };
         let list_h = area.bottom().saturating_sub(body_y + footer_h);
         if list_h >= 3 {
             let list_area = Rect::new(area.x, body_y, area.width, list_h);
@@ -698,9 +700,9 @@ impl Screen for GreeterSettingsScreen {
         }
 
         if let Some((kind, msg)) = &self.status
-            && area.bottom() >= 3
+            && area.bottom() >= 2
         {
-            let status_y = area.bottom().saturating_sub(2);
+            let status_y = area.bottom().saturating_sub(1);
             let style = match kind {
                 StatusKind::Ok => Style::default()
                     .fg(ctx.design.color(ColorRole::Ok))
@@ -718,10 +720,6 @@ impl Screen for GreeterSettingsScreen {
             );
         }
 
-        let strip_y = area.bottom().saturating_sub(1);
-        let strip_rect = Rect::new(area.x + 1, strip_y, area.width.saturating_sub(2), 1);
-        self.strip.render(strip_rect, ctx.buf, ctx.design);
-        hits.strip = Some(strip_rect);
         *self.hits.borrow_mut() = hits;
     }
 
@@ -1026,10 +1024,6 @@ fn build_setting_rows(cfg: &GreeterConfig) -> Vec<Row> {
         .map(|t| format!("{} ({theme_slug})", t.name))
         .unwrap_or_else(|| theme_slug.to_string());
     let greeting = cfg.greeting.as_deref().unwrap_or(DEFAULT_GREETING);
-    let session = cfg
-        .default_session
-        .as_deref()
-        .unwrap_or("Auto (first available)");
 
     vec![
         Row::new("Follow user theme")
@@ -1060,18 +1054,6 @@ fn build_setting_rows(cfg: &GreeterConfig) -> Vec<Row> {
                 "off \u{00b7} always starts empty"
             })
             .value("remember_user"),
-        Row::new("Default session")
-            .glyph(Glyph::Window)
-            .detail(session)
-            .value("default_session"),
-        Row::new("Remember last session")
-            .glyph(Glyph::History)
-            .detail(if cfg.remember_session {
-                "on \u{00b7} keeps last chosen desktop session"
-            } else {
-                "off \u{00b7} always starts with Default session"
-            })
-            .value("remember_session"),
         Row::new("Clock format")
             .glyph(Glyph::Clock)
             .detail(if cfg.clock_24h {
@@ -1225,8 +1207,8 @@ mod tests {
         scr.key(key(KeyCode::Char(' ')), &design);
         assert!(!scr.config().show_user_pills);
 
-        // Move to Row 6: Clock format -> toggle 12h.
-        for _ in 0..4 {
+        // Move to Row 4: Clock format -> toggle 12h.
+        for _ in 0..2 {
             scr.key(key(KeyCode::Down), &design);
         }
         scr.key(key(KeyCode::Enter), &design);
@@ -1303,5 +1285,13 @@ mod tests {
         assert!(out.contains("Follow user theme"));
         assert!(out.contains("User pills"));
         assert!(out.contains("Reset defaults"));
+        assert!(!out.contains("Default session"));
+        assert!(!out.contains("Remember last session"));
+        let strip_rect = scr.hits.borrow().strip.expect("top action strip rect");
+        let list_rect = scr.hits.borrow().main_list.expect("settings list rect");
+        assert!(
+            strip_rect.y < list_rect.y,
+            "action strip should sit at the top above the settings card"
+        );
     }
 }
