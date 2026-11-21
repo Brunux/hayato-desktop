@@ -1123,7 +1123,7 @@ impl Screen for GreeterScreen {
 
         let in_modal = !matches!(self.mode, Mode::Login);
         let use_pixel_hero = area.height >= 26 && area.width >= 44;
-        let hero_h: u16 = if use_pixel_hero { 8 } else { 5 };
+        let hero_h: u16 = if use_pixel_hero { 5 } else { 2 };
         let has_status = self.runner.is_running() || self.status.is_some();
 
         // Compute tight card geometry fitted to content (or expanded for pickers).
@@ -1161,39 +1161,14 @@ impl Screen for GreeterScreen {
         let top_y = area.y + area.height.saturating_sub(total_h) / 2;
         let card_x = area.x + (area.width - card_w) / 2;
 
-        // 1. Minimalist Hero: clock, date, single centered Hayato wordmark
+        // 1. Minimalist Hero: pixel-hacker Hayato wordmark only
         {
-            let y0 = top_y;
-            let clock_w = (self.clock_str.chars().count() as u16).min(area.width);
-            let cx = area.x + area.width.saturating_sub(clock_w) / 2;
-            put_trunc(
-                ctx.buf,
-                cx,
-                y0,
-                &self.clock_str,
-                clock_w,
-                Style::default()
-                    .fg(ctx.design.color(ColorRole::Accent))
-                    .add_modifier(Modifier::BOLD),
-            );
-
-            let date_w = (self.date_str.chars().count() as u16).min(area.width);
-            let dx = area.x + area.width.saturating_sub(date_w) / 2;
-            put_trunc(
-                ctx.buf,
-                dx,
-                y0 + 1,
-                &self.date_str,
-                date_w,
-                ctx.design.style(TextStyle::Dim),
-            );
-
             let hero_reduced = ctx.design.reduced_motion() || self.clock_fixed;
             if use_pixel_hero {
                 draw_pixel_hero(
                     ctx.buf,
                     area,
-                    y0 + 3,
+                    top_y,
                     ctx.design,
                     self.anim_tick,
                     self.glitch_seed,
@@ -1203,7 +1178,7 @@ impl Screen for GreeterScreen {
                 draw_compact_hero(
                     ctx.buf,
                     area,
-                    y0 + 3,
+                    top_y,
                     ctx.design,
                     self.anim_tick,
                     self.glitch_seed,
@@ -2078,7 +2053,8 @@ mod tests {
         let mut scr = test_screen(true);
         let small = render_text(&mut scr, 80, 24);
         assert!(small.contains("Hayato"));
-        assert!(small.contains("18:30"));
+        assert!(!small.contains("18:30"));
+        assert!(!small.contains("Nov 2026"));
         assert!(small.contains("brunux"));
         assert!(small.contains("^T"));
         assert!(small.contains("^P"));
@@ -2091,7 +2067,8 @@ mod tests {
         assert!(!small.contains("^G"));
 
         let large = render_text(&mut scr, 152, 45);
-        assert!(large.contains("18:30"));
+        assert!(!large.contains("18:30"));
+        assert!(!large.contains("Nov 2026"));
         assert!(large.contains("\u{2588}"));
         assert!(large.contains("^T"));
         assert!(large.contains("^P"));

@@ -432,11 +432,7 @@ impl GreeterSettingsScreen {
             } else {
                 "pills off"
             };
-            let clock_txt = if self.config.clock_24h { "24h" } else { "12h" };
-            let summary = format!(
-                "{pills_txt} \u{00b7} clock {clock_txt} \u{00b7} {}",
-                self.config_path.display()
-            );
+            let summary = format!("{pills_txt} \u{00b7} {}", self.config_path.display());
             put_trunc(
                 ctx.buf,
                 inner.x,
@@ -1045,14 +1041,6 @@ fn build_setting_rows(cfg: &GreeterConfig) -> Vec<Row> {
                 "hidden \u{00b7} username text box only"
             })
             .value("show_user_pills"),
-        Row::new("Clock format")
-            .glyph(Glyph::Clock)
-            .detail(if cfg.clock_24h {
-                "24-hour (19:30)"
-            } else {
-                "12-hour (07:30 PM)"
-            })
-            .value("clock_24h"),
         Row::new("Power buttons")
             .glyph(Glyph::Power)
             .detail(if cfg.show_power_actions {
@@ -1080,8 +1068,7 @@ pub fn status_summary() -> String {
     } else {
         "pills off"
     };
-    let clock = if cfg.clock_24h { "24h" } else { "12h" };
-    format!("{theme} \u{00b7} {pills} \u{00b7} {clock}")
+    format!("{theme} \u{00b7} {pills}")
 }
 
 /// Open Greeter Settings cleanly from a standalone menu (`hayato menu greeter`
@@ -1194,15 +1181,15 @@ mod tests {
         scr.key(key(KeyCode::Char(' ')), &design);
         assert!(!scr.config().show_user_pills);
 
-        // Move to Row 3: Clock format -> toggle 12h.
+        // Move to Row 3: Power buttons -> toggle off.
         scr.key(key(KeyCode::Down), &design);
         scr.key(key(KeyCode::Enter), &design);
-        assert!(!scr.config().clock_24h);
+        assert!(!scr.config().show_power_actions);
 
         let disk = load_greeter_config(&cfg_path);
         assert!(!disk.follow_user_theme);
         assert!(!disk.show_user_pills);
-        assert!(!disk.clock_24h);
+        assert!(!disk.show_power_actions);
     }
 
     #[test]
