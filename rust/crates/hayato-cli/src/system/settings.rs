@@ -1958,6 +1958,9 @@ fn save_notify(config: super::notify_settings::Config) -> Result<String, String>
 
 fn change_password(password: &str) -> Result<(), String> {
     use std::io::Write as _;
+    if password.is_empty() || password.chars().any(|c| matches!(c, '\n' | '\r' | '\0')) {
+        return Err("password cannot be empty or contain newline characters".to_string());
+    }
     let user = out(&["id", "-un"]).unwrap_or_else(|| "hayato".to_string());
     let mut child = std::process::Command::new("sudo")
         .args(["-n", "/usr/sbin/chpasswd"])

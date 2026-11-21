@@ -159,16 +159,14 @@ impl RunScreen {
         }
         self.save_history();
 
-        // Build the command
-        let exec_cmd = if in_foot {
-            format!("exec foot -e {}", cmd.path)
+        // Spawn detached without invoking a shell
+        let mut child = std::process::Command::new("setsid");
+        if in_foot {
+            child.args(["foot", "-e", &cmd.path]);
         } else {
-            cmd.path.clone()
-        };
-
-        // Spawn detached
-        let _ = std::process::Command::new("setsid")
-            .args(["sh", "-c", &exec_cmd])
+            child.arg(&cmd.path);
+        }
+        let _ = child
             .env_remove("HAYATO_UI")
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())

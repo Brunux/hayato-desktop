@@ -335,10 +335,8 @@ impl CaptureScreen {
                     let shotdir = dirs::picture_dir()
                         .map(|p| p.join("Screenshots"))
                         .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Pictures"));
-                    crate::system::spawn_detached(&format!(
-                        "exec xdg-open '{}'",
-                        shotdir.display()
-                    ));
+                    let shotdir_str = shotdir.to_string_lossy();
+                    crate::system::spawn_detached_argv("xdg-open", &[&shotdir_str]);
                     Outcome::Done(hayato_ui::app::exit::OK)
                 }
                 _ => Outcome::Continue,
@@ -363,8 +361,11 @@ impl CaptureScreen {
     fn screenshot(action: &str, target: &str) {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
         let argv = Self::screenshot_argv(&home, action, target);
-        let cmd = format!("sleep 0.2; exec {}", argv.join(" "));
-        crate::system::spawn_detached(&cmd);
+        let mut sh_args: Vec<&str> = vec!["-c", "sleep 0.2; exec \"$@\"", "sh"];
+        for a in &argv {
+            sh_args.push(a.as_str());
+        }
+        crate::system::spawn_detached_argv("sh", &sh_args);
     }
 
     fn annotate() {

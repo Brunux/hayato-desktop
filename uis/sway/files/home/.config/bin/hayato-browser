@@ -33,10 +33,10 @@ url=${1:-}
 if [ -n "$url" ]; then
 	# gio applies the same default handler the MIME database names. Calling
 	# xdg-open here would come back to this helper.
-	if command -v gio >/dev/null 2>&1 && gio open "$url"; then
+	if command -v gio >/dev/null 2>&1 && gio open -- "$url"; then
 		exit 0
 	fi
-	exec firefox-esr "$url"
+	exec firefox-esr -- "$url"
 fi
 
 _id=$(default_id)

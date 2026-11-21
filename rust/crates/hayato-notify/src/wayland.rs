@@ -39,6 +39,7 @@ fn open_in_files(path: &Path) {
         return;
     };
     let opened = Command::new("hayato-files")
+        .arg("--")
         .arg(&dir)
         .env_remove("HAYATO_UI")
         .stdin(Stdio::null())

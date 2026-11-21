@@ -83,9 +83,11 @@ pub fn listen(tx: Sender<DbusCommand>, wake_fd: i32) -> std::io::Result<SocketGu
     let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     let guard = SocketGuard { path: path.clone() };
     thread::spawn(move || {
+        use std::io::Read as _;
         for stream in listener.incoming().flatten() {
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(500)));
             let mut line = String::new();
-            let mut reader = BufReader::new(stream);
+            let mut reader = BufReader::new(stream.take(64));
             if reader.read_line(&mut line).is_err() {
                 continue;
             }

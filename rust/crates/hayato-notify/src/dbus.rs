@@ -55,7 +55,7 @@ fn open_path_for(
     app_name: &str,
     app_icon: &str,
 ) -> Option<PathBuf> {
-    if let Some(path) = hint.filter(|path| !path.is_empty()) {
+    if let Some(path) = hint.filter(|path| path.starts_with('/')) {
         return Some(PathBuf::from(path));
     }
     if app_name != "grimshot" {

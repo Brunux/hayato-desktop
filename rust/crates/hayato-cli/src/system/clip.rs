@@ -327,19 +327,16 @@ impl ClipScreen {
             "save" => {
                 let img_entry = self.entries.iter().find(|e| e.kind == ClipKind::Image);
                 if let Some(entry) = img_entry {
-                    let cmd = format!(
-                        "tmp=$(mktemp /tmp/clipimg.XXXXXX); \
-                        cliphist decode '{}' > \"$tmp\" 2>/dev/null; \
+                    let script = "tmp=$(mktemp \"${XDG_RUNTIME_DIR:-/tmp}/clipimg.XXXXXX\"); \
+                        cliphist decode \"$1\" > \"$tmp\" 2>/dev/null; \
                         ext=$(file --brief --mime-type \"$tmp\" 2>/dev/null | sed -e 's|.*/||' -e 's|jpeg|jpg|' -e 's|[^a-z0-9]||g'); \
                         [ -n \"$ext\" ] || ext=png; \
                         dir=\"$HOME/Pictures/clipboard\"; \
                         mkdir -p \"$dir\"; \
                         dest=\"$dir/clip-$(date +%Y%m%d-%H%M%S).$ext\"; \
                         mv -f \"$tmp\" \"$dest\"; \
-                        exec xdg-open \"$dest\"",
-                        entry.id
-                    );
-                    crate::system::spawn_detached(&cmd);
+                        exec xdg-open \"$dest\"";
+                    crate::system::spawn_detached_argv("sh", &["-c", script, "sh", &entry.id]);
                     Outcome::Done(hayato_ui::app::exit::OK)
                 } else {
                     self.status_note = Some("No image in clipboard history".to_string());

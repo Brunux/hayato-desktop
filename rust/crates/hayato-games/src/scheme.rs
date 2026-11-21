@@ -100,7 +100,6 @@ impl Handler {
         let length = data.len() as i64;
         let stream = gio::MemoryInputStream::from_bytes(&glib::Bytes::from_owned(data));
         let headers = soup::MessageHeaders::new(soup::MessageHeadersType::Response);
-        headers.append("Access-Control-Allow-Origin", "*");
         headers.append("Cache-Control", "no-store");
         let response = webkit6::URISchemeResponse::new(&stream, length);
         response.set_content_type(mime);

@@ -133,11 +133,14 @@ pub fn replace(text: &str) -> Result<(), String> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
 
-    let dir = std::env::temp_dir();
+    let dir = std::env::var_os("XDG_RUNTIME_DIR")
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
     let path = dir.join(format!("hayato-fstab-{}", std::process::id()));
+    let _ = std::fs::remove_file(&path);
     let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(true)
+        .create_new(true)
         .write(true)
         .mode(0o600)
         .open(&path)

@@ -27,13 +27,13 @@ case ${1:-} in
 	printf 'usage: xdg-open URL|FILE\n' >&2
 	exit 2
 	;;
-*://* | mailto:*)
+[A-Za-z][A-Za-z0-9+.-]*://* | mailto:*)
 	# The person's choice, not this script's: hayato-browser reads
 	# `xdg-settings get default-web-browser`, which Settings writes.
 	if [ -n "${HOME:-}" ] && [ -x "$HOME/.config/bin/hayato-browser" ]; then
 		exec "$HOME/.config/bin/hayato-browser" "$1"
 	fi
-	exec firefox-esr "$1"
+	exec firefox-esr -- "$1"
 	;;
 *)
 	case $1 in
@@ -48,6 +48,6 @@ case ${1:-} in
 	if [ -n "${HOME:-}" ] && [ -x "$HOME/.config/bin/hayato-browser" ]; then
 		exec "$HOME/.config/bin/hayato-browser" "file://$path"
 	fi
-	exec firefox-esr "file://$path"
+	exec firefox-esr -- "file://$path"
 	;;
 esac

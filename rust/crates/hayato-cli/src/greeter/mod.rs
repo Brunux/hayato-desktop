@@ -441,7 +441,11 @@ pub fn parse_greeter_config(text: &str) -> GreeterConfig {
 }
 
 fn toml_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
 }
 
 /// Format [`GreeterConfig`] as clean TOML suitable for `/etc/hayato/greeter.toml`.
@@ -517,6 +521,10 @@ pub fn save_greeter_config(path: &Path, cfg: &GreeterConfig) -> Result<(), Strin
                 let _ = fs::remove_file(&tmp);
             }
         }
+    }
+
+    if path != Path::new(DEFAULT_CONFIG_FILE) {
+        return Err(format!("cannot write {}", path.display()));
     }
 
     let tmp_dir = std::env::var_os("XDG_RUNTIME_DIR")

@@ -672,6 +672,16 @@ impl Desk {
         let path = expanded
             .canonicalize()
             .map_err(|e| format!("`{asked}` cannot be opened: {e}"))?;
+        if path.components().any(|c| {
+            matches!(
+                c.as_os_str().to_str(),
+                Some(".ssh" | ".gnupg" | "shadow" | "gshadow")
+            )
+        }) {
+            return Err(format!(
+                "refusing to open sensitive credential path `{asked}`"
+            ));
+        }
         let meta = std::fs::metadata(&path).map_err(|e| format!("`{asked}`: {e}"))?;
         let shown = path.display().to_string();
         if meta.is_dir() {

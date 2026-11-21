@@ -312,6 +312,22 @@ fn run_real_install(
         );
     }
 
+    if let Err(e) = super::config::validate_username(&config.username)
+        .and_then(|()| super::config::validate_hostname(&config.hostname))
+    {
+        return fail_state(state_path, &mut state, &mut log_file, e);
+    }
+    if let Some(pw) = secret_password {
+        if pw.chars().any(|c| matches!(c, '\n' | '\r' | '\0')) {
+            return fail_state(
+                state_path,
+                &mut state,
+                &mut log_file,
+                "Password cannot contain newline or NUL characters",
+            );
+        }
+    }
+
     // Revalidate live root, /boot, /boot/efi, and kern_guid safety invariants before touching anything.
     if let Err(reason) = check_machine_safety(&config.target_disk) {
         return fail_state(state_path, &mut state, &mut log_file, &reason);

@@ -101,6 +101,21 @@ impl InstallConfig {
         validate_username(&self.username)?;
         validate_password(&self.password, &self.password_confirm)?;
         validate_hostname(&self.hostname)?;
+        if self
+            .fullname
+            .chars()
+            .any(|c| matches!(c, ':' | '\n' | '\r' | '\0') || c.is_control())
+        {
+            return Err("Full name cannot contain colons or control characters");
+        }
+        if self.timezone.contains("..")
+            || self
+                .timezone
+                .chars()
+                .any(|c| matches!(c, '\n' | '\r' | '\0') || c.is_control())
+        {
+            return Err("Invalid timezone path");
+        }
         Ok(())
     }
 }
@@ -141,10 +156,13 @@ pub fn validate_username(name: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// Validate that password is non-empty and matches the confirmation.
+/// Validate that password is non-empty, contains no newline/control characters, and matches the confirmation.
 pub fn validate_password(p1: &str, p2: &str) -> Result<(), &'static str> {
     if p1.is_empty() {
         return Err("Password cannot be empty");
+    }
+    if p1.chars().any(|c| matches!(c, '\n' | '\r' | '\0')) {
+        return Err("Password cannot contain newline or NUL characters");
     }
     if p1 != p2 {
         return Err("Passwords do not match");

@@ -256,10 +256,11 @@ pub fn menu_for_path(
                 } else {
                     &parent
                 };
-                crate::system::spawn_detached(&format!(
-                    "exec foot --working-directory '{}'",
-                    dir.display()
-                ));
+                let dir_str = dir.to_string_lossy();
+                crate::system::spawn_detached_argv(
+                    "foot",
+                    &[&format!("--working-directory={dir_str}")],
+                );
                 return Ok(0);
             }
             "du" => {

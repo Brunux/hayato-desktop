@@ -48,7 +48,8 @@ DEV=${1:-}
 # filesystem-mount-other-seat half is for.
 USER_NAME=
 for _u in $(loginctl list-users --no-legend 2>/dev/null | awk '{ print $2 }'); do
-	if [ "$_u" != root ] && id -u "$_u" >/dev/null 2>&1; then
+	if [ "$_u" != root ] && id -u "$_u" >/dev/null 2>&1 &&
+		id -nG "$_u" 2>/dev/null | tr ' ' '\n' | grep -qx 'plugdev'; then
 		USER_NAME=$_u
 		break
 	fi
@@ -177,7 +178,7 @@ LABEL=$(lsblk -no LABEL "$DEV" 2>/dev/null | head -1)
 
 if [ -z "$MOUNTED" ]; then
 	echo "could not mount $DEV: $OUT" >&2
-	as_user notify-send -a Hayato -i dialog-error -u critical 'USB drive' \
+	as_user notify-send -a Hayato -i dialog-error -u critical -- 'USB drive' \
 		"$LABEL did not mount: $OUT" 2>/dev/null || true
 	exit 1
 fi
@@ -197,5 +198,5 @@ case ",$OPTS," in
 esac
 
 echo "mounted $DEV ($LABEL) at $MP$NOTE"
-as_user notify-send -a Hayato -i drive-harddisk 'USB drive' \
+as_user notify-send -a Hayato -i drive-harddisk -- 'USB drive' \
 	"$LABEL mounted at $MP$NOTE" 2>/dev/null || true

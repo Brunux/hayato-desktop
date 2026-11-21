@@ -119,7 +119,7 @@ pub fn menu(
                     let _ = std::process::Command::new("setsid").arg("waybar").spawn();
                 }
                 let now =
-                    out(&["sh", "-c", &format!("TZ={zone} date '+%H:%M'")]).unwrap_or_default();
+                    out(&["env", &format!("TZ={zone}"), "date", "+%H:%M"]).unwrap_or_default();
                 status_note = Some(format!("Now {zone} · {}", now.trim()));
             }
             "ntp:on" | "ntp:off" => {

@@ -110,6 +110,11 @@ if [ -d "$UI_FILES/home" ]; then
 		find "$PKG/usr/share/hayato/skel/.config/bin" -maxdepth 1 -type f -exec chmod 0755 {} +
 	fi
 fi
+chmod -R go-w "$PKG"
+if [ -f "$DESKTOP_DIR/tools/favnyr/SHA256SUMS" ] && [ -f "$PKG/usr/bin/favnyr" ]; then
+	( cd "$DESKTOP_DIR" && sha256sum -c "$DESKTOP_DIR/tools/favnyr/SHA256SUMS" >/dev/null ) ||
+		die "favnyr checksum mismatch against tools/favnyr/SHA256SUMS"
+fi
 
 DEPS="$(deb_depends "$BIN" "$NOTIFY_BIN" "$GAMES_BIN")"
 INSTALLED_SIZE="$(du -sk --exclude=DEBIAN "$PKG" | cut -f1)"
@@ -203,27 +208,38 @@ if [ -n "$_user" ] && [ -d "$_home" ] && [ -d /usr/share/hayato/skel ]; then
 		done
 	fi
 	if [ -d /usr/share/hayato/skel/.config/retroarch/autoconfig/udev ]; then
-		install -d -m 0755 -o "$_user" -g "$_user" "$_home/.config/retroarch/autoconfig/udev"
-		cp -a /usr/share/hayato/skel/.config/retroarch/autoconfig/udev/. \
-			"$_home/.config/retroarch/autoconfig/udev/"
-		chown -R "$_user:$_user" "$_home/.config/retroarch"
+		install -d -m 0755 -o "$_user" -g "$_user" \
+			"$_home/.config/retroarch" \
+			"$_home/.config/retroarch/autoconfig" \
+			"$_home/.config/retroarch/autoconfig/udev"
+		for _ra in /usr/share/hayato/skel/.config/retroarch/autoconfig/udev/*; do
+			[ -f "$_ra" ] || continue
+			install -m 0644 -o "$_user" -g "$_user" "$_ra" \
+				"$_home/.config/retroarch/autoconfig/udev/$(basename "$_ra")"
+		done
 	fi
 	if [ -d /usr/share/hayato/skel/Pictures/Wallpapers ]; then
-		install -d -m 0755 -o "$_user" -g "$_user" "$_home/Pictures/Wallpapers"
-		cp -a /usr/share/hayato/skel/Pictures/Wallpapers/. "$_home/Pictures/Wallpapers/"
-		chown -R "$_user:$_user" "$_home/Pictures"
+		install -d -m 0755 -o "$_user" -g "$_user" "$_home/Pictures" "$_home/Pictures/Wallpapers"
+		for _wp in /usr/share/hayato/skel/Pictures/Wallpapers/*; do
+			[ -f "$_wp" ] || continue
+			install -m 0644 -o "$_user" -g "$_user" "$_wp" \
+				"$_home/Pictures/Wallpapers/$(basename "$_wp")"
+		done
 	fi
 	for _d in Documents Downloads Music Videos; do
 		install -d -m 0755 -o "$_user" -g "$_user" "$_home/$_d"
 	done
 	if [ -x /usr/bin/hayato-games ]; then
-		su -s /bin/sh "$_user" -c "HOME='$_home' /usr/bin/hayato-games --ensure-layout" >/dev/null 2>&1 || true
+		su -s /bin/sh "$_user" -c 'HOME="$1" /usr/bin/hayato-games --ensure-layout' -- "$_home" >/dev/null 2>&1 || true
 	fi
 	if [ -x /usr/bin/hayato ] && [ -f "$_home/.local/state/hayato/theme" ]; then
 		_slug="$(tr -d ' \t\r\n' <"$_home/.local/state/hayato/theme" 2>/dev/null || true)"
-		if [ -n "$_slug" ]; then
-			su -s /bin/sh "$_user" -c "HOME='$_home' /usr/bin/hayato theme set '$_slug' --headless --force" >/dev/null 2>&1 || true
-		fi
+		case "$_slug" in
+			'' | *[!a-z0-9-]*) ;;
+			*)
+				su -s /bin/sh "$_user" -c 'HOME="$1" /usr/bin/hayato theme set "$2" --headless --force' -- "$_home" "$_slug" >/dev/null 2>&1 || true
+				;;
+		esac
 	fi
 fi
 exit 0

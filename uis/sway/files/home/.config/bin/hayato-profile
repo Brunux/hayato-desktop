@@ -656,6 +656,7 @@ cmd_export() {
 	[ -w "$_target" ] || die "not writable: $_target"
 
 	mkdir -p "$CACHE"
+	chmod 700 "$CACHE" 2>/dev/null || :
 	work_dir
 
 	# Stream directly into the target drive so local storage is never consumed by
@@ -782,6 +783,7 @@ cmd_import() {
 	[ -r "$_archive" ] || die "cannot read: $_archive"
 
 	mkdir -p "$CACHE"
+	chmod 700 "$CACHE" 2>/dev/null || :
 	work_dir
 
 	"$UI_BIN/busy" start dev 'Developer' "Opening $(basename "$_archive")…" package-x-generic 2>/dev/null || :
@@ -805,9 +807,25 @@ cmd_import() {
 	esac
 
 	# A tar made by this script only ever carries relative names.  Anything else
-	# (an absolute path, a `..`) is refused before a single file is written:
-	# extraction happens in $HOME, and one bad member would land outside it.
+	# (an absolute path, a `..`, a symlink/hardlink escaping $HOME, or a device/setuid
+	# entry) is refused before a single file is written: extraction happens in $HOME,
+	# and one bad member would land outside it.
 	_members_file=$WORK/members.txt
+	_verbose_file=$WORK/members-verbose.txt
+	rm -f "$WORK/open.rc"
+	if ! {
+		stream_archive_open "$_archive" "${_pass_file:-}" ||
+			printf '%s\n' "$?" >"$WORK/open.rc"
+	} | tar --zstd -tvf - >"$_verbose_file" 2>/dev/null || [ -s "$WORK/open.rc" ]; then
+		[ -s "$WORK/open.rc" ] && die "cannot open the archive: $(gpg_error)"
+		die 'that is not a Hayato profile archive (tar could not read it)'
+	fi
+	_bad_meta=$(awk '
+		/^[bcps]/ || /^[-dl][r-][w-][sS]/ || /^[-dl][r-][w-][x-][r-][w-][sS]/ { print; exit }
+		/ -> \// || / -> (\.\.\/|.*\/\.\.(\/|$))/ { print; exit }
+		/ link to \// || / link to (\.\.\/|.*\/\.\.(\/|$))/ { print; exit }
+	' "$_verbose_file")
+	[ -z "$_bad_meta" ] || die "refusing an archive with an unsafe link, device or setuid entry: $_bad_meta"
 	rm -f "$WORK/open.rc"
 	if ! {
 		stream_archive_open "$_archive" "${_pass_file:-}" ||
@@ -881,7 +899,7 @@ cmd_import() {
 	if ! {
 		stream_archive_open "$_archive" "${_pass_file:-}" ||
 			printf '%s\n' "$?" >"$WORK/open.rc"
-	} | tar --zstd --no-same-owner -xpf - -C "$HOME" || [ -s "$WORK/open.rc" ]; then
+	} | tar --zstd --no-same-owner --no-overwrite-dir -xpf - -C "$HOME" || [ -s "$WORK/open.rc" ]; then
 		"$UI_BIN/busy" fail dev 'Extraction failed; the backup is in ~/.cache/hayato/backups' dialog-error 2>/dev/null || :
 		exit 1
 	fi
@@ -906,6 +924,7 @@ cmd_report() {
 	[ -w "$_target" ] || die "not writable: $_target"
 
 	mkdir -p "$CACHE"
+	chmod 700 "$CACHE" 2>/dev/null || :
 	work_dir
 	_bundle=$WORK/bundle
 	mkdir -p "$_bundle"

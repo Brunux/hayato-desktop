@@ -116,10 +116,19 @@ pub fn apply(args: &[String]) -> i32 {
     }
 
     let mut config = if let Some(path) = args.first().filter(|a| !a.starts_with('-')) {
-        if let Ok(contents) = std::fs::read_to_string(path) {
-            serde_json::from_str(&contents).unwrap_or_default()
-        } else {
-            InstallConfig::default()
+        let contents = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("hayato-installer: cannot read config {path}: {e}");
+                return hayato_ui::app::exit::FAILED;
+            }
+        };
+        match serde_json::from_str(&contents) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                eprintln!("hayato-installer: invalid config JSON in {path}: {e}");
+                return hayato_ui::app::exit::FAILED;
+            }
         }
     } else {
         InstallConfig::default()
