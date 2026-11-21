@@ -1,23 +1,29 @@
 # Software
 
-Debian **forky** with a normal `apt`. There is one repository
-(`deb.debian.org/debian forky main contrib non-free non-free-firmware`) and
-`sudo` does not ask for a password.
+Debian **forky** with a normal `apt`. Standard Debian packages come from
+`deb.debian.org/debian forky main contrib non-free non-free-firmware`, and
+Hayato's own components (`hayato`, `hayato-core`, `hayato-device-<board>`,
+`linux-image-hayato-<flavor>`, `swayfx`, `workstyle`, `retroarch`,
+`hayato-libretro-fbneo`, `hayato-libretro-mupen64plus-next`) are distributed as
+`.deb` packages through the Hayato Cloudsmith APT repository
+(`/etc/apt/sources.list.d/hayato.sources`, signed by
+`/usr/share/keyrings/hayato-archive-keyring.gpg`) and archived on GitHub
+Releases. `sudo` does not ask for a password.
 
 ```sh
-sudo apt update                # refresh the package lists
-sudo apt install <package>     # add something
-sudo apt remove <package>      # remove it (add --purge for its configuration)
-apt search <word>              # find packages
-apt show <package>             # details, size, dependencies
-sudo apt full-upgrade          # the whole system (see "The system" page: a new
-                               # kernel also needs the boot partition rewritten)
+sudo hayato-apt enable                  # enable the Cloudsmith APT repository and refresh keys
+sudo apt update                         # refresh the package lists
+sudo apt install <package>              # add something
+sudo apt remove <package>               # remove it (add --purge for its configuration)
+apt search <word>                       # find packages
+apt show <package>                      # details, size, dependencies
+sudo apt full-upgrade                   # upgrade Debian and Hayato in place
+sudo hayato-apt upgrade-from-github     # fallback: install the latest release .debs directly from GitHub
 ```
 
 Nothing about this machine depends on a package manager other than apt: no
-Flatpak, no Snap, no AUR. If a program is not packaged for Debian, compiling it
-in your home is the way (that is how the compositor got here), not a third-party
-repository.
+Flatpak, no Snap, no AUR. Every Hayato release publishes both full disk images
+and `.deb` packages so an installed machine upgrades in place with `apt`.
 
 ## What is installed, and where the lists are
 

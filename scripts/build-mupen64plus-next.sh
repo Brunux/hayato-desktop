@@ -9,6 +9,7 @@
 # Usage: build-mupen64plus-next.sh
 # Output: $HAYATO_STAGE/hayato-libretro-mupen64plus-next_<rev>+hayato1_<arch>.deb
 set -euo pipefail
+umask 022
 _here="$(cd "$(dirname "$0")" && pwd)"
 DESKTOP_DIR="${DESKTOP_DIR:-$(cd "$_here/.." && pwd)}"
 if [ -n "${HAYATO_CORE_DIR:-}" ] && [ -f "$HAYATO_CORE_DIR/scripts/lib.sh" ]; then
@@ -23,11 +24,14 @@ fi
 
 CORE_DIR="$DESKTOP_DIR/tools/mupen64plus-next"
 CORE_REV="$(tr -d ' \t\r\n' <"$CORE_DIR/version")"
+CORE_SHORT="$(printf '%.12s' "$CORE_REV")"
+HAYATO_VERSION="$(tr -d ' \t\r\n' <"$DESKTOP_DIR/VERSION")"
 CORE_TARBALL="mupen64plus-next-$CORE_REV.tar.gz"
 CORE_URL="https://github.com/libretro/mupen64plus-libretro-nx/archive/$CORE_REV.tar.gz"
 CORE_SRC="$SRC_DIR/mupen64plus-libretro-nx-$CORE_REV"
 PACKAGING_REVISION="hayato1"
-PKG_VERSION="$CORE_REV+$PACKAGING_REVISION"
+PKG_FILE_VERSION="${HAYATO_VERSION}+git.${CORE_SHORT}+${PACKAGING_REVISION}"
+PKG_VERSION="1:${PKG_FILE_VERSION}"
 DEB_ARCH="$(dpkg --print-architecture)"
 MULTIARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
 
@@ -93,6 +97,7 @@ Description: Mupen64Plus-Next libretro core (AArch64, GLES3)
 EOF
 
 mkdir -p "$HAYATO_STAGE"
-DEB="$HAYATO_STAGE/hayato-libretro-mupen64plus-next_${PKG_VERSION}_${DEB_ARCH}.deb"
+rm -f "$HAYATO_STAGE"/hayato-libretro-mupen64plus-next_*.deb
+DEB="$HAYATO_STAGE/hayato-libretro-mupen64plus-next_${PKG_FILE_VERSION}_${DEB_ARCH}.deb"
 dpkg-deb --build --root-owner-group "$PKG" "$DEB" >/dev/null
 log "mupen64plus-next $CORE_REV -> $DEB"

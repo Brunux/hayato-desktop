@@ -13,6 +13,7 @@
 #
 # Usage: build-hayato.sh
 set -euo pipefail
+umask 022
 _here="$(cd "$(dirname "$0")" && pwd)"
 DESKTOP_DIR="${DESKTOP_DIR:-$(cd "$_here/.." && pwd)}"
 if [ -n "${HAYATO_CORE_DIR:-}" ] && [ -f "$HAYATO_CORE_DIR/scripts/lib.sh" ]; then
@@ -28,17 +29,19 @@ fi
 command -v cargo >/dev/null 2>&1 || die "cargo is not installed (run scripts/00-deps.sh)"
 
 log "Building the session framework (hayato)"
-cargo build --release --locked --manifest-path "$DESKTOP_DIR/rust/Cargo.toml"
-
 BIN="$DESKTOP_DIR/rust/target/release/hayato"
-[ -x "$BIN" ] || die "cargo finished but $BIN is missing"
 NOTIFY_BIN="$DESKTOP_DIR/rust/target/release/hayato-notify"
-[ -x "$NOTIFY_BIN" ] || die "cargo finished but $NOTIFY_BIN is missing"
 GAMES_BIN="$DESKTOP_DIR/rust/target/release/hayato-games"
+if [ "${SKIP_CARGO_BUILD:-no}" != "yes" ] || [ ! -x "$BIN" ] || [ ! -x "$NOTIFY_BIN" ] || [ ! -x "$GAMES_BIN" ]; then
+	cargo build --release --locked --manifest-path "$DESKTOP_DIR/rust/Cargo.toml"
+fi
+
+[ -x "$BIN" ] || die "cargo finished but $BIN is missing"
+[ -x "$NOTIFY_BIN" ] || die "cargo finished but $NOTIFY_BIN is missing"
 [ -x "$GAMES_BIN" ] || die "cargo finished but $GAMES_BIN is missing"
 # A binary that cannot report its version is not the one the image should
 # carry: the check is one process and it catches a broken include_str!.
-VERSION="$(cat "$DESKTOP_DIR/VERSION")"
+VERSION="$(tr -d ' \t\r\n' <"$DESKTOP_DIR/VERSION")"
 REPORTED="$("$BIN" --version)"
 [ "$REPORTED" = "$VERSION" ] ||
 	die "hayato reports '$REPORTED' but VERSION is '$VERSION'"
@@ -58,3 +61,159 @@ log "hayato $REPORTED -> $HAYATO_STAGE/hayato"
 log "hayato-notify -> $HAYATO_STAGE/hayato-notify"
 log "hayato-games $GAMES_REPORTED -> $HAYATO_STAGE/hayato-games"
 log "games data -> $HAYATO_STAGE/share/hayato/games"
+
+# Package hayato, hayato-notify, hayato-games, the desktop system overlay, and
+# the user skeleton into a Debian package for in-place apt upgrades.
+PACKAGING_REVISION="1hayato1"
+PKG_VERSION="${VERSION}-${PACKAGING_REVISION}"
+DEB_ARCH="$(dpkg --print-architecture)"
+PKG="$WORK_DIR/hayato-pkg"
+rm -rf "$PKG"
+install -d -m 0755 "$PKG/usr/bin" "$PKG/usr/share/hayato/games" \
+	"$PKG/usr/share/hayato/etc/sway" "$PKG/usr/share/hayato/skel" \
+	"$PKG/usr/libexec/hayato/check"
+
+install -m 0755 "$BIN" "$PKG/usr/bin/hayato"
+install -m 0755 "$NOTIFY_BIN" "$PKG/usr/bin/hayato-notify"
+install -m 0755 "$GAMES_BIN" "$PKG/usr/bin/hayato-games"
+cp -a "$DESKTOP_DIR/rust/crates/hayato-games/data/." "$PKG/usr/share/hayato/games/"
+
+while IFS='	' read -r _name _path; do
+	[ -n "$_name" ] || continue
+	ln -sfn hayato "$PKG/usr/bin/$_name"
+done < <("$BIN" --symlinks)
+
+if [ -f "$DESKTOP_DIR/scripts/check-desktop.sh" ]; then
+	install -m 0755 "$DESKTOP_DIR/scripts/check-desktop.sh" "$PKG/usr/libexec/hayato/check/30-desktop.sh"
+fi
+
+UI_FILES="$DESKTOP_DIR/uis/${UI:-sway}/files"
+if [ -d "$UI_FILES/usr" ]; then
+	cp -a "$UI_FILES/usr/." "$PKG/usr/"
+fi
+if [ -d "$UI_FILES/etc" ]; then
+	install -d -m 0755 "$PKG/etc"
+	cp -a "$UI_FILES/etc/." "$PKG/etc/"
+	# /etc/sway/config is owned by sway/swayfx and /etc/yt-dlp.conf by yt-dlp;
+	# ship them under /usr/share/hayato/etc/ and install them in postinst so dpkg
+	# never reports a file conflict during apt upgrades.
+	if [ -f "$PKG/etc/sway/config" ]; then
+		mv "$PKG/etc/sway/config" "$PKG/usr/share/hayato/etc/sway/config"
+	fi
+	if [ -f "$PKG/etc/yt-dlp.conf" ]; then
+		mv "$PKG/etc/yt-dlp.conf" "$PKG/usr/share/hayato/etc/yt-dlp.conf"
+	fi
+fi
+if [ -d "$UI_FILES/home" ]; then
+	cp -a "$UI_FILES/home/." "$PKG/usr/share/hayato/skel/"
+	if [ -d "$PKG/usr/share/hayato/skel/.config/bin" ]; then
+		find "$PKG/usr/share/hayato/skel/.config/bin" -maxdepth 1 -type f -exec chmod 0755 {} +
+	fi
+fi
+
+DEPS="$(deb_depends "$BIN" "$NOTIFY_BIN" "$GAMES_BIN")"
+INSTALLED_SIZE="$(du -sk --exclude=DEBIAN "$PKG" | cut -f1)"
+mkdir -p "$PKG/DEBIAN"
+cat >"$PKG/DEBIAN/control" <<EOF
+Package: hayato
+Version: $PKG_VERSION
+Architecture: $DEB_ARCH
+Maintainer: Hayato <maintainers@hayato.org>
+Installed-Size: $INSTALLED_SIZE
+${DEPS:+Depends: $DEPS}
+Section: x11
+Priority: optional
+Homepage: https://github.com/Brunux/Hayato
+Description: Hayato Wayland desktop framework, greeter, notifications, and games library
+ The multi-call hayato session binary, hayato-notify layer-shell notification
+ daemon, hayato-games WebKitGTK host, Sway configuration, manuals, and desktop
+ helpers for Hayato.
+EOF
+
+cat >"$PKG/DEBIAN/postinst" <<'EOF'
+#!/bin/sh
+set -e
+
+if [ -f /usr/share/hayato/etc/sway/config ]; then
+	install -d -m 0755 /etc/sway
+	install -m 0644 /usr/share/hayato/etc/sway/config /etc/sway/config
+fi
+if [ -f /usr/share/hayato/etc/yt-dlp.conf ]; then
+	install -m 0644 /usr/share/hayato/etc/yt-dlp.conf /etc/yt-dlp.conf
+fi
+
+if [ -x /usr/bin/hayato ]; then
+	/usr/bin/hayato --symlinks 2>/dev/null | while IFS='	' read -r _name _path; do
+		[ -n "$_name" ] || continue
+		ln -sfn hayato "/usr/bin/$_name"
+	done
+fi
+
+rm -f /etc/fonts/conf.d/10-nerd-font-symbols.conf
+if command -v fc-cache >/dev/null 2>&1; then
+	fc-cache -f -s >/dev/null 2>&1 || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1 && [ -d /usr/share/icons/Hayato ]; then
+	gtk-update-icon-cache -q -t -f /usr/share/icons/Hayato 2>/dev/null || true
+fi
+
+_user="$(awk -F: '$3 == 1000 { print $1; exit }' /etc/passwd 2>/dev/null || true)"
+_home="/home/$_user"
+if [ -n "$_user" ] && [ -d "$_home" ] && [ -d /usr/share/hayato/skel ]; then
+	if [ -d /usr/share/hayato/skel/.config/bin ]; then
+		install -d -m 0755 -o "$_user" -g "$_user" "$_home/.config/bin"
+		for _f in /usr/share/hayato/skel/.config/bin/*; do
+			[ -e "$_f" ] || [ -L "$_f" ] || continue
+			_dst="$_home/.config/bin/$(basename "$_f")"
+			if [ -L "$_f" ]; then
+				rm -f "$_dst"
+				cp -Pf "$_f" "$_dst"
+				chown -h "$_user:$_user" "$_dst" 2>/dev/null || true
+			elif [ -f "$_f" ]; then
+				rm -f "$_dst"
+				install -m 0755 -o "$_user" -g "$_user" "$_f" "$_dst"
+			fi
+		done
+	fi
+	if [ -d /usr/share/hayato/skel/.config/opencode ]; then
+		install -d -m 0755 -o "$_user" -g "$_user" "$_home/.config/opencode"
+		for _oc in opencode.json AGENTS.md; do
+			if [ -f "/usr/share/hayato/skel/.config/opencode/$_oc" ]; then
+				install -m 0644 -o "$_user" -g "$_user" \
+					"/usr/share/hayato/skel/.config/opencode/$_oc" \
+					"$_home/.config/opencode/$_oc"
+			fi
+		done
+	fi
+	if [ -d /usr/share/hayato/skel/.config/retroarch/autoconfig/udev ]; then
+		install -d -m 0755 -o "$_user" -g "$_user" "$_home/.config/retroarch/autoconfig/udev"
+		cp -a /usr/share/hayato/skel/.config/retroarch/autoconfig/udev/. \
+			"$_home/.config/retroarch/autoconfig/udev/"
+		chown -R "$_user:$_user" "$_home/.config/retroarch"
+	fi
+	if [ -d /usr/share/hayato/skel/Pictures/Wallpapers ]; then
+		install -d -m 0755 -o "$_user" -g "$_user" "$_home/Pictures/Wallpapers"
+		cp -a /usr/share/hayato/skel/Pictures/Wallpapers/. "$_home/Pictures/Wallpapers/"
+		chown -R "$_user:$_user" "$_home/Pictures"
+	fi
+	for _d in Documents Downloads Music Videos; do
+		install -d -m 0755 -o "$_user" -g "$_user" "$_home/$_d"
+	done
+	if [ -x /usr/bin/hayato-games ]; then
+		su -s /bin/sh "$_user" -c "HOME='$_home' /usr/bin/hayato-games --ensure-layout" >/dev/null 2>&1 || true
+	fi
+	if [ -x /usr/bin/hayato ] && [ -f "$_home/.local/state/hayato/theme" ]; then
+		_slug="$(tr -d ' \t\r\n' <"$_home/.local/state/hayato/theme" 2>/dev/null || true)"
+		if [ -n "$_slug" ]; then
+			su -s /bin/sh "$_user" -c "HOME='$_home' /usr/bin/hayato theme set '$_slug' --headless --force" >/dev/null 2>&1 || true
+		fi
+	fi
+fi
+exit 0
+EOF
+chmod 0755 "$PKG/DEBIAN/postinst"
+
+DEB="$HAYATO_STAGE/hayato_${PKG_VERSION}_${DEB_ARCH}.deb"
+rm -f "$HAYATO_STAGE"/hayato_*.deb
+dpkg-deb --build --root-owner-group "$PKG" "$DEB" >/dev/null
+log "hayato package -> $DEB"

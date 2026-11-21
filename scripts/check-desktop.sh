@@ -98,6 +98,13 @@ if have hayato-greeter; then
 	hayato-greeter --check >/dev/null 2>&1 &&
 		ok "hayato-greeter --check passes" ||
 		fail "hayato-greeter --check failed"
+	if have dpkg-query; then
+		if [ "$(dpkg-query -W -f='${Status}' hayato 2>/dev/null || true)" = "install ok installed" ]; then
+			ok "hayato desktop framework is registered as a Debian package ($(dpkg-query -W -f='${Version}' hayato 2>/dev/null))"
+		else
+			warn "hayato is not yet registered in dpkg (run desktop/scripts/build-hayato.sh && core/scripts/install-hayato.sh /)"
+		fi
+	fi
 	printf '%s\n' "$SETTINGS_ROWS" | grep -q '^greeter	' &&
 		ok "Settings exposes Login screen (Greeter) defaults" ||
 		fail "Settings (hayato menu settings) lost the 'greeter' row: greeter defaults are unreachable"

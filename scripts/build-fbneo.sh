@@ -11,6 +11,7 @@
 # Usage: build-fbneo.sh
 # Output: $HAYATO_STAGE/hayato-libretro-fbneo_<rev>+hayato1_<arch>.deb
 set -euo pipefail
+umask 022
 _here="$(cd "$(dirname "$0")" && pwd)"
 DESKTOP_DIR="${DESKTOP_DIR:-$(cd "$_here/.." && pwd)}"
 if [ -n "${HAYATO_CORE_DIR:-}" ] && [ -f "$HAYATO_CORE_DIR/scripts/lib.sh" ]; then
@@ -25,11 +26,14 @@ fi
 
 CORE_DIR="$DESKTOP_DIR/tools/fbneo"
 CORE_REV="$(tr -d ' \t\r\n' <"$CORE_DIR/version")"
+CORE_SHORT="$(printf '%.12s' "$CORE_REV")"
+HAYATO_VERSION="$(tr -d ' \t\r\n' <"$DESKTOP_DIR/VERSION")"
 CORE_TARBALL="FBNeo-$CORE_REV.tar.gz"
 CORE_URL="https://github.com/libretro/FBNeo/archive/$CORE_REV.tar.gz"
 CORE_SRC="$SRC_DIR/FBNeo-$CORE_REV"
 PACKAGING_REVISION="hayato1"
-PKG_VERSION="$CORE_REV+$PACKAGING_REVISION"
+PKG_FILE_VERSION="${HAYATO_VERSION}+git.${CORE_SHORT}+${PACKAGING_REVISION}"
+PKG_VERSION="1:${PKG_FILE_VERSION}"
 DEB_ARCH="$(dpkg --print-architecture)"
 MULTIARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
 
@@ -98,6 +102,7 @@ Description: FBNeo libretro core (all arcade boards)
 EOF
 
 mkdir -p "$HAYATO_STAGE"
-DEB="$HAYATO_STAGE/hayato-libretro-fbneo_${PKG_VERSION}_${DEB_ARCH}.deb"
+rm -f "$HAYATO_STAGE"/hayato-libretro-fbneo_*.deb
+DEB="$HAYATO_STAGE/hayato-libretro-fbneo_${PKG_FILE_VERSION}_${DEB_ARCH}.deb"
 dpkg-deb --build --root-owner-group "$PKG" "$DEB" >/dev/null
 log "FBNeo $CORE_REV -> $DEB"

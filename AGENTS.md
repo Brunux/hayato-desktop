@@ -368,6 +368,17 @@ Add a probe when a new state is introduced.
   the choice, and a literal there silently ignores Settings.
 - Guard optional hardware resume hooks in Sway configs (e.g., `[ -x /usr/local/bin/hayato-dp-resume ]`),
   and detect both `eDP-*` and `DSI-*` internal panel outputs dynamically in `system::display`.
+- **In-place `.deb` Packaging (`scripts/build-hayato.sh`, `scripts/build-fbneo.sh`, `scripts/build-mupen64plus-next.sh`)**:
+  `build-hayato.sh` packages `hayato_<ver>-1hayato1_<arch>.deb` containing `/usr/bin/{hayato,hayato-notify,hayato-games}`,
+  all `hayato --symlinks`, `/usr/share/hayato/games/`, `/usr/libexec/hayato/check/30-desktop.sh`,
+  `uis/sway/files/{usr,etc}` (staging `/etc/sway/config` and `/etc/yt-dlp.conf` under
+  `/usr/share/hayato/etc/` and installing them in `postinst` so `dpkg` never conflicts with `swayfx` or
+  `yt-dlp`), and `uis/sway/files/home/` under `/usr/share/hayato/skel/` (whose `postinst` syncs
+  `~/.config/bin/*`, `~/.config/opencode/{opencode.json,AGENTS.md}`, wallpapers, and DualShock 4 profiles
+  while preserving `cli.json`/`service.json` and re-rendering the active theme headlessly). Git-pinned
+  libretro core packages (`build-fbneo.sh`, `build-mupen64plus-next.sh`) prefix `Version:` with
+  `1:<hayato_ver>+git.<shortrev>+hayato1` (and filename `<hayato_ver>+git.<shortrev>+hayato1`) so
+  `dpkg` version comparisons remain strictly monotonic across pin bumps.
 
 ## Feature Witnesses
 Every user-facing change ships with:

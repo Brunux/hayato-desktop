@@ -34,9 +34,10 @@ Hayato uses pluggable boot backends selected by `/etc/hayato/deviceinfo`
   `hayato_boot`, `/boot/extlinux/extlinux.conf`) and `p2` `hayato_root` (ext4
   labeled `hayato_root`).
 
-On `uefi` and `extlinux`, Debian's `/etc/kernel/postinst.d/zz-hayato-boot` hook
-runs `/usr/libexec/hayato/install-boot.sh` automatically on `apt upgrade` to
-sync DTBs and regenerate boot entries.
+On `depthcharge`, `uefi`, and `extlinux`, `/etc/kernel/postinst.d/zz-hayato-boot`
+and `/etc/initramfs/post-update.d/zz-hayato-boot` invoke
+`/usr/libexec/hayato/install-boot.sh` automatically on `apt upgrade` to sync
+DTBs and refresh either the signed ChromeOS `kpart` or the boot entry.
 
 ## The kernel
 
@@ -443,12 +444,11 @@ keeping all key bindings, the root menu (*Install Hayato*), and `org.hayato.inst
    Writes `/etc/hayato/installation` last, verifies root ext4 cleanly with `e2fsck -f -n`, and
    displays boot instructions tailored to Depthcharge, UEFI (`systemd-boot`), or `extlinux`.
 
-## Kernel Updates & Boot Targets
+## Kernel Updates & In-Place `.deb` Upgrades
 
-* **`google-asurada` & `google-kukui` (`depthcharge`)**: use the shared `mediatek-mt81` (`7.2.7`) kernel with
+* **`google-asurada` & `google-kukui` (`depthcharge`)**: use the shared `mediatek-mt81` (`7.2.7`) kernel packaged as `linux-image-hayato-mediatek-mt81` with
   Hayato tuning (`HZ=1000`, MGLRU, `schedutil`), QCA6174/MT7921s/SCP firmware (`google-kukui`), and
-  board ALSA UCM2/keyd overlays. Rewrite the active ChromeOS kernel partition
-  after a kernel update with `CONFIRM=yes sudo /usr/libexec/hayato/install-boot.sh`.
+  board ALSA UCM2/keyd overlays (`hayato-device-<board>`). Whenever `apt upgrade` installs a new kernel or rebuilds the initramfs, `/etc/kernel/postinst.d/zz-hayato-boot` and `/etc/initramfs/post-update.d/zz-hayato-boot` automatically invoke `CONFIRM=yes TARGET_KERNEL_RELEASE=<ver> /usr/libexec/hayato/install-boot.sh` (`install-kpart.sh`) to re-sign and flash the active ChromeOS `kern_guid` partition.
 * **`arm64-uefi` & `arm64-extlinux` (`debian-arm64`)**: use Debian `forky`'s packaged
   `linux-image-arm64` kernel plus broad multi-vendor firmware. Whenever `apt upgrade` updates the
   kernel, `/etc/kernel/postinst.d/zz-hayato-boot` automatically syncs `/usr/lib/linux-image-*`
@@ -456,12 +456,18 @@ keeping all key bindings, the root menu (*Install Hayato*), and `org.hayato.inst
   `/boot/extlinux/extlinux.conf` via `/usr/libexec/hayato/install-boot.sh`.
 
 ```sh
-sudo apt update && sudo apt full-upgrade
-sudo /usr/libexec/hayato/install-boot.sh     # manual boot config/kpart refresh if needed
+sudo hayato-apt enable                       # enable Cloudsmith APT repository (once)
+sudo apt update && sudo apt full-upgrade     # in-place upgrade of Debian + Hayato .debs
+sudo hayato-apt upgrade-from-github          # or upgrade directly from GitHub Release .debs
 check-system.sh
 ```
 
-The image itself is a snapshot: it is rebuilt from the repository, not upgraded
-in place forever. Your home and your `apt` changes survive; the shipped
-`/etc` files and the session scripts are replaced by the next image, which is why
-personal settings belong in `~/.config/`.
+Hayato ships its framework (`hayato`), core runtime (`hayato-core`), board
+definitions (`hayato-device-<board>`), custom kernels
+(`linux-image-hayato-<flavor>`), compositor (`swayfx`, `libscenefx-*`),
+workspace renamer (`workstyle`), and game stack (`retroarch`,
+`hayato-libretro-fbneo`, `hayato-libretro-mupen64plus-next`) as `.deb` packages.
+Upgrading `hayato` refreshes `/usr/bin/hayato*`, system configs, user helper
+scripts in `~/.config/bin/`, and re-renders the active theme headlessly while
+preserving personal credentials (`~/.config/opencode/{cli.json,service.json}`)
+and user state.
