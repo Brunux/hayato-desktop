@@ -39,7 +39,7 @@ Hayato · Display Studio                                                        
 │                                                                             │ │                                                                      │
 │                                                                             │ │                                                                      │
 │                                                                             │ │                                                                      │
-│ Config: <tmp>/config/sway/config.d/40-display.conf        │ │                                                                      │
+│ Config: ~/.config/sway/config.d/40-display.conf                             │ │                                                                      │
 │ ←/→ adjust · Ctrl+S apply & save · Ctrl+R refresh                           │ │                                                                      │
 ╰─────────────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────────────────────────────╯
  [←→]  adjust   [↑↓]  select   [Ctrl+S]  apply & save   [Ctrl+R]  refresh   [Esc]  close                                                                

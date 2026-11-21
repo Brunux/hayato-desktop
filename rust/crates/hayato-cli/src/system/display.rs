@@ -1162,8 +1162,14 @@ impl DisplayScreen {
             }));
             put_trunc(buf, inner.x, foot_y, msg, inner.width, st);
         } else {
-            let cfg = format!("Config: {}", config_path().display());
-            put_trunc(buf, inner.x, foot_y, &cfg, inner.width, dim_style);
+            put_trunc(
+                buf,
+                inner.x,
+                foot_y,
+                "Config: ~/.config/sway/config.d/40-display.conf",
+                inner.width,
+                dim_style,
+            );
         }
         put_trunc(
             buf,
