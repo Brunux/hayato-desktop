@@ -1,10 +1,10 @@
 Hayato · Clipboard                                                              
 ────────────────────────────────────────────────────────────────────────────────
 ╭ History ─────────────────────────────────────────────────────────────────────╮
+│ [All 0]  Text 0   Links 0   Images 0                                         │
 │  ^S   Save newest image   ^X   Clear history (0)             [Tab] actions │
 │                                                                              │
 │  Clipboard history is empty · Esc backs out                                 │
-│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -21,4 +21,4 @@ Hayato · Clipboard
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- [Enter]  copy back   [Alt+1]  delete entry   [Ctrl+S]  save image  [Esc]  back 
+ [Enter]  copy back   [Tab]  filter kind   [Del]  delete   …        [Esc]  back 
