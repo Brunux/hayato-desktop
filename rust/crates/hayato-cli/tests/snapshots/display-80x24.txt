@@ -1,0 +1,24 @@
+Hayato · Display Studio                       eDP-1 + DP-1 · right of the panel 
+────────────────────────────────────────────────────────────────────────────────
+╭ Display Studio ──────────────────────────────────────────────────────────────╮
+│ ● LIVE · [eDP-1] ▸ [DP-1]                                                    │
+│ ←/→ adjusts inline · Ctrl+S applies & saves                                  │
+│                                                                              │
+│ ▍   Position                                             ◀ Right of panel ▶ │
+│                                                                              │
+│     Resolution                                           ◀ 1920x1080@60Hz ▶ │
+│                                                                              │
+│     Scale                                                  ◀ 1.0× · crisp ▶ │
+│                                                                              │
+│     Internal (eDP-1)                                                 [ ON ] │
+│                                                                              │
+│     Monitor (DP-1)                                                   [ ON ] │
+│                                                                              │
+│     Apply & Save                                                 up to date │
+│                                                                              │
+│     Open wdisplays                                        freehand drag GUI │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [←→]  adjust   [↑↓]  select   [Ctrl+S]  apply & save   …          [Esc]  close 

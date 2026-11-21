@@ -26,9 +26,10 @@ use hayato_cli::padmap::Bindings;
 use hayato_cli::system::{
     about::AboutScreen, apps::AppsScreen, audio::AudioScreen, bluetooth::BluetoothScreen,
     calc::CalcScreen, capture::CaptureScreen, clean::CleanScreen, clip::ClipScreen,
-    colour::ColourScreen, dev::DevScreen, emoji::EmojiScreen, games::GamesScreen, keys::KeysScreen,
-    kill::KillScreen, learn::LearnScreen, media::MediaScreen, net::NetScreen, notify::NotifyScreen,
-    pad::ControllerScreen, pkg::PkgScreen, qr::QrScreen, remind::RemindScreen, run::RunScreen,
+    colour::ColourScreen, dev::DevScreen, display::DisplayScreen, display::Output as DisplayOutput,
+    emoji::EmojiScreen, games::GamesScreen, keys::KeysScreen, kill::KillScreen, learn::LearnScreen,
+    media::MediaScreen, net::NetScreen, notify::NotifyScreen, pad::ControllerScreen,
+    pkg::PkgScreen, qr::QrScreen, remind::RemindScreen, run::RunScreen,
     theme_picker::ThemePickerScreen, window::WindowScreen,
 };
 use hayato_ui::{App, Density, Design, Header, Screen};
@@ -360,4 +361,39 @@ fn greeter() -> Box<dyn Screen> {
 #[test]
 fn the_greeter_preview_draws_a_login_at_both_grids() {
     golden("greeter", greeter);
+}
+
+#[test]
+fn display_studio_draws_dual_monitor_topology_at_both_grids() {
+    golden("display", || {
+        Box::new(DisplayScreen::from_outputs(
+            vec![
+                DisplayOutput {
+                    name: "eDP-1".into(),
+                    x: 0,
+                    y: 0,
+                    width: 1366,
+                    height: 768,
+                    scale: 1.0,
+                    mode_width: 1366,
+                    mode_height: 768,
+                    mode_refresh: 60000,
+                    active: true,
+                },
+                DisplayOutput {
+                    name: "DP-1".into(),
+                    x: 1366,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                    scale: 1.0,
+                    mode_width: 1920,
+                    mode_height: 1080,
+                    mode_refresh: 60000,
+                    active: true,
+                },
+            ],
+            vec!["1920x1080@60Hz".into(), "2560x1440@60Hz".into()],
+        ))
+    });
 }
