@@ -229,6 +229,9 @@ python3-terminaltexteffects
 
 # login manager (the greeter itself is built into /usr/bin/hayato-greeter)
 greetd
+# animated boot splash (minimalist Hayato wordmark theme in /usr/share/plymouth/themes/hayato)
+plymouth
+plymouth-themes
 
 # audio
 pipewire

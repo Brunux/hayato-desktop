@@ -156,6 +156,10 @@ fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1 && [ -d /usr/share/icons/Hayato ]; then
 	gtk-update-icon-cache -q -t -f /usr/share/icons/Hayato 2>/dev/null || true
 fi
+if command -v plymouth-set-default-theme >/dev/null 2>&1 &&
+	[ -f /usr/share/plymouth/themes/hayato/hayato.plymouth ]; then
+	plymouth-set-default-theme hayato >/dev/null 2>&1 || true
+fi
 
 _user="$(awk -F: '$3 == 1000 { print $1; exit }' /etc/passwd 2>/dev/null || true)"
 _home="/home/$_user"

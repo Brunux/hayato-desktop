@@ -39,6 +39,15 @@ and `/etc/initramfs/post-update.d/zz-hayato-boot` invoke
 `/usr/libexec/hayato/install-boot.sh` automatically on `apt upgrade` to sync
 DTBs and refresh either the signed ChromeOS `kpart` or the boot entry.
 
+## Boot splash
+
+Booting displays the minimalist animated **Hayato** Plymouth splash theme
+(`/usr/share/plymouth/themes/hayato/`) on a solid `#1a1b26` Tokyo Night canvas:
+the signature orange cursor types `Hayato` into place with a brief spring hop,
+then pulses beside the wordmark with a gentle wingbeat ripple and cyan accent
+bar until `greetd` takes over seamlessly. It is enabled via `splash` in
+`/etc/hayato/kernel-cmdline.conf` and `plymouth-set-default-theme hayato`.
+
 ## The kernel
 
 Generic targets (`arm64-uefi`, `arm64-extlinux`) use Debian `forky`'s packaged

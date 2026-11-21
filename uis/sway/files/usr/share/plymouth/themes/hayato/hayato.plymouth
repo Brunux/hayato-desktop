@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Hayato
+Description=Minimalist animated Hayato wordmark boot splash
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/hayato
+ScriptFile=/usr/share/plymouth/themes/hayato/hayato.script

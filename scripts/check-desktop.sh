@@ -111,6 +111,22 @@ if have hayato-greeter; then
 else
 	fail "hayato-greeter is not installed (run scripts/build-hayato.sh && scripts/install-hayato.sh)"
 fi
+if [ -f /usr/share/plymouth/themes/hayato/hayato.plymouth ] &&
+	[ -f /usr/share/plymouth/themes/hayato/hayato.script ]; then
+	ok "Hayato Plymouth boot splash theme is installed"
+	if have plymouth-set-default-theme; then
+		_plymouth_theme="$(plymouth-set-default-theme 2>/dev/null || true)"
+		if [ "$_plymouth_theme" = "hayato" ]; then
+			ok "Plymouth default theme is hayato"
+		else
+			warn "Plymouth default theme is '${_plymouth_theme:-unset}' (expected 'hayato')"
+		fi
+	else
+		warn "plymouth-set-default-theme is missing (install plymouth and plymouth-themes)"
+	fi
+else
+	warn "Hayato Plymouth boot splash theme is not installed"
+fi
 # greetd hands the session only the PAM environment, so pam_env is what puts the
 # locale there; without it every terminal warns "'C' is not a UTF-8 locale" and
 # sorting/matching run on the C locale.
