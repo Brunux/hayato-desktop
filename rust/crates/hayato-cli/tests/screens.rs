@@ -29,7 +29,7 @@ use hayato_cli::system::{
     colour::ColourScreen, dev::DevScreen, display::DisplayScreen, display::Output as DisplayOutput,
     emoji::EmojiScreen, games::GamesScreen, keys::KeysScreen, kill::KillScreen, learn::LearnScreen,
     media::MediaScreen, net::NetScreen, notify::NotifyScreen, pad::ControllerScreen,
-    pkg::PkgScreen, qr::QrScreen, remind::RemindScreen, run::RunScreen,
+    pkg::PkgScreen, qr::QrScreen, remind::RemindScreen, run::RunScreen, settings::SettingsScreen,
     theme_picker::ThemePickerScreen, window::WindowScreen,
 };
 use hayato_ui::{App, Density, Design, Header, Screen};
@@ -396,4 +396,9 @@ fn display_studio_draws_dual_monitor_topology_at_both_grids() {
             vec!["1920x1080@60Hz".into(), "2560x1440@60Hz".into()],
         ))
     });
+}
+
+#[test]
+fn settings_control_center_draws_master_detail_at_both_grids() {
+    golden("settings", || Box::new(SettingsScreen::new_for_test()));
 }

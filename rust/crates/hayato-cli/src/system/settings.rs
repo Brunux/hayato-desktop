@@ -10,12 +10,21 @@
 //! Nothing here is a daemon: every draw reads the state from nmcli,
 //! bluetoothctl, swaymsg, makoctl, the night-light helper and sysfs.
 
-use hayato_ui::{Design, Glyph};
+use std::cell::{Cell, RefCell};
+use std::process::{Command, Stdio};
+
+use hayato_ui::widgets::{put, put_trunc};
+use hayato_ui::{
+    BodyCtx, ColorRole, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Screen,
+    TextStyle, draw_card, draw_filter_bar,
+};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
 
 use super::pick::{Picker, Question, row};
-use std::process::{Command, Stdio};
 
 use super::{checked, out, sudo};
 use crate::installer::config::validate_password;
@@ -485,6 +494,18 @@ impl Section {
         }
     }
 
+    fn short_label(self) -> &'static str {
+        match self {
+            Self::Network => "Net",
+            Self::DisplaySound => "Disp",
+            Self::Appearance => "Look",
+            Self::Input => "Input",
+            Self::PowerIdle => "Power",
+            Self::System => "Sys",
+            Self::Accessibility => "A11y",
+        }
+    }
+
     fn glyph(self) -> Glyph {
         match self {
             Self::Network => Glyph::Wifi,
@@ -886,11 +907,482 @@ fn build_rows(section: Section) -> (Vec<hayato_ui::Row>, Vec<String>) {
         }
     }
 
-    back_row(&mut rows, &mut keys);
     (rows, keys)
 }
 
-/// `hayato menu settings` (`hayato-settings`): the settings picker.
+const HIT_SECTION_BASE: usize = 20_000;
+
+/// Master-Detail Settings Control Center.
+///
+/// Wide terminals (`>= 100` cols) render a persistent left section rail paired
+/// with the active section's live settings list on the right. Compact terminals
+/// (`< 100` cols) render a clickable horizontal section tab strip above the list.
+pub struct SettingsScreen {
+    active_section: usize,
+    focus_rail: bool,
+    cache: Vec<Option<(Vec<hayato_ui::Row>, Vec<String>)>>,
+    keys: Vec<String>,
+    list: ListState,
+    banner: Option<String>,
+    pub selected_key: Option<String>,
+    header: Header,
+    keybar: Vec<KeyHint>,
+    rows_height: Cell<u16>,
+    section_hits: RefCell<Vec<Rect>>,
+    static_mode: bool,
+}
+
+impl Default for SettingsScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SettingsScreen {
+    /// Open the Control Center on the first section (`Network`).
+    pub fn new() -> Self {
+        Self::with_state(0, None)
+    }
+
+    /// Open on a specific section with an optional post-action status banner.
+    pub fn with_state(section_idx: usize, banner: Option<String>) -> Self {
+        let idx = section_idx.min(Section::ALL.len().saturating_sub(1));
+        let mut screen = Self {
+            active_section: idx,
+            focus_rail: false,
+            cache: vec![None; Section::ALL.len()],
+            keys: Vec::new(),
+            list: ListState::new().with_empty("no matching settings"),
+            banner,
+            selected_key: None,
+            header: Header::new("Hayato").subtitle("Settings"),
+            keybar: vec![
+                KeyHint::new("Tab", "sections"),
+                KeyHint::new("Enter", "open / toggle"),
+                KeyHint::new("type", "filter"),
+                KeyHint::new("Esc", "close"),
+            ],
+            rows_height: Cell::new(18),
+            section_hits: RefCell::new(Vec::new()),
+            static_mode: false,
+        };
+        screen.load_section(idx);
+        screen
+    }
+
+    /// Deterministic constructor for golden snapshot tests (never shells out).
+    pub fn new_for_test() -> Self {
+        let mut cache = vec![None; Section::ALL.len()];
+        cache[0] = Some((
+            vec![
+                row("Wi-Fi radio", "on", Glyph::Wifi),
+                row("Wi-Fi networks", "Hayato-5G", Glyph::Globe),
+                row("Bluetooth radio", "on", Glyph::Bluetooth),
+                row("Bluetooth devices", "1 device connected", Glyph::Link),
+                row("DNS", "the resolver this connection uses", Glyph::Cloud),
+                row("Share this screen", "off", Glyph::Eye),
+                row("Remote login (SSH)", "remote login status", Glyph::Server),
+            ],
+            vec![
+                "wifi-radio".into(),
+                "wifi".into(),
+                "bt-radio".into(),
+                "bt".into(),
+                "dns".into(),
+                "vnc".into(),
+                "ssh".into(),
+            ],
+        ));
+        let mut screen = Self {
+            active_section: 0,
+            focus_rail: false,
+            cache,
+            keys: Vec::new(),
+            list: ListState::new().with_empty("no matching settings"),
+            banner: None,
+            selected_key: None,
+            header: Header::new("Hayato").subtitle("Settings"),
+            keybar: vec![
+                KeyHint::new("Tab", "sections"),
+                KeyHint::new("Enter", "open / toggle"),
+                KeyHint::new("type", "filter"),
+                KeyHint::new("Esc", "close"),
+            ],
+            rows_height: Cell::new(18),
+            section_hits: RefCell::new(Vec::new()),
+            static_mode: true,
+        };
+        screen.load_section(0);
+        screen
+    }
+
+    pub fn active_section_index(&self) -> usize {
+        self.active_section
+    }
+
+    fn load_section(&mut self, idx: usize) {
+        let idx = idx.min(Section::ALL.len().saturating_sub(1));
+        self.active_section = idx;
+        if self.cache[idx].is_none() {
+            let section = Section::ALL[idx];
+            if self.static_mode {
+                let mut rows = Vec::new();
+                let mut keys = Vec::new();
+                for &k in section_keys(section) {
+                    rows.push(row(k, "", section.glyph()));
+                    keys.push(k.to_string());
+                }
+                self.cache[idx] = Some((rows, keys));
+            } else {
+                self.cache[idx] = Some(build_rows(section));
+            }
+        }
+        if let Some((rows, keys)) = self.cache[idx].clone() {
+            self.keys = keys;
+            self.list.set_filter("");
+            self.list.set_rows(rows);
+        }
+        let sec = Section::ALL[idx];
+        self.header = Header::new("Hayato").subtitle("Settings").status(format!(
+            "{} · {}",
+            sec.label(),
+            sec.detail()
+        ));
+    }
+
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 28) / 100).clamp(28, 36) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn right_layout(area: Rect, compact: bool) -> (Option<Rect>, Rect, Rect) {
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        if compact {
+            let tabs = Rect::new(inner.x, inner.y, inner.width, 1.min(inner.height));
+            let filter_y = inner.y.saturating_add(2).min(inner.bottom());
+            let filter = Rect::new(
+                inner.x,
+                filter_y,
+                inner.width,
+                1.min(inner.bottom().saturating_sub(filter_y)),
+            );
+            let rows_y = inner.y.saturating_add(4).min(inner.bottom());
+            let rows = Rect::new(
+                inner.x,
+                rows_y,
+                inner.width,
+                inner.bottom().saturating_sub(rows_y),
+            );
+            (Some(tabs), filter, rows)
+        } else {
+            let filter = Rect::new(inner.x, inner.y, inner.width, 1.min(inner.height));
+            let rows_y = inner.y.saturating_add(2).min(inner.bottom());
+            let rows = Rect::new(
+                inner.x,
+                rows_y,
+                inner.width,
+                inner.bottom().saturating_sub(rows_y),
+            );
+            (None, filter, rows)
+        }
+    }
+
+    fn activate_selected(&mut self) -> Outcome {
+        if let Some(index) = self.list.selected_index()
+            && let Some(key) = self.keys.get(index)
+        {
+            self.selected_key = Some(key.clone());
+            return Outcome::Done(hayato_ui::app::exit::OK);
+        }
+        Outcome::Continue
+    }
+}
+
+impl Screen for SettingsScreen {
+    fn draw(&mut self, ctx: &mut BodyCtx) {
+        let (left, right) = Self::split_panes(ctx.area);
+        let mut hits = self.section_hits.borrow_mut();
+        hits.clear();
+
+        if let Some(right_area) = right {
+            // Wide Master-Detail: persistent left section rail + right live settings pane.
+            draw_card(ctx.buf, left, ctx.design, Some("Sections"), self.focus_rail);
+            let inner = Rect::new(
+                left.x + 2,
+                left.y + 1,
+                left.width.saturating_sub(4),
+                left.height.saturating_sub(2),
+            );
+            let mut y = inner.y;
+            for (idx, sec) in Section::ALL.iter().enumerate() {
+                if y >= inner.bottom() {
+                    break;
+                }
+                let active = idx == self.active_section;
+                let marker = if active { "▍" } else { " " };
+                let marker_style = if active {
+                    Style::default()
+                        .fg(ctx.design.color(ColorRole::Accent))
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    ctx.design.style(TextStyle::Dim)
+                };
+                put(ctx.buf, inner.x, y, marker, 1, marker_style);
+                let label_style = if active {
+                    Style::default()
+                        .fg(ctx.design.color(ColorRole::Accent))
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    ctx.design.style(TextStyle::Body)
+                };
+                let label = format!("{}  {}", sec.glyph().cell(), sec.label());
+                put_trunc(
+                    ctx.buf,
+                    inner.x + 2,
+                    y,
+                    &label,
+                    inner.width.saturating_sub(2),
+                    label_style,
+                );
+                hits.push(Rect::new(inner.x, y, inner.width, 1));
+                y += 1;
+                if y < inner.bottom() && inner.height >= 16 {
+                    put_trunc(
+                        ctx.buf,
+                        inner.x + 5,
+                        y,
+                        sec.detail(),
+                        inner.width.saturating_sub(5),
+                        ctx.design.style(TextStyle::Dim),
+                    );
+                    y += 2;
+                } else {
+                    y += 1;
+                }
+            }
+
+            let sec = Section::ALL[self.active_section];
+            draw_card(
+                ctx.buf,
+                right_area,
+                ctx.design,
+                Some(sec.label()),
+                !self.focus_rail,
+            );
+            let (_, filter, rows) = Self::right_layout(right_area, false);
+            let msg = self
+                .banner
+                .as_deref()
+                .unwrap_or("Type to filter · Enter opens or toggles · Tab switches pane");
+            draw_filter_bar(
+                ctx.buf,
+                filter,
+                ctx.design,
+                self.list.filter(),
+                msg,
+                self.list.visible_len(),
+                self.keys.len(),
+            );
+            self.rows_height.set(rows.height);
+            self.list
+                .render(rows, ctx.buf, ctx.design, !self.focus_rail);
+        } else {
+            // Compact (< 100 cols): horizontal section tab bar + live settings list.
+            let sec = Section::ALL[self.active_section];
+            draw_card(ctx.buf, left, ctx.design, Some(sec.label()), true);
+            let (tabs, filter, rows) = Self::right_layout(left, true);
+            if let Some(tab_area) = tabs {
+                let mut x = tab_area.x;
+                for (idx, s) in Section::ALL.iter().enumerate() {
+                    let active = idx == self.active_section;
+                    let text = if active {
+                        format!("[{}]", s.short_label())
+                    } else {
+                        format!(" {} ", s.short_label())
+                    };
+                    let w = text.chars().count() as u16;
+                    if x + w > tab_area.right() {
+                        break;
+                    }
+                    let st = if active {
+                        Style::default()
+                            .fg(ctx.design.color(ColorRole::Accent))
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        ctx.design.style(TextStyle::Dim)
+                    };
+                    put_trunc(ctx.buf, x, tab_area.y, &text, w, st);
+                    hits.push(Rect::new(x, tab_area.y, w, 1));
+                    x += w + 1;
+                }
+            }
+            let msg = self
+                .banner
+                .as_deref()
+                .unwrap_or("Tab/←→ switches section · type to filter · Enter acts");
+            draw_filter_bar(
+                ctx.buf,
+                filter,
+                ctx.design,
+                self.list.filter(),
+                msg,
+                self.list.visible_len(),
+                self.keys.len(),
+            );
+            self.rows_height.set(rows.height);
+            self.list.render(rows, ctx.buf, ctx.design, true);
+        }
+    }
+
+    fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
+        if key.kind != KeyEventKind::Press {
+            return Outcome::Continue;
+        }
+        match key.code {
+            KeyCode::Tab => {
+                if self.focus_rail {
+                    self.focus_rail = false;
+                } else {
+                    self.focus_rail = true;
+                }
+                return Outcome::Consumed;
+            }
+            KeyCode::BackTab => {
+                let n = Section::ALL.len();
+                let prev = (self.active_section + n - 1) % n;
+                self.load_section(prev);
+                return Outcome::Consumed;
+            }
+            KeyCode::Left if !self.focus_rail && self.list.filter().is_empty() => {
+                let n = Section::ALL.len();
+                let prev = (self.active_section + n - 1) % n;
+                self.load_section(prev);
+                return Outcome::Consumed;
+            }
+            KeyCode::Right if self.focus_rail => {
+                self.focus_rail = false;
+                return Outcome::Consumed;
+            }
+            KeyCode::Right if !self.focus_rail && self.list.filter().is_empty() => {
+                let next = (self.active_section + 1) % Section::ALL.len();
+                self.load_section(next);
+                return Outcome::Consumed;
+            }
+            KeyCode::Esc => {
+                if !self.list.filter().is_empty() {
+                    self.list.set_filter("");
+                    return Outcome::Consumed;
+                }
+                return Outcome::Done(hayato_ui::app::exit::ESCAPE);
+            }
+            _ => {}
+        }
+
+        if self.focus_rail {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    let prev = self.active_section.saturating_sub(1);
+                    self.load_section(prev);
+                    return Outcome::Consumed;
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let next = (self.active_section + 1).min(Section::ALL.len() - 1);
+                    self.load_section(next);
+                    return Outcome::Consumed;
+                }
+                KeyCode::Enter => {
+                    self.focus_rail = false;
+                    return Outcome::Consumed;
+                }
+                _ => return Outcome::Continue,
+            }
+        }
+
+        if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
+            && !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
+            && self.list.type_filter(key)
+        {
+            self.banner = None;
+            return Outcome::Consumed;
+        }
+
+        if key.code == KeyCode::Enter {
+            return self.activate_selected();
+        }
+
+        let rows_height = self.rows_height.get();
+        match self.list.handle(key, rows_height, design) {
+            ListAction::Activated(_) => self.activate_selected(),
+            ListAction::Moved | ListAction::Ignored => Outcome::Continue,
+        }
+    }
+
+    fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        let hits = self.section_hits.borrow();
+        for (idx, r) in hits.iter().enumerate() {
+            if x >= r.x && x < r.right() && y >= r.y && y < r.bottom() {
+                return Some(HIT_SECTION_BASE + idx);
+            }
+        }
+        let (left, right) = Self::split_panes(area);
+        let (_, _, rows) = match right {
+            Some(r) => Self::right_layout(r, false),
+            None => Self::right_layout(left, true),
+        };
+        self.list.hit_row(rows, x, y, design)
+    }
+
+    fn click(&mut self, row: Option<usize>) -> Outcome {
+        let Some(r) = row else {
+            return Outcome::Continue;
+        };
+        if r >= HIT_SECTION_BASE {
+            let idx = r - HIT_SECTION_BASE;
+            if idx < Section::ALL.len() {
+                self.load_section(idx);
+                self.focus_rail = false;
+            }
+            return Outcome::Consumed;
+        }
+        self.focus_rail = false;
+        self.list.set_cursor(r);
+        self.activate_selected()
+    }
+
+    fn keybar(&self) -> Option<&[KeyHint]> {
+        Some(&self.keybar)
+    }
+
+    fn header(&self) -> Option<&Header> {
+        Some(&self.header)
+    }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some(Section::ALL[self.active_section].key())
+    }
+}
+
+/// `hayato menu settings` (`hayato-settings`): Master-Detail Settings Control Center.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
@@ -903,59 +1395,19 @@ pub fn menu(
     }
 
     let mut banner: Option<String> = None;
-    let mut section: Option<Section> = None;
+    let mut active_section: usize = 0;
 
     loop {
-        let (rows, keys, title) = match section {
-            Some(section) => {
-                let (rows, keys) = build_rows(section);
-                (rows, keys, section.label())
-            }
-            None => {
-                let (rows, keys) = section_rows();
-                (rows, keys, "Settings")
-            }
-        };
-        let note = banner.take().unwrap_or_else(|| {
-            if section.is_some() {
-                "Enter acts \u{00b7} Escape returns to Settings".to_string()
-            } else {
-                "Enter opens a section \u{00b7} Escape closes".to_string()
-            }
-        });
-
-        // The picker's name is the surface (Settings, Network, …); the question
-        // is the card's title, so it must not repeat the name.
-        let question = if section.is_none() {
-            "What do you want to change?"
-        } else {
-            "Choose a setting"
-        };
-        let mut picker = Picker::new(title, vec![Question::choose(question, note, rows, keys)]);
-
-        let code = crate::run_screen(terminal, design, title, &mut picker)?;
+        let mut screen = SettingsScreen::with_state(active_section, banner.take());
+        let code = crate::run_screen(terminal, design, "Settings", &mut screen)?;
+        active_section = screen.active_section_index();
         if code != 0 {
-            if section.is_some() {
-                section = None;
-                continue;
-            }
             return Ok(code);
         }
 
-        let Some(key) = picker.answers().first().cloned() else {
+        let Some(key) = screen.selected_key.take() else {
             return Ok(1);
         };
-
-        if let Some(section_key) = key.strip_prefix("section:") {
-            if let Some(next) = Section::from_key(section_key) {
-                section = Some(next);
-            }
-            continue;
-        }
-        if key == "back" {
-            section = None;
-            continue;
-        }
 
         match key.as_str() {
             "wifi-radio" => {
@@ -2086,5 +2538,27 @@ mod tests {
                 "Settings lost the {key} row"
             );
         }
+    }
+
+    #[test]
+    fn settings_control_center_switches_sections_and_activates() {
+        let design = Design::solarized();
+        let mut screen = SettingsScreen::new_for_test();
+        assert_eq!(screen.phase(), Some("network"));
+        assert_eq!(screen.active_section_index(), 0);
+
+        // Right arrow cycles to Display & Sound.
+        let _ = screen.key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE), &design);
+        assert_eq!(screen.active_section_index(), 1);
+        assert_eq!(screen.phase(), Some("display-sound"));
+
+        // Left arrow cycles back to Network.
+        let _ = screen.key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE), &design);
+        assert_eq!(screen.active_section_index(), 0);
+
+        // Enter activates the first row ("wifi-radio").
+        let outcome = screen.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &design);
+        assert!(matches!(outcome, Outcome::Done(0)));
+        assert_eq!(screen.selected_key.as_deref(), Some("wifi-radio"));
     }
 }
