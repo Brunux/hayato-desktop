@@ -1019,10 +1019,6 @@ pub fn menu(
             .run(terminal)
             .map_err(|e| Failure::new("greeter terminal stopped answering", e.to_string()))?;
 
-        if preview && scr.take_open_settings() {
-            let _ = settings::menu_embedded(terminal, design)?;
-            continue;
-        }
         return Ok(code);
     }
 }

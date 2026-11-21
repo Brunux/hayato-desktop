@@ -9,29 +9,25 @@
                                                                                                                                                         
                                                                                                                                                         
                                                                                                                                                         
+                                                                                                                                                        
+                                                                                                                                                        
+                                                                                                                                                        
+                                                                                                                                                        
+                                                                                                                                                        
+                                                                         18:30                                                                          
+                                                                    Sun, 15 Nov 2026                                                                    
+                                                                                                                                                        
                                                                          Hayato                                                                         
-                                                              18:30:00 · Sun, 15 Nov 2026                                                               
                                                                                                                                                         
-                                                                   light. fast. fun.                                                                    
+                                                     ╭────────────────────────────────────────────╮                                                     
+                                                     │                                            │                                                     
+                                                     │     brunux     + Other                     │                                                     
+                                                     │                                            │                                                     
+                                                     │   ▍                                        │                                                     
+                                                     │                                            │                                                     
+                                                     ╰────────────────────────────────────────────╯                                                     
                                                                                                                                                         
-                   ╭ Sign in ───────────────────────────────────────────────────────────────────────────────────────────────────────╮                   
-                   │   User       brunux     + Other                                                                               │                   
-                   │                                                                                                                │                   
-                   │   Password ▍                                                                                                  │                   
-                   │                                                                                                                │                   
-                   │ Preview mode: enter any text to simulate sign-in ("wrong" tests error)                                         │                   
-                   │                                                                                                                │                   
-                   │                                                                                                                │                   
-                   │                                                                                                                │                   
-                   │                                                                                                                │                   
-                   │                                                                                                                │                   
-                   │                                                                                                                │                   
-                   │                                                                                                                │                   
-                   │                                                                                                                │                   
-                   │                                                                                                                │                   
-                   │                                                                                                                │                   
-                   │  ^T   Theme   ^Z   Sleep   ^R   Reboot   ^P ⏻  Shut down   ^G   Settings                     [Tab] actions │                   
-                   ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯                   
+                                       ^T   Theme   ^Z   Sleep   ^R   Reboot   ^P ⏻  Shut down    [Tab] actions                                      
                                                                                                                                                         
                                                                                                                                                         
                                                                                                                                                         
@@ -42,4 +38,8 @@
                                                                                                                                                         
                                                                                                                                                         
                                                                                                                                                         
- [Enter]  sign in   [Tab]  fields   [Esc]  close                                                                                                        
+                                                                                                                                                        
+                                                                                                                                                        
+                                                                                                                                                        
+                                                                                                                                                        
+                                                                                                                                                        

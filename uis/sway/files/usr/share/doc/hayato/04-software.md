@@ -753,25 +753,21 @@ centered, cached at `~/.cache/hayato/wallpapers/`. The first wallpaper is what
 `hayato-greeter` (`/usr/bin/hayato-greeter --session`), a native Ratatui login
 surface running fullscreen in `foot` over a minimal `sway` + theme wallpaper
 backdrop (with automatic VT7 console fallback if Wayland cannot start). It
-centers a single `Hayato` hero title, clock/date, and tagline above a clean
-`Sign in` card (no top window header band, session summary box, or input
-placeholder hints), automatically picks up the active user theme, and lets you
-cycle all 16 themes live with **F4** or **Ctrl+T**, or trigger Sleep / Reboot /
-Shut down with Cancel-first confirmation. To preview
-it inside an open session without logging out, run `hayato greeter --preview`
-(press **Esc** to close, or **Ctrl+G** / **F9** / **Settings** to tweak defaults live);
-to revert to raw VT7 fallback in `/etc/greetd/config.toml`,
-add `--tty` to `/usr/bin/hayato-greeter --session --tty`.
+centers a minimalist `HH:MM` clock, date, and single `Hayato` wordmark above a
+tight, border-only login card (user pills + password box with no placeholder
+hints or idle filler text) and a single quiet action row underneath (**Ctrl+T**
+/ **F4** for themes, plus Sleep / Reboot / Shut down with Cancel-first
+confirmation). To preview it inside an open session without logging out, run
+`hayato greeter --preview` (press **Esc** to close); to revert to raw VT7
+fallback in `/etc/greetd/config.toml`, add `--tty` to
+`/usr/bin/hayato-greeter --session --tty`.
 
 Defaults for the boot greeter live in `/etc/hayato/greeter.toml` and can be
 configured interactively from **Settings → Login screen (Greeter)**, the root
 menu (`Greeter settings`), `hayato menu greeter`, or `hayato greeter settings`:
 the action buttons (`Preview`, `Reset defaults`, `Done`) sit at the top above
-the defaults summary and settings list to toggle whether the greeter follows
-the last user's active theme or uses a fixed default theme across all 16
-palettes, show or hide user account pills, enable or disable remembering the
-last username, switch between 24-hour and 12-hour clock formatting, show or
-hide power buttons, and customize the greeting banner. The lock screen
+the defaults summary and five core settings (`Follow user theme`, `Default theme`,
+`User pills`, `Clock format`, and `Power buttons`). The lock screen
 (`swaylock`) uses the theme's colours for its indicator ring and the theme's
 wallpaper as its background image.
 

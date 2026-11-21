@@ -334,16 +334,9 @@ impl GreeterScreen {
         let hostname = read_hostname();
         let (clock_str, date_str, now_sec) = current_clock(clock_24h);
 
-        let strip = Self::build_strip(setup.preview, show_power_actions);
+        let strip = Self::build_strip(show_power_actions);
 
-        let keybar_main = vec![
-            KeyHint::new("Enter", "sign in"),
-            KeyHint::new("Tab", "fields"),
-            KeyHint::new(
-                "Esc",
-                if setup.preview { "close" } else { "clear" },
-            ),
-        ];
+        let keybar_main = Vec::new();
 
         Self {
             users: setup.users,
@@ -418,23 +411,18 @@ impl GreeterScreen {
         self.clock_fixed = true;
     }
 
-    fn build_strip(preview: bool, show_power_actions: bool) -> ActionStrip {
-        let mut items = vec![
-            ActionItem::new("theme", "^T", "Theme").glyph(Glyph::Theme),
-        ];
+    fn build_strip(show_power_actions: bool) -> ActionStrip {
+        let mut items = vec![ActionItem::new("theme", "^T", "Theme").glyph(Glyph::Theme)];
         if show_power_actions {
             items.push(ActionItem::new("sleep", "^Z", "Sleep").glyph(Glyph::Moon));
             items.push(ActionItem::new("reboot", "^R", "Reboot").glyph(Glyph::Reboot));
             items.push(ActionItem::new("poweroff", "^P", "Shut down").glyph(Glyph::Power));
         }
-        if preview {
-            items.push(ActionItem::new("settings", "^G", "Settings").glyph(Glyph::Gear));
-        }
         ActionStrip::new(items)
     }
 
     fn refresh_strip(&mut self) {
-        self.strip = Self::build_strip(self.preview, self.show_power_actions);
+        self.strip = Self::build_strip(self.show_power_actions);
     }
 
     fn pills_visible(&self) -> bool {
@@ -930,98 +918,93 @@ impl Screen for GreeterScreen {
             return;
         }
 
-        // Center the hero + auth card cleanly inside full-bleed viewport.
-        let card_w = area.width.saturating_sub(2).clamp(32, 114);
-        let card_h = area.height.saturating_sub(2).clamp(12, 23);
+        let in_modal = !matches!(self.mode, Mode::Login);
+        let hero_h: u16 = 5;
+        let has_status = self.runner.is_running() || self.status.is_some();
+
+        // Compute tight card geometry fitted to content (or expanded for modals).
+        let (card_w, card_h) = if in_modal {
+            (
+                area.width.saturating_sub(4).clamp(32, 72),
+                area.height.saturating_sub(hero_h + 4).clamp(8, 16),
+            )
+        } else {
+            let mut rows: u16 = 2; // top + bottom inner breathing room
+            if self.pills_visible() {
+                rows += 2;
+            }
+            if self.using_other_user() {
+                rows += 2;
+            }
+            if self.auth_prompt.is_challenge() {
+                rows += 1;
+            }
+            rows += 1; // password input
+            if has_status {
+                rows += 2;
+            }
+            let h = (rows + 2).min(area.height.saturating_sub(hero_h + 3));
+            (area.width.saturating_sub(4).clamp(32, 46), h.max(5))
+        };
+
+        let strip_block_h: u16 = if in_modal { 0 } else { 2 };
+        let total_h = hero_h + card_h + strip_block_h;
+        let top_y = area.y + area.height.saturating_sub(total_h) / 2;
         let card_x = area.x + (area.width - card_w) / 2;
-        let card_y = area.y + (area.height - card_h) / 2;
 
-        let hero_h = if card_h >= 19 { 5 } else { 3 };
-        let hero_area = Rect::new(card_x, card_y, card_w, hero_h);
-        let bento_area = Rect::new(
-            card_x,
-            card_y + hero_h,
-            card_w,
-            card_h.saturating_sub(hero_h),
-        );
-
-        // Hero clock & Hayato mark
+        // 1. Minimalist Hero: clock, date, single centered Hayato wordmark
         {
-            let mut y = hero_area.y;
+            let y0 = top_y;
+            let clock_w = (self.clock_str.chars().count() as u16).min(area.width);
+            let cx = area.x + area.width.saturating_sub(clock_w) / 2;
+            put_trunc(
+                ctx.buf,
+                cx,
+                y0,
+                &self.clock_str,
+                clock_w,
+                Style::default()
+                    .fg(ctx.design.color(ColorRole::Accent))
+                    .add_modifier(Modifier::BOLD),
+            );
+
+            let date_w = (self.date_str.chars().count() as u16).min(area.width);
+            let dx = area.x + area.width.saturating_sub(date_w) / 2;
+            put_trunc(
+                ctx.buf,
+                dx,
+                y0 + 1,
+                &self.date_str,
+                date_w,
+                ctx.design.style(TextStyle::Dim),
+            );
+
             let brand = "Hayato";
             let bw = brand.len() as u16;
-            let bx = hero_area.x + hero_area.width.saturating_sub(bw) / 2;
+            let bx = area.x + area.width.saturating_sub(bw) / 2;
             put(
                 ctx.buf,
                 bx,
-                y,
+                y0 + 3,
                 brand,
                 bw,
                 Style::default()
                     .fg(ctx.design.color(ColorRole::Text))
                     .add_modifier(Modifier::BOLD),
             );
-            y += 1;
-
-            if y < hero_area.bottom() {
-                let clock_w = self.clock_str.len() as u16;
-                let date_w = self.date_str.len() as u16;
-                let total_w = clock_w + 3 + date_w;
-                let cx = hero_area.x + hero_area.width.saturating_sub(total_w) / 2;
-                put(
-                    ctx.buf,
-                    cx,
-                    y,
-                    &self.clock_str,
-                    clock_w,
-                    Style::default()
-                        .fg(ctx.design.color(ColorRole::Accent))
-                        .add_modifier(Modifier::BOLD),
-                );
-                put(
-                    ctx.buf,
-                    cx + clock_w,
-                    y,
-                    " \u{00b7} ",
-                    3,
-                    ctx.design.style(TextStyle::Dim),
-                );
-                put_trunc(
-                    ctx.buf,
-                    cx + clock_w + 3,
-                    y,
-                    &self.date_str,
-                    hero_area.right().saturating_sub(cx + clock_w + 3),
-                    ctx.design.style(TextStyle::Body),
-                );
-                y += 1;
-            }
-
-            if hero_h >= 5 && y + 1 < hero_area.bottom() {
-                y += 1;
-                let g_w = (self.greeting.chars().count() as u16).min(hero_area.width);
-                let gx = hero_area.x + hero_area.width.saturating_sub(g_w) / 2;
-                put_trunc(
-                    ctx.buf,
-                    gx,
-                    y,
-                    &self.greeting,
-                    g_w,
-                    ctx.design.style(TextStyle::Dim),
-                );
-            }
         }
 
-        // Main Bento login card
+        // 2. Compact Login Card (border only, no title)
+        let card_area = Rect::new(card_x, top_y + hero_h, card_w, card_h);
         let inner = draw_card_with(
             ctx.buf,
-            bento_area,
+            card_area,
             ctx.design,
-            Some("Sign in"),
-            ColorRole::Accent,
+            None,
+            ColorRole::Border,
             ctx.design.style(TextStyle::Title),
         );
-        if inner.width < 20 || inner.height < 6 {
+        if inner.width < 16 || inner.height < 3 {
             *self.hits.borrow_mut() = hits;
             return;
         }
@@ -1060,31 +1043,15 @@ impl Screen for GreeterScreen {
             Mode::Login => {}
         }
 
-        let mut y = inner.y;
+        let pad_x: u16 = if inner.width >= 24 { 2 } else { 1 };
+        let field_x = inner.x + pad_x;
+        let field_w = inner.width.saturating_sub(pad_x * 2);
+        let mut y = inner.y + if inner.height >= 5 { 1 } else { 0 };
         let bg_surface = ctx.design.color(ColorRole::Surface);
 
-        // 1. User pills row (hidden when show_user_pills = false)
-        if self.pills_visible() {
-            let user_glyph = Glyph::People.cell();
-            put(
-                ctx.buf,
-                inner.x,
-                y,
-                user_glyph,
-                2,
-                Style::default()
-                    .fg(ctx.design.color(ColorRole::Accent))
-                    .bg(bg_surface),
-            );
-            put(
-                ctx.buf,
-                inner.x + 3,
-                y,
-                "User",
-                4,
-                ctx.design.style(TextStyle::Dim).bg(bg_surface),
-            );
-            let mut px = inner.x + 12.min(inner.width / 3);
+        // User pills row (hidden when show_user_pills = false)
+        if self.pills_visible() && y < inner.bottom() {
+            let mut px = field_x;
             let pill_limit = self.users.len().min(MAX_USER_PILLS);
             let mut pill_idx = 0usize;
             for idx in 0..=pill_limit {
@@ -1095,7 +1062,7 @@ impl Screen for GreeterScreen {
                     self.users[idx].username.as_str()
                 };
                 let w = (label.chars().count() as u16) + 4;
-                if px + w > inner.right() {
+                if px + w > field_x + field_w {
                     break;
                 }
                 let selected = if is_other {
@@ -1131,35 +1098,10 @@ impl Screen for GreeterScreen {
             y += 2;
         }
 
-        let input_x = inner.x + 12.min(inner.width / 3);
-
-        // 2. Optional inline Username box when "+ Other" is active or pills are hidden
-        if self.using_other_user() && y + 1 < inner.bottom() {
+        // Optional inline Username box when "+ Other" is active or pills are hidden
+        if self.using_other_user() && y < inner.bottom() {
             let user_focused = self.focus == Focus::Username;
-            let label_style = if user_focused {
-                Style::default()
-                    .fg(ctx.design.color(ColorRole::Accent))
-                    .bg(bg_surface)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                ctx.design.style(TextStyle::Dim).bg(bg_surface)
-            };
-            put(
-                ctx.buf,
-                inner.x,
-                y,
-                Glyph::Tag.cell(),
-                2,
-                Style::default()
-                    .fg(ctx.design.color(if user_focused {
-                        ColorRole::Accent
-                    } else {
-                        ColorRole::Dim
-                    }))
-                    .bg(bg_surface),
-            );
-            put(ctx.buf, inner.x + 3, y, "Login", 6, label_style);
-            let box_rect = Rect::new(input_x, y, inner.right().saturating_sub(input_x), 1);
+            let box_rect = Rect::new(field_x, y, field_w, 1);
             self.username_input.render_field(
                 box_rect,
                 ctx.buf,
@@ -1174,42 +1116,25 @@ impl Screen for GreeterScreen {
             y += 2;
         }
 
-        // 3. Password / PAM prompt input box
-        if y + 1 < inner.bottom() {
+        // Password / PAM prompt input box
+        if y < inner.bottom() {
             let pass_focused = self.focus == Focus::Password;
-            let lock_glyph = Glyph::Key.cell();
-            put(
-                ctx.buf,
-                inner.x,
-                y,
-                lock_glyph,
-                2,
-                Style::default()
-                    .fg(ctx.design.color(ColorRole::Accent))
-                    .bg(bg_surface),
-            );
-            let label_w = input_x.saturating_sub(inner.x + 4).max(4);
-            let label_style = if pass_focused {
-                Style::default()
-                    .fg(ctx.design.color(ColorRole::Accent))
-                    .bg(bg_surface)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                ctx.design.style(TextStyle::Dim).bg(bg_surface)
-            };
-            put_trunc(
-                ctx.buf,
-                inner.x + 3,
-                y,
-                self.auth_prompt.label(),
-                label_w,
-                label_style,
-            );
+            if self.auth_prompt.is_challenge() && y + 1 < inner.bottom() {
+                put_trunc(
+                    ctx.buf,
+                    field_x,
+                    y,
+                    self.auth_prompt.label(),
+                    field_w,
+                    ctx.design.style(TextStyle::Dim).bg(bg_surface),
+                );
+                y += 1;
+            }
 
             let caps_reserve = if self.caps_lock { 8 } else { 0 };
-            let input_w = inner.right().saturating_sub(input_x + caps_reserve);
+            let input_w = field_w.saturating_sub(caps_reserve);
             if input_w >= 8 {
-                let pass_rect = Rect::new(input_x, y, input_w, 1);
+                let pass_rect = Rect::new(field_x, y, input_w, 1);
                 self.secret_input.render_field(
                     pass_rect,
                     ctx.buf,
@@ -1222,7 +1147,7 @@ impl Screen for GreeterScreen {
                 );
                 hits.password_box = Some(pass_rect);
 
-                if self.caps_lock && pass_rect.right() + 7 <= inner.right() {
+                if self.caps_lock && pass_rect.right() + 7 <= field_x + field_w {
                     put(
                         ctx.buf,
                         pass_rect.right() + 1,
@@ -1239,14 +1164,13 @@ impl Screen for GreeterScreen {
             y += 2;
         }
 
-        // 4. Status / Spinner / PAM error banner
-        let strip_y = inner.bottom().saturating_sub(1);
-        if y < strip_y {
+        // Status / Spinner / PAM error (only drawn when active)
+        if has_status && y < inner.bottom() {
             if self.runner.is_running() {
                 let spin = self.runner.spinner();
                 put(
                     ctx.buf,
-                    inner.x,
+                    field_x,
                     y,
                     spin,
                     2,
@@ -1256,10 +1180,10 @@ impl Screen for GreeterScreen {
                 );
                 put_trunc(
                     ctx.buf,
-                    inner.x + 3,
+                    field_x + 3,
                     y,
-                    "Authenticating with greetd\u{2026}",
-                    inner.width.saturating_sub(3),
+                    "Authenticating\u{2026}",
+                    field_w.saturating_sub(3),
                     ctx.design.style(TextStyle::Title).bg(bg_surface),
                 );
             } else if let Some((kind, text)) = &self.status {
@@ -1271,7 +1195,7 @@ impl Screen for GreeterScreen {
                 };
                 put(
                     ctx.buf,
-                    inner.x,
+                    field_x,
                     y,
                     glyph,
                     2,
@@ -1282,34 +1206,26 @@ impl Screen for GreeterScreen {
                 );
                 put_trunc(
                     ctx.buf,
-                    inner.x + 3,
+                    field_x + 3,
                     y,
                     text,
-                    inner.width.saturating_sub(3),
+                    field_w.saturating_sub(3),
                     Style::default().fg(ctx.design.color(role)).bg(bg_surface),
-                );
-            } else {
-                let card_hint = if self.preview {
-                    "Preview mode: enter any text to simulate sign-in (\"wrong\" tests error)"
-                } else {
-                    "Enter password and press Enter to unlock your session"
-                };
-                put_trunc(
-                    ctx.buf,
-                    inner.x,
-                    y,
-                    card_hint,
-                    inner.width,
-                    ctx.design.style(TextStyle::Dim).bg(bg_surface),
                 );
             }
         }
 
-        // 6. Bottom ActionStrip
-        let strip_area = Rect::new(inner.x, strip_y, inner.width, 1);
-        self.strip
-            .render_on(strip_area, ctx.buf, ctx.design, ColorRole::Bg);
-        hits.strip_row = Some(strip_area);
+        // 3. Single quiet ActionStrip centered below the card
+        let strip_y = card_area.bottom() + 1;
+        if strip_y < area.bottom() {
+            let strip_w = if self.show_power_actions { 76 } else { 30 };
+            let w = strip_w.min(area.width.saturating_sub(2));
+            let sx = area.x + area.width.saturating_sub(w) / 2;
+            let strip_area = Rect::new(sx, strip_y, w, 1);
+            self.strip
+                .render_on(strip_area, ctx.buf, ctx.design, ColorRole::Bg);
+            hits.strip_row = Some(strip_area);
+        }
 
         *self.hits.borrow_mut() = hits;
     }
@@ -1580,9 +1496,6 @@ impl Screen for GreeterScreen {
             (true, KeyCode::Char('t')) => {
                 return self.trigger_action("theme");
             }
-            (true, KeyCode::Char('g')) | (false, KeyCode::F(9)) if self.preview => {
-                return self.trigger_action("settings");
-            }
             (true, KeyCode::Char('z')) if self.show_power_actions => {
                 return self.trigger_action("sleep");
             }
@@ -1764,9 +1677,9 @@ fn epoch_secs() -> u64 {
 fn current_clock(clock_24h: bool) -> (String, String, u64) {
     let now = Local::now();
     let time = if clock_24h {
-        now.format("%H:%M:%S").to_string()
+        now.format("%H:%M").to_string()
     } else {
-        now.format("%I:%M:%S %p").to_string()
+        now.format("%I:%M %p").to_string()
     };
     (time, now.format("%a, %d %b %Y").to_string(), epoch_secs())
 }
@@ -1844,7 +1757,7 @@ mod tests {
             config,
         };
         let mut scr = GreeterScreen::new(setup);
-        scr.set_clock_for_test("18:30:00", "Sun, 15 Nov 2026", "hayato");
+        scr.set_clock_for_test("18:30", "Sun, 15 Nov 2026", "hayato");
         scr
     }
 
@@ -1940,17 +1853,19 @@ mod tests {
         let mut scr = test_screen(true);
         let small = render_text(&mut scr, 80, 24);
         assert!(small.contains("Hayato"));
-        assert!(small.contains("18:30:00"));
+        assert!(small.contains("18:30"));
         assert!(small.contains("brunux"));
         assert!(small.contains("Theme"));
         assert!(!small.contains("z_"));
         assert!(!small.contains("Hayato_"));
         assert!(!small.contains("Sway (Wayland)"));
+        assert!(!small.contains("Settings"));
+        assert!(!small.contains("^G"));
 
         let large = render_text(&mut scr, 152, 45);
-        assert!(large.contains("18:30:00"));
+        assert!(large.contains("18:30"));
         assert!(large.contains("Shut down"));
-        assert!(large.contains("Settings"));
+        assert!(!large.contains("Settings"));
     }
 
     #[test]
@@ -1965,9 +1880,9 @@ mod tests {
         assert_eq!(scr.focus, Focus::Username);
         let out = render_text(&mut scr, 100, 30);
         assert!(!out.contains("+ Other"));
-        assert!(out.contains("Login"));
+        assert!(out.contains("Theme"));
         assert!(!out.contains("Shut down"));
-        assert!(out.contains("Settings"));
+        assert!(!out.contains("Settings"));
     }
 
     #[test]

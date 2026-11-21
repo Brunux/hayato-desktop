@@ -2201,8 +2201,6 @@ impl Input {
                 .fg(design.color(ColorRole::Bg))
                 .bg(accent)
                 .add_modifier(ratatui::style::Modifier::BOLD)
-        } else if focused {
-            normal_style.add_modifier(ratatui::style::Modifier::UNDERLINED)
         } else {
             normal_style
         };
@@ -2217,7 +2215,7 @@ impl Input {
                     let first_style = if cursor_visible {
                         cursor_style
                     } else {
-                        ph_style.add_modifier(ratatui::style::Modifier::UNDERLINED)
+                        ph_style
                     };
                     put(buf, x, area.y, first_str, 1, first_style);
                     put_trunc(
@@ -3474,6 +3472,14 @@ mod tests {
         );
         assert_eq!(buf_off.cell((0, 0)).unwrap().symbol(), "\u{258d}");
         assert_eq!(buf_off.cell((4, 0)).unwrap().bg, bg);
+        assert!(
+            !buf_off
+                .cell((4, 0))
+                .unwrap()
+                .modifier
+                .contains(ratatui::style::Modifier::UNDERLINED),
+            "blink-off cursor must not draw an underline fallback"
+        );
 
         // Unfocused -> neither focus bar nor cursor block appears
         let mut buf_unfocused = Buffer::empty(area);

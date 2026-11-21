@@ -1023,7 +1023,6 @@ fn build_setting_rows(cfg: &GreeterConfig) -> Vec<Row> {
     let theme_name = load_theme_by_slug(theme_slug)
         .map(|t| format!("{} ({theme_slug})", t.name))
         .unwrap_or_else(|| theme_slug.to_string());
-    let greeting = cfg.greeting.as_deref().unwrap_or(DEFAULT_GREETING);
 
     vec![
         Row::new("Follow user theme")
@@ -1046,20 +1045,12 @@ fn build_setting_rows(cfg: &GreeterConfig) -> Vec<Row> {
                 "hidden \u{00b7} username text box only"
             })
             .value("show_user_pills"),
-        Row::new("Remember last user")
-            .glyph(Glyph::History)
-            .detail(if cfg.remember_user {
-                "on \u{00b7} pre-selects last logged-in user"
-            } else {
-                "off \u{00b7} always starts empty"
-            })
-            .value("remember_user"),
         Row::new("Clock format")
             .glyph(Glyph::Clock)
             .detail(if cfg.clock_24h {
-                "24-hour (19:30:00)"
+                "24-hour (19:30)"
             } else {
-                "12-hour (07:30:00 PM)"
+                "12-hour (07:30 PM)"
             })
             .value("clock_24h"),
         Row::new("Power buttons")
@@ -1070,10 +1061,6 @@ fn build_setting_rows(cfg: &GreeterConfig) -> Vec<Row> {
                 "hidden"
             })
             .value("show_power_actions"),
-        Row::new("Greeting text")
-            .glyph(Glyph::Tag)
-            .detail(greeting)
-            .value("greeting"),
     ]
 }
 
@@ -1207,10 +1194,8 @@ mod tests {
         scr.key(key(KeyCode::Char(' ')), &design);
         assert!(!scr.config().show_user_pills);
 
-        // Move to Row 4: Clock format -> toggle 12h.
-        for _ in 0..2 {
-            scr.key(key(KeyCode::Down), &design);
-        }
+        // Move to Row 3: Clock format -> toggle 12h.
+        scr.key(key(KeyCode::Down), &design);
         scr.key(key(KeyCode::Enter), &design);
         assert!(!scr.config().clock_24h);
 

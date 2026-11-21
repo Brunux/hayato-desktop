@@ -353,7 +353,7 @@ fn greeter() -> Box<dyn Screen> {
     };
     let mut screen = GreeterScreen::new(setup);
     // The clock is the one thing that would move between two runs.
-    screen.set_clock_for_test("18:30:00", "Sun, 15 Nov 2026", "hayato");
+    screen.set_clock_for_test("18:30", "Sun, 15 Nov 2026", "hayato");
     Box::new(screen)
 }
 
