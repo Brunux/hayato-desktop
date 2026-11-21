@@ -179,6 +179,19 @@ if [ -n "$_user" ] && [ -d "$_home" ] && [ -d /usr/share/hayato/skel ]; then
 			fi
 		done
 	fi
+	if [ -d /usr/share/hayato/skel/.config/hayato ]; then
+		install -d -m 0755 -o "$_user" -g "$_user" "$_home/.config/hayato"
+		for _sv in /usr/share/hayato/skel/.config/hayato/screensaver*.txt; do
+			[ -f "$_sv" ] || continue
+			install -m 0644 -o "$_user" -g "$_user" "$_sv" "$_home/.config/hayato/$(basename "$_sv")"
+		done
+	fi
+	if [ -f /usr/share/hayato/skel/.config/foot/screensaver.ini ]; then
+		install -d -m 0755 -o "$_user" -g "$_user" "$_home/.config/foot"
+		install -m 0644 -o "$_user" -g "$_user" \
+			/usr/share/hayato/skel/.config/foot/screensaver.ini \
+			"$_home/.config/foot/screensaver.ini"
+	fi
 	if [ -d /usr/share/hayato/skel/.config/opencode ]; then
 		install -d -m 0755 -o "$_user" -g "$_user" "$_home/.config/opencode"
 		for _oc in opencode.json AGENTS.md; do

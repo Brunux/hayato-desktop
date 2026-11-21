@@ -172,11 +172,6 @@ def main():
         "\n".join(["$1" + line for line in art])
         + f"\n\n$3{WORDMARK[:-1]}$2_\n$1{TAGLINE}\n",
     )
-    write(
-        f"{conf}/screensaver.txt",
-        "\n".join(art)
-        + f"\n\n{WORDMARK}\n\n:: {TAGLINE} ::\n\u00bb press any key to play \u00ab\n",
-    )
     print(f"mark {len(rows)}x{len(rows[0])}, art {len(art[0])}x{len(art)}")
 
 

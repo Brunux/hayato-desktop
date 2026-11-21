@@ -100,7 +100,7 @@ left something on:
 
 | After | What happens |
 |---|---|
-| 2½ minutes | the Hayato idle screen starts (one foot window, 30 fps, nothing else) |
+| 2½ minutes | the Hayato idle screen starts (one foot window cycling three pixel-hacker Golden Eagle artworks + `Hayato _` at 30 fps with `tte`) |
 | 5 minutes | the session locks (`sway-lock`, the same lock every other path uses) |
 | 6 minutes | the panel goes dark (`swaymsg "output * power off"`, i.e. DPMS) |
 

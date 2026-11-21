@@ -35,15 +35,14 @@
 set -u
 
 APP_ID="org.hayato.screensaver"
-LOGO="${XDG_CONFIG_HOME:-$HOME/.config}/hayato/screensaver.txt"
+LOGO_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hayato"
+LOGO="$LOGO_DIR/screensaver.txt"
 FOOT_INI="${XDG_CONFIG_HOME:-$HOME/.config}/foot/screensaver.ini"
 # 30, because the frame rate is the whole cost of the loop: at 120 fps the same
 # cycle is over in a third of the time, at three times the share of a core.
 FPS=30
-# The effects that end with the text sitting still (plus --reuse-canvas, which
-# keeps the canvas between them). Anything heavier belongs in an animation, not
-# in something that runs for the whole idle period on a battery.
-EFFECTS="decrypt middleout print sweep wipe slide expand"
+# Pixel-hacker effects that settle cleanly on the golden eagle + Hayato _ art.
+EFFECTS="decrypt beams binarypath rain sweep wipe"
 
 have_tte() {
 	command -v tte >/dev/null 2>&1
@@ -159,8 +158,17 @@ run() {
 		exit 0
 	fi
 
+	LOGOS=()
+	for _cand in "$LOGO" "$LOGO_DIR/screensaver-dive.txt" "$LOGO_DIR/screensaver-head.txt"; do
+		[ -r "$_cand" ] && LOGOS+=("$_cand")
+	done
+	[ "${#LOGOS[@]}" -gt 0 ] || LOGOS=("$LOGO")
+
 	failures=0
+	logo_idx=0
 	while :; do
+		current_logo="${LOGOS[$logo_idx]}"
+		logo_idx=$(( (logo_idx + 1) % ${#LOGOS[@]} ))
 		# `--include-effects` takes the rest of the command line as its list
 		# (argparse's nargs='+'), so it stays the last option here.
 		#
@@ -168,7 +176,7 @@ run() {
 		# own controls and would swallow the key that is meant to dismiss this
 		# (a key pressed during an effect reached tte, not the read below, and
 		# the screen only ended when the next effect boundary came around).
-		tte -i "$LOGO" --frame-rate "$FPS" \
+		tte -i "$current_logo" --frame-rate "$FPS" \
 			--reuse-canvas \
 			--canvas-width 0 --canvas-height 0 \
 			--anchor-canvas c --anchor-text c \
