@@ -45,8 +45,10 @@ Booting displays the minimalist animated **Hayato** Plymouth splash theme
 (`/usr/share/plymouth/themes/hayato/`) on a solid `#1a1b26` Tokyo Night canvas:
 the signature orange cursor types `Hayato` into place with a brief spring hop,
 then pulses beside the wordmark with a gentle wingbeat ripple and cyan accent
-bar until `greetd` takes over seamlessly. It is enabled via `splash` in
-`/etc/hayato/kernel-cmdline.conf` and `plymouth-set-default-theme hayato`.
+bar until `greetd` takes over seamlessly. It is enabled via `splash` and
+`plymouth.ignore-serial-consoles` (so ARM64 device-tree UARTs like `ttyS0` do
+not suppress the graphical splash) in `/etc/hayato/kernel-cmdline.conf` and
+`plymouth-set-default-theme hayato`.
 
 ## The kernel
 
