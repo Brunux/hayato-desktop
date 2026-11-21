@@ -46,7 +46,9 @@ Booting displays the minimalist pixel-art **Hayato** Plymouth splash theme
 each character scrambles briefly through cyan pixel glyphs before locking into
 crisp pixel-grid `Hayato`, followed by a square-wave blinking orange block
 cursor, a 12-dot cyan pixel scanner row, and subtle periodic glitch pulses
-until `greetd` takes over seamlessly. It is enabled via `splash` and
+until `greetd` takes over seamlessly — where `hayato-greeter` continues the
+same pixel-hacker `Hayato █` wordmark and dot scanner styled in the active
+greeter theme. It is enabled via `splash` and
 `plymouth.ignore-serial-consoles` (so ARM64 device-tree UARTs like `ttyS0` do
 not suppress the graphical splash) in `/etc/hayato/kernel-cmdline.conf` and
 `plymouth-set-default-theme hayato`.
