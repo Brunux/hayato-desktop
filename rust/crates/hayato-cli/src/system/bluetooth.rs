@@ -848,19 +848,25 @@ fn format_status(powered: bool, connected_names: &[String]) -> String {
     const OFF: &str = "\u{f00b2}";
     if !powered {
         return format!(
-            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"off\",\"tooltip\":\"Bluetooth off (click to turn on)\"}}",
+            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"off\",\"tooltip\":\"Bluetooth · Off\\nClick: devices · Right-click: bluetoothctl\"}}",
             OFF
         );
     }
     if connected_names.is_empty() {
         format!(
-            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"on\",\"tooltip\":\"Bluetooth on · nothing connected\"}}",
+            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"on\",\"tooltip\":\"Bluetooth · On (none connected)\\nClick: devices · Right-click: bluetoothctl\"}}",
             ON
         )
     } else {
-        let tooltip = connected_names.join("\\n").replace('"', "'");
-        // No count on the bar: the only number on the line is the battery's
-        // charge. What is connected is in the tooltip.
+        let escaped: Vec<String> = connected_names
+            .iter()
+            .map(|name| name.replace('\\', "\\\\").replace('"', "'"))
+            .collect();
+        let tooltip = format!(
+            "Bluetooth · Connected\\n{}\\nClick: devices · Right-click: bluetoothctl",
+            escaped.join("\\n")
+        );
+        // No count on the bar: what is connected lives in the tooltip.
         format!(
             "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"on\",\"tooltip\":\"{}\"}}",
             ON, tooltip
@@ -910,6 +916,6 @@ mod tests {
         assert!(on.contains("\"class\":\"on\""));
         assert!(on.contains("\u{f00af}"));
         assert!(!on.contains("</span> 1\""));
-        assert!(on.contains("\"tooltip\":\"Buds\""));
+        assert!(on.contains("Bluetooth · Connected\\nBuds"));
     }
 }

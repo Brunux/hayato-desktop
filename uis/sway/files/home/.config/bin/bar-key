@@ -68,6 +68,6 @@ fi
 # xkb_layout is the configured code ("us,latam"); the human name is longer and
 # does not fit the bar, so the code is shown, upper-cased.
 code=$(printf '%s' "${code:-$active}" | tr '[:lower:]' '[:upper:]')
-tooltip="Layout: $active\nClick to switch to the next one"
+tooltip="Layout · $active\\nClick: next · Right-click: layouts"
 
 printf '{"text":"%s  %s","class":"on","tooltip":"%s"}\n' "$icon" "$code" "$tooltip"

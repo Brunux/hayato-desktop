@@ -48,8 +48,45 @@ impl Rect {
     }
 
     pub fn contains(&self, px: f32, py: f32) -> bool {
-        px >= self.x && px <= self.x + self.w && py >= self.y && py <= self.y + self.h
+        self.w > 0.0
+            && self.h > 0.0
+            && px >= self.x
+            && px <= self.x + self.w
+            && py >= self.y
+            && py <= self.y + self.h
     }
+}
+
+/// Read the session reduced-motion preference once (env var or ~/.config/hayato/reduced-motion).
+pub fn reduced_motion_enabled() -> bool {
+    if let Ok(val) = std::env::var("HAYATO_REDUCED_MOTION") {
+        let v = val.trim();
+        if !v.is_empty()
+            && v != "0"
+            && !v.eq_ignore_ascii_case("false")
+            && !v.eq_ignore_ascii_case("no")
+        {
+            return true;
+        }
+    }
+    let cfg = std::env::var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".config"))
+        })
+        .map(|base| base.join("hayato/reduced-motion"));
+    if let Some(path) = cfg {
+        if let Ok(text) = std::fs::read_to_string(path) {
+            return matches!(
+                text.trim().to_ascii_lowercase().as_str(),
+                "1" | "yes" | "true" | "on"
+            );
+        }
+    }
+    false
 }
 
 pub const ANIM_DURATION: Duration = Duration::from_millis(150);
@@ -107,18 +144,60 @@ pub struct Notification {
     pub action_rects: Vec<(String, Rect)>,
     pub close_rect: Option<Rect>,
     pub is_hovered: bool,
+    pub hovered_close: bool,
     pub hovered_action: Option<String>,
+    pub hovered_at: Option<Instant>,
     #[allow(dead_code)]
     pub dismissing: bool,
     pub progress_color_override: Option<[u8; 4]>,
 }
 
 impl Notification {
+    /// Update hover state and freeze/resume the expiry timer seamlessly so a
+    /// card never vanishes while the user is reading it or aiming for a button.
+    pub fn set_hovered(&mut self, hovered: bool) {
+        if hovered == self.is_hovered {
+            return;
+        }
+        let now = Instant::now();
+        if hovered {
+            self.is_hovered = true;
+            if self.hovered_at.is_none() {
+                self.hovered_at = Some(now);
+            }
+        } else {
+            self.is_hovered = false;
+            if let Some(since) = self.hovered_at.take() {
+                let paused = now.saturating_duration_since(since);
+                self.created_at += paused;
+            }
+        }
+    }
+
+    pub fn effective_elapsed(&self) -> Duration {
+        let now = self.hovered_at.unwrap_or_else(Instant::now);
+        now.saturating_duration_since(self.created_at)
+    }
+
+    /// Fraction of timeout remaining (`1.0` fresh -> `0.0` expired), or `None`
+    /// for sticky/critical/OSD cards.
+    pub fn remaining_fraction(&self) -> Option<f32> {
+        if self.is_osd() || self.urgency == Urgency::Critical || self.timeout.is_zero() {
+            return None;
+        }
+        let total = self.timeout.as_secs_f32();
+        if total <= 0.0 {
+            return None;
+        }
+        let elapsed = self.effective_elapsed().as_secs_f32();
+        Some((1.0 - elapsed / total).clamp(0.0, 1.0))
+    }
+
     pub fn is_expired(&self) -> bool {
-        if self.urgency == Urgency::Critical || self.timeout.is_zero() {
+        if self.urgency == Urgency::Critical || self.timeout.is_zero() || self.is_hovered {
             return false;
         }
-        self.created_at.elapsed() >= self.timeout
+        self.effective_elapsed() >= self.timeout
     }
 
     #[allow(dead_code)]
@@ -142,8 +221,8 @@ impl Notification {
         matches!(self.anim_state, AnimState::Opening { .. })
     }
 
-    pub fn animation_factors(&self) -> (f32, f32) {
-        if std::env::var("HAYATO_REDUCED_MOTION").is_ok() {
+    pub fn animation_factors(&self, reduced_motion: bool) -> (f32, f32) {
+        if reduced_motion {
             return (1.0, 1.0);
         }
         match self.anim_state {
@@ -198,10 +277,32 @@ mod tests {
             action_rects: Vec::new(),
             close_rect: None,
             is_hovered: false,
+            hovered_close: false,
             hovered_action: None,
+            hovered_at: None,
             dismissing: false,
             progress_color_override: None,
         }
+    }
+
+    #[test]
+    fn zero_size_rect_never_matches_origin() {
+        let empty = Rect::new(0.0, 0.0, 0.0, 0.0);
+        assert!(!empty.contains(0.0, 0.0));
+        let real = Rect::new(10.0, 10.0, 20.0, 20.0);
+        assert!(real.contains(15.0, 15.0));
+    }
+
+    #[test]
+    fn hover_pauses_expiry_until_leave() {
+        let mut n = dummy_notification(AnimState::Active);
+        n.timeout = Duration::from_millis(50);
+        n.created_at = Instant::now() - Duration::from_millis(60);
+        assert!(n.is_expired());
+        n.set_hovered(true);
+        assert!(!n.is_expired());
+        n.set_hovered(false);
+        assert!(n.is_expired());
     }
 
     #[test]
@@ -210,7 +311,7 @@ mod tests {
         assert!(!n.is_closing());
         assert!(!n.is_opening());
         assert!(!n.is_animating());
-        let (scale, alpha) = n.animation_factors();
+        let (scale, alpha) = n.animation_factors(false);
         assert_eq!(scale, 1.0);
         assert_eq!(alpha, 1.0);
     }
@@ -224,7 +325,7 @@ mod tests {
         assert!(n.is_opening());
         assert!(!n.is_closing());
         assert!(n.is_animating());
-        let (scale, alpha) = n.animation_factors();
+        let (scale, alpha) = n.animation_factors(false);
         assert!((0.85..=0.87).contains(&scale));
         assert!((0.0..=0.05).contains(&alpha));
 
@@ -232,7 +333,7 @@ mod tests {
         let past = Instant::now() - Duration::from_millis(200);
         let n_done = dummy_notification(AnimState::Opening { start: past });
         assert!(!n_done.is_animating());
-        let (scale, alpha) = n_done.animation_factors();
+        let (scale, alpha) = n_done.animation_factors(false);
         assert_eq!(scale, 1.0);
         assert_eq!(alpha, 1.0);
     }
@@ -247,7 +348,7 @@ mod tests {
         assert!(n.is_closing());
         assert!(!n.is_opening());
         assert!(n.is_animating());
-        let (scale, alpha) = n.animation_factors();
+        let (scale, alpha) = n.animation_factors(false);
         assert!((0.98..=1.0).contains(&scale));
         assert!((0.95..=1.0).contains(&alpha));
 
@@ -258,7 +359,7 @@ mod tests {
             reason: 1,
         });
         assert!(!n_done.is_animating());
-        let (scale, alpha) = n_done.animation_factors();
+        let (scale, alpha) = n_done.animation_factors(false);
         assert_eq!(scale, 0.85);
         assert_eq!(alpha, 0.0);
     }

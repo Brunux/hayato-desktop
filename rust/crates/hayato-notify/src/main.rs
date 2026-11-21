@@ -279,7 +279,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 DbusCommand::Close(id) => {
-                    let reduced = std::env::var("HAYATO_REDUCED_MOTION").is_ok();
+                    let reduced = state.renderer.reduced_motion;
                     if reduced {
                         let before = state.notifications.len();
                         state.notifications.retain(|n| n.id != id);
@@ -303,10 +303,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // Expiry check (every 50 ms)
-        if last_check.elapsed() >= Duration::from_millis(50) {
+        // Expiry & subtle countdown bar check (every 100 ms)
+        if last_check.elapsed() >= Duration::from_millis(100) {
             last_check = Instant::now();
-            let reduced = std::env::var("HAYATO_REDUCED_MOTION").is_ok();
+            let reduced = state.renderer.reduced_motion;
             for n in &mut state.notifications {
                 if n.is_expired() && !n.is_closing() {
                     if reduced {
@@ -320,6 +320,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             reason: 1,
                         };
                     }
+                    dirty = true;
+                } else if !n.is_closing() && !n.is_hovered && n.remaining_fraction().is_some() {
+                    // Advance subtle bottom countdown hairline smoothly.
                     dirty = true;
                 }
             }
@@ -514,7 +517,9 @@ mod tests {
             action_rects: Vec::new(),
             close_rect: None,
             is_hovered: false,
+            hovered_close: false,
             hovered_action: None,
+            hovered_at: None,
             dismissing: false,
             progress_color_override: None,
         }

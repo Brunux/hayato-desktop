@@ -50,9 +50,9 @@ window#waybar {
 tooltip {
     background: {{ surface }};
     color: {{ text }};
-    border: 1px solid rgba({{ border:rgb }}, 0.55);
-    border-radius: 0;
-    padding: 6px 9px;
+    border: 1px solid rgba({{ border:rgb }}, 0.85);
+    border-radius: 6px;
+    padding: 8px 11px;
 }
 
 tooltip label {

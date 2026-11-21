@@ -110,8 +110,8 @@ glyph=$(printf '%s\n' ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏ | sed -n "${i}p")
 # first are escaped once here.  The tooltip carries the click, which is the only
 # place the bar can say what the card is for: waybar has no per-module "title".
 esc=$(printf '%s' "$label" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
-tip=$esc
-[ -r "$state/$tag.stop" ] && tip="$esc\nclick to stop"
+tip="Busy · $esc"
+[ -r "$state/$tag.stop" ] && tip="Busy · $esc\nClick: stop"
 
 printf '{"text":"<span font_desc=%s>%s</span>  %s","class":"busy","tooltip":"%s"}\n' \
 	"'JetBrains Mono 13'" "$glyph" "$esc" "$tip"

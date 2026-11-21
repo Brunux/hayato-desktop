@@ -17,8 +17,8 @@
 //   layout      left: next xkb layout (hidden with a single layout)
 //   bluetooth   left: device list  right: bluetoothctl in a floating terminal
 //   network     left: Wi-Fi list   right: nmtui in a floating terminal
-//   volume      left: mute  right: output list  scroll: volume
-//   brightness  scroll: backlight
+//   volume      left: audio panel  right: mute  scroll: volume
+//   brightness  left: display panel  scroll: backlight
 //   battery     left: power panel  right: root menu
 {
     "layer": "top",
@@ -64,13 +64,15 @@
     // button.
     "custom/brand": {
         "format": "<span font_desc='JetBrains Mono 14' weight='bold'>H</span>",
-        "tooltip": false,
+        "tooltip": true,
+        "tooltip-format": "Hayato · Menu (Alt+Space)\nClick: menu · Right-click: terminal",
         "on-click": "~/.config/bin/bar-menu",
         "on-click-right": "foot"
     },
     "custom/brand-dot": {
         "format": "<span font_desc='JetBrains Mono 14' weight='bold'>_</span>",
-        "tooltip": false,
+        "tooltip": true,
+        "tooltip-format": "Hayato · Menu (Alt+Space)\nClick: menu · Right-click: terminal",
         "on-click": "~/.config/bin/bar-menu",
         "on-click-right": "foot"
     },
@@ -99,12 +101,23 @@
     "clock": {
         "format": "<span font_desc='JetBrains Mono 13'>\uf073</span>  {:%a, %d %b  %H:%M}",
         "format-alt": "<span font_desc='JetBrains Mono 13'>\uf073</span>  {:%H:%M:%S}",
-        "tooltip-format": "<big>{:%A, %d %B %Y}</big>\n<tt><small>{calendar}</small></tt>",
+        "tooltip-format": "<big><b>{:%A, %d %B %Y}</b></big>\n\n<tt><small>{calendar}</small></tt>\n\n<span alpha='60%'><small>Click: seconds · Right-click: year · Scroll: months</small></span>",
         "calendar": {
             "mode": "month",
             "mode-mon-col": 3,
             "weeks-pos": "right",
-            "on-scroll": 1
+            "on-scroll": 1,
+            "format": {
+                "months": "<b>{}</b>",
+                "weekdays": "<span alpha='60%'>{}</span>",
+                "weeks": "<span alpha='45%'>W{}</span>",
+                "today": "<span color='#ff9e64'><b><u>{}</u></b></span>"
+            }
+        },
+        "actions": {
+            "on-click-right": "mode",
+            "on-scroll-up": "shift_up",
+            "on-scroll-down": "shift_down"
         },
         "interval": 30
     },
@@ -200,8 +213,10 @@
         "format-ethernet": "<span font_desc='JetBrains Mono 13'>\uf233</span>",
         "format-linked": "<span font_desc='JetBrains Mono 13'>\uf1e6</span>",
         "format-disconnected": "<span font_desc='JetBrains Mono 13'>\udb81\uddaa</span>",
-        "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ifname}: {ipaddr}\nGateway: {gwaddr}\nClick to pick a network",
-        "tooltip-format-ethernet": "{ifname}: {ipaddr}\nGateway: {gwaddr}",
+        "tooltip-format-wifi": "Wi-Fi · {essid} ({signalStrength}%)\n{ifname}: {ipaddr} · gw {gwaddr}\nClick: Wi-Fi · Right-click: nmtui",
+        "tooltip-format-ethernet": "Ethernet · {ifname}\nIP: {ipaddr} · gw {gwaddr}\nClick: network · Right-click: nmtui",
+        "tooltip-format-linked": "Network · {ifname} (no IP)\nClick: network · Right-click: nmtui",
+        "tooltip-format-disconnected": "Network · Disconnected\nClick: Wi-Fi · Right-click: nmtui",
         "on-click": "~/.config/bin/bar-net",
         "on-click-right": "foot --app-id=popup nmtui"
     },
@@ -218,7 +233,8 @@
                 "\udb81\udd7e"
             ]
         },
-        "tooltip-format": "{desc} ({volume}%)",
+        "tooltip-format": "Volume · {volume}%\n{desc}\nClick: audio · Right-click: mute · Scroll: level",
+        "tooltip-format-muted": "Volume · Muted ({volume}%)\n{desc}\nClick: audio · Right-click: unmute · Scroll: level",
         "scroll-step": 5,
         "max-volume": 100,
         "on-click": "~/.config/bin/bar-audio",
@@ -227,7 +243,7 @@
     "backlight": {
         "device": "backlight-lcd0",
         "format": "<span font_desc='JetBrains Mono 13'>\uf185</span>",
-        "tooltip-format": "Brightness {percent}%",
+        "tooltip-format": "Brightness · {percent}%\nClick: display · Scroll: brightness",
         "interval": 5,
         "on-click": "~/.config/bin/hayato-display",
         "on-scroll-up": "brightnessctl set 5%+",
@@ -251,8 +267,8 @@
     // mpv asks for its own inhibitor.
     "idle_inhibitor": {
         "format": "<span font_desc='JetBrains Mono 13'>\uf0f4</span>",
-        "tooltip-format-activated": "Keeping the screen awake\nClick to let it sleep",
-        "tooltip-format-deactivated": "Click to keep the screen awake",
+        "tooltip-format-activated": "Keep Awake · On\nClick: allow sleep",
+        "tooltip-format-deactivated": "Keep Awake · Off\nClick: keep screen awake",
         "start-activated": false
     },
     "battery": {
@@ -276,7 +292,10 @@
             "\uf241",
             "\uf240"
         ],
-        "tooltip-format": "Battery {capacity}%\nClick for power menu",
+        "tooltip-format": "Battery · {capacity}% ({timeTo})\nDraw: {power:.1f} W\nClick: power menu",
+        "tooltip-format-charging": "Battery · Charging {capacity}% ({timeTo})\nInput: {power:.1f} W\nClick: power menu",
+        "tooltip-format-plugged": "Battery · Plugged in ({capacity}%)\nClick: power menu",
+        "tooltip-format-full": "Battery · Full (100%)\nClick: power menu",
         "interval": 30,
         "on-click": "~/.config/bin/bar-power",
         "on-click-right": "~/.config/bin/hayato-power"

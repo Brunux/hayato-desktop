@@ -132,6 +132,33 @@ impl FontRenderer {
         width
     }
 
+    pub fn truncate_text(&self, text: &str, size: f32, max_width: f32, bold: bool) -> String {
+        if max_width <= 0.0 || text.is_empty() {
+            return String::new();
+        }
+        if self.measure_width(text, size, bold) <= max_width {
+            return text.to_string();
+        }
+        let ellipsis = "…";
+        let el_width = self.measure_width(ellipsis, size, bold);
+        if el_width >= max_width {
+            return ellipsis.to_string();
+        }
+        let mut out = String::new();
+        let mut cur_w = 0.0f32;
+        for ch in text.chars() {
+            let mut buf = [0u8; 4];
+            let s = ch.encode_utf8(&mut buf);
+            let w = self.measure_width(s, size, bold);
+            if cur_w + w + el_width > max_width {
+                break;
+            }
+            out.push(ch);
+            cur_w += w;
+        }
+        out.trim_end().to_string() + ellipsis
+    }
+
     pub fn wrap_text(
         &self,
         text: &str,
@@ -140,41 +167,91 @@ impl FontRenderer {
         max_lines: usize,
         bold: bool,
     ) -> Vec<String> {
+        if max_lines == 0 || max_width <= 0.0 {
+            return Vec::new();
+        }
         let mut lines = Vec::new();
-        for paragraph in text.lines() {
-            if lines.len() >= max_lines {
-                break;
-            }
+        let mut truncated = false;
+        let space_width = self.measure_width(" ", size, bold);
+
+        'outer: for paragraph in text.lines() {
             let mut cur_line = String::new();
             let mut cur_width = 0.0f32;
 
             for word in paragraph.split_whitespace() {
+                if lines.len() >= max_lines {
+                    truncated = true;
+                    break 'outer;
+                }
                 let word_width = self.measure_width(word, size, bold);
-                let space_width = self.measure_width(" ", size, bold);
 
                 if cur_line.is_empty() {
-                    cur_line.push_str(word);
-                    cur_width = word_width;
+                    if word_width <= max_width {
+                        cur_line.push_str(word);
+                        cur_width = word_width;
+                    } else {
+                        // Break long unbroken tokens (file paths, URLs) cleanly across lines.
+                        for ch in word.chars() {
+                            let mut buf = [0u8; 4];
+                            let s = ch.encode_utf8(&mut buf);
+                            let cw = self.measure_width(s, size, bold);
+                            if !cur_line.is_empty() && cur_width + cw > max_width {
+                                lines.push(std::mem::take(&mut cur_line));
+                                cur_width = 0.0;
+                                if lines.len() >= max_lines {
+                                    truncated = true;
+                                    break 'outer;
+                                }
+                            }
+                            cur_line.push(ch);
+                            cur_width += cw;
+                        }
+                    }
                 } else if cur_width + space_width + word_width <= max_width {
                     cur_line.push(' ');
                     cur_line.push_str(word);
                     cur_width += space_width + word_width;
                 } else {
                     lines.push(std::mem::take(&mut cur_line));
+                    cur_width = 0.0;
                     if lines.len() >= max_lines {
-                        break;
+                        truncated = true;
+                        break 'outer;
                     }
-                    cur_line.push_str(word);
-                    cur_width = word_width;
+                    if word_width <= max_width {
+                        cur_line.push_str(word);
+                        cur_width = word_width;
+                    } else {
+                        for ch in word.chars() {
+                            let mut buf = [0u8; 4];
+                            let s = ch.encode_utf8(&mut buf);
+                            let cw = self.measure_width(s, size, bold);
+                            if !cur_line.is_empty() && cur_width + cw > max_width {
+                                lines.push(std::mem::take(&mut cur_line));
+                                cur_width = 0.0;
+                                if lines.len() >= max_lines {
+                                    truncated = true;
+                                    break 'outer;
+                                }
+                            }
+                            cur_line.push(ch);
+                            cur_width += cw;
+                        }
+                    }
                 }
             }
 
-            if !cur_line.is_empty() && lines.len() < max_lines {
-                lines.push(cur_line);
+            if !cur_line.is_empty() {
+                if lines.len() < max_lines {
+                    lines.push(cur_line);
+                } else {
+                    truncated = true;
+                    break 'outer;
+                }
             }
         }
 
-        if lines.len() == max_lines && !text.is_empty() {
+        if truncated {
             if let Some(last) = lines.last_mut() {
                 let ellipsis = "…";
                 let el_width = self.measure_width(ellipsis, size, bold);
@@ -183,7 +260,8 @@ impl FontRenderer {
                 {
                     last.pop();
                 }
-                last.push('…');
+                let trimmed = last.trim_end().to_string();
+                *last = trimmed + ellipsis;
             }
         }
 
@@ -297,5 +375,43 @@ mod tests {
         // Measure width and font picking must always succeed without panicking
         let width = renderer.measure_width("Hayato Notification", 12.0, false);
         assert!(width > 0.0);
+    }
+
+    #[test]
+    fn wrap_breaks_long_paths_and_avoids_false_ellipsis() {
+        let renderer = FontRenderer::new();
+        let exact_four = "line one\nline two\nline three\nline four";
+        let wrapped = renderer.wrap_text(exact_four, 12.0, 260.0, 4, false);
+        assert_eq!(wrapped.len(), 4);
+        assert!(
+            !wrapped[3].ends_with('…'),
+            "exact 4-line text must not get a false ellipsis: {:?}",
+            wrapped
+        );
+
+        let five_lines = "line one\nline two\nline three\nline four\nline five";
+        let truncated = renderer.wrap_text(five_lines, 12.0, 260.0, 4, false);
+        assert_eq!(truncated.len(), 4);
+        assert!(truncated[3].ends_with('…'));
+
+        let long_path =
+            "/home/brunux/Pictures/Screenshots/hayato-very-long-unbroken-filename-2026-11-21.png";
+        let path_lines = renderer.wrap_text(long_path, 12.0, 140.0, 4, false);
+        assert!(path_lines.len() >= 2);
+        for line in &path_lines {
+            assert!(
+                renderer.measure_width(line, 12.0, false) <= 145.0,
+                "wrapped line overflowed max width: {line}"
+            );
+        }
+
+        let short_sum = renderer.truncate_text(
+            "A very long notification summary that would hit close",
+            12.0,
+            100.0,
+            false,
+        );
+        assert!(short_sum.ends_with('…'));
+        assert!(renderer.measure_width(&short_sum, 12.0, false) <= 102.0);
     }
 }

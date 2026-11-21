@@ -192,7 +192,9 @@ impl NotificationServer {
             action_rects: Vec::new(),
             close_rect: None,
             is_hovered: false,
+            hovered_close: false,
             hovered_action: None,
+            hovered_at: None,
             dismissing: false,
             progress_color_override: None,
         };
@@ -219,7 +221,7 @@ impl NotificationServer {
     }
 
     fn get_server_information(&self) -> (&'static str, &'static str, &'static str, &'static str) {
-        ("hayato-notify", "Hayato", "0.4.2", "1.2")
+        ("hayato-notify", "Hayato", env!("CARGO_PKG_VERSION"), "1.2")
     }
 
     #[zbus(signal)]

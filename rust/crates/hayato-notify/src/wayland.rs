@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use wayland_client::protocol::{
     wl_buffer, wl_compositor, wl_pointer, wl_region, wl_registry, wl_seat, wl_shm, wl_shm_pool,
-    wl_surface,
+    wl_surface, wl_touch,
 };
 use wayland_client::{Connection, Dispatch, QueueHandle};
 use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
@@ -60,6 +60,7 @@ pub struct WaylandState {
     pub layer_shell: Option<zwlr_layer_shell_v1::ZwlrLayerShellV1>,
     pub seat: Option<wl_seat::WlSeat>,
     pub pointer: Option<wl_pointer::WlPointer>,
+    pub touch: Option<wl_touch::WlTouch>,
     pub surface: Option<wl_surface::WlSurface>,
     pub layer_surface: Option<zwlr_layer_surface_v1::ZwlrLayerSurfaceV1>,
 
@@ -83,6 +84,7 @@ impl WaylandState {
             layer_shell: None,
             seat: None,
             pointer: None,
+            touch: None,
             surface: None,
             layer_surface: None,
             width: 0,
@@ -274,21 +276,60 @@ impl WaylandState {
 
         let _ = file.write_all_at(&data, 0);
 
-        // Update input region around cards only
+        // Update input region around visible cards only
         let region = compositor.create_region(qh, ());
         for notif in &self.notifications {
-            region.add(
-                notif.card_bounds.x.round() as i32,
-                notif.card_bounds.y.round() as i32,
-                notif.card_bounds.w.round() as i32,
-                notif.card_bounds.h.round() as i32,
-            );
+            if notif.card_bounds.w > 0.0 && notif.card_bounds.h > 0.0 {
+                region.add(
+                    notif.card_bounds.x.round() as i32,
+                    notif.card_bounds.y.round() as i32,
+                    notif.card_bounds.w.round() as i32,
+                    notif.card_bounds.h.round() as i32,
+                );
+            }
         }
         surface.set_input_region(Some(&region));
 
         surface.attach(Some(&buffer), 0, 0);
         surface.damage_buffer(0, 0, target_w as i32, target_h as i32);
         surface.commit();
+    }
+
+    fn relayout_or_destroy(&mut self, qh: &QueueHandle<Self>) {
+        if self.notifications.is_empty() {
+            self.destroy_surface();
+            return;
+        }
+        let metrics = self.renderer.compute_layout(&mut self.notifications);
+        let new_w = metrics.total_width.ceil() as u32;
+        let new_h = metrics.total_height.ceil() as u32;
+        if new_w != self.width || new_h != self.height {
+            self.width = new_w;
+            self.height = new_h;
+            if let Some(ref ls) = self.layer_surface {
+                ls.set_size(new_w, new_h);
+            }
+            if let Some(ref s) = self.surface {
+                s.commit();
+            }
+        } else {
+            self.paint_surface(qh);
+        }
+    }
+
+    pub fn handle_pointer_leave(&mut self, qh: &QueueHandle<Self>) {
+        let mut needs_repaint = false;
+        for notif in &mut self.notifications {
+            if notif.is_hovered || notif.hovered_close || notif.hovered_action.is_some() {
+                notif.set_hovered(false);
+                notif.hovered_close = false;
+                notif.hovered_action = None;
+                needs_repaint = true;
+            }
+        }
+        if needs_repaint {
+            self.paint_surface(qh);
+        }
     }
 
     pub fn handle_pointer_button(
@@ -304,7 +345,8 @@ impl WaylandState {
         let px = self.pointer_x as f32;
         let py = self.pointer_y as f32;
 
-        // Find which card was clicked
+        // Find which visible card was clicked. Action buttons take priority
+        // over close_rect so a close target can never steal an action click.
         let mut clicked_index = None;
         let mut clicked_action = None;
         let mut clicked_close = false;
@@ -316,19 +358,18 @@ impl WaylandState {
             if notif.card_bounds.contains(px, py) {
                 clicked_index = Some(i);
 
-                // Check close button
-                if let Some(ref close) = notif.close_rect {
-                    if close.contains(px, py) {
-                        clicked_close = true;
-                        break;
-                    }
-                }
-
-                // Check action buttons
                 for (key, rect) in &notif.action_rects {
                     if rect.contains(px, py) {
                         clicked_action = Some(key.clone());
                         break;
+                    }
+                }
+
+                if clicked_action.is_none() {
+                    if let Some(ref close) = notif.close_rect {
+                        if close.contains(px, py) {
+                            clicked_close = true;
+                        }
                     }
                 }
                 break;
@@ -339,7 +380,7 @@ impl WaylandState {
             return;
         };
 
-        let reduced = std::env::var("HAYATO_REDUCED_MOTION").is_ok();
+        let reduced = self.renderer.reduced_motion;
 
         match button {
             0x110 => {
@@ -349,20 +390,14 @@ impl WaylandState {
                     if reduced {
                         self.notifications.remove(idx);
                         let _ = self.event_tx.send(UiEvent::NotificationClosed(id, 2));
-                        if self.notifications.is_empty() {
-                            self.destroy_surface();
-                        } else {
-                            let metrics = self.renderer.compute_layout(&mut self.notifications);
-                            self.width = metrics.total_width.ceil() as u32;
-                            self.height = metrics.total_height.ceil() as u32;
-                            self.paint_surface(qh);
-                        }
+                        self.relayout_or_destroy(qh);
                     } else {
                         self.notifications[idx].anim_state = AnimState::Closing {
                             start: Instant::now(),
                             reason: 2,
                         };
-                        self.notifications[idx].is_hovered = false;
+                        self.notifications[idx].set_hovered(false);
+                        self.notifications[idx].hovered_close = false;
                         self.notifications[idx].hovered_action = None;
                         self.paint_surface(qh);
                     }
@@ -378,27 +413,20 @@ impl WaylandState {
                     let _ = self.event_tx.send(UiEvent::NotificationClosed(id, 2));
                     if reduced {
                         self.notifications.remove(idx);
-                        if self.notifications.is_empty() {
-                            self.destroy_surface();
-                        } else {
-                            let metrics = self.renderer.compute_layout(&mut self.notifications);
-                            self.width = metrics.total_width.ceil() as u32;
-                            self.height = metrics.total_height.ceil() as u32;
-                            self.paint_surface(qh);
-                        }
+                        self.relayout_or_destroy(qh);
                     } else {
                         self.notifications[idx].anim_state = AnimState::Closing {
                             start: Instant::now(),
                             reason: 0,
                         };
-                        self.notifications[idx].is_hovered = false;
+                        self.notifications[idx].set_hovered(false);
+                        self.notifications[idx].hovered_close = false;
                         self.notifications[idx].hovered_action = None;
                         self.paint_surface(qh);
                     }
                 } else {
                     // Click on card body: show the file in Files when the card
-                    // names one, otherwise invoke "default" if present, or
-                    // dismiss.
+                    // names one, otherwise invoke "default" if present, or dismiss.
                     let id = self.notifications[idx].id;
                     if let Some(path) = self.notifications[idx].open_path.clone() {
                         open_in_files(&path);
@@ -414,20 +442,14 @@ impl WaylandState {
                     if reduced {
                         self.notifications.remove(idx);
                         let _ = self.event_tx.send(UiEvent::NotificationClosed(id, 2));
-                        if self.notifications.is_empty() {
-                            self.destroy_surface();
-                        } else {
-                            let metrics = self.renderer.compute_layout(&mut self.notifications);
-                            self.width = metrics.total_width.ceil() as u32;
-                            self.height = metrics.total_height.ceil() as u32;
-                            self.paint_surface(qh);
-                        }
+                        self.relayout_or_destroy(qh);
                     } else {
                         self.notifications[idx].anim_state = AnimState::Closing {
                             start: Instant::now(),
                             reason: 2,
                         };
-                        self.notifications[idx].is_hovered = false;
+                        self.notifications[idx].set_hovered(false);
+                        self.notifications[idx].hovered_close = false;
                         self.notifications[idx].hovered_action = None;
                         self.paint_surface(qh);
                     }
@@ -439,20 +461,14 @@ impl WaylandState {
                 if reduced {
                     self.notifications.remove(idx);
                     let _ = self.event_tx.send(UiEvent::NotificationClosed(id, 2));
-                    if self.notifications.is_empty() {
-                        self.destroy_surface();
-                    } else {
-                        let metrics = self.renderer.compute_layout(&mut self.notifications);
-                        self.width = metrics.total_width.ceil() as u32;
-                        self.height = metrics.total_height.ceil() as u32;
-                        self.paint_surface(qh);
-                    }
+                    self.relayout_or_destroy(qh);
                 } else {
                     self.notifications[idx].anim_state = AnimState::Closing {
                         start: Instant::now(),
                         reason: 2,
                     };
-                    self.notifications[idx].is_hovered = false;
+                    self.notifications[idx].set_hovered(false);
+                    self.notifications[idx].hovered_close = false;
                     self.notifications[idx].hovered_action = None;
                     self.paint_surface(qh);
                 }
@@ -470,14 +486,7 @@ impl WaylandState {
                         }
                     }
                     self.notifications = remaining;
-                    if self.notifications.is_empty() {
-                        self.destroy_surface();
-                    } else {
-                        let metrics = self.renderer.compute_layout(&mut self.notifications);
-                        self.width = metrics.total_width.ceil() as u32;
-                        self.height = metrics.total_height.ceil() as u32;
-                        self.paint_surface(qh);
-                    }
+                    self.relayout_or_destroy(qh);
                 } else {
                     for notif in &mut self.notifications {
                         if notif.app_name == app && !notif.is_closing() {
@@ -485,7 +494,8 @@ impl WaylandState {
                                 start: Instant::now(),
                                 reason: 2,
                             };
-                            notif.is_hovered = false;
+                            notif.set_hovered(false);
+                            notif.hovered_close = false;
                             notif.hovered_action = None;
                         }
                     }
@@ -506,8 +516,9 @@ impl WaylandState {
 
         for notif in &mut self.notifications {
             if notif.is_closing() {
-                if notif.is_hovered || notif.hovered_action.is_some() {
-                    notif.is_hovered = false;
+                if notif.is_hovered || notif.hovered_close || notif.hovered_action.is_some() {
+                    notif.set_hovered(false);
+                    notif.hovered_close = false;
                     notif.hovered_action = None;
                     needs_repaint = true;
                 }
@@ -517,20 +528,33 @@ impl WaylandState {
             let was_hovered = notif.is_hovered;
             let is_hovered = notif.card_bounds.contains(px, py);
             if was_hovered != is_hovered {
-                notif.is_hovered = is_hovered;
+                notif.set_hovered(is_hovered);
                 needs_repaint = true;
             }
 
             let old_action = notif.hovered_action.clone();
             let mut new_action = None;
-            for (key, rect) in &notif.action_rects {
-                if rect.contains(px, py) {
-                    new_action = Some(key.clone());
-                    break;
+            if is_hovered {
+                for (key, rect) in &notif.action_rects {
+                    if rect.contains(px, py) {
+                        new_action = Some(key.clone());
+                        break;
+                    }
                 }
             }
             if old_action != new_action {
-                notif.hovered_action = new_action;
+                notif.hovered_action = new_action.clone();
+                needs_repaint = true;
+            }
+
+            let new_close = is_hovered
+                && new_action.is_none()
+                && notif
+                    .close_rect
+                    .map(|r| r.contains(px, py))
+                    .unwrap_or(false);
+            if notif.hovered_close != new_close {
+                notif.hovered_close = new_close;
                 needs_repaint = true;
             }
         }
@@ -662,14 +686,33 @@ impl Dispatch<wl_seat::WlSeat, ()> for WaylandState {
         _: &Connection,
         qh: &QueueHandle<Self>,
     ) {
-        if let wl_seat::Event::Capabilities { capabilities } = event {
-            let has_pointer = match capabilities {
-                wayland_client::WEnum::Value(caps) => caps.contains(wl_seat::Capability::Pointer),
-                _ => false,
-            };
-            if has_pointer && state.pointer.is_none() {
+        if let wl_seat::Event::Capabilities {
+            capabilities: wayland_client::WEnum::Value(caps),
+        } = event
+        {
+            if caps.contains(wl_seat::Capability::Pointer) && state.pointer.is_none() {
                 state.pointer = Some(seat.get_pointer(qh, ()));
             }
+            if caps.contains(wl_seat::Capability::Touch) && state.touch.is_none() {
+                state.touch = Some(seat.get_touch(qh, ()));
+            }
+        }
+    }
+}
+
+impl Dispatch<wl_touch::WlTouch, ()> for WaylandState {
+    fn event(
+        state: &mut Self,
+        _: &wl_touch::WlTouch,
+        event: wl_touch::Event,
+        _: &(),
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
+        if let wl_touch::Event::Down { x, y, .. } = event {
+            state.pointer_x = x;
+            state.pointer_y = y;
+            state.handle_pointer_button(0x110, wl_pointer::ButtonState::Pressed, qh);
         }
     }
 }
@@ -684,6 +727,16 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandState {
         qh: &QueueHandle<Self>,
     ) {
         match event {
+            wl_pointer::Event::Enter {
+                surface_x,
+                surface_y,
+                ..
+            } => {
+                state.handle_pointer_motion(surface_x, surface_y, qh);
+            }
+            wl_pointer::Event::Leave { .. } => {
+                state.handle_pointer_leave(qh);
+            }
             wl_pointer::Event::Motion {
                 surface_x,
                 surface_y,
