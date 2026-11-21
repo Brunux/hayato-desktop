@@ -12,6 +12,7 @@
 #![allow(clippy::vec_init_then_push)]
 use std::cell::Cell;
 
+use hayato_ui::widgets::put_trunc;
 use hayato_ui::{
     ActionItem, ActionStrip, ActionStripEvent, BodyCtx, Card, ColorRole, Design, Glyph, Header,
     Input, KeyHint, ListAction, ListState, Outcome, Row, Screen, TextStyle, Urgency, draw_badge,
@@ -19,6 +20,7 @@ use hayato_ui::{
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
 
 use crate::system::{missing, out};
 
@@ -292,6 +294,139 @@ impl RemindScreen {
         self.list.update_rows(rows);
     }
 
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 56) / 100).max(50) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn draw_inspector(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
+        draw_card(buf, area, design, Some("Timer Details"), false);
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        if inner.width < 16 || inner.height < 6 {
+            return;
+        }
+        let dim = design.style(TextStyle::Dim);
+        let body = design.style(TextStyle::Body);
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        let title_style = design.style(TextStyle::Title).add_modifier(Modifier::BOLD);
+
+        if let Some(idx) = self.list.selected_index()
+            && let Some(r) = self.reminders.get(idx)
+        {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let countdown = Self::left(r.when.saturating_sub(now));
+            let fire_at = chrono::DateTime::from_timestamp(r.when as i64, 0)
+                .map(|d| d.format("%a %d %b %Y · %H:%M").to_string())
+                .unwrap_or_default();
+            let mut y = inner.y;
+            put_trunc(buf, inner.x, y, "SCHEDULED TIMER", inner.width, accent);
+            y += 1;
+            put_trunc(buf, inner.x, y, &r.title, inner.width, title_style);
+            y += 2;
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                &format!("Fires     {fire_at}"),
+                inner.width,
+                body,
+            );
+            y += 1;
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                &format!("In        {countdown}"),
+                inner.width,
+                body,
+            );
+            y += 1;
+            if let Some(cal) = &r.calendar {
+                let rep = Self::repeat_words(cal).unwrap_or_else(|| cal.clone());
+                put_trunc(
+                    buf,
+                    inner.x,
+                    y,
+                    &format!("Repeat    {rep}"),
+                    inner.width,
+                    dim,
+                );
+                y += 1;
+            }
+            if !r.note.is_empty() {
+                y += 1;
+                put_trunc(buf, inner.x, y, &r.note, inner.width, body);
+            }
+            put_trunc(
+                buf,
+                inner.x,
+                inner.bottom().saturating_sub(2),
+                &format!("Unit: {}", r.unit),
+                inner.width,
+                dim,
+            );
+            put_trunc(
+                buf,
+                inner.x,
+                inner.bottom().saturating_sub(1),
+                "Enter cancels this timer · Ctrl+N schedules new",
+                inner.width,
+                dim,
+            );
+        } else {
+            let mut y = inner.y;
+            put_trunc(buf, inner.x, y, "QUICK TIMERS", inner.width, accent);
+            y += 2;
+            let guide = [
+                "Transient systemd user timers — survive terminal",
+                "close and fire a desktop notification on time.",
+                "",
+                "Built-in presets (Ctrl+N)",
+                "  • In 5m / 15m / 30m / 1h / 3h",
+                "  • Every day at 09:00",
+                "  • Every weekday (Mon..Fri) at 09:00",
+            ];
+            for line in guide {
+                if y >= inner.bottom().saturating_sub(1) {
+                    break;
+                }
+                let st = if line.starts_with("Built-in") {
+                    accent
+                } else if line.starts_with("  •") {
+                    body
+                } else {
+                    dim
+                };
+                put_trunc(buf, inner.x, y, line, inner.width, st);
+                y += 1;
+            }
+        }
+    }
+
     fn layout(area: Rect) -> (Rect, Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
@@ -324,11 +459,16 @@ impl RemindScreen {
 
 impl Screen for RemindScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Waiting"), true);
+        let (left, right) = if matches!(self.mode, RemindMode::List) {
+            Self::split_panes(ctx.area)
+        } else {
+            (ctx.area, None)
+        };
+        draw_card(ctx.buf, left, ctx.design, Some("Waiting"), true);
 
         match &self.mode {
             RemindMode::List => {
-                let (strip, filter, rows) = Self::layout(ctx.area);
+                let (strip, filter, rows) = Self::layout(left);
                 self.strip.render(strip, ctx.buf, ctx.design);
                 let default_msg = if self.reminders.is_empty() {
                     "Press Enter or Ctrl+N to schedule a reminder · Esc backs out".to_string()
@@ -360,6 +500,9 @@ impl Screen for RemindScreen {
                 } else {
                     self.list
                         .render(rows, ctx.buf, ctx.design, !self.strip.is_focused());
+                }
+                if let Some(right_area) = right {
+                    self.draw_inspector(ctx.buf, right_area, ctx.design);
                 }
             }
             RemindMode::NewTitle => {
@@ -545,7 +688,8 @@ impl Screen for RemindScreen {
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
         match self.mode {
             RemindMode::List => {
-                let (strip, _, rows) = Self::layout(area);
+                let (left, _) = Self::split_panes(area);
+                let (strip, _, rows) = Self::layout(left);
                 if let Some(idx) = self.strip.hit_index(strip, x, y) {
                     return Some(10_000 + idx);
                 }

@@ -1,18 +1,26 @@
-//! Media Downloader (`hayato-download`, `hayato menu download`).
+//! Unified Download Deck (`hayato-download`, `hayato menu download`).
 //!
-//! Prompts for video/audio URL (auto-populating from clipboard if valid),
-//! asks for download profile (video vs audio-only), and runs `yt-dlp` inside
-//! an in-window [`TaskView`] with live streaming progress and stop support.
+//! Single-screen download studio: auto-fills a valid clipboard URL, lets you
+//! toggle Video vs Audio-only (m4a) inline (`Tab` / `Ctrl+P`), shows recent
+//! files in `~/Downloads`, and runs `yt-dlp` inside an embedded [`TaskView`].
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
-use hayato_ui::{Design, Glyph, Task, TaskView};
+use hayato_ui::widgets::{put, put_trunc};
+use hayato_ui::{
+    BodyCtx, ColorRole, Design, Glyph, Header, Input, KeyHint, Outcome, Screen, Task, TaskView,
+    TextStyle, draw_card,
+};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
 
-use super::pick::{Picker, Question, row};
+use super::pick::{Question, row};
 use super::{have, out};
 
 /// Get the first URL in the clipboard if valid.
@@ -37,8 +45,7 @@ pub fn is_downloading() -> bool {
 
 /// Count files in ~/Downloads.
 pub fn downloads_count() -> usize {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-    let dl = Path::new(&home).join("Downloads");
+    let dl = downloads_dir();
     if let Ok(entries) = fs::read_dir(&dl) {
         entries
             .filter_map(|e| e.ok())
@@ -47,6 +54,47 @@ pub fn downloads_count() -> usize {
     } else {
         0
     }
+}
+
+fn downloads_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+    PathBuf::from(home).join("Downloads")
+}
+
+fn recent_downloads(limit: usize) -> Vec<(String, String)> {
+    let dl = downloads_dir();
+    let Ok(entries) = fs::read_dir(&dl) else {
+        return Vec::new();
+    };
+    let mut items: Vec<(std::time::SystemTime, String, u64)> = entries
+        .flatten()
+        .filter_map(|e| {
+            let meta = e.metadata().ok()?;
+            if !meta.is_file() {
+                return None;
+            }
+            let name = e.file_name().to_string_lossy().to_string();
+            let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+            Some((modified, name, meta.len()))
+        })
+        .collect();
+    items.sort_by(|a, b| b.0.cmp(&a.0));
+    items
+        .into_iter()
+        .take(limit)
+        .map(|(_, name, bytes)| {
+            let size = if bytes >= 1_073_741_824 {
+                format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
+            } else if bytes >= 1_048_576 {
+                format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+            } else if bytes >= 1024 {
+                format!("{} KB", bytes / 1024)
+            } else {
+                format!("{bytes} B")
+            };
+            (name, size)
+        })
+        .collect()
 }
 
 /// Build the yt-dlp argv for `url` into `dl_dir`.
@@ -109,6 +157,407 @@ pub fn questions(clip: Option<&str>, count: usize, downloading: bool, note: &str
     vec![Question::choose("Download", note, rows, keys)]
 }
 
+enum DownloadMode {
+    Compose,
+    Downloading(Box<TaskView>),
+}
+
+/// Unified Download Deck screen.
+pub struct DownloadScreen {
+    input: Input,
+    audio_only: bool,
+    recent: Vec<(String, String)>,
+    total_files: usize,
+    active_bg: bool,
+    mode: DownloadMode,
+    banner: Option<(String, bool)>,
+    header: Header,
+    keybar: Vec<KeyHint>,
+}
+
+impl Default for DownloadScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DownloadScreen {
+    pub fn new() -> Self {
+        let clip = clipboard_url();
+        let input = match &clip {
+            Some(url) => Input::with_text(url.clone()),
+            None => Input::new(),
+        };
+        let total_files = downloads_count();
+        let recent = recent_downloads(12);
+        let active_bg = is_downloading();
+        let banner = clip.map(|_| {
+            (
+                "Prefilled URL from clipboard · press Enter to start".into(),
+                false,
+            )
+        });
+
+        Self {
+            input,
+            audio_only: false,
+            recent,
+            total_files,
+            active_bg,
+            mode: DownloadMode::Compose,
+            banner,
+            header: Header::new("Hayato")
+                .subtitle("Download Deck")
+                .status(format!("{total_files} files in ~/Downloads")),
+            keybar: vec![
+                KeyHint::new("Enter", "download"),
+                KeyHint::new("Tab", "video / audio"),
+                KeyHint::new("Ctrl+O", "open folder"),
+                KeyHint::new("Esc", "close"),
+            ],
+        }
+    }
+
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 56) / 100).max(52) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn start_download(&mut self) {
+        let url = self.input.text().trim().to_string();
+        if !url.starts_with("http://") && !url.starts_with("https://") {
+            self.banner = Some((
+                "Enter a valid URL starting with http:// or https://".into(),
+                true,
+            ));
+            return;
+        }
+        let dl = downloads_dir();
+        let _ = fs::create_dir_all(&dl);
+        let argv = build_download_argv(&url, &dl, self.audio_only);
+        let kind_label = if self.audio_only {
+            "Audio (m4a)"
+        } else {
+            "Video"
+        };
+        let preview: String = url.chars().take(48).collect();
+        let tag = format!("download-{}", std::process::id());
+        let step_label = format!("yt-dlp {preview} → ~/Downloads");
+        match Task::start_steps(
+            &tag,
+            format!("Download {kind_label}"),
+            vec![step_label],
+            true,
+            vec![argv],
+        ) {
+            Ok(task) => {
+                self.mode = DownloadMode::Downloading(Box::new(TaskView::new(task)));
+                self.banner = None;
+            }
+            Err(e) => {
+                self.banner = Some((format!("Could not start yt-dlp: {e}"), true));
+            }
+        }
+    }
+}
+
+impl Screen for DownloadScreen {
+    fn needs_tick(&self) -> Option<Duration> {
+        match &self.mode {
+            DownloadMode::Downloading(tv) => tv.needs_tick(),
+            DownloadMode::Compose => None,
+        }
+    }
+
+    fn tick(&mut self) -> Outcome {
+        match &mut self.mode {
+            DownloadMode::Downloading(tv) => tv.tick(),
+            DownloadMode::Compose => Outcome::Continue,
+        }
+    }
+
+    fn draw(&mut self, ctx: &mut BodyCtx) {
+        if let DownloadMode::Downloading(tv) = &mut self.mode {
+            tv.draw(ctx);
+            return;
+        }
+
+        let (left, right) = Self::split_panes(ctx.area);
+        draw_card(ctx.buf, left, ctx.design, Some("New Download"), true);
+        let inner = Rect::new(
+            left.x + 2,
+            left.y + 1,
+            left.width.saturating_sub(4),
+            left.height.saturating_sub(2),
+        );
+        if inner.width >= 16 && inner.height >= 8 {
+            let dim = ctx.design.style(TextStyle::Dim);
+            let body = ctx.design.style(TextStyle::Body);
+            let accent = Style::default()
+                .fg(ctx.design.color(ColorRole::Accent))
+                .add_modifier(Modifier::BOLD);
+
+            let mut y = inner.y;
+            put_trunc(
+                buf_ref(ctx),
+                inner.x,
+                y,
+                "Media or Direct URL",
+                inner.width,
+                accent,
+            );
+            y += 1;
+            let input_rect = Rect::new(inner.x, y, inner.width, 1);
+            self.input.render(
+                input_rect,
+                ctx.buf,
+                ctx.design,
+                "https://youtube.com/watch?v=…",
+            );
+            y += 2;
+
+            put_trunc(
+                ctx.buf,
+                inner.x,
+                y,
+                "Profile (Tab to toggle)",
+                inner.width,
+                accent,
+            );
+            y += 1;
+            let (vid_st, aud_st) = if !self.audio_only {
+                (accent, dim)
+            } else {
+                (dim, accent)
+            };
+            let vid_pill = if !self.audio_only {
+                "[ ● Video + Audio ]"
+            } else {
+                "  ○ Video + Audio  "
+            };
+            let aud_pill = if self.audio_only {
+                "[ ● Audio only (m4a) ]"
+            } else {
+                "  ○ Audio only (m4a)  "
+            };
+            let next_x = put(ctx.buf, inner.x, y, vid_pill, inner.width, vid_st);
+            put_trunc(
+                ctx.buf,
+                next_x + 2,
+                y,
+                aud_pill,
+                inner.right().saturating_sub(next_x + 2),
+                aud_st,
+            );
+            y += 2;
+
+            put_trunc(
+                ctx.buf,
+                inner.x,
+                y,
+                "Destination   ~/Downloads (single item, no playlist)",
+                inner.width,
+                dim,
+            );
+            y += 2;
+
+            if self.active_bg && y < inner.bottom().saturating_sub(2) {
+                put_trunc(
+                    ctx.buf,
+                    inner.x,
+                    y,
+                    "● A background yt-dlp job is running · Ctrl+K stops it",
+                    inner.width,
+                    Style::default().fg(ctx.design.color(ColorRole::Warn)),
+                );
+                y += 2;
+            }
+
+            if let Some((msg, is_err)) = &self.banner
+                && y < inner.bottom().saturating_sub(1)
+            {
+                let st = Style::default().fg(ctx.design.color(if *is_err {
+                    ColorRole::Danger
+                } else {
+                    ColorRole::Ok
+                }));
+                put_trunc(ctx.buf, inner.x, y, msg, inner.width, st);
+            }
+
+            put_trunc(
+                ctx.buf,
+                inner.x,
+                inner.bottom().saturating_sub(1),
+                "Enter starts yt-dlp · Ctrl+O opens ~/Downloads",
+                inner.width,
+                body,
+            );
+        }
+
+        if let Some(right_area) = right {
+            draw_card(
+                ctx.buf,
+                right_area,
+                ctx.design,
+                Some("Recent Downloads"),
+                false,
+            );
+            let r_in = Rect::new(
+                right_area.x + 2,
+                right_area.y + 1,
+                right_area.width.saturating_sub(4),
+                right_area.height.saturating_sub(2),
+            );
+            let dim = ctx.design.style(TextStyle::Dim);
+            let body = ctx.design.style(TextStyle::Body);
+            let mut y = r_in.y;
+            if self.recent.is_empty() {
+                put_trunc(
+                    ctx.buf,
+                    r_in.x,
+                    y,
+                    "No files in ~/Downloads yet",
+                    r_in.width,
+                    dim,
+                );
+            } else {
+                for (name, size) in &self.recent {
+                    if y >= r_in.bottom().saturating_sub(1) {
+                        break;
+                    }
+                    let sw = size.chars().count() as u16;
+                    let max_name = r_in.width.saturating_sub(sw + 4);
+                    put_trunc(
+                        ctx.buf,
+                        r_in.x,
+                        y,
+                        &format!("{}  {name}", Glyph::File.cell()),
+                        max_name,
+                        body,
+                    );
+                    let sx = r_in.right().saturating_sub(sw);
+                    if sx > r_in.x + 4 {
+                        put_trunc(ctx.buf, sx, y, size, sw, dim);
+                    }
+                    y += 1;
+                }
+            }
+            put_trunc(
+                ctx.buf,
+                r_in.x,
+                r_in.bottom().saturating_sub(1),
+                &format!("{} total files · ~/Downloads", self.total_files),
+                r_in.width,
+                dim,
+            );
+        }
+    }
+
+    fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
+        if key.kind != KeyEventKind::Press {
+            return Outcome::Continue;
+        }
+        if let DownloadMode::Downloading(tv) = &mut self.mode {
+            return match tv.key(key, design) {
+                Outcome::Done(_) => {
+                    self.mode = DownloadMode::Compose;
+                    self.total_files = downloads_count();
+                    self.recent = recent_downloads(12);
+                    self.active_bg = is_downloading();
+                    self.banner = Some(("Download finished · check ~/Downloads".into(), false));
+                    Outcome::Consumed
+                }
+                other => other,
+            };
+        }
+
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('p') | KeyCode::Char('P') => {
+                    self.audio_only = !self.audio_only;
+                    return Outcome::Consumed;
+                }
+                KeyCode::Char('o') | KeyCode::Char('O') => {
+                    let dl = downloads_dir();
+                    crate::system::spawn_detached(&format!(
+                        "exec hayato menu files '{}'",
+                        dl.display()
+                    ));
+                    return Outcome::Done(hayato_ui::app::exit::OK);
+                }
+                KeyCode::Char('k') | KeyCode::Char('K') if self.active_bg => {
+                    let _ = Command::new("pkill").args(["-f", "yt-dlp"]).status();
+                    self.active_bg = false;
+                    self.banner = Some(("Stopped background yt-dlp process".into(), false));
+                    return Outcome::Consumed;
+                }
+                _ => {}
+            }
+        }
+
+        match key.code {
+            KeyCode::Tab | KeyCode::BackTab => {
+                self.audio_only = !self.audio_only;
+                Outcome::Consumed
+            }
+            KeyCode::Enter => {
+                self.start_download();
+                Outcome::Consumed
+            }
+            KeyCode::Esc => {
+                if !self.input.text().is_empty() {
+                    self.input.clear();
+                    return Outcome::Consumed;
+                }
+                Outcome::Done(hayato_ui::app::exit::ESCAPE)
+            }
+            _ => {
+                let _ = self.input.handle(key);
+                Outcome::Consumed
+            }
+        }
+    }
+
+    fn keybar(&self) -> Option<&[KeyHint]> {
+        match &self.mode {
+            DownloadMode::Downloading(tv) => tv.keybar(),
+            DownloadMode::Compose => Some(&self.keybar),
+        }
+    }
+
+    fn header(&self) -> Option<&Header> {
+        match &self.mode {
+            DownloadMode::Downloading(tv) => tv.header(),
+            DownloadMode::Compose => Some(&self.header),
+        }
+    }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some(match self.mode {
+            DownloadMode::Compose => "download.compose",
+            DownloadMode::Downloading(_) => "download.running",
+        })
+    }
+}
+
+fn buf_ref<'a>(ctx: &'a mut BodyCtx) -> &'a mut ratatui::buffer::Buffer {
+    ctx.buf
+}
+
 /// Interactive `hayato menu download`.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
@@ -120,141 +569,8 @@ pub fn menu(
             "yt-dlp is not installed (package yt-dlp)",
         ));
     }
-
-    let mut banner: Option<String> = None;
-
-    loop {
-        let clip = clipboard_url();
-        let count = downloads_count();
-        let downloading = is_downloading();
-
-        let note = banner
-            .take()
-            .unwrap_or_else(|| "Enter downloads in this window \u{00b7} Escape closes".to_string());
-
-        let mut picker = Picker::new(
-            "Download",
-            questions(clip.as_deref(), count, downloading, &note),
-        );
-
-        let code = crate::run_screen(terminal, design, "Download", &mut picker)?;
-        if code != 0 {
-            return Ok(code);
-        }
-
-        let Some(action) = picker.answers().first().cloned() else {
-            return Ok(1);
-        };
-
-        match action.as_str() {
-            "folder" => {
-                let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-                let dl = Path::new(&home).join("Downloads");
-                crate::system::spawn_detached(&format!(
-                    "exec hayato menu files '{}'",
-                    dl.display()
-                ));
-                return Ok(0);
-            }
-            "stop" => {
-                let _ = Command::new("pkill").args(["-f", "yt-dlp"]).status();
-                banner = Some(
-                    "Stopped active yt-dlp process \u{00b7} partial .part file remains in ~/Downloads"
-                        .to_string(),
-                );
-            }
-            "link" => {
-                let mut url_picker = Picker::new(
-                    "Link",
-                    vec![Question::input(
-                        "Download URL",
-                        "Enter URL starting with http:// or https:// \u{00b7} Escape goes back",
-                        "https://...",
-                        false,
-                    )],
-                );
-                let uc = crate::run_screen(terminal, design, "Link", &mut url_picker)?;
-                if uc != 0 {
-                    continue;
-                }
-                let Some(raw_url) = url_picker.answers().first() else {
-                    continue;
-                };
-                let url = raw_url.trim();
-                if !url.starts_with("http://") && !url.starts_with("https://") {
-                    banner =
-                        Some("Not a valid URL (must start with http:// or https://)".to_string());
-                    continue;
-                }
-                let res = ask_kind_and_download(terminal, design, url)?;
-                if res == hayato_ui::app::exit::ESCAPE {
-                    continue;
-                }
-                return Ok(res);
-            }
-            act if act.starts_with("clip:") => {
-                let url = &act[5..];
-                let res = ask_kind_and_download(terminal, design, url)?;
-                if res == hayato_ui::app::exit::ESCAPE {
-                    continue;
-                }
-                return Ok(res);
-            }
-            _ => return Ok(0),
-        }
-    }
-}
-
-fn ask_kind_and_download(
-    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    design: &Design,
-    url: &str,
-) -> Result<i32, crate::Failure> {
-    let rows = vec![
-        row(
-            "Video",
-            "best video + audio streams merged into ~/Downloads",
-            Glyph::Video,
-        ),
-        row(
-            "Audio only",
-            "m4a extracted from the best audio stream",
-            Glyph::Music,
-        ),
-    ];
-    let keys = vec!["video".to_string(), "audio".to_string()];
-
-    let mut picker = Picker::new(
-        "Download profile",
-        vec![Question::choose("Download profile", url, rows, keys)],
-    );
-
-    let code = crate::run_screen(terminal, design, "Download profile", &mut picker)?;
-    if code != 0 {
-        return Ok(code);
-    }
-
-    let audio_only = picker.answers().first().map(String::as_str) == Some("audio");
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-    let dl = Path::new(&home).join("Downloads");
-    let _ = fs::create_dir_all(&dl);
-
-    let argv = build_download_argv(url, &dl, audio_only);
-    let kind_label = if audio_only { "Audio (m4a)" } else { "Video" };
-    let preview: String = url.chars().take(48).collect();
-    let tag = format!("download-{}", std::process::id());
-    let step_label = format!("yt-dlp {preview} \u{2192} ~/Downloads");
-    let task = Task::start_steps(
-        &tag,
-        format!("Download {kind_label}"),
-        vec![step_label],
-        true,
-        vec![argv],
-    )
-    .map_err(|e| crate::Failure::new("Download", e.to_string()))?;
-
-    let mut view = TaskView::new(task);
-    crate::run_screen(terminal, design, "Download", &mut view)
+    let mut screen = DownloadScreen::new();
+    crate::run_screen(terminal, design, "Download", &mut screen)
 }
 
 #[cfg(test)]
@@ -273,5 +589,14 @@ mod tests {
         let argv = build_download_argv("https://example.com/v", Path::new("/tmp"), true);
         assert!(argv.contains(&"-x".to_string()));
         assert!(argv.contains(&"m4a".to_string()));
+    }
+
+    #[test]
+    fn download_deck_toggles_profile_inline_with_tab() {
+        let design = Design::solarized();
+        let mut screen = DownloadScreen::new();
+        assert!(!screen.audio_only);
+        let _ = screen.key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), &design);
+        assert!(screen.audio_only);
     }
 }

@@ -3,17 +3,25 @@
 //! Launch a coding agent CLI, manage accounts per agent, and pick a default.
 //! Provides `--default`, `--env` and `--new` subcommands.
 
+use std::cell::Cell;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
-use hayato_ui::{Card, Design, Glyph, Task, TaskState, TaskView, Urgency};
+use hayato_ui::widgets::put_trunc;
+use hayato_ui::{
+    BodyCtx, Card, ColorRole, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row,
+    Screen, Task, TaskState, TaskView, TextStyle, Urgency, draw_card, draw_filter_bar,
+};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
 
 use super::pick::{Picker, Question, row};
 use super::say;
 
+#[derive(Debug)]
 pub struct AgentDef {
     pub name: &'static str,
     pub binary: &'static str,
@@ -360,6 +368,453 @@ pub fn questions(
     vec![Question::choose("Agents", note, rows, keys)]
 }
 
+#[derive(Clone, Debug)]
+struct AgentSnapshot {
+    def: &'static AgentDef,
+    installed: bool,
+    is_default: bool,
+    active_account: Option<String>,
+    accounts: Vec<String>,
+}
+
+/// Interactive AI Agents & Accounts Studio.
+pub struct AgentsScreen {
+    snapshots: Vec<AgentSnapshot>,
+    row_keys: Vec<String>,
+    list: ListState,
+    header: Header,
+    keybar: Vec<KeyHint>,
+    rows_height: Cell<u16>,
+    banner: Option<String>,
+    pub chosen: Option<String>,
+}
+
+impl Default for AgentsScreen {
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
+impl AgentsScreen {
+    pub fn new(banner: Option<String>) -> Self {
+        let default = get_default_agent().map(|d| d.binary);
+        let snapshots: Vec<AgentSnapshot> = AGENTS
+            .iter()
+            .map(|def| {
+                let installed = is_installed(def.binary);
+                let active_account = default_account(def);
+                let mut accounts = Vec::new();
+                if !def.envvar.is_empty()
+                    && let Ok(entries) = fs::read_dir(data_dir().join(def.binary))
+                {
+                    for entry in entries.flatten() {
+                        if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                            accounts.push(entry.file_name().to_string_lossy().to_string());
+                        }
+                    }
+                    accounts.sort();
+                }
+                AgentSnapshot {
+                    def,
+                    installed,
+                    is_default: default == Some(def.binary),
+                    active_account,
+                    accounts,
+                }
+            })
+            .collect();
+        Self::from_snapshots(snapshots, banner)
+    }
+
+    fn from_snapshots(snapshots: Vec<AgentSnapshot>, banner: Option<String>) -> Self {
+        let mut rows = Vec::new();
+        let mut row_keys = Vec::new();
+        let mut installed_count = 0usize;
+
+        for snap in &snapshots {
+            if snap.installed {
+                installed_count += 1;
+                let detail = match &snap.active_account {
+                    Some(acc) => format!("{} · account: {acc}", snap.def.binary),
+                    None => format!("{} · launch in ~/Work", snap.def.binary),
+                };
+                let mut r = Row::new(snap.def.name).glyph(Glyph::Code).detail(detail);
+                if snap.is_default {
+                    r = r.value("● default");
+                }
+                rows.push(r);
+                row_keys.push(format!("launch:{}", snap.def.binary));
+            } else {
+                rows.push(
+                    Row::new(snap.def.name)
+                        .glyph(Glyph::Download)
+                        .detail(format!("install {}", snap.def.npm))
+                        .value("not installed"),
+                );
+                row_keys.push(format!("install:{}", snap.def.binary));
+            }
+        }
+
+        rows.push(
+            Row::new("Agent console")
+                .glyph(Glyph::Terminal)
+                .detail("drop down from the top · Alt+`")
+                .value("console"),
+        );
+        row_keys.push("console".to_string());
+
+        rows.push(
+            Row::new("Open a terminal in ~/Work")
+                .glyph(Glyph::Terminal)
+                .detail("~/Work")
+                .value("shell"),
+        );
+        row_keys.push("shell".to_string());
+
+        let mut list = ListState::new().with_empty("no matching agents");
+        list.set_rows(rows);
+
+        Self {
+            snapshots,
+            row_keys,
+            list,
+            header: Header::new("Hayato")
+                .subtitle("Agents Studio")
+                .status(format!("{installed_count}/{} installed", AGENTS.len())),
+            keybar: vec![
+                KeyHint::new("Enter", "launch / install"),
+                KeyHint::new("Ctrl+D", "set default"),
+                KeyHint::new("Ctrl+A", "accounts"),
+                KeyHint::new("Esc", "close"),
+            ],
+            rows_height: Cell::new(18),
+            banner,
+            chosen: None,
+        }
+    }
+
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 52) / 100).max(46) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn left_layout(area: Rect) -> (Rect, Rect) {
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        let filter = Rect::new(inner.x, inner.y, inner.width, 1.min(inner.height));
+        let rows = Rect::new(
+            inner.x,
+            inner.y.saturating_add(2).min(inner.bottom()),
+            inner.width,
+            inner.height.saturating_sub(2),
+        );
+        (filter, rows)
+    }
+
+    fn selected_agent(&self) -> Option<&AgentSnapshot> {
+        let idx = self.list.selected_index()?;
+        self.snapshots.get(idx)
+    }
+
+    fn draw_inspector(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
+        draw_card(buf, area, design, Some("Agent Deck"), false);
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        if inner.width < 16 || inner.height < 8 {
+            return;
+        }
+        let dim = design.style(TextStyle::Dim);
+        let body = design.style(TextStyle::Body);
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        let ok = Style::default()
+            .fg(design.color(ColorRole::Ok))
+            .add_modifier(Modifier::BOLD);
+        let title_style = design.style(TextStyle::Title).add_modifier(Modifier::BOLD);
+
+        if let Some(snap) = self.selected_agent() {
+            let mut y = inner.y;
+            let status_pill = if snap.installed {
+                if snap.is_default {
+                    "● INSTALLED · DEFAULT"
+                } else {
+                    "● INSTALLED"
+                }
+            } else {
+                "○ NOT INSTALLED"
+            };
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                status_pill,
+                inner.width,
+                if snap.installed { ok } else { dim },
+            );
+            y += 1;
+            put_trunc(buf, inner.x, y, snap.def.name, inner.width, title_style);
+            y += 2;
+
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                &format!("Binary    {}", snap.def.binary),
+                inner.width,
+                body,
+            );
+            y += 1;
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                &format!("Package   {}", snap.def.npm),
+                inner.width,
+                dim,
+            );
+            y += 2;
+
+            if !snap.def.envvar.is_empty() {
+                put_trunc(buf, inner.x, y, "Account Profiles", inner.width, accent);
+                y += 1;
+                put_trunc(
+                    buf,
+                    inner.x,
+                    y,
+                    &format!("Env var   {}", snap.def.envvar),
+                    inner.width,
+                    dim,
+                );
+                y += 1;
+                if snap.accounts.is_empty() {
+                    put_trunc(
+                        buf,
+                        inner.x,
+                        y,
+                        "Default profile · press Ctrl+A to add accounts",
+                        inner.width,
+                        dim,
+                    );
+                } else {
+                    for acc in &snap.accounts {
+                        if y >= inner.bottom().saturating_sub(3) {
+                            break;
+                        }
+                        let active = snap.active_account.as_deref() == Some(acc.as_str());
+                        let line = if active {
+                            format!("● {acc} (active)")
+                        } else {
+                            format!("  {acc}")
+                        };
+                        put_trunc(
+                            buf,
+                            inner.x,
+                            y,
+                            &line,
+                            inner.width,
+                            if active { ok } else { body },
+                        );
+                        y += 1;
+                    }
+                }
+            } else {
+                put_trunc(buf, inner.x, y, "Session", inner.width, accent);
+                y += 1;
+                put_trunc(
+                    buf,
+                    inner.x,
+                    y,
+                    "Launches in ~/Work using its native config.",
+                    inner.width,
+                    dim,
+                );
+            }
+
+            let footer = if snap.installed {
+                if !snap.def.envvar.is_empty() {
+                    "Enter launches · Ctrl+D sets default · Ctrl+A manages accounts"
+                } else {
+                    "Enter launches · Ctrl+D sets default"
+                }
+            } else {
+                "Enter installs globally into ~/.local via npm TaskView"
+            };
+            put_trunc(
+                buf,
+                inner.x,
+                inner.bottom().saturating_sub(1),
+                footer,
+                inner.width,
+                dim,
+            );
+        } else {
+            put_trunc(
+                buf,
+                inner.x,
+                inner.y,
+                "WORKSPACE & CONSOLE",
+                inner.width,
+                accent,
+            );
+            put_trunc(
+                buf,
+                inner.x,
+                inner.y + 2,
+                "Quick-launch the Quake drop-down agent console (Alt+`)",
+                inner.width,
+                body,
+            );
+            put_trunc(
+                buf,
+                inner.x,
+                inner.y + 3,
+                "or open a fresh terminal directly inside ~/Work.",
+                inner.width,
+                dim,
+            );
+        }
+    }
+
+    fn activate_selected(&mut self) -> Outcome {
+        if let Some(idx) = self.list.selected_index()
+            && let Some(key) = self.row_keys.get(idx)
+        {
+            self.chosen = Some(key.clone());
+            return Outcome::Done(hayato_ui::app::exit::OK);
+        }
+        Outcome::Continue
+    }
+}
+
+impl Screen for AgentsScreen {
+    fn draw(&mut self, ctx: &mut BodyCtx) {
+        let (left, right) = Self::split_panes(ctx.area);
+        draw_card(ctx.buf, left, ctx.design, Some("Agents"), true);
+        let (filter, rows) = Self::left_layout(left);
+        let msg = self
+            .banner
+            .as_deref()
+            .unwrap_or("Enter launches/installs · Ctrl+D default · Ctrl+A accounts");
+        draw_filter_bar(
+            ctx.buf,
+            filter,
+            ctx.design,
+            self.list.filter(),
+            msg,
+            self.list.visible_len(),
+            self.row_keys.len(),
+        );
+        self.rows_height.set(rows.height);
+        self.list.render(rows, ctx.buf, ctx.design, true);
+
+        if let Some(right_area) = right {
+            self.draw_inspector(ctx.buf, right_area, ctx.design);
+        }
+    }
+
+    fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
+        if key.kind != KeyEventKind::Press {
+            return Outcome::Continue;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('d') | KeyCode::Char('D') => {
+                    if let Some(snap) = self.selected_agent()
+                        && snap.installed
+                    {
+                        self.chosen = Some(format!("set-default:{}", snap.def.binary));
+                        return Outcome::Done(hayato_ui::app::exit::OK);
+                    }
+                    self.chosen = Some("default".to_string());
+                    return Outcome::Done(hayato_ui::app::exit::OK);
+                }
+                KeyCode::Char('a') | KeyCode::Char('A') => {
+                    if let Some(snap) = self.selected_agent()
+                        && !snap.def.envvar.is_empty()
+                    {
+                        self.chosen = Some(format!("accounts:{}", snap.def.binary));
+                        return Outcome::Done(hayato_ui::app::exit::OK);
+                    }
+                    self.banner = Some("Selected agent does not use multi-account profiles".into());
+                    return Outcome::Consumed;
+                }
+                _ => {}
+            }
+        }
+        match key.code {
+            KeyCode::Esc => {
+                if !self.list.filter().is_empty() {
+                    self.list.set_filter("");
+                    return Outcome::Consumed;
+                }
+                return Outcome::Done(hayato_ui::app::exit::ESCAPE);
+            }
+            KeyCode::Enter => return self.activate_selected(),
+            KeyCode::Char(_) | KeyCode::Backspace
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                    && self.list.type_filter(key) =>
+            {
+                return Outcome::Consumed;
+            }
+            _ => {}
+        }
+        match self.list.handle(key, self.rows_height.get(), design) {
+            ListAction::Activated(_) => self.activate_selected(),
+            _ => Outcome::Continue,
+        }
+    }
+
+    fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        let (left, _) = Self::split_panes(area);
+        let (_, rows) = Self::left_layout(left);
+        self.list.hit_row(rows, x, y, design)
+    }
+
+    fn click(&mut self, row: Option<usize>) -> Outcome {
+        if let Some(r) = row {
+            self.list.set_cursor(r);
+            return self.activate_selected();
+        }
+        Outcome::Continue
+    }
+
+    fn keybar(&self) -> Option<&[KeyHint]> {
+        Some(&self.keybar)
+    }
+
+    fn header(&self) -> Option<&Header> {
+        Some(&self.header)
+    }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some("agents.studio")
+    }
+}
+
 /// Interactive surface: `hayato menu agents`.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
@@ -368,41 +823,22 @@ pub fn menu(
     let mut status_note: Option<String> = None;
 
     loop {
-        let installed: Vec<&str> = AGENTS
-            .iter()
-            .map(|a| a.binary)
-            .filter(|b| is_installed(b))
-            .collect();
-        let accounts: Vec<(&str, String)> = AGENTS
-            .iter()
-            .filter_map(|a| {
-                let account = fs::read_to_string(data_dir().join(a.binary).join("default"))
-                    .ok()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())?;
-                Some((a.binary, account))
-            })
-            .collect();
-        let default = get_default_agent().map(|d| d.binary);
-
-        let note = match &status_note {
-            Some(msg) => format!("{msg} · Enter selects · Escape closes"),
-            None => "Enter launches or configures · Escape closes".to_string(),
-        };
-
-        let mut picker = Picker::new("Agents", questions(&installed, &accounts, default, &note));
-
-        let code = crate::run_screen(terminal, design, "Agents", &mut picker)?;
+        let mut screen = AgentsScreen::new(status_note.take());
+        let code = crate::run_screen(terminal, design, "Agents", &mut screen)?;
         if code != 0 {
             return Ok(code);
         }
 
-        let answers = picker.answers();
-        let Some(action) = answers.first() else {
+        let Some(action) = screen.chosen.take() else {
             return Ok(1);
         };
 
         match action.as_str() {
+            act if act.starts_with("set-default:") => {
+                let bin = &act["set-default:".len()..];
+                let _ = set_default_agent(bin);
+                status_note = Some(format!("Default agent set to {bin}"));
+            }
             "console" => {
                 let _ = super::quake::toggle();
                 return Ok(0);

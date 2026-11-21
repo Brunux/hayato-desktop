@@ -3,16 +3,24 @@
 //! Translates selected text or clipboard via Google / MyMemory fallback.
 //! Supports `--languages`, `--target-name`, and `config` language selector.
 
+use std::cell::Cell;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
-use hayato_ui::{Design, Glyph, Urgency};
+use hayato_ui::widgets::put_trunc;
+use hayato_ui::{
+    BodyCtx, ColorRole, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row,
+    Screen, TextStyle, Urgency, draw_card, draw_filter_bar,
+};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
 
-use super::pick::{Picker, Question, row};
-use super::{have, out, say};
+use super::pick::{Question, row};
+use super::{out, say};
 
 pub const LANGUAGES: &[(&str, &str)] = &[
     ("en", "English"),
@@ -239,32 +247,346 @@ pub fn config_questions(current: &str, note: &str) -> Vec<Question> {
     )]
 }
 
+/// Interactive Translation Studio screen.
+pub struct TranslateScreen {
+    current: String,
+    list: ListState,
+    clipboard_sample: String,
+    translated: Option<(String, String)>,
+    banner: Option<(String, bool)>,
+    header: Header,
+    keybar: Vec<KeyHint>,
+    rows_height: Cell<u16>,
+}
+
+impl Default for TranslateScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TranslateScreen {
+    pub fn new() -> Self {
+        let current = target_code();
+        let clip = out(&["wl-paste", "-n"])
+            .unwrap_or_default()
+            .trim()
+            .chars()
+            .take(500)
+            .collect::<String>();
+        let mut screen = Self {
+            current,
+            list: ListState::new().with_empty("no matching languages"),
+            clipboard_sample: clip,
+            translated: None,
+            banner: None,
+            header: Header::new("Hayato").subtitle("Translate Studio"),
+            keybar: vec![
+                KeyHint::new("Enter", "set target"),
+                KeyHint::new("Ctrl+T", "translate clipboard"),
+                KeyHint::new("type", "filter"),
+                KeyHint::new("Esc", "close"),
+            ],
+            rows_height: Cell::new(18),
+        };
+        screen.rebuild_rows();
+        screen
+    }
+
+    fn rebuild_rows(&mut self) {
+        let rows: Vec<Row> = LANGUAGES
+            .iter()
+            .map(|(code, name)| {
+                let mut r = Row::new(*name).glyph(Glyph::Globe).detail(*code);
+                if *code == self.current {
+                    r = r.value("● current");
+                }
+                r
+            })
+            .collect();
+        self.list.update_rows(rows);
+        self.header = Header::new("Hayato")
+            .subtitle("Translate Studio")
+            .status(format!(
+                "Auto-detect → {} ({})",
+                name_of(&self.current),
+                self.current
+            ));
+    }
+
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 44) / 100).max(40) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn left_layout(area: Rect) -> (Rect, Rect) {
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        let filter = Rect::new(inner.x, inner.y, inner.width, 1.min(inner.height));
+        let rows = Rect::new(
+            inner.x,
+            inner.y.saturating_add(2).min(inner.bottom()),
+            inner.width,
+            inner.height.saturating_sub(2),
+        );
+        (filter, rows)
+    }
+
+    fn select_current(&mut self) {
+        if let Some(idx) = self.list.selected_index()
+            && let Some((code, name)) = LANGUAGES.get(idx)
+        {
+            if set_target_code(code).is_ok() {
+                self.current = (*code).to_string();
+                self.banner = Some((format!("Target language set to {name} ({code})"), false));
+                self.rebuild_rows();
+            }
+        }
+    }
+
+    fn translate_clipboard_now(&mut self) {
+        let text = self.clipboard_sample.trim();
+        if text.is_empty() {
+            self.banner = Some(("Clipboard is empty — copy text first".into(), true));
+            return;
+        }
+        match query_google(text, &self.current) {
+            Some((out_text, detected)) => {
+                let _ = Command::new("wl-copy").arg(&out_text).status();
+                let src = name_of(&detected).to_string();
+                self.translated = Some((src.clone(), out_text));
+                self.banner = Some((
+                    format!(
+                        "Translated {src} → {} & copied to clipboard",
+                        name_of(&self.current)
+                    ),
+                    false,
+                ));
+            }
+            None => {
+                self.banner = Some(("Could not reach translator (check network)".into(), true));
+            }
+        }
+    }
+
+    fn draw_workbench(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
+        draw_card(buf, area, design, Some("Live Translator"), false);
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        if inner.width < 16 || inner.height < 8 {
+            return;
+        }
+        let dim = design.style(TextStyle::Dim);
+        let body = design.style(TextStyle::Body);
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        let ok = Style::default()
+            .fg(design.color(ColorRole::Ok))
+            .add_modifier(Modifier::BOLD);
+
+        let mut y = inner.y;
+        put_trunc(
+            buf,
+            inner.x,
+            y,
+            &format!(
+                "Auto-detect  →  {} ({})",
+                name_of(&self.current),
+                self.current
+            ),
+            inner.width,
+            accent,
+        );
+        y += 2;
+
+        put_trunc(buf, inner.x, y, "Clipboard Source", inner.width, dim);
+        y += 1;
+        let w = usize::from(inner.width.max(1));
+        if self.clipboard_sample.is_empty() {
+            put_trunc(buf, inner.x, y, "(clipboard is empty)", inner.width, dim);
+            y += 2;
+        } else {
+            let chars: Vec<char> = self.clipboard_sample.chars().take(w * 4).collect();
+            for chunk in chars.chunks(w).take(4) {
+                if y >= inner.bottom().saturating_sub(6) {
+                    break;
+                }
+                let s: String = chunk.iter().collect();
+                put_trunc(buf, inner.x, y, &s, inner.width, body);
+                y += 1;
+            }
+            y += 1;
+        }
+
+        if let Some((src, out_text)) = &self.translated {
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                &format!("Translation ({src} → {})", name_of(&self.current)),
+                inner.width,
+                ok,
+            );
+            y += 1;
+            let chars: Vec<char> = out_text.chars().collect();
+            for chunk in chars.chunks(w) {
+                if y >= inner.bottom().saturating_sub(2) {
+                    break;
+                }
+                let s: String = chunk.iter().collect();
+                put_trunc(buf, inner.x, y, &s, inner.width, body);
+                y += 1;
+            }
+        } else if y < inner.bottom().saturating_sub(3) {
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                "Press Ctrl+T to translate clipboard text live here.",
+                inner.width,
+                dim,
+            );
+        }
+
+        put_trunc(
+            buf,
+            inner.x,
+            inner.bottom().saturating_sub(1),
+            "Enter saves target language · Ctrl+T translates & copies",
+            inner.width,
+            dim,
+        );
+    }
+}
+
+impl Screen for TranslateScreen {
+    fn draw(&mut self, ctx: &mut BodyCtx) {
+        let (left, right) = Self::split_panes(ctx.area);
+        draw_card(ctx.buf, left, ctx.design, Some("Target Language"), true);
+        let (filter, rows) = Self::left_layout(left);
+        let default_msg = format!(
+            "Everything goes into {} · Enter sets · Ctrl+T translates",
+            name_of(&self.current)
+        );
+        let msg = self
+            .banner
+            .as_ref()
+            .map(|(m, _)| m.as_str())
+            .unwrap_or(&default_msg);
+        draw_filter_bar(
+            ctx.buf,
+            filter,
+            ctx.design,
+            self.list.filter(),
+            msg,
+            self.list.visible_len(),
+            LANGUAGES.len(),
+        );
+        self.rows_height.set(rows.height);
+        self.list.render(rows, ctx.buf, ctx.design, true);
+
+        if let Some(right_area) = right {
+            self.draw_workbench(ctx.buf, right_area, ctx.design);
+        }
+    }
+
+    fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
+        if key.kind != KeyEventKind::Press {
+            return Outcome::Continue;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('t') | KeyCode::Char('T'))
+        {
+            self.translate_clipboard_now();
+            return Outcome::Consumed;
+        }
+        match key.code {
+            KeyCode::Esc => {
+                if !self.list.filter().is_empty() {
+                    self.list.set_filter("");
+                    return Outcome::Consumed;
+                }
+                return Outcome::Done(hayato_ui::app::exit::ESCAPE);
+            }
+            KeyCode::Enter => {
+                self.select_current();
+                return Outcome::Consumed;
+            }
+            KeyCode::Char(_) | KeyCode::Backspace
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                    && self.list.type_filter(key) =>
+            {
+                return Outcome::Consumed;
+            }
+            _ => {}
+        }
+        match self.list.handle(key, self.rows_height.get(), design) {
+            ListAction::Activated(_) => {
+                self.select_current();
+                Outcome::Consumed
+            }
+            _ => Outcome::Continue,
+        }
+    }
+
+    fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        let (left, _) = Self::split_panes(area);
+        let (_, rows) = Self::left_layout(left);
+        self.list.hit_row(rows, x, y, design)
+    }
+
+    fn click(&mut self, row: Option<usize>) -> Outcome {
+        if let Some(r) = row {
+            self.list.set_cursor(r);
+            self.select_current();
+            return Outcome::Consumed;
+        }
+        Outcome::Continue
+    }
+
+    fn keybar(&self) -> Option<&[KeyHint]> {
+        Some(&self.keybar)
+    }
+
+    fn header(&self) -> Option<&Header> {
+        Some(&self.header)
+    }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some("translate.studio")
+    }
+}
+
 pub fn menu_config(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
-    let mut status_note: Option<String> = None;
-
-    loop {
-        let cur = target_code();
-        let cur_name = name_of(&cur);
-
-        let note = status_note
-            .clone()
-            .unwrap_or_else(|| format!("Everything goes into {cur_name} · Enter sets language"));
-
-        let mut picker = Picker::new("Translate", config_questions(&cur, &note));
-
-        let code = crate::run_screen(terminal, design, "Translate", &mut picker)?;
-        if code != 0 {
-            return Ok(code);
-        }
-
-        if let Some(chosen) = picker.answers().first() {
-            let _ = set_target_code(chosen);
-            status_note = Some(format!("Target language set to {}", name_of(chosen)));
-        }
-    }
+    let mut screen = TranslateScreen::new();
+    crate::run_screen(terminal, design, "Translate", &mut screen)
 }
 
 #[cfg(test)]
