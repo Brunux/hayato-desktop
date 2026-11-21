@@ -9,7 +9,7 @@ Hayato uses pluggable boot backends selected by `/etc/hayato/deviceinfo`
 
 | Partition | Size | What |
 |---|---|---|
-| `p1` `pmOS_kernel` | 128 MiB | the **signed FIT** ("kpart") the firmware boots: kernel, initramfs, and DTBs in one file |
+| `p1` `pmOS_kernel` | 128 MiB | the **signed FIT** ("kpart", `lz4`-compressed for fast firmware boot) the firmware loads: kernel, initramfs, and DTBs in one file |
 | `p2` `pmOS_boot` | 512 MiB | ext2, mounted on `/boot`: kernel, initramfs, and DTBs unpacked |
 | `p3` `pmOS_root` | the rest | ext4 root filesystem |
 
