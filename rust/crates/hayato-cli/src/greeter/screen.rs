@@ -438,9 +438,6 @@ pub struct GreeterScreen {
 
     header: Header,
     keybar_main: Vec<KeyHint>,
-    keybar_picker: Vec<KeyHint>,
-    keybar_confirm: Vec<KeyHint>,
-    keybar_busy: Vec<KeyHint>,
     hits: RefCell<HitRects>,
     picker_height: Cell<u16>,
 }
@@ -584,17 +581,6 @@ impl GreeterScreen {
             reduced_motion: setup.reduced_motion,
             header: Header::default(),
             keybar_main,
-            keybar_picker: vec![
-                KeyHint::new("Enter", "select"),
-                KeyHint::new("type", "filter"),
-                KeyHint::new("Esc", "back"),
-            ],
-            keybar_confirm: vec![
-                KeyHint::new("\u{2190}\u{2192}", "choose"),
-                KeyHint::new("Enter", "confirm"),
-                KeyHint::new("Esc", "cancel"),
-            ],
-            keybar_busy: vec![KeyHint::new("Esc", "cancel auth")],
             hits: RefCell::new(HitRects::default()),
             picker_height: Cell::new(10),
         }
@@ -890,16 +876,21 @@ impl GreeterScreen {
         let mut msg = String::new();
         msg.push_str(action.label());
         msg.push_str(" this device now?");
+        let start_y = area.y + area.height.saturating_sub(3) / 2;
+        let msg_w = (msg.chars().count() as u16).min(area.width);
+        let msg_x = area.x + area.width.saturating_sub(msg_w) / 2;
         put_trunc(
             buf,
-            area.x,
-            area.y,
+            msg_x,
+            start_y,
             &msg,
-            area.width,
-            design.style(TextStyle::Title),
+            msg_w,
+            design
+                .style(TextStyle::Title)
+                .bg(design.color(ColorRole::Surface)),
         );
 
-        let y = area.y + 2;
+        let y = start_y + 2;
         if y >= area.bottom() {
             return;
         }
@@ -926,7 +917,11 @@ impl GreeterScreen {
                 .bg(design.color(ColorRole::SurfaceAlt))
         };
 
-        let cancel_rect = Rect::new(area.x, y, cancel_w.min(area.width), 1);
+        let gap: u16 = 2;
+        let row_w = (cancel_w + gap + yes_w).min(area.width);
+        let row_x = area.x + area.width.saturating_sub(row_w) / 2;
+
+        let cancel_rect = Rect::new(row_x, y, cancel_w.min(area.right() - row_x), 1);
         put_trunc(
             buf,
             cancel_rect.x,
@@ -937,7 +932,7 @@ impl GreeterScreen {
         );
         hits.confirm_cancel = Some(cancel_rect);
 
-        let yes_x = cancel_rect.right() + 2;
+        let yes_x = cancel_rect.right() + gap;
         if yes_x + 4 <= area.right() {
             let yes_rect = Rect::new(yes_x, y, yes_w.min(area.right() - yes_x), 1);
             put_trunc(buf, yes_rect.x, y, yes_label, yes_rect.width, yes_style);
@@ -1003,15 +998,7 @@ impl Screen for GreeterScreen {
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {
-        if self.runner.is_running() {
-            Some(&self.keybar_busy)
-        } else {
-            match self.mode {
-                Mode::Login => Some(&self.keybar_main),
-                Mode::SessionPicker | Mode::ThemePicker => Some(&self.keybar_picker),
-                Mode::ConfirmPower { .. } => Some(&self.keybar_confirm),
-            }
-        }
+        Some(&self.keybar_main)
     }
 
     fn phase(&self) -> Option<&'static str> {
@@ -1139,29 +1126,34 @@ impl Screen for GreeterScreen {
         let hero_h: u16 = if use_pixel_hero { 8 } else { 5 };
         let has_status = self.runner.is_running() || self.status.is_some();
 
-        // Compute tight card geometry fitted to content (or expanded for modals).
-        let (card_w, card_h) = if in_modal {
-            (
+        // Compute tight card geometry fitted to content (or expanded for pickers).
+        let (card_w, card_h) = match self.mode {
+            Mode::ConfirmPower { .. } => (
+                area.width.saturating_sub(4).clamp(32, 46),
+                7u16.min(area.height.saturating_sub(hero_h + 3)).max(5),
+            ),
+            Mode::SessionPicker | Mode::ThemePicker => (
                 area.width.saturating_sub(4).clamp(32, 72),
                 area.height.saturating_sub(hero_h + 4).clamp(8, 16),
-            )
-        } else {
-            let mut rows: u16 = 2; // top + bottom inner breathing room
-            if self.pills_visible() {
-                rows += 2;
+            ),
+            Mode::Login => {
+                let mut rows: u16 = 2; // top + bottom inner breathing room
+                if self.pills_visible() {
+                    rows += 2;
+                }
+                if self.using_other_user() {
+                    rows += 2;
+                }
+                if self.auth_prompt.is_challenge() {
+                    rows += 1;
+                }
+                rows += 1; // password input
+                if has_status {
+                    rows += 2;
+                }
+                let h = (rows + 2).min(area.height.saturating_sub(hero_h + 3));
+                (area.width.saturating_sub(4).clamp(32, 46), h.max(5))
             }
-            if self.using_other_user() {
-                rows += 2;
-            }
-            if self.auth_prompt.is_challenge() {
-                rows += 1;
-            }
-            rows += 1; // password input
-            if has_status {
-                rows += 2;
-            }
-            let h = (rows + 2).min(area.height.saturating_sub(hero_h + 3));
-            (area.width.saturating_sub(4).clamp(32, 46), h.max(5))
         };
 
         let strip_block_h: u16 = if in_modal { 0 } else { 2 };
@@ -2029,6 +2021,13 @@ mod tests {
                 confirm_yes: false
             }
         );
+
+        // Confirm modal has no bottom helper keybar and renders centered inside the card.
+        assert!(scr.keybar().unwrap().is_empty());
+        let modal = render_text(&mut scr, 100, 30);
+        assert!(modal.contains("Reboot this device now?"));
+        assert!(!modal.contains("choose"));
+        assert!(!modal.contains("select"));
 
         // Pressing Enter immediately cancels safely instead of rebooting.
         scr.key(key(KeyCode::Enter), &design);
