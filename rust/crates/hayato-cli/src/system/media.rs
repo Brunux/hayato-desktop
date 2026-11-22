@@ -14,12 +14,14 @@
 #![allow(clippy::vec_init_then_push)]
 use std::cell::Cell;
 
+use hayato_ui::widgets::put_trunc;
 use hayato_ui::{
     BodyCtx, Card, ColorRole, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row,
     Screen, TextStyle, Urgency, draw_badge, draw_card, draw_filter_bar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
 
 use crate::system::{missing, out};
 
@@ -196,12 +198,161 @@ impl MediaScreen {
     }
 }
 
+impl MediaScreen {
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 48) / 100).max(46) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn draw_deck(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
+        draw_card(buf, area, design, Some("Now Playing Deck"), false);
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        if inner.width < 16 || inner.height < 8 {
+            return;
+        }
+        let dim = design.style(TextStyle::Dim);
+        let body = design.style(TextStyle::Body);
+        let title_style = design.style(TextStyle::Title).add_modifier(Modifier::BOLD);
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+
+        if let Some(active) = self
+            .players
+            .iter()
+            .find(|p| p.status.is_playing())
+            .or_else(|| self.players.first())
+        {
+            let (badge, role) = if active.status.is_playing() {
+                ("▶ PLAYING", ColorRole::Ok)
+            } else {
+                ("⏸ PAUSED", ColorRole::Warn)
+            };
+            let mut y = inner.y;
+            draw_badge(buf, inner.x, y, design, badge, role);
+            y += 2;
+            let title = if active.title.is_empty() {
+                active.name.as_str()
+            } else {
+                active.title.as_str()
+            };
+            put_trunc(buf, inner.x, y, title, inner.width, title_style);
+            y += 1;
+            if !active.artist.is_empty() {
+                put_trunc(buf, inner.x, y, &active.artist, inner.width, body);
+                y += 1;
+            }
+            if !active.album.is_empty() {
+                put_trunc(buf, inner.x, y, &active.album, inner.width, dim);
+                y += 1;
+            }
+            y += 1;
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                &format!("Player    {}", active.name),
+                inner.width,
+                dim,
+            );
+            y += 2;
+            if y < inner.bottom().saturating_sub(2) {
+                put_trunc(buf, inner.x, y, "Transport", inner.width, accent);
+                y += 1;
+                let bar = if active.status.is_playing() {
+                    "[ ⏮ Prev ]   [ ⏸ Pause ]   [ ⏭ Next ]   [ ⏹ Stop ]"
+                } else {
+                    "[ ⏮ Prev ]   [ ▶ Play  ]   [ ⏭ Next ]   [ ⏹ Stop ]"
+                };
+                put_trunc(buf, inner.x, y, bar, inner.width, body);
+            }
+        } else {
+            let mut y = inner.y;
+            draw_badge(buf, inner.x, y, design, "NO PLAYER", ColorRole::Border);
+            y += 2;
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                "Nothing is playing right now",
+                inner.width,
+                title_style,
+            );
+            y += 2;
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                "Start audio or video in Firefox, Spotify, mpv, or any",
+                inner.width,
+                dim,
+            );
+            put_trunc(
+                buf,
+                inner.x,
+                y + 1,
+                "MPRIS-compatible player and press Ctrl+R to refresh.",
+                inner.width,
+                dim,
+            );
+        }
+
+        put_trunc(
+            buf,
+            inner.x,
+            inner.bottom().saturating_sub(1),
+            "Space toggles play/pause · Ctrl+R refreshes",
+            inner.width,
+            dim,
+        );
+    }
+}
+
 impl Screen for MediaScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Now playing"), true);
-        let (hero, filter, rows) = Self::layout(ctx.area);
+        let (left, right) = Self::split_panes(ctx.area);
+        let list_card = if let Some(right_area) = right {
+            self.draw_deck(ctx.buf, left, ctx.design);
+            right_area
+        } else {
+            left
+        };
 
-        if let Some(h) = hero {
+        draw_card(
+            ctx.buf,
+            list_card,
+            ctx.design,
+            Some(if right.is_some() {
+                "Players & Controls"
+            } else {
+                "Now playing"
+            }),
+            true,
+        );
+        let (hero, filter, rows) = Self::layout(list_card);
+
+        if right.is_none()
+            && let Some(h) = hero
+        {
             if let Some(active) = self
                 .players
                 .iter()
@@ -334,7 +485,9 @@ impl Screen for MediaScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        let (_, _, rows) = Self::layout(area);
+        let (left, right) = Self::split_panes(area);
+        let list_card = right.unwrap_or(left);
+        let (_, _, rows) = Self::layout(list_card);
         self.list.hit_row(rows, x, y, design)
     }
 

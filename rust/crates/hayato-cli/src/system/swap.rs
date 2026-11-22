@@ -13,12 +13,20 @@
 //! It is **not stoppable**, like Format a disk: a kill between the table and
 //! `mkswap` leaves a card that is neither a filesystem nor swap.
 
+use std::cell::Cell;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use hayato_ui::{Design, Glyph, Task, TaskView};
+use hayato_ui::widgets::put_trunc;
+use hayato_ui::{
+    BodyCtx, ColorRole, Confirm, ConfirmAction, Design, Glyph, Header, KeyHint, ListAction,
+    ListState, Outcome, Row, Screen, Task, TaskView, TextStyle, draw_card, draw_gauge,
+};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
 
 use super::disk::{self, Disk, Facts};
 use super::fstab;
@@ -430,7 +438,288 @@ fn questions(found: &[Disk]) -> Vec<Question> {
     ]
 }
 
-/// `hayato menu swap` (`hayato-swap`): the window, then the steps or the undo inside a TaskView.
+enum SwapMode {
+    Overview,
+    ConfirmOff(Confirm),
+}
+
+/// Memory & Auxiliary Swap Studio screen (for active/configured swap management).
+pub struct SwapScreen {
+    status: Status,
+    mem_used_pct: f64,
+    mem_summary: String,
+    swaps_lines: Vec<String>,
+    list: ListState,
+    mode: SwapMode,
+    header: Header,
+    keybar: Vec<KeyHint>,
+    rows_height: Cell<u16>,
+    pub turn_off_confirmed: bool,
+}
+
+impl SwapScreen {
+    pub fn new(status: Status) -> Self {
+        let (mem_used_pct, mem_summary) = std::fs::read_to_string("/proc/meminfo")
+            .ok()
+            .and_then(|raw| super::kill::parse_meminfo(&raw))
+            .map(|(used, total)| {
+                let pct = if total > 0 {
+                    (used as f64 / total as f64).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let s = format!(
+                    "{} / {} ({:.0}%)",
+                    super::kill::format_mem_kb(used),
+                    super::kill::format_mem_kb(total),
+                    pct * 100.0
+                );
+                (pct, s)
+            })
+            .unwrap_or((0.0, "unavailable".into()));
+
+        let swaps_lines: Vec<String> =
+            out(&["swapon", "--show=NAME,SIZE,USED,PRIO", "--noheadings"])
+                .unwrap_or_default()
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect();
+
+        let mut list = ListState::new();
+        list.set_rows(vec![
+            Row::new("Auxiliary swap status")
+                .glyph(if status.active {
+                    Glyph::Chip
+                } else {
+                    Glyph::Warning
+                })
+                .detail(status.detail())
+                .value(if status.active {
+                    "● active"
+                } else {
+                    "○ inactive"
+                }),
+            Row::new("Turn off auxiliary swap")
+                .glyph(Glyph::Undo)
+                .detail("swapoff & remove /etc/fstab entry · card files untouched"),
+        ]);
+
+        Self {
+            header: Header::new("Hayato")
+                .subtitle("Memory & Swap Studio")
+                .status(status.line()),
+            status,
+            mem_used_pct,
+            mem_summary,
+            swaps_lines,
+            list,
+            mode: SwapMode::Overview,
+            keybar: vec![KeyHint::new("Enter", "act"), KeyHint::new("Esc", "close")],
+            rows_height: Cell::new(12),
+            turn_off_confirmed: false,
+        }
+    }
+
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 48) / 100).max(46) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn draw_telemetry(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
+        draw_card(buf, area, design, Some("Memory & Swap Telemetry"), false);
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        if inner.width < 16 || inner.height < 8 {
+            return;
+        }
+        let dim = design.style(TextStyle::Dim);
+        let body = design.style(TextStyle::Body);
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+
+        let mut y = inner.y;
+        put_trunc(buf, inner.x, y, "SYSTEM RAM", inner.width, accent);
+        y += 1;
+        put_trunc(buf, inner.x, y, &self.mem_summary, inner.width, body);
+        y += 1;
+        let gauge = Rect::new(inner.x, y, inner.width.min(36), 1);
+        let pct_label = format!("{:.0}%", self.mem_used_pct * 100.0);
+        draw_gauge(buf, gauge, design, self.mem_used_pct, &pct_label);
+        y += 2;
+
+        put_trunc(
+            buf,
+            inner.x,
+            y,
+            "ACTIVE SWAP PRIORITY STACK",
+            inner.width,
+            accent,
+        );
+        y += 1;
+        if self.swaps_lines.is_empty() {
+            put_trunc(
+                buf,
+                inner.x,
+                y,
+                "(no active swap devices)",
+                inner.width,
+                dim,
+            );
+        } else {
+            for line in &self.swaps_lines {
+                if y >= inner.bottom().saturating_sub(3) {
+                    break;
+                }
+                put_trunc(buf, inner.x, y, line, inner.width, body);
+                y += 1;
+            }
+        }
+        put_trunc(
+            buf,
+            inner.x,
+            inner.bottom().saturating_sub(1),
+            "zram (pri 100) absorbs burst first · SD/USB card (pri 10) is overflow",
+            inner.width,
+            dim,
+        );
+    }
+
+    fn activate(&mut self) -> Outcome {
+        if self.list.selected_index() == Some(1) {
+            let part = self.status.part.as_deref().unwrap_or("auxiliary swap");
+            let confirm = Confirm::new(
+                "Turn off auxiliary swap?",
+                format!("{part} · swapoff and remove boot entry · files are not erased"),
+            )
+            .with_options(&["Cancel", "Turn it off"]);
+            self.mode = SwapMode::ConfirmOff(confirm);
+        }
+        Outcome::Consumed
+    }
+}
+
+impl Screen for SwapScreen {
+    fn draw(&mut self, ctx: &mut BodyCtx) {
+        if let SwapMode::ConfirmOff(confirm) = &self.mode {
+            confirm.render(ctx.area, ctx.buf, ctx.design);
+            return;
+        }
+        let (left, right) = Self::split_panes(ctx.area);
+        draw_card(ctx.buf, left, ctx.design, Some("Auxiliary Swap"), true);
+        let inner = Rect::new(
+            left.x + 2,
+            left.y + 1,
+            left.width.saturating_sub(4),
+            left.height.saturating_sub(2),
+        );
+        put_trunc(
+            ctx.buf,
+            inner.x,
+            inner.y,
+            "Enter acts · Escape closes · the card is not erased",
+            inner.width,
+            ctx.design.style(TextStyle::Dim),
+        );
+        let rows = Rect::new(
+            inner.x,
+            inner.y.saturating_add(2).min(inner.bottom()),
+            inner.width,
+            inner.height.saturating_sub(2),
+        );
+        self.rows_height.set(rows.height);
+        self.list.render(rows, ctx.buf, ctx.design, true);
+        if let Some(right_area) = right {
+            self.draw_telemetry(ctx.buf, right_area, ctx.design);
+        }
+    }
+
+    fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
+        if key.kind != KeyEventKind::Press {
+            return Outcome::Continue;
+        }
+        if let SwapMode::ConfirmOff(confirm) = &mut self.mode {
+            match confirm.handle(key) {
+                ConfirmAction::Chosen(1) => {
+                    self.turn_off_confirmed = true;
+                    return Outcome::Done(hayato_ui::app::exit::OK);
+                }
+                ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                    self.mode = SwapMode::Overview;
+                }
+                ConfirmAction::None => {}
+            }
+            return Outcome::Consumed;
+        }
+        match key.code {
+            KeyCode::Esc => return Outcome::Done(hayato_ui::app::exit::ESCAPE),
+            KeyCode::Enter => return self.activate(),
+            _ => {}
+        }
+        match self.list.handle(key, self.rows_height.get(), design) {
+            ListAction::Activated(_) => self.activate(),
+            _ => Outcome::Continue,
+        }
+    }
+
+    fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        if matches!(self.mode, SwapMode::ConfirmOff(_)) {
+            return None;
+        }
+        let (left, _) = Self::split_panes(area);
+        let rows = Rect::new(
+            left.x + 2,
+            left.y + 3,
+            left.width.saturating_sub(4),
+            left.height.saturating_sub(4),
+        );
+        self.list.hit_row(rows, x, y, design)
+    }
+
+    fn click(&mut self, row: Option<usize>) -> Outcome {
+        if let Some(r) = row {
+            self.list.set_cursor(r);
+            return self.activate();
+        }
+        Outcome::Continue
+    }
+
+    fn keybar(&self) -> Option<&[KeyHint]> {
+        Some(&self.keybar)
+    }
+
+    fn header(&self) -> Option<&Header> {
+        Some(&self.header)
+    }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some(match self.mode {
+            SwapMode::Overview => "swap.overview",
+            SwapMode::ConfirmOff(_) => "swap.confirm_off",
+        })
+    }
+}
+
+/// `hayato menu swap` (`hayato-swap`): Memory & Auxiliary Swap Studio.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
@@ -452,48 +741,10 @@ pub fn menu(
     let status = Status::from_machine();
 
     if status.configured || status.active {
-        let mut picker = Picker::new(
-            "Auxiliary swap",
-            vec![
-                Question::choose(
-                    "Auxiliary swap",
-                    "Enter acts \u{00b7} Escape closes \u{00b7} the card is not touched",
-                    vec![
-                        row(
-                            "Status",
-                            status.detail(),
-                            if status.active {
-                                Glyph::Chip
-                            } else {
-                                Glyph::Warning
-                            },
-                        ),
-                        row(
-                            "Turn it off",
-                            "swapoff, and no swap from that card at the next boot",
-                            Glyph::Undo,
-                        ),
-                    ],
-                    vec!["status".to_string(), "undo".to_string()],
-                ),
-                Question::ask(
-                    "Turn off the auxiliary swap?",
-                    "a card that is in use can take a while \u{00b7} Escape leaves it as it is",
-                    "{0} \u{00b7} files on it are not erased",
-                    "Turn it off",
-                    "go",
-                ),
-            ],
-        );
-
-        let code = crate::run_screen(terminal, design, "Auxiliary swap", &mut picker)?;
-        if code != 0 {
+        let mut screen = SwapScreen::new(status.clone());
+        let code = crate::run_screen(terminal, design, "Auxiliary swap", &mut screen)?;
+        if code != 0 || !screen.turn_off_confirmed {
             return Ok(code);
-        }
-
-        let answers = picker.answers();
-        if answers.get(1) != Some(&"go".to_string()) {
-            return Ok(0);
         }
 
         let stripped = fstab::strip(&fstab_text);

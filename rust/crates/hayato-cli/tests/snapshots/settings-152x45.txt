@@ -1,0 +1,45 @@
+Hayato · Settings                                                                                  Network · Wi-Fi, Bluetooth, DNS, SSH, screen sharing 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+╭ Sections ────────────────────────╮ ╭ Network ────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ▍   Network                     │ │  Type to filter · Enter opens or toggles · Tab switches pane                                            7 / 7  │
+│      Wi-Fi, Bluetooth, DNS, SSH… │ │                                                                                                                 │
+│                                  │ │ ▍   Wi-Fi radio  on                                                                                            │
+│     Display & Sound             │ │     Wi-Fi networks  Hayato-5G                                                                                  │
+│      Night light, display, rota… │ │     Bluetooth radio  on                                                                                        │
+│                                  │ │     Bluetooth devices  1 device connected                                                                      │
+│     Appearance                  │ │     DNS  the resolver this connection uses                                                                     │
+│      Theme, wallpaper, bar, win… │ │     Share this screen  off                                                                                     │
+│                                  │ │     Remote login (SSH)  remote login status                                                                    │
+│     Input                       │ │                                                                                                                 │
+│      Touchpad, keyboard, tablet… │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│     Power & Idle                │ │                                                                                                                 │
+│      Battery, idle & lock, powe… │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│     System                      │ │                                                                                                                 │
+│      Date & time, updates, stor… │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│     Accessibility               │ │                                                                                                                 │
+│      Reduced motion, on-screen … │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+│                                  │ │                                                                                                                 │
+╰──────────────────────────────────╯ ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ [Tab]  sections   [Enter]  open / toggle   [type]  filter   [Esc]  close                                                                               

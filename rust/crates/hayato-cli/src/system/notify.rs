@@ -14,22 +14,31 @@ use std::fs;
 use std::io::BufRead;
 use std::path::PathBuf;
 
+use hayato_ui::widgets::put_trunc;
 use hayato_ui::{
-    ActionItem, ActionStrip, ActionStripEvent, BodyCtx, Card, Design, Glyph, Header, KeyHint,
-    ListAction, ListState, Outcome, Row, Screen, Urgency, draw_card, draw_empty, draw_filter_bar,
+    ActionItem, ActionStrip, ActionStripEvent, BodyCtx, Card, ColorRole, Confirm, ConfirmAction,
+    Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row, Screen, TextStyle,
+    Urgency, draw_card, draw_empty, draw_filter_bar,
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
 
 use crate::system::missing;
 
 const NEEDED: &[&str] = &["wl-copy"];
 
-/// The notify screen.
+enum NotifyMode {
+    Browse,
+    ConfirmDismiss(Confirm),
+}
+
+/// The Notification Center screen.
 pub struct NotifyScreen {
     notifications: Vec<Notification>,
     actions: Vec<String>,
     dnd: bool,
+    mode: NotifyMode,
     strip: ActionStrip,
     list: ListState,
     header: Header,
@@ -79,6 +88,7 @@ impl NotifyScreen {
             notifications: Vec::new(),
             actions: Vec::new(),
             dnd: false,
+            mode: NotifyMode::Browse,
             strip: ActionStrip::default(),
             list: ListState::new(),
             header: Header::new("Hayato").subtitle("Notifications"),
@@ -209,6 +219,108 @@ impl NotifyScreen {
         self.list.update_rows(rows);
     }
 
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 50) / 100).max(48) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn draw_inspector(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
+        draw_card(buf, area, design, Some("Message Inspector"), false);
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        if inner.width < 16 || inner.height < 6 {
+            return;
+        }
+        let Some(idx) = self.list.selected_index() else {
+            draw_empty(
+                buf,
+                inner,
+                design,
+                "No notification selected",
+                "Select a notification on the left to read its full body",
+            );
+            return;
+        };
+        let Some(n) = self.notifications.get(idx) else {
+            draw_empty(
+                buf,
+                inner,
+                design,
+                "No notification selected",
+                "Select a notification on the left to read its full body",
+            );
+            return;
+        };
+        let dim = design.style(TextStyle::Dim);
+        let body = design.style(TextStyle::Body);
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        let title_style = design.style(TextStyle::Title).add_modifier(Modifier::BOLD);
+
+        let mut y = inner.y;
+        let app_label = if n.app.is_empty() {
+            "NOTIFICATION"
+        } else {
+            n.app.as_str()
+        };
+        put_trunc(buf, inner.x, y, app_label, inner.width, accent);
+        y += 1;
+        put_trunc(buf, inner.x, y, &n.summary, inner.width, title_style);
+        y += 2;
+
+        if n.body.is_empty() {
+            put_trunc(buf, inner.x, y, "(no message body)", inner.width, dim);
+        } else {
+            let max_y = inner.bottom().saturating_sub(2);
+            let w = usize::from(inner.width.max(1));
+            'outer: for line in n.body.lines() {
+                if line.is_empty() {
+                    y += 1;
+                    if y >= max_y {
+                        break;
+                    }
+                    continue;
+                }
+                let chars: Vec<char> = line.chars().collect();
+                for chunk in chars.chunks(w) {
+                    if y >= max_y {
+                        break 'outer;
+                    }
+                    let s: String = chunk.iter().collect();
+                    put_trunc(buf, inner.x, y, &s, inner.width, body);
+                    y += 1;
+                }
+            }
+        }
+        put_trunc(
+            buf,
+            inner.x,
+            inner.bottom().saturating_sub(1),
+            "Enter copies full text · Ctrl+D toggles DND · Ctrl+X clears",
+            inner.width,
+            dim,
+        );
+    }
+
     fn layout(area: Rect) -> (Rect, Rect, Rect) {
         let inner = Rect {
             x: area.x + 2,
@@ -241,8 +353,13 @@ impl NotifyScreen {
 
 impl Screen for NotifyScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("History"), true);
-        let (strip, filter, rows) = Self::layout(ctx.area);
+        if let NotifyMode::ConfirmDismiss(confirm) = &self.mode {
+            confirm.render(ctx.area, ctx.buf, ctx.design);
+            return;
+        }
+        let (left, right) = Self::split_panes(ctx.area);
+        draw_card(ctx.buf, left, ctx.design, Some("History"), true);
+        let (strip, filter, rows) = Self::layout(left);
         self.strip.render(strip, ctx.buf, ctx.design);
         let msg = if let Some(note) = &self.status_note {
             note.as_str()
@@ -273,11 +390,29 @@ impl Screen for NotifyScreen {
             self.list
                 .render(rows, ctx.buf, ctx.design, !self.strip.is_focused());
         }
+        if let Some(right_area) = right {
+            self.draw_inspector(ctx.buf, right_area, ctx.design);
+        }
     }
 
     fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
+        }
+        if let NotifyMode::ConfirmDismiss(confirm) = &mut self.mode {
+            match confirm.handle(key) {
+                ConfirmAction::Chosen(1) => {
+                    self.mode = NotifyMode::Browse;
+                    let _ = clear_history();
+                    self.status_note = Some("Cleared notification history".to_string());
+                    self.reload();
+                }
+                ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                    self.mode = NotifyMode::Browse;
+                }
+                ConfirmAction::None => {}
+            }
+            return Outcome::Consumed;
         }
         match self.strip.handle(key) {
             ActionStripEvent::Activated(id) => return self.run_strip_action(id),
@@ -346,7 +481,11 @@ impl Screen for NotifyScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        let (strip, _, rows) = Self::layout(area);
+        if matches!(self.mode, NotifyMode::ConfirmDismiss(_)) {
+            return None;
+        }
+        let (left, _) = Self::split_panes(area);
+        let (strip, _, rows) = Self::layout(left);
         if let Some(idx) = self.strip.hit_index(strip, x, y) {
             return Some(10_000 + idx);
         }
@@ -359,6 +498,13 @@ impl Screen for NotifyScreen {
 
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
+    }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some(match self.mode {
+            NotifyMode::Browse => "notify.browse",
+            NotifyMode::ConfirmDismiss(_) => "notify.confirm_dismiss",
+        })
     }
 }
 
@@ -403,11 +549,19 @@ impl NotifyScreen {
                 }
             }
             "dismiss" => {
-                let count = self.notifications.len();
-                let path = history_path();
-                let _ = fs::write(&path, "");
-                self.status_note = Some(format!("Dismissed {count} notifications"));
-                self.reload();
+                if self.notifications.is_empty() {
+                    self.status_note = Some("Notification history is already empty".to_string());
+                } else {
+                    let confirm = Confirm::new(
+                        "Dismiss all notifications?",
+                        format!(
+                            "Clear all {} notifications from history?",
+                            self.notifications.len()
+                        ),
+                    )
+                    .with_options(&["Cancel", "Dismiss all"]);
+                    self.mode = NotifyMode::ConfirmDismiss(confirm);
+                }
             }
             _ => {}
         }

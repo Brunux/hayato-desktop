@@ -31,14 +31,21 @@
 //! there, and `/proc/PID/comm` says it is wayvnc - a pid can be reused after
 //! a crash, and killing a stranger would be a worse bug than a stale file.
 
+use std::cell::Cell;
 use std::time::Duration;
 
-use hayato_ui::{Card, Design, Glyph, Urgency};
+use hayato_ui::widgets::put_trunc;
+use hayato_ui::{
+    BodyCtx, Card, ColorRole, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row,
+    Screen, TextStyle, Urgency, draw_card,
+};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
 
 use super::out;
-use super::pick::{Picker, Question, row};
 
 /// What the menu needs before it offers anything.
 pub const NEEDED: &[&str] = &["wayvnc", "ss"];
@@ -327,7 +334,273 @@ pub fn stop() -> Result<(), String> {
     Ok(())
 }
 
-/// `hayato menu vnc` (`hayato-vnc`): the VNC picker.
+/// Screen Share (VNC) Studio screen.
+pub struct VncScreen {
+    mode: Option<Mode>,
+    tunnel: String,
+    keys: Vec<String>,
+    list: ListState,
+    banner: Option<String>,
+    header: Header,
+    keybar: Vec<KeyHint>,
+    rows_height: Cell<u16>,
+    pub chosen: Option<String>,
+}
+
+impl VncScreen {
+    pub fn new(mode: Option<Mode>, banner: Option<String>) -> Self {
+        let tunnel = tunnel_cmd();
+        let (rows, keys) = match mode {
+            Some(m) => {
+                let switch_row = match m {
+                    Mode::View => Row::new("Switch to remote control")
+                        .glyph(Glyph::Keyboard)
+                        .detail("viewer can type and click · restarts server"),
+                    Mode::Control => Row::new("Switch to view only")
+                        .glyph(Glyph::Eye)
+                        .detail("viewer looks only · disables virtual input"),
+                };
+                (
+                    vec![
+                        Row::new("Stop sharing")
+                            .glyph(Glyph::Stop)
+                            .detail("stop wayvnc · disconnect viewer"),
+                        switch_row,
+                        Row::new("Copy SSH tunnel command")
+                            .glyph(Glyph::Link)
+                            .detail(&tunnel),
+                    ],
+                    vec!["stop".into(), "switch".into(), "tunnel".into()],
+                )
+            }
+            None => (
+                vec![
+                    Row::new("Share this screen (read-only)")
+                        .glyph(Glyph::Eye)
+                        .detail(format!("localhost:{PORT} · pixels out, no input")),
+                    Row::new("Allow remote control")
+                        .glyph(Glyph::Keyboard)
+                        .detail(format!("localhost:{PORT} · viewer can type & click")),
+                    Row::new("Copy SSH tunnel command")
+                        .glyph(Glyph::Link)
+                        .detail(&tunnel),
+                ],
+                vec!["start".into(), "control".into(), "tunnel".into()],
+            ),
+        };
+        let mut list = ListState::new();
+        list.set_rows(rows);
+        let status_str = match mode {
+            Some(m) => format!("Active · localhost:{PORT} ({})", m.label()),
+            None => "Off · loopback-only (127.0.0.1:5900)".into(),
+        };
+        Self {
+            mode,
+            tunnel,
+            keys,
+            list,
+            banner,
+            header: Header::new("Hayato")
+                .subtitle("Screen Share (VNC)")
+                .status(status_str),
+            keybar: vec![KeyHint::new("Enter", "act"), KeyHint::new("Esc", "close")],
+            rows_height: Cell::new(14),
+            chosen: None,
+        }
+    }
+
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 48) / 100).max(46) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn draw_inspector(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
+        draw_card(buf, area, design, Some("Security & Tunnel Deck"), false);
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(2),
+        );
+        if inner.width < 16 || inner.height < 8 {
+            return;
+        }
+        let dim = design.style(TextStyle::Dim);
+        let body = design.style(TextStyle::Body);
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        let (pill, pill_role) = match self.mode {
+            Some(Mode::View) => ("● SHARING · READ-ONLY", ColorRole::Ok),
+            Some(Mode::Control) => ("● SHARING · REMOTE CONTROL", ColorRole::Warn),
+            None => ("○ SERVER OFF", ColorRole::Muted),
+        };
+        let mut y = inner.y;
+        put_trunc(
+            buf,
+            inner.x,
+            y,
+            pill,
+            inner.width,
+            Style::default()
+                .fg(design.color(pill_role))
+                .add_modifier(Modifier::BOLD),
+        );
+        y += 2;
+        put_trunc(
+            buf,
+            inner.x,
+            y,
+            &format!("Bind      127.0.0.1:{PORT} (loopback only)"),
+            inner.width,
+            body,
+        );
+        y += 1;
+        put_trunc(
+            buf,
+            inner.x,
+            y,
+            "Auth      SSH tunnel required (never exposed on LAN)",
+            inner.width,
+            dim,
+        );
+        y += 2;
+        put_trunc(buf, inner.x, y, "Viewer SSH Tunnel", inner.width, accent);
+        y += 1;
+        put_trunc(buf, inner.x, y, &self.tunnel, inner.width, body);
+        y += 2;
+        put_trunc(
+            buf,
+            inner.x,
+            y,
+            "Then connect any VNC viewer to localhost:5900.",
+            inner.width,
+            dim,
+        );
+        if let Some(note) = &self.banner {
+            put_trunc(
+                buf,
+                inner.x,
+                inner.bottom().saturating_sub(1),
+                note,
+                inner.width,
+                Style::default().fg(design.color(ColorRole::Ok)),
+            );
+        }
+    }
+
+    fn activate(&mut self) -> Outcome {
+        if let Some(idx) = self.list.selected_index()
+            && let Some(k) = self.keys.get(idx)
+        {
+            self.chosen = Some(k.clone());
+            return Outcome::Done(hayato_ui::app::exit::OK);
+        }
+        Outcome::Continue
+    }
+}
+
+impl Screen for VncScreen {
+    fn draw(&mut self, ctx: &mut BodyCtx) {
+        let (left, right) = Self::split_panes(ctx.area);
+        draw_card(ctx.buf, left, ctx.design, Some("Controls"), true);
+        let inner = Rect::new(
+            left.x + 2,
+            left.y + 1,
+            left.width.saturating_sub(4),
+            left.height.saturating_sub(2),
+        );
+        let note = self
+            .banner
+            .as_deref()
+            .unwrap_or("Read-only by default · localhost:5900 over SSH");
+        put_trunc(
+            ctx.buf,
+            inner.x,
+            inner.y,
+            note,
+            inner.width,
+            ctx.design.style(TextStyle::Dim),
+        );
+        let rows = Rect::new(
+            inner.x,
+            inner.y.saturating_add(2).min(inner.bottom()),
+            inner.width,
+            inner.height.saturating_sub(2),
+        );
+        self.rows_height.set(rows.height);
+        self.list.render(rows, ctx.buf, ctx.design, true);
+        if let Some(right_area) = right {
+            self.draw_inspector(ctx.buf, right_area, ctx.design);
+        }
+    }
+
+    fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
+        if key.kind != KeyEventKind::Press {
+            return Outcome::Continue;
+        }
+        match key.code {
+            KeyCode::Esc => return Outcome::Done(hayato_ui::app::exit::ESCAPE),
+            KeyCode::Enter => return self.activate(),
+            _ => {}
+        }
+        match self.list.handle(key, self.rows_height.get(), design) {
+            ListAction::Activated(_) => self.activate(),
+            _ => Outcome::Continue,
+        }
+    }
+
+    fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        let (left, _) = Self::split_panes(area);
+        let rows = Rect::new(
+            left.x + 2,
+            left.y + 3,
+            left.width.saturating_sub(4),
+            left.height.saturating_sub(4),
+        );
+        self.list.hit_row(rows, x, y, design)
+    }
+
+    fn click(&mut self, row: Option<usize>) -> Outcome {
+        if let Some(r) = row {
+            self.list.set_cursor(r);
+            return self.activate();
+        }
+        Outcome::Continue
+    }
+
+    fn keybar(&self) -> Option<&[KeyHint]> {
+        Some(&self.keybar)
+    }
+
+    fn header(&self) -> Option<&Header> {
+        Some(&self.header)
+    }
+
+    fn phase(&self) -> Option<&'static str> {
+        Some(match self.mode {
+            Some(Mode::View) => "vnc.view",
+            Some(Mode::Control) => "vnc.control",
+            None => "vnc.off",
+        })
+    }
+}
+
+/// `hayato menu vnc` (`hayato-vnc`): Screen Share (VNC) Control Panel.
 pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
@@ -343,91 +616,15 @@ pub fn menu(
 
     loop {
         let mode = running_mode().filter(|_| listening());
-        let (rows, keys, default_note) = match mode {
-            Some(mode) => {
-                let (title, glyph) = match mode {
-                    Mode::View => ("Sharing this screen", Glyph::Eye),
-                    Mode::Control => ("Remote control is on", Glyph::Keyboard),
-                };
-                let switch = match mode {
-                    Mode::View => row(
-                        "Switch to remote control",
-                        "the viewer can type and click · stops and restarts",
-                        Glyph::Keyboard,
-                    ),
-                    Mode::Control => row(
-                        "Switch to view only",
-                        "the viewer can look but not type",
-                        Glyph::Eye,
-                    ),
-                };
-                (
-                    vec![
-                        row(title, format!("localhost:{PORT} · {}", mode.label()), glyph)
-                            .value("● active"),
-                        row("Stop sharing", "the viewer loses the picture", Glyph::Stop),
-                        switch,
-                        row("Copy the tunnel command", tunnel_cmd(), Glyph::Link),
-                        row(
-                            "What this does",
-                            "view looks only · control types here, over ssh",
-                            Glyph::Info,
-                        ),
-                    ],
-                    vec![
-                        "none".into(),
-                        "stop".into(),
-                        "switch".into(),
-                        "tunnel".into(),
-                        "info".into(),
-                    ],
-                    format!("{} on localhost:{PORT} · Enter acts", mode.label()),
-                )
-            }
-            None => (
-                vec![
-                    row(
-                        "Share this screen",
-                        format!("view only · localhost:{PORT} · watched over ssh"),
-                        Glyph::Eye,
-                    )
-                    .value("○ off"),
-                    row(
-                        "Allow remote control",
-                        format!("viewer can type and click · localhost:{PORT}, over ssh"),
-                        Glyph::Keyboard,
-                    ),
-                    row("Copy the tunnel command", tunnel_cmd(), Glyph::Link),
-                    row(
-                        "What this does",
-                        "view looks only · control types here, over ssh",
-                        Glyph::Info,
-                    ),
-                ],
-                vec![
-                    "start".into(),
-                    "control".into(),
-                    "tunnel".into(),
-                    "info".into(),
-                ],
-                "Read-only by default · localhost:5900 · watched from another machine".to_string(),
-            ),
-        };
-
-        let note = status_note.clone().unwrap_or(default_note);
-        let mut picker = Picker::new(
-            "Share this screen",
-            vec![Question::choose("Share this screen", note, rows, keys)],
-        );
-        let code = crate::run_screen(terminal, design, "Share this screen", &mut picker)?;
+        let mut screen = VncScreen::new(mode, status_note.take());
+        let code = crate::run_screen(terminal, design, "Share this screen", &mut screen)?;
         if code != 0 {
             return Ok(code);
         }
-        let answers = picker.answers();
-        if answers.is_empty() {
+        let Some(action) = screen.chosen.take() else {
             return Ok(1);
-        }
-        match answers[0].as_str() {
+        };
+        match action.as_str() {
             "start" => match start(Mode::View) {
                 Ok(()) => {
                     status_note = Some(format!(

@@ -1,0 +1,24 @@
+Hayato · Settings          Network · Wi-Fi, Bluetooth, DNS, SSH, screen sharing 
+────────────────────────────────────────────────────────────────────────────────
+╭ Network ─────────────────────────────────────────────────────────────────────╮
+│ [Net]  Disp   Look   Input   Power   Sys   A11y                              │
+│                                                                              │
+│  Tab/←→ switches section · type to filter · Enter acts               7 / 7  │
+│                                                                              │
+│ ▍   Wi-Fi radio  on                                                         │
+│     Wi-Fi networks  Hayato-5G                                               │
+│     Bluetooth radio  on                                                     │
+│     Bluetooth devices  1 device connected                                   │
+│     DNS  the resolver this connection uses                                  │
+│     Share this screen  off                                                  │
+│     Remote login (SSH)  remote login status                                 │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [Tab]  sections   [Enter]  open / toggle   [type]  filter   [Esc]  close       

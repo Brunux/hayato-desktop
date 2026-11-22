@@ -115,13 +115,85 @@ impl Screen for ControllerScreen {
     }
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        draw_card(ctx.buf, ctx.area, ctx.design, Some("Buttons"), true);
-        let inner = Rect {
-            x: ctx.area.x + 2,
-            y: ctx.area.y + 1,
-            width: ctx.area.width.saturating_sub(4),
-            height: ctx.area.height.saturating_sub(2),
+        let (left, right) = if ctx.area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(ctx.area.width) * 56) / 100).max(52) as u16;
+            let right_w = ctx.area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(ctx.area.x, ctx.area.y, left_w, ctx.area.height),
+                Some(Rect::new(
+                    ctx.area.x + left_w + gap,
+                    ctx.area.y,
+                    right_w,
+                    ctx.area.height,
+                )),
+            )
+        } else {
+            (ctx.area, None)
         };
+        draw_card(ctx.buf, left, ctx.design, Some("Buttons"), true);
+        let inner = Rect {
+            x: left.x + 2,
+            y: left.y + 1,
+            width: left.width.saturating_sub(4),
+            height: left.height.saturating_sub(2),
+        };
+        if let Some(right_area) = right {
+            draw_card(ctx.buf, right_area, ctx.design, Some("Gamepad Deck"), false);
+            let r_in = Rect::new(
+                right_area.x + 2,
+                right_area.y + 1,
+                right_area.width.saturating_sub(4),
+                right_area.height.saturating_sub(2),
+            );
+            if r_in.width >= 20 && r_in.height >= 12 {
+                let accent = Style::default()
+                    .fg(ctx.design.color(ColorRole::Accent))
+                    .add_modifier(Modifier::BOLD);
+                let dim = ctx.design.style(TextStyle::Dim);
+                let body = ctx.design.style(TextStyle::Body);
+                let mut ry = r_in.y;
+                put_trunc(ctx.buf, r_in.x, ry, "CONSOLE LAYOUT", r_in.width, accent);
+                ry += 2;
+                let diagram = [
+                    "   ╭────[ L1 ]──────────[ R1 ]────╮",
+                    "  ╱   ╭─╮                  (△)     ╲",
+                    " │  (◀ ┼ ▶)   [Sh] [Op]  (□) (○)    │",
+                    "  ╲   ╰─╯                  (×)     ╱",
+                    "   ╰───(  LS  )──────(  RS  )─────╯",
+                ];
+                for line in diagram {
+                    if ry >= r_in.bottom().saturating_sub(5) {
+                        break;
+                    }
+                    put_trunc(ctx.buf, r_in.x, ry, line, r_in.width, body);
+                    ry += 1;
+                }
+                ry += 1;
+                if self.row < Button::ALL.len() {
+                    let b = Button::ALL[self.row];
+                    let act = self.bindings.get(b);
+                    put_trunc(ctx.buf, r_in.x, ry, "SELECTED BUTTON", r_in.width, accent);
+                    ry += 1;
+                    put_trunc(
+                        ctx.buf,
+                        r_in.x,
+                        ry,
+                        &format!("{}  →  {}", b.label(), act.name()),
+                        r_in.width,
+                        body,
+                    );
+                }
+                put_trunc(
+                    ctx.buf,
+                    r_in.x,
+                    r_in.bottom().saturating_sub(1),
+                    "DS4: hold PS+Share · DS3: plug USB once, press PS",
+                    r_in.width,
+                    dim,
+                );
+            }
+        }
         if inner.width < 30 || inner.height < 8 {
             return;
         }

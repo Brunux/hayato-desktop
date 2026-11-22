@@ -51,9 +51,9 @@ window#waybar {
 tooltip {
     background: #e6e9ef;
     color: #4c4f69;
-    border: 1px solid rgba(30, 102, 245, 0.55);
-    border-radius: 0;
-    padding: 6px 9px;
+    border: 1px solid rgba(30, 102, 245, 0.85);
+    border-radius: 6px;
+    padding: 8px 11px;
 }
 
 tooltip label {

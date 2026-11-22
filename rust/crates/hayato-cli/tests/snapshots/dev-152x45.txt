@@ -1,45 +1,45 @@
 Hayato · Developer                                                                                                                                      
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-╭ Developer tools ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  Type to filter · health checks, logs, APT, MCP, desktop tools & profile backups                                                           11 / 11  │
-│                                                                                                                                                      │
-│  Health & Debugging  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────   │
-│ ▍   Run system health check  check-system.sh · 10-core, 20-device, 30-desktop witnesses                                                             │
-│     Inspect boot & session logs  journalctl · this boot errors, previous boot, kernel, Sway                                                         │
-│     Inspect MCP tools & status  hayato mcp --tools · 18 agent tools & OpenCode registration                                                         │
-│     Save a diagnostics bundle  the system report and this boot's journal, for a bug report                                                          │
-│  Packages & Identity  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────   │
-│     Hayato APT repository  Cloudsmith debian/forky · status, enable, disable, apt update                                                            │
-│     SSH keys & Git identity  copy ~/.ssh/*.pub to clipboard · view git user & email                                                                 │
-│  Desktop & UI Dev  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────   │
-│     Preview login greeter  hayato greeter --preview · test themes & layout without rebooting                                                        │
-│     Reload desktop services  swaymsg reload · restart waybar and hayato-notify                                                                      │
-│     Open config & repo folders  ~/.config/hayato, ~/.config/sway, /etc/hayato, ~/Dev/Hayato                                                         │
-│  Profile Backup  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────   │
-│     Export my profile  keys, configs and optional home folder, encrypted · to a disk                                                                │
-│     Restore a profile  from an exported archive · the current files are backed up first                                                             │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Developer tools ─────────────────────────────────────────────────────────╮ ╭ Workbench Inspector ────────────────────────────────────────────────────╮
+│  Type to filter · health checks, logs, APT, MCP, desktop tool… 11 / 11  │ │ HEALTH & DEBUGGING                                                      │
+│                                                                          │ │ Run system health check                                                 │
+│  Health & Debugging  ─────────────────────────────────────────────────   │ │                                                                         │
+│ ▍   Run system health check  check-system.sh · 10-core, 20-device, 30-… │ │ $ check-system.sh                                                       │
+│     Inspect boot & session logs  journalctl · this boot errors, previo… │ │                                                                         │
+│     Inspect MCP tools & status  hayato mcp --tools · 18 agent tools & … │ │ Executes the full 3-layer Hayato runtime witness suite in an in-window  │
+│     Save a diagnostics bundle  the system report and this boot's journ… │ │ TaskView.                                                               │
+│  Packages & Identity  ────────────────────────────────────────────────   │ │                                                                         │
+│     Hayato APT repository  Cloudsmith debian/forky · status, enable, d… │ │ What it does                                                            │
+│     SSH keys & Git identity  copy ~/.ssh/*.pub to clipboard · view git… │ │ • 10-core.sh   Rootfs, boot backend, APT & systemd services             │
+│  Desktop & UI Dev  ───────────────────────────────────────────────────   │ │ • 20-device.sh Kernel, firmware, audio, display & board quirks          │
+│     Preview login greeter  hayato greeter --preview · test themes & la… │ │ • 30-desktop.sh SwayFX, Waybar, theme files, glyphs & hayato CLI        │
+│     Reload desktop services  swaymsg reload · restart waybar and hayat… │ │                                                                         │
+│     Open config & repo folders  ~/.config/hayato, ~/.config/sway, /etc… │ │ Paths                                                                   │
+│  Profile Backup  ─────────────────────────────────────────────────────   │ │ /usr/libexec/hayato/check/                                              │
+│     Export my profile  keys, configs and optional home folder, encrypt… │ │ /usr/sbin/check-system.sh                                               │
+│     Restore a profile  from an exported archive · the current files ar… │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │                                                                         │
+│                                                                          │ │ Read-only diagnostic run · safe to run at any time                      │
+╰──────────────────────────────────────────────────────────────────────────╯ ╰─────────────────────────────────────────────────────────────────────────╯
  [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close                                                                                             
