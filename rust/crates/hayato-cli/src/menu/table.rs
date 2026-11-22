@@ -248,6 +248,17 @@ pub const ROOT: &[MenuItem] = &[
         session("hayato-places"),
     ),
     item(
+        "eject",
+        "Eject drive",
+        "safely unmount a USB stick or SD card",
+        Glyph::Undo,
+        Open,
+        Action::Run {
+            program: Program::Hayato,
+            args: &[Arg::Lit("menu"), Arg::Lit("places"), Arg::Lit("--eject")],
+        },
+    ),
+    item(
         "camera",
         "Camera",
         "look through the webcam, take a photo",

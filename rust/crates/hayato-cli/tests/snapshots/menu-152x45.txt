@@ -1,4 +1,4 @@
-Hayato · Menu                                                                                                                               52 commands
+Hayato · Menu                                                                                                                               53 commands
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ Commands ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                                                                                                  │
@@ -10,6 +10,7 @@ Hayato · Menu                                                                  
 │     Notes  quick notes, ink notes, sign a PDF                                                                                                open █ │
 │     Search inside files  the text in them, with ripgrep                                                                                      open █ │
 │     Places  home, disks, the configuration                                                                                                   open █ │
+│     Eject drive  safely unmount a USB stick or SD card                                                                                       open █ │
 │     Camera  look through the webcam, take a photo                                                                                            open █ │
 │     Games  retro and Hayato games                                                                                                            open █ │
 │     Download  a link, into ~/Downloads                                                                                                       open █ │
@@ -27,7 +28,7 @@ Hayato · Menu                                                                  
 │  AI  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── █ │
 │     Agent session  ● opencode, in ~/Work                                                                                                       ai █ │
 │     Ask  one question, the answer here                                                                                                         ai █ │
-│     Agents  Claude Code, Codex and the others                                                                                                  ai █ │
+│     Agents  Claude Code, Codex and the others                                                                                                  ai │ │
 │     Dictation  speak, and it is typed                                                                                                          ai │ │
 │     Local model  a 1.7B model, offline, on four cores                                                                                          ai │ │
 │  System  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │ │
@@ -40,6 +41,5 @@ Hayato · Menu                                                                  
 │     Share this screen  read-only, over ssh                                                                                                 system │ │
 │     Time zone  and network time                                                                                                            system │ │
 │     Free space  what is using it, and clean up                                                                                             system │ │
-│     Auxiliary swap  a card as more memory, on every boot                                                                                   system │ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
  [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close

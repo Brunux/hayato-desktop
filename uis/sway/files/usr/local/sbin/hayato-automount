@@ -198,5 +198,6 @@ case ",$OPTS," in
 esac
 
 echo "mounted $DEV ($LABEL) at $MP$NOTE"
+as_user pkill -RTMIN+8 waybar 2>/dev/null || true
 as_user notify-send -a Hayato -i drive-harddisk -- 'USB drive' \
 	"$LABEL mounted at $MP$NOTE" 2>/dev/null || true

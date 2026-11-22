@@ -47,6 +47,7 @@
         "custom/busy",
         "custom/keyboard-layout",
         "custom/vnc",
+        "custom/drives",
         "custom/bluetooth",
         "network",
         "pulseaudio",
@@ -173,6 +174,15 @@
         "tooltip": true,
         "on-click": "~/.config/bin/hayato-vnc",
         "on-click-right": "~/.config/bin/hayato-vnc stop"
+    },
+    "custom/drives": {
+        "exec": "~/.config/bin/hayato-places --bar",
+        "return-type": "json",
+        "interval": 5,
+        "signal": 8,
+        "tooltip": true,
+        "on-click": "~/.config/bin/hayato-places --eject",
+        "on-click-right": "~/.config/bin/hayato-places"
     },
     "custom/keyboard-layout": {
         "exec": "~/.config/bin/bar-key",

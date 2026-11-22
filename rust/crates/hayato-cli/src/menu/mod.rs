@@ -413,7 +413,9 @@ mod tests {
             .collect();
         assert_eq!(
             added,
-            vec!["notes", "games", "ask", "format", "display", "theme"],
+            vec![
+                "notes", "eject", "games", "ask", "format", "display", "theme"
+            ],
             "the rows spec 007, 010, 017 and the theme picker add to ROOT (spec 011 entries are in BAR_MENU_KEYS)"
         );
     }

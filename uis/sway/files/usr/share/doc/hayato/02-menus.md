@@ -93,8 +93,12 @@ The rest of the menus live in the root menu and the launcher: **Places**
 (home, documents, downloads, pictures, every mounted disk, and a **Mount** row
 for each unmounted one - an SD card in the internal slot, or a stick when
 Settings' *Auto-mount USB drives* is off - where Enter mounts it and opens it in
-Files and **Alt+1** unmounts a disk; a USB stick is already in that list by the
-time you open it, because plugging one in mounts it; its last two rows are the disk
+Files and **Ctrl+E** (or **Alt+1** / **Delete**) safely unmounts and powers off a disk; a USB stick is already in that list by the
+time you open it, because plugging one in mounts it and raises an **eject icon** on Waybar
+(`custom/drives`, showing a drive count when multiple drives are mounted — click to choose a drive to
+safely eject, right-click to open Places). You can also open the **Eject drive** studio directly from
+the main menu (`Alt+Space` → *Eject drive*) or `hayato menu places --eject`; if a process holds the
+mount busy, it names the blocking process via `fuser`. Its last two rows are the disk
 actions, **Auxiliary swap** (a card as more memory, activated on every boot) and
 **Format a disk**, and both list only disks with nothing mounted on them, no
 ChromeOS kernel partition, and that are neither built into the machine nor the

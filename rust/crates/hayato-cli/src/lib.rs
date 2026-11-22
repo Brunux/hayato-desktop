@@ -464,6 +464,10 @@ fn query(resolved: &Resolved) -> Option<i32> {
             }
             Some(EXIT_OK)
         }
+        ("menu places", ["--bar"] | ["bar"]) => {
+            println!("{}", system::places::bar_json());
+            Some(EXIT_OK)
+        }
         ("menu notes", ["--rows"] | ["rows"]) => {
             let mut out = io::stdout();
             for (key, label, detail) in system::notes::rows() {
@@ -633,7 +637,7 @@ fn execute(
         "menu net" => system::net::menu(terminal, design),
         "menu notes" => system::notes::menu(terminal, design),
         "menu agents" => system::agents::menu(terminal, design),
-        "menu places" => system::places::menu(terminal, design),
+        "menu places" => system::places::menu_with_args(&resolved.args, terminal, design),
         "menu clean" => system::clean::menu(terminal, design),
         "menu kill" => system::kill::menu(terminal, design),
         "menu download" => system::download::menu(terminal, design),
