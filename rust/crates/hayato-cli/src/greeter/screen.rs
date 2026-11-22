@@ -2141,14 +2141,14 @@ mod tests {
         for bucket in 1..=12u32 {
             let tick = bucket * 42;
             let mut glitched = None;
-            for idx in 0..PIXEL_LETTERS.len() {
+            for (idx, slot) in seen.iter_mut().enumerate().take(PIXEL_LETTERS.len()) {
                 if matches!(
                     hero_letter_state(idx, tick, seed, false),
                     GlyphState::Glitch(_)
                 ) {
                     assert!(glitched.is_none(), "only one letter glitches per bucket");
                     glitched = Some(idx);
-                    seen[idx] = true;
+                    *slot = true;
                 }
                 assert_eq!(
                     hero_letter_state(idx, tick + 2, seed, false),

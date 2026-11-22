@@ -1259,11 +1259,7 @@ impl Screen for SettingsScreen {
         }
         match key.code {
             KeyCode::Tab => {
-                if self.focus_rail {
-                    self.focus_rail = false;
-                } else {
-                    self.focus_rail = true;
-                }
+                self.focus_rail = !self.focus_rail;
                 return Outcome::Consumed;
             }
             KeyCode::BackTab => {

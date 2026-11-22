@@ -297,8 +297,7 @@ impl PkgScreen {
                 "  Ctrl+G   Upgrade all installed packages (full-upgrade)",
                 "  Esc      Clear search or close window",
             ];
-            let mut y = inner.y + 2;
-            for line in lines {
+            for (y, line) in (inner.y + 2..).zip(lines) {
                 if y >= inner.bottom() {
                     break;
                 }
@@ -310,7 +309,6 @@ impl PkgScreen {
                     dim
                 };
                 put_trunc(buf, inner.x, y, line, inner.width, st);
-                y += 1;
             }
             return;
         }

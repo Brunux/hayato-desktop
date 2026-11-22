@@ -867,6 +867,7 @@ impl DisplayScreen {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_box(
         buf: &mut Buffer,
         r: Rect,

@@ -464,17 +464,15 @@ impl ClipScreen {
             DecodedPreview::Link { url, host } => {
                 let badge = format!("{}  LINK · {host}", Glyph::Link.cell());
                 put_trunc(buf, inner.x, inner.y, &badge, inner.width, accent);
-                let mut y = inner.y + 2;
                 let max_y = inner.bottom().saturating_sub(2);
                 let w = usize::from(inner.width.max(1));
                 let chars: Vec<char> = url.chars().collect();
-                for chunk in chars.chunks(w) {
+                for (y, chunk) in (inner.y + 2..).zip(chars.chunks(w)) {
                     if y >= max_y {
                         break;
                     }
                     let s: String = chunk.iter().collect();
                     put_trunc(buf, inner.x, y, &s, inner.width, body);
-                    y += 1;
                 }
                 put_trunc(
                     buf,
@@ -488,7 +486,7 @@ impl ClipScreen {
             DecodedPreview::Image { meta } => {
                 let badge = format!("{}  IMAGE", Glyph::Image.cell());
                 put_trunc(buf, inner.x, inner.y, &badge, inner.width, accent);
-                let frame_w = inner.width.min(36).max(20);
+                let frame_w = inner.width.clamp(20, 36);
                 let frame_h = 7u16.min(inner.height.saturating_sub(5));
                 if frame_h >= 5 {
                     let fx = inner.x + inner.width.saturating_sub(frame_w) / 2;

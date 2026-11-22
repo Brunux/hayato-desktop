@@ -978,48 +978,46 @@ pub fn menu(
     let state_path = default_state_path();
     let cfg_path = default_config_path();
 
-    loop {
-        let backend = ipc::Backend::from_env_or_preview(preview)
-            .map_err(|err| Failure::new("greeter cannot reach greetd", err))?;
+    let backend = ipc::Backend::from_env_or_preview(preview)
+        .map_err(|err| Failure::new("greeter cannot reach greetd", err))?;
 
-        let users = discover_users();
-        let sessions = discover_sessions();
-        let state = GreeterState::load(&state_path);
-        let cfg = load_greeter_config(&cfg_path);
-        let home = resolve_user_home(&users, &state);
-        let (theme_slug, theme, greeting) =
-            resolve_theme_and_greeting(cli_theme, home.as_deref(), &state, &cfg_path);
+    let users = discover_users();
+    let sessions = discover_sessions();
+    let state = GreeterState::load(&state_path);
+    let cfg = load_greeter_config(&cfg_path);
+    let home = resolve_user_home(&users, &state);
+    let (theme_slug, theme, greeting) =
+        resolve_theme_and_greeting(cli_theme, home.as_deref(), &state, &cfg_path);
 
-        let initial_design = Design::new(
-            theme.palette(),
-            design.density(),
-            design.reduced_motion() || theme.motion != hayato_theme::Motion::Full,
-        );
+    let initial_design = Design::new(
+        theme.palette(),
+        design.density(),
+        design.reduced_motion() || theme.motion != hayato_theme::Motion::Full,
+    );
 
-        let mut scr = screen::GreeterScreen::new(screen::GreeterSetup {
-            users,
-            sessions,
-            state,
-            state_path: (!preview).then(|| state_path.clone()),
-            auth_marker: std::env::var_os("HAYATO_GREETER_AUTH_MARKER").map(PathBuf::from),
-            theme_slug,
-            theme,
-            greeting,
-            backend,
-            preview,
-            density: design.density(),
-            reduced_motion: design.reduced_motion(),
-            config: cfg,
-        });
+    let mut scr = screen::GreeterScreen::new(screen::GreeterSetup {
+        users,
+        sessions,
+        state,
+        state_path: (!preview).then(|| state_path.clone()),
+        auth_marker: std::env::var_os("HAYATO_GREETER_AUTH_MARKER").map(PathBuf::from),
+        theme_slug,
+        theme,
+        greeting,
+        backend,
+        preview,
+        density: design.density(),
+        reduced_motion: design.reduced_motion(),
+        config: cfg,
+    });
 
-        let code = App::new(Header::default())
-            .design(initial_design)
-            .screen(&mut scr)
-            .run(terminal)
-            .map_err(|e| Failure::new("greeter terminal stopped answering", e.to_string()))?;
+    let code = App::new(Header::default())
+        .design(initial_design)
+        .screen(&mut scr)
+        .run(terminal)
+        .map_err(|e| Failure::new("greeter terminal stopped answering", e.to_string()))?;
 
-        return Ok(code);
-    }
+    Ok(code)
 }
 
 #[cfg(test)]
