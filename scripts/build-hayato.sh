@@ -147,6 +147,18 @@ if [ -f /usr/share/hayato/etc/yt-dlp.conf ]; then
 	install -m 0644 /usr/share/hayato/etc/yt-dlp.conf /etc/yt-dlp.conf
 fi
 
+# Preserve non-default desktop user home paths across apt upgrades: shipped
+# Sway configs and .desktop entries reference /home/brunux by default.
+_desktop_home="$(awk -F: '$3 == 1000 && $6 != "" { print $6; exit }' /etc/passwd 2>/dev/null || true)"
+if [ -n "$_desktop_home" ] && [ "$_desktop_home" != "/home/brunux" ]; then
+	for _f in /etc/sway/config /etc/sway/config.d/*.conf /usr/share/applications/org.hayato.*.desktop; do
+		[ -f "$_f" ] || continue
+		if grep -q '/home/brunux' "$_f" 2>/dev/null; then
+			sed -i "s|/home/brunux|${_desktop_home}|g" "$_f"
+		fi
+	done
+fi
+
 if [ -x /usr/bin/hayato ]; then
 	/usr/bin/hayato --symlinks 2>/dev/null | while IFS='	' read -r _name _path; do
 		[ -n "$_name" ] || continue

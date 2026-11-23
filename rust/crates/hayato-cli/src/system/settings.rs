@@ -49,7 +49,7 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("dns", "DNS", "hayato-dns"),
         ("night", "Night light", "night-light apply"),
         ("notify", "Notifications", "notify.conf"),
-        ("dnd", "Do not disturb", "makoctl mode -t do-not-disturb"),
+        ("dnd", "Do not disturb", "hayato-notify-history"),
         ("vnc", "Share this screen", "hayato-vnc"),
         ("ssh", "Remote login (SSH)", "hayato-ssh"),
         ("tz", "Date & time", "hayato-tz"),
@@ -423,12 +423,23 @@ fn media_detail() -> String {
 }
 
 fn battery_detail() -> String {
-    let c = std::fs::read_to_string("/sys/class/power_supply/sbs-8-000b/capacity").ok();
-    let s = std::fs::read_to_string("/sys/class/power_supply/sbs-8-000b/status").ok();
-    match (c, s) {
-        (Some(cap), Some(sta)) => format!("{}% · {}", cap.trim(), sta.trim().to_lowercase()),
-        _ => String::new(),
+    let entries = match std::fs::read_dir("/sys/class/power_supply") {
+        Ok(e) => e,
+        Err(_) => return String::new(),
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let kind = std::fs::read_to_string(path.join("type")).unwrap_or_default();
+        if kind.trim() != "Battery" {
+            continue;
+        }
+        let c = std::fs::read_to_string(path.join("capacity")).ok();
+        let s = std::fs::read_to_string(path.join("status")).ok();
+        if let (Some(cap), Some(sta)) = (c, s) {
+            return format!("{}% · {}", cap.trim(), sta.trim().to_lowercase());
+        }
     }
+    String::new()
 }
 
 /// Build the rows for the settings menu.

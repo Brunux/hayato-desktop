@@ -354,15 +354,14 @@ fn set(paths: &Paths, args: &[&str]) -> i32 {
 ///
 /// None of this is a daemon: `swaymsg reload` re-reads the configuration (which
 /// re-runs the `exec` lines that read a palette), waybar re-reads its stylesheet
-/// on SIGUSR2 and mako on `makoctl reload`. A missing program is a line, not a
-/// failure - a theme set over ssh has nothing to reload.
+/// on SIGUSR2 and `hayato-notify` reloads its palette on SIGUSR1. A missing
+/// program is a line, not a failure - a theme set over ssh has nothing to reload.
 pub fn reload() {
     if std::env::var("WAYLAND_DISPLAY").is_err() {
         return;
     }
     for (program, args) in [
         ("swaymsg", vec!["reload"]),
-        ("makoctl", vec!["reload"]),
         ("pkill", vec!["-USR2", "-x", "waybar"]),
         ("pkill", vec!["-USR1", "-x", "hayato-notify"]),
     ] {
