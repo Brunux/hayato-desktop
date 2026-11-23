@@ -609,8 +609,9 @@ impl SwapScreen {
             let part = self.status.part.as_deref().unwrap_or("auxiliary swap");
             let confirm = Confirm::new(
                 "Turn off auxiliary swap?",
-                format!("{part} · swapoff and remove boot entry · files are not erased"),
+                format!("Disable swap on {part} and remove its boot entry?"),
             )
+            .with_detail("Files on the card are not erased.")
             .with_options(&["Cancel", "Turn it off"]);
             self.mode = SwapMode::ConfirmOff(confirm);
         }
@@ -682,8 +683,8 @@ impl Screen for SwapScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        if matches!(self.mode, SwapMode::ConfirmOff(_)) {
-            return None;
+        if let SwapMode::ConfirmOff(confirm) = &self.mode {
+            return confirm.hit(area, design, x, y);
         }
         let (left, _) = Self::split_panes(area);
         let rows = Rect::new(
@@ -696,6 +697,21 @@ impl Screen for SwapScreen {
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
+        if let SwapMode::ConfirmOff(confirm) = &mut self.mode {
+            if let Some(idx) = row {
+                match confirm.click(idx) {
+                    ConfirmAction::Chosen(1) => {
+                        self.turn_off_confirmed = true;
+                        return Outcome::Done(hayato_ui::app::exit::OK);
+                    }
+                    ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                        self.mode = SwapMode::Overview;
+                    }
+                    ConfirmAction::None => {}
+                }
+            }
+            return Outcome::Consumed;
+        }
         if let Some(r) = row {
             self.list.set_cursor(r);
             return self.activate();

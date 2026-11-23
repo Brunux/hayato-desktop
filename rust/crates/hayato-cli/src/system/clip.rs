@@ -601,12 +601,11 @@ impl ClipScreen {
                 }
                 let confirm = Confirm::new(
                     "Clear clipboard history?",
-                    format!(
-                        "Remove all {} saved clipboard entries? This cannot be undone.",
-                        self.entries.len()
-                    ),
+                    format!("Remove all {} saved clipboard entries?", self.entries.len()),
                 )
-                .with_options(&["Cancel", "Clear all"]);
+                .with_detail("This cannot be undone.")
+                .with_options(&["Cancel", "Clear all"])
+                .destructive(true);
                 self.mode = ClipMode::ConfirmWipe(confirm);
                 Outcome::Consumed
             }
@@ -813,7 +812,19 @@ impl Screen for ClipScreen {
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
-        if matches!(self.mode, ClipMode::ConfirmWipe(_)) {
+        if let ClipMode::ConfirmWipe(confirm) = &mut self.mode {
+            if let Some(idx) = row {
+                match confirm.click(idx) {
+                    ConfirmAction::Chosen(1) => {
+                        self.mode = ClipMode::Browse;
+                        self.perform_wipe();
+                    }
+                    ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                        self.mode = ClipMode::Browse;
+                    }
+                    ConfirmAction::None => {}
+                }
+            }
             return Outcome::Consumed;
         }
         if let Some(r) = row {
@@ -843,8 +854,8 @@ impl Screen for ClipScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        if matches!(self.mode, ClipMode::ConfirmWipe(_)) {
-            return None;
+        if let ClipMode::ConfirmWipe(confirm) = &self.mode {
+            return confirm.hit(area, design, x, y);
         }
         let hits = self.kind_hits.borrow();
         for (idx, r) in hits.iter().enumerate() {

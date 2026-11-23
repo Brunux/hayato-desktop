@@ -307,7 +307,8 @@ impl Picker {
                 ..
             }) => {
                 let confirm = Confirm::new(fill(title, &answers), fill(message, &answers))
-                    .with_options(&["Cancel", fill(verb, &answers).as_str()]);
+                    .with_options(&["Cancel", fill(verb, &answers).as_str()])
+                    .destructive(true);
                 (
                     Current::Ask { at, confirm },
                     fill(title, &answers),
@@ -545,6 +546,17 @@ impl Screen for Picker {
         let Some(row) = row else {
             return Outcome::Continue;
         };
+        if let Current::Ask { at, confirm } = &mut self.current {
+            let answer = match self.questions.get(*at) {
+                Some(Question::Ask { answer, .. }) => answer.clone(),
+                _ => return Outcome::Continue,
+            };
+            return match confirm.click(row) {
+                ConfirmAction::Chosen(1) => self.advance(answer),
+                ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => self.back(),
+                ConfirmAction::None => Outcome::Continue,
+            };
+        }
         let Some(list) = self.list_mut() else {
             return Outcome::Continue;
         };
@@ -557,11 +569,13 @@ impl Screen for Picker {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        if !matches!(self.current, Current::Choose { .. }) {
-            return None;
+        match &self.current {
+            Current::Ask { confirm, .. } => confirm.hit(area, design, x, y),
+            Current::Choose { .. } => self
+                .list()
+                .and_then(|list| list.hit_row(list_layout(area).1, x, y, design)),
+            _ => None,
         }
-        self.list()
-            .and_then(|list| list.hit_row(list_layout(area).1, x, y, design))
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {

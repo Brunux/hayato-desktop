@@ -499,6 +499,21 @@ fn confirmation_on_continue() {
 }
 
 #[test]
+fn confirmation_destructive_wraps_with_detail() {
+    check("confirm-destructive", |buf, area, design| {
+        let mut confirm = Confirm::new(
+            "Erase /dev/sda?",
+            "ALL DATA on /dev/sda (SanDisk Ultra, 32G) WILL BE LOST.",
+        )
+        .with_detail("Formatted as exfat (label HAYATO)")
+        .with_options(&["Cancel", "Erase & Format"])
+        .destructive(true);
+        confirm.handle(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        confirm.render(area, buf, design);
+    });
+}
+
+#[test]
 fn log_pane() {
     check("logpane", |buf, area, design| {
         let mut log = LogPane::new();

@@ -85,7 +85,9 @@ pub struct Setup {
 /// The question that ends the session, Cancel first: the one gate the Power
 /// rows have, whoever opened it.
 fn confirm_for(action: SessionAction) -> Confirm {
-    Confirm::new("Confirm", action.question()).with_options(&["Cancel", action.verb()])
+    Confirm::new("Confirm", action.question())
+        .with_options(&["Cancel", action.verb()])
+        .destructive(true)
 }
 
 pub struct MenuScreen {
@@ -687,12 +689,31 @@ impl Screen for MenuScreen {
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
-        let outcome = match (&self.mode, row) {
+        let outcome = match (&mut self.mode, row) {
             (Mode::List, Some(visible)) => {
                 self.list.set_cursor(visible);
                 match self.list.selected_index() {
                     Some(index) => self.activate(index),
                     None => Outcome::Continue,
+                }
+            }
+            (Mode::Confirm(action, confirm), Some(index)) => {
+                let action = *action;
+                match confirm.click(index) {
+                    ConfirmAction::Chosen(1) => {
+                        self.chosen = Some(Picked::Session(action));
+                        Outcome::Done(OK)
+                    }
+                    ConfirmAction::Chosen(_) | ConfirmAction::Cancelled
+                        if matches!(self.setup.power, Some(Some(_))) =>
+                    {
+                        Outcome::Done(ESCAPE)
+                    }
+                    ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                        self.mode = Mode::Power;
+                        Outcome::Consumed
+                    }
+                    ConfirmAction::None => Outcome::Continue,
                 }
             }
             _ => Outcome::Continue,
@@ -702,11 +723,12 @@ impl Screen for MenuScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        match self.mode {
+        match &self.mode {
             Mode::List => {
                 let (_, rows) = Self::list_layout(area);
                 self.list.hit_row(rows, x, y, design)
             }
+            Mode::Confirm(_, confirm) => confirm.hit(area, design, x, y),
             _ => None,
         }
     }
