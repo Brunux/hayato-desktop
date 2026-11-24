@@ -145,7 +145,7 @@ const HOTKEYS: &[HotkeyEntry] = &[
         desc: "Smart clipboard (Ctrl+T clean / JSON)",
     },
     HotkeyEntry {
-        keys: "Alt+Ctrl+Shift+L",
+        keys: "Alt+I",
         desc: "Hayato Lens (local Circle-to-Search)",
     },
     HotkeyEntry {
@@ -1474,10 +1474,7 @@ mod tests {
             screen.key(press(KeyCode::Char('2')), &design);
             let hotkeys = render_screen(&mut screen, &design, w, h);
             assert!(hotkeys.contains("Alt+Space"), "{w}x{h} missing Alt+Space");
-            assert!(
-                hotkeys.contains("Alt+Ctrl+Shift+L"),
-                "{w}x{h} missing Lens shortcut"
-            );
+            assert!(hotkeys.contains("Alt+I"), "{w}x{h} missing Lens shortcut");
             assert!(
                 hotkeys.contains("Alt+Shift+M"),
                 "{w}x{h} missing Mic mute shortcut"

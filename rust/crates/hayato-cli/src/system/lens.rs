@@ -25,7 +25,7 @@ use ratatui::style::Style;
 
 use super::clip::clean_url;
 use super::translate::{name_of, query_google, query_local_translate, target_code};
-use super::{have, out};
+use super::{have, out, say};
 
 /// What kind of content Lens detected in the captured region.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -473,16 +473,60 @@ impl Screen for LensScreen {
     }
 }
 
+/// Headless pre-capture entry point used when launched from a Sway keybinding:
+/// runs `slurp` + `grim` + `zbarimg`/`tesseract` *before* any floating `foot`
+/// window opens so the screen stays 100% unobstructed during region selection.
+pub fn capture_and_launch() -> i32 {
+    match capture_region() {
+        Ok(None) => hayato_ui::app::exit::ESCAPE,
+        Ok(Some((text, source))) => {
+            if text.is_empty() {
+                say(
+                    "Hayato Lens",
+                    "No text or QR code found in the selected region",
+                    hayato_ui::Urgency::Normal,
+                    Glyph::Eye,
+                );
+                return hayato_ui::app::exit::FAILED;
+            }
+            let exe = std::env::current_exe()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| "hayato".to_string());
+            let _ = Command::new(&exe)
+                .args(["menu", "lens", "--source", source, "--text", &text])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+            hayato_ui::app::exit::OK
+        }
+        Err(err) => {
+            say("Hayato Lens", err, hayato_ui::Urgency::Critical, Glyph::Eye);
+            hayato_ui::app::exit::FAILED
+        }
+    }
+}
+
 /// `hayato menu lens` (`hayato-lens`): capture region or inspect clipboard text.
 pub fn menu(
     args: &[String],
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
+    let explicit_source: Option<&'static str> = args
+        .iter()
+        .position(|a| a == "--source")
+        .and_then(|pos| args.get(pos + 1))
+        .map(|s| match s.as_str() {
+            "QR / Barcode" => "QR / Barcode",
+            "OCR" => "OCR",
+            "Clipboard" => "Clipboard",
+            _ => "Text",
+        });
     let (text, source) = if let Some(pos) = args.iter().position(|a| a == "--text")
         && let Some(val) = args.get(pos + 1)
     {
-        (val.clone(), "Text")
+        (val.clone(), explicit_source.unwrap_or("Text"))
     } else if args.iter().any(|a| a == "--clipboard") {
         let clip = out(&["wl-paste", "-n"]).unwrap_or_default();
         (clip.trim().to_string(), "Clipboard")

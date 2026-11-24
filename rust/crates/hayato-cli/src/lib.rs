@@ -468,6 +468,11 @@ fn query(resolved: &Resolved) -> Option<i32> {
             println!("{}", system::places::bar_json());
             Some(EXIT_OK)
         }
+        // Run region capture (slurp + grim + OCR/QR) *before* spawning the
+        // floating foot window so the popup never blocks the screen during selection.
+        ("menu lens", []) if !std::io::IsTerminal::is_terminal(&io::stdout()) => {
+            Some(system::lens::capture_and_launch())
+        }
         ("menu notes", ["--rows"] | ["rows"]) => {
             let mut out = io::stdout();
             for (key, label, detail) in system::notes::rows() {

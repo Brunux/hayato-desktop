@@ -67,14 +67,14 @@
     "custom/brand": {
         "format": "<span font_desc='JetBrains Mono 14' weight='bold'>H</span>",
         "tooltip": true,
-        "tooltip-format": "<span alpha='50%'>╭─</span> <b>HAYATO // DECK</b>\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+Space</span>        Menu\n<span alpha='45%'>│</span> <span alpha='65%'>Search</span>           Apps\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+Ctrl+Shift+L</span> Lens\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] menu · [RMB] terminal</span>",
+        "tooltip-format": "<span alpha='50%'>╭─</span> <b>HAYATO // DECK</b>\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+Space</span>  Menu\n<span alpha='45%'>│</span> <span alpha='65%'>Search</span>     Apps\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+I</span>      Lens\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] menu · [RMB] terminal</span>",
         "on-click": "~/.config/bin/bar-menu",
         "on-click-right": "foot"
     },
     "custom/brand-dot": {
         "format": "<span font_desc='JetBrains Mono 14' weight='bold'>_</span>",
         "tooltip": true,
-        "tooltip-format": "<span alpha='50%'>╭─</span> <b>HAYATO // DECK</b>\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+Space</span>        Menu\n<span alpha='45%'>│</span> <span alpha='65%'>Search</span>           Apps\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+Ctrl+Shift+L</span> Lens\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] menu · [RMB] terminal</span>",
+        "tooltip-format": "<span alpha='50%'>╭─</span> <b>HAYATO // DECK</b>\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+Space</span>  Menu\n<span alpha='45%'>│</span> <span alpha='65%'>Search</span>     Apps\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+I</span>      Lens\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] menu · [RMB] terminal</span>",
         "on-click": "~/.config/bin/bar-menu",
         "on-click-right": "foot"
     },
