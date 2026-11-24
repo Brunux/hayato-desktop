@@ -259,6 +259,17 @@ pub const ROOT: &[MenuItem] = &[
         },
     ),
     item(
+        "studio",
+        "Studio",
+        "screen record, webcam video, photo snap",
+        Glyph::Video,
+        Open,
+        Action::Run {
+            program: Program::System("hayato"),
+            args: &[Arg::Lit("menu"), Arg::Lit("studio")],
+        },
+    ),
+    item(
         "camera",
         "Camera",
         "look through the webcam, take a photo",
@@ -390,6 +401,17 @@ pub const ROOT: &[MenuItem] = &[
         Action::Run {
             program: Program::System("hayato"),
             args: &[Arg::Lit("menu"), Arg::Lit("lens"), Arg::Lit("--detach")],
+        },
+    ),
+    item(
+        "share",
+        "Share",
+        "share clipboard, files, links or receive from phone",
+        Glyph::Qr,
+        Open,
+        Action::Run {
+            program: Program::System("hayato"),
+            args: &[Arg::Lit("share")],
         },
     ),
     item(

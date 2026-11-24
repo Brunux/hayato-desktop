@@ -1,4 +1,4 @@
-Hayato · Menu                                                                                                                               55 commands
+Hayato · Menu                                                                                                                               57 commands
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ Commands ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                                                                                                  │
@@ -11,6 +11,7 @@ Hayato · Menu                                                                  
 │     Search inside files  the text in them, with ripgrep                                                                                      open █ │
 │     Places  home, disks, the configuration                                                                                                   open █ │
 │     Eject drive  safely unmount a USB stick or SD card                                                                                       open █ │
+│     Studio  screen record, webcam video, photo snap                                                                                          open █ │
 │     Camera  look through the webcam, take a photo                                                                                            open █ │
 │     Games  retro and Hayato games                                                                                                            open █ │
 │     Download  a link, into ~/Downloads                                                                                                       open █ │
@@ -24,9 +25,10 @@ Hayato · Menu                                                                  
 │     Emoji  type a name, insert the glyph                                                                                                     open █ │
 │     Clipboard  what was copied, back in one pick                                                                                             open █ │
 │     Lens  capture screen region to text, link, translate, or note                                                                            open █ │
-│     Drop  share or receive files over Wi-Fi via QR code                                                                                      open █ │
-│     Password  32 random characters, into the clipboard                                                                                       open █ │
-│     SSH  remote login status                                                                                                                 open █ │
+│     Share  share clipboard, files, links or receive from phone                                                                               open █ │
+│     Drop  share or receive files over Wi-Fi via QR code                                                                                      open │ │
+│     Password  32 random characters, into the clipboard                                                                                       open │ │
+│     SSH  remote login status                                                                                                                 open │ │
 │  AI  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │ │
 │     Agent session  ● opencode, in ~/Work                                                                                                       ai │ │
 │     Ask  one question, the answer here                                                                                                         ai │ │
@@ -39,7 +41,5 @@ Hayato · Menu                                                                  
 │     Bluetooth  scan, connect, disconnect                                                                                                   system │ │
 │     Audio output  switch sink, mute, pavucontrol                                                                                           system │ │
 │     Media  play, pause, next, copy track                                                                                                   system │ │
-│     Notifications  history and do-not-disturb                                                                                              system │ │
-│     Share this screen  read-only, over ssh                                                                                                 system │ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
  [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close

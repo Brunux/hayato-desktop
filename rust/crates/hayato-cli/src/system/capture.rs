@@ -549,6 +549,7 @@ impl CaptureScreen {
                 (hayato_ui::recording::AudioMode::Off, "Off"),
                 (hayato_ui::recording::AudioMode::Mic, "Mic"),
                 (hayato_ui::recording::AudioMode::System, "System"),
+                (hayato_ui::recording::AudioMode::Both, "Both"),
             ];
             let mut line = String::from("[^A] Audio   : ");
             for (mode, label) in audio_modes {
@@ -753,6 +754,15 @@ impl Screen for CaptureScreen {
                 if let Some(index) = self.list.selected_index() {
                     return self.activate(index);
                 }
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') if ctrl => {
+                if let Some(item) = self.recent.first() {
+                    let _ = crate::system::share::spawn_detached(
+                        &crate::system::share::SharePayload::from_path(item.path.clone()),
+                    );
+                    return Outcome::Done(hayato_ui::app::exit::OK);
+                }
+                return Outcome::Consumed;
             }
             KeyCode::Char(_) | KeyCode::Backspace
                 if !ctrl && !alt && self.list.type_filter(key) =>
@@ -1231,6 +1241,11 @@ fn audio_source(mode: hayato_ui::recording::AudioMode) -> Result<Option<String>,
             source.map(Some).ok_or_else(|| {
                 "No system-audio monitor source is available (pactl found none)".to_string()
             })
+        }
+        AudioMode::Both => {
+            // Capture uses a single source; Studio's PipeWire mixer handles Both.
+            // Fall back to default microphone here if invoked via legacy capture.
+            audio_source(AudioMode::Mic)
         }
     }
 }

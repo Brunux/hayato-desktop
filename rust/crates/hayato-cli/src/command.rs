@@ -385,6 +385,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &["hayato-capture"],
     },
     CommandSpec {
+        // Studio: screen recording, webcam video, photo snap, and live HUD.
+        path: "menu studio",
+        summary: "screen record, webcam video, photo snap, and live HUD",
+        shape: Shape::Task,
+        symlinks: &["hayato-studio"],
+        installed: &["hayato-studio"],
+    },
+    CommandSpec {
         // QR: Wi-Fi payload or any text (spec 011).
         path: "menu qr",
         summary: "the Wi-Fi QR or any text, rendered in-window (spec 011)",
@@ -407,6 +415,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         shape: Shape::Pick,
         symlinks: &["hayato-drop"],
         installed: &["hayato-drop"],
+    },
+    CommandSpec {
+        // Share: OS-wide Share Sheet (Phone QR, LocalSend v2, offline QR, clipboard, notes).
+        path: "share",
+        summary: "system share sheet: Phone QR, LocalSend, offline QR, clipboard, notes",
+        shape: Shape::Pick,
+        symlinks: &["hayato-share"],
+        installed: &["hayato-share"],
     },
     CommandSpec {
         // Remind: title → note → when flow (spec 011).

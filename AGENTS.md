@@ -70,12 +70,25 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `every_builtin_theme_clears_the_derived_floors` fails a palette that cannot. The key bar draws a
    hint whole or not at all: it drops the middle to `…` and keeps the last hint (the way out) on
    the right.
-10. **A recording is a file of the screen**: the capture menu starts `wf-recorder` as its own argv
-   (`hayato menu capture --start`, a detached re-exec; never a shell line, so the saved pid is the
-   recorder), verifies `/proc/<pid>/comm`, and signals that exact pid (INT, then TERM). While
-   `hayato_ui::recording` reports a live recorder, `hayato-notify` holds back non-critical cards
-   (history still records them) because anything drawn is in the video; critical cards still show,
-   and the "saved" card is sent only after the recorder is gone.
+10. **A recording is a file of the screen (`hayato-studio` & `hayato-capture`)**: `hayato menu studio`
+    (`hayato-studio`, `Alt+Ctrl+R`, with `~/.config/bin/hayato-camera` wrapping `--mode photo`) unifies
+    Screen Record (`wf-recorder`), Webcam Video (`ffmpeg`), and Photo Snap (`mpv.sock` zero-flicker
+    viewfinder + `ffmpeg` fallback) using dynamic `/sys/class/video4linux` `uvcvideo` discovery (never
+    hardcoding `/dev/video0`). Live PipeWire audio switching (`Off`/`Mic`/`System`/`Both`) uses an
+    ephemeral `hayato_rec_mix` null-sink + dynamic `module-loopback` (never looping `hayato_rec_mix.monitor`
+    back into itself). Waybar displays a minimal pulsing `custom/rec` icon next to `privacy` (0px when idle)
+    whose left-click opens `LiveHudScreen` (`hayato menu studio --hud`) for hot audio switching and 60 FPS
+    cubic-eased Sway IPC `hayato-webcam` PiP gliding (`sticky enable`, scratchpad Hide/Show, fullscreen warning).
+    While `hayato_ui::recording::is_recording()` reports a live session (either `hayato-studio/session.json`
+    or legacy `hayato-capture/recording.pid`), `hayato-notify` holds back non-critical cards so nothing
+    contaminates the video, and the "saved" card fires only after the recorder exits.
+10b. **System Share Sheet (`hayato share` / `hayato-share`)**: `system/share/` provides the OS-wide
+    Share Sheet invoked from `hayato-files` (`Ctrl+S`), `file_actions`, `hayato-lens` (`s`), `hayato-clip`
+    (`Alt+S`), `hayato-notes` (`Ctrl+S`), `hayato-capture` (`Ctrl+S`), `hayato-studio` (`Ctrl+S`), and CLI
+    stdin/paths (`system/drop.rs` is a thin compatibility facade). Its ephemeral LAN HTTP server uses a
+    128-bit `/dev/urandom` token, constant-time comparison, active-theme CSS injection, HTML escaping,
+    multi-file/folder ZIP streaming, two-way phone upload/clipboard push, and 5-min auto-expiry, alongside
+    zero-daemon on-demand LocalSend v2 UDP multicast (`224.0.0.167:53317`) peer discovery.
 11. **A modal replaces the body; it never floats over a live list**: a `Confirm` or a
    `centered` card is drawn on its own screen (like the Ask strip and the kill screen), or the
    screen first clears the card area. At 80×24 a 56-wide card cuts list rows in half

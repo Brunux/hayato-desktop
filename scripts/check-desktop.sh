@@ -2769,10 +2769,10 @@ elif [ -d /sys/module/uvcvideo ]; then
 else
 	skip "no webcam (uvcvideo is not loaded: no UVC device on the bus)"
 fi
-if have guvcview; then
-	ok "camera application installed (guvcview $(dpkg-query -W -f='${Version}' guvcview 2>/dev/null))"
+if have hayato && have mpv && have ffmpeg; then
+	ok "camera & studio stack installed (hayato-studio + mpv + ffmpeg)"
 else
-	fail "guvcview is missing: the Camera row opens nothing - there is a camera and no window for it"
+	fail "studio/camera tools missing: need hayato, mpv and ffmpeg for Camera/Studio"
 fi
 if [ -x "$HOME/.config/bin/hayato-camera" ]; then
 	ok "the camera wrapper runs (bin/hayato-camera, executable)"

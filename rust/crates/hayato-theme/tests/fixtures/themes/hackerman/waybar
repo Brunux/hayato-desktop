@@ -90,6 +90,7 @@ tooltip label {
    theme (Catppuccin Latte) is the colour of the background. Emphasis is
    weight. */
 #custom-busy,
+#custom-rec,
 #privacy,
 #custom-updates,
 #tray,
@@ -198,6 +199,7 @@ tooltip label {
 
 #custom-updates.empty,
 #custom-busy.empty,
+#custom-rec.empty,
 #custom-keyboard-layout.empty,
 #custom-vnc.empty,
 #custom-drives.empty {
@@ -205,6 +207,26 @@ tooltip label {
     margin: 0;
     border: none;
     background: transparent;
+}
+
+/* Studio recording icon: 0px when idle (.empty), pulsing danger glyph when live. */
+@keyframes hayato-rec-pulse {
+    0% { color: #ff5c57; }
+    50% { color: rgba(255, 92, 87, 0.35); }
+    100% { color: #ff5c57; }
+}
+
+#custom-rec.recording {
+    padding: 0 7px;
+    color: #ff5c57;
+    font-weight: 700;
+    animation: hayato-rec-pulse 1.6s ease-in-out infinite;
+}
+
+#custom-rec.recording-static {
+    padding: 0 7px;
+    color: #ff5c57;
+    font-weight: 700;
 }
 
 /* Remote control is the explicit second start (`--disable-input` absent), and

@@ -473,6 +473,8 @@ fn query(resolved: &Resolved) -> Option<i32> {
         ("menu lens", []) => Some(system::lens::capture_and_launch(false)),
         ("menu lens", ["--detach"]) => Some(system::lens::detach_capture()),
         ("menu lens", ["--after-menu"]) => Some(system::lens::capture_and_launch(true)),
+        ("share", _) => system::share::try_capture_stdin(&resolved.args),
+        ("menu studio", _) => system::studio::try_query(&resolved.args),
         ("menu notes", ["--rows"] | ["rows"]) => {
             let mut out = io::stdout();
             for (key, label, detail) in system::notes::rows() {
@@ -625,9 +627,11 @@ fn execute(
         "menu clip" => system::clip::menu(terminal, design),
         "menu emoji" => system::emoji::menu(terminal, design),
         "menu capture" => system::capture::menu(terminal, design),
+        "menu studio" => system::studio::menu(&resolved.args, terminal, design),
         "menu qr" => system::qr::menu_with_args(&resolved.args, terminal, design),
         "menu lens" => system::lens::menu(&resolved.args, terminal, design),
         "menu drop" => system::drop::menu(&resolved.args, terminal, design),
+        "share" => system::share::menu(&resolved.args, terminal, design),
         "menu remind" => system::remind::menu(terminal, design),
         "menu calc" => system::calc::menu(terminal, design),
         "menu colour" => system::colour::menu(terminal, design),
@@ -736,6 +740,7 @@ fn session_menu(
                             | "menu palette"
                             | "ask"
                             | "menu capture"
+                            | "menu studio"
                             | "menu lens"
                             | "menu translate"
                             | "menu dictate"

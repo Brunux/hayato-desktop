@@ -112,14 +112,16 @@ pub fn questions(
     rows.push(row("Compress", format!("→ {base}.tar.xz"), Glyph::Box));
     keys.push("pack".to_string());
 
-    if kind != FileKind::Directory {
-        rows.push(row(
-            "Share nearby (Hayato Drop)",
-            "send over Wi-Fi via scannable QR code",
-            Glyph::Qr,
-        ));
-        keys.push("drop".to_string());
-    }
+    rows.push(row(
+        "Share\u{2026} (Phone QR / LocalSend)",
+        if kind == FileKind::Directory {
+            "zip & share folder over Wi-Fi or local targets"
+        } else {
+            "send to phone via QR / LocalSend or copy"
+        },
+        Glyph::Qr,
+    ));
+    keys.push("share".to_string());
 
     if matches!(kind, FileKind::ArchiveZip | FileKind::ArchiveTar) {
         rows.push(row(
@@ -253,9 +255,9 @@ pub fn menu_for_path(
         };
 
         match action.as_str() {
-            "drop" => {
-                return super::drop::menu(
-                    &[target.to_string_lossy().to_string()],
+            "share" | "drop" => {
+                return super::share::open(
+                    super::share::SharePayload::from_path(target.to_path_buf()),
                     terminal,
                     design,
                 );

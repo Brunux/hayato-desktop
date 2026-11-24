@@ -1,4 +1,4 @@
-Hayato · Menu                                                       55 commands
+Hayato · Menu                                                       57 commands
 ────────────────────────────────────────────────────────────────────────────────
 ╭ Commands ────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                          │
@@ -11,6 +11,7 @@ Hayato · Menu                                                       55 commands
 │     Search inside files  the text in them, with ripgrep              open │ │
 │     Places  home, disks, the configuration                           open │ │
 │     Eject drive  safely unmount a USB stick or SD card               open │ │
+│     Studio  screen record, webcam video, photo snap                  open │ │
 │     Camera  look through the webcam, take a photo                    open │ │
 │     Games  retro and Hayato games                                    open │ │
 │     Download  a link, into ~/Downloads                               open │ │
@@ -19,6 +20,5 @@ Hayato · Menu                                                       55 commands
 │     Keybindings  every binding, from the configuration               open │ │
 │     Applications  desktop entries, icons, frecency                   open │ │
 │     Window switcher  focus or close any window                       open │ │
-│     Run command  PATH completion, Shift+Enter in foot                open │ │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close

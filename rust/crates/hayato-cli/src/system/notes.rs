@@ -60,6 +60,7 @@ enum Pending {
     Export,
     Search,
     Trash(PathBuf),
+    Share(PathBuf),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -614,6 +615,13 @@ impl Screen for NotesScreen {
                         }
                     };
                 }
+            }
+            return Outcome::Consumed;
+        }
+        if key.code == KeyCode::Char('s') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            if let Some(note) = self.selected_note() {
+                self.pending = Some(Pending::Share(note.path.clone()));
+                return Outcome::Done(hayato_ui::app::exit::OK);
             }
             return Outcome::Consumed;
         }
@@ -2034,6 +2042,13 @@ pub fn menu(
                 }
             }
             Some(Pending::Trash(path)) => trash_note(terminal, design, &path)?,
+            Some(Pending::Share(path)) => {
+                let _ = crate::system::share::open(
+                    crate::system::share::SharePayload::from_path(path),
+                    terminal,
+                    design,
+                )?;
+            }
             None => return Ok(code),
         }
     }

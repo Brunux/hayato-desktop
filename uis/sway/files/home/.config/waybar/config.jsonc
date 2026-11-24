@@ -45,6 +45,7 @@
     ],
     "modules-right": [
         "privacy",
+        "custom/rec",
         "custom/busy",
         "custom/keyboard-layout",
         "custom/vnc",
@@ -156,6 +157,15 @@
                 "tooltip-icon-size": 16
             }
         ]
+    },
+    "custom/rec": {
+        "exec": "hayato menu studio --bar",
+        "return-type": "json",
+        "interval": 1,
+        "signal": 8,
+        "tooltip": true,
+        "on-click": "hayato menu studio --hud",
+        "on-click-right": "hayato menu studio --stop"
     },
     "custom/busy": {
         "exec": "~/.config/bin/bar-busy",

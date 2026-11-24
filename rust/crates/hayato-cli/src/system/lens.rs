@@ -261,6 +261,14 @@ impl LensScreen {
         );
         keys.push("qr");
 
+        rows.push(
+            Row::new("Share\u{2026}")
+                .glyph(Glyph::Wifi)
+                .detail("open Hayato Share Sheet (Phone QR / LocalSend / Notes)")
+                .value("s"),
+        );
+        keys.push("share");
+
         self.keys = keys;
         self.list.set_rows(rows);
         self.header = Header::new("Hayato")
@@ -276,6 +284,25 @@ impl LensScreen {
                 } else {
                     self.status = "Could not copy (wl-copy failed)".to_string();
                 }
+            }
+            "share" => {
+                let payload = if let Some(url) = &self.url {
+                    crate::system::share::SharePayload::Url {
+                        url: url.clone(),
+                        title: None,
+                        source: crate::system::share::ShareSource::Lens,
+                    }
+                } else {
+                    crate::system::share::SharePayload::Text {
+                        content: self.text.clone(),
+                        label: Some("Lens capture".to_string()),
+                        source: crate::system::share::ShareSource::Lens,
+                    }
+                };
+                if crate::system::share::spawn_detached(&payload).is_ok() {
+                    return Outcome::Done(hayato_ui::app::exit::OK);
+                }
+                self.status = "Could not open Hayato Share".to_string();
             }
             "open-url" => {
                 if let Some(url) = &self.url {
@@ -427,6 +454,7 @@ impl Screen for LensScreen {
             KeyCode::Char('t') => return self.run_action("translate"),
             KeyCode::Char('n') => return self.run_action("note"),
             KeyCode::Char('q') => return self.run_action("qr"),
+            KeyCode::Char('s') => return self.run_action("share"),
             _ => {}
         }
         match self.list.handle(key, self.rows_height.get(), design) {

@@ -17,6 +17,8 @@
 
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 /// The process name the compositor's recorder runs under.
 pub const COMM: &str = "wf-recorder";
 
@@ -25,12 +27,24 @@ pub const COMM: &str = "wf-recorder";
 /// recorder impossible to remember after a reboot.
 pub const DIR: &str = "hayato-capture";
 
+/// The directory under `$XDG_RUNTIME_DIR` that holds Hayato Studio's live
+/// recording session (`session.json`, PipeWire mixer module IDs, `mpv.sock`).
+pub const STUDIO_DIR: &str = "hayato-studio";
+
 /// `$XDG_RUNTIME_DIR/hayato-capture`, or `/tmp/hayato-capture` in a session
 /// that has no runtime directory.
 pub fn state_dir() -> PathBuf {
     match std::env::var_os("XDG_RUNTIME_DIR").filter(|dir| !dir.is_empty()) {
         Some(dir) => PathBuf::from(dir).join(DIR),
         None => PathBuf::from("/tmp").join(DIR),
+    }
+}
+
+/// `$XDG_RUNTIME_DIR/hayato-studio`, or `/tmp/hayato-studio` when unset.
+pub fn studio_state_dir() -> PathBuf {
+    match std::env::var_os("XDG_RUNTIME_DIR").filter(|dir| !dir.is_empty()) {
+        Some(dir) => PathBuf::from(dir).join(STUDIO_DIR),
+        None => PathBuf::from("/tmp").join(STUDIO_DIR),
     }
 }
 
@@ -115,12 +129,14 @@ pub fn read() -> Recorder {
     read_in(&state_dir())
 }
 
-/// What to record beside the screen.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// What to record beside the screen or webcam.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum AudioMode {
     Off,
     Mic,
     System,
+    Both,
 }
 
 impl AudioMode {
@@ -129,6 +145,7 @@ impl AudioMode {
             Self::Off => "off",
             Self::Mic => "mic",
             Self::System => "system",
+            Self::Both => "both",
         }
     }
 
@@ -137,6 +154,7 @@ impl AudioMode {
             "off" => Some(Self::Off),
             "mic" => Some(Self::Mic),
             "system" => Some(Self::System),
+            "both" => Some(Self::Both),
             _ => None,
         }
     }
@@ -146,6 +164,16 @@ impl AudioMode {
             Self::Off => "no audio",
             Self::Mic => "microphone",
             Self::System => "system audio (line out)",
+            Self::Both => "mic + system (mixed)",
+        }
+    }
+
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Self::Off => "Muted",
+            Self::Mic => "Mic",
+            Self::System => "System",
+            Self::Both => "Mic + System",
         }
     }
 
@@ -153,16 +181,188 @@ impl AudioMode {
         match self {
             Self::Off => Self::Mic,
             Self::Mic => Self::System,
-            Self::System => Self::Off,
+            Self::System => Self::Both,
+            Self::Both => Self::Off,
         }
     }
 }
 
-/// The webinar options saved between recordings.
+/// Simple quality presets tuned for MT8192 8-core ARM64 / 4 GB RAM.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum QualityPreset {
+    Compact,
+    Balanced,
+    Crisp,
+}
+
+impl QualityPreset {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Compact => "compact",
+            Self::Balanced => "balanced",
+            Self::Crisp => "crisp",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        match text.trim() {
+            "compact" => Some(Self::Compact),
+            "balanced" => Some(Self::Balanced),
+            "crisp" => Some(Self::Crisp),
+            _ => None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Compact => "Compact (24fps)",
+            Self::Balanced => "Balanced (30fps)",
+            Self::Crisp => "Crisp (30fps HQ)",
+        }
+    }
+
+    pub fn fps(self) -> u32 {
+        match self {
+            Self::Compact => 24,
+            Self::Balanced | Self::Crisp => 30,
+        }
+    }
+
+    pub fn x264_preset(self) -> &'static str {
+        match self {
+            Self::Compact => "ultrafast",
+            Self::Balanced => "veryfast",
+            Self::Crisp => "faster",
+        }
+    }
+
+    pub fn crf(self) -> u8 {
+        match self {
+            Self::Compact => 30,
+            Self::Balanced => 26,
+            Self::Crisp => 22,
+        }
+    }
+
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Compact => Self::Balanced,
+            Self::Balanced => Self::Crisp,
+            Self::Crisp => Self::Compact,
+        }
+    }
+}
+
+/// Webcam Picture-in-Picture position presets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PipCorner {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+    Center,
+}
+
+impl PipCorner {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::TopLeft => "tl",
+            Self::TopRight => "tr",
+            Self::BottomLeft => "bl",
+            Self::BottomRight => "br",
+            Self::Center => "center",
+        }
+    }
+
+    pub fn short(self) -> &'static str {
+        match self {
+            Self::TopLeft => "TL",
+            Self::TopRight => "TR",
+            Self::BottomLeft => "BL",
+            Self::BottomRight => "BR",
+            Self::Center => "CTR",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        match text.trim() {
+            "tl" | "top-left" => Some(Self::TopLeft),
+            "tr" | "top-right" => Some(Self::TopRight),
+            "bl" | "bottom-left" => Some(Self::BottomLeft),
+            "br" | "bottom-right" => Some(Self::BottomRight),
+            "center" | "ctr" | "c" => Some(Self::Center),
+            _ => None,
+        }
+    }
+
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::TopLeft => Self::TopRight,
+            Self::TopRight => Self::BottomRight,
+            Self::BottomRight => Self::BottomLeft,
+            Self::BottomLeft => Self::Center,
+            Self::Center => Self::TopLeft,
+        }
+    }
+}
+
+/// Webcam Picture-in-Picture size presets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PipSize {
+    Small,
+    Medium,
+    Large,
+}
+
+impl PipSize {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Small => "s",
+            Self::Medium => "m",
+            Self::Large => "l",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        match text.trim() {
+            "s" | "small" => Some(Self::Small),
+            "m" | "medium" => Some(Self::Medium),
+            "l" | "large" => Some(Self::Large),
+            _ => None,
+        }
+    }
+
+    pub fn dims(self) -> (i64, i64) {
+        match self {
+            Self::Small => (240, 180),
+            Self::Medium => (320, 240),
+            Self::Large => (480, 360),
+        }
+    }
+
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Small => Self::Medium,
+            Self::Medium => Self::Large,
+            Self::Large => Self::Small,
+        }
+    }
+}
+
+/// Persisted Studio / Capture options (`~/.config/hayato/record.conf`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Options {
     pub audio: AudioMode,
     pub webcam: bool,
+    pub quality: QualityPreset,
+    pub corner: PipCorner,
+    pub pip_size: PipSize,
+    pub mirror: bool,
+    pub sticky: bool,
+    pub timer_secs: u8,
 }
 
 impl Default for Options {
@@ -170,6 +370,12 @@ impl Default for Options {
         Self {
             audio: AudioMode::Off,
             webcam: false,
+            quality: QualityPreset::Balanced,
+            corner: PipCorner::BottomRight,
+            pip_size: PipSize::Medium,
+            mirror: true,
+            sticky: true,
+            timer_secs: 0,
         }
     }
 }
@@ -182,6 +388,62 @@ impl Options {
             if self.webcam { "on" } else { "off" }
         )
     }
+}
+
+/// Active Hayato Studio live recording session (`$XDG_RUNTIME_DIR/hayato-studio/session.json`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StudioSession {
+    pub kind: String,
+    pub pid: u32,
+    pub comm: String,
+    pub file: PathBuf,
+    pub started_epoch: u64,
+    pub quality: QualityPreset,
+    pub audio: AudioMode,
+    pub geometry: Option<String>,
+    pub cam_pid: Option<u32>,
+    pub cam_visible: bool,
+    pub cam_sticky: bool,
+    pub cam_corner: PipCorner,
+    pub cam_size: PipSize,
+    pub cam_mirror: bool,
+}
+
+pub fn read_studio_session_in(dir: &Path) -> Option<StudioSession> {
+    let raw = std::fs::read_to_string(dir.join("session.json")).ok()?;
+    let session: StudioSession = serde_json::from_str(&raw).ok()?;
+    let live_comm = read_proc_comm(session.pid)?;
+    if (live_comm == session.comm || live_comm == "wf-recorder" || live_comm == "ffmpeg")
+        && !is_zombie(session.pid)
+    {
+        Some(session)
+    } else {
+        None
+    }
+}
+
+pub fn read_studio_session() -> Option<StudioSession> {
+    read_studio_session_in(&studio_state_dir())
+}
+
+pub fn write_studio_session_in(dir: &Path, session: &StudioSession) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let tmp = dir.join("session.json.part");
+    let json = serde_json::to_vec_pretty(session).map_err(std::io::Error::other)?;
+    std::fs::write(&tmp, json)?;
+    std::fs::rename(tmp, dir.join("session.json"))
+}
+
+pub fn write_studio_session(session: &StudioSession) -> std::io::Result<()> {
+    write_studio_session_in(&studio_state_dir(), session)
+}
+
+pub fn clear_studio_session_in(dir: &Path) {
+    let _ = std::fs::remove_file(dir.join("session.json"));
+}
+
+pub fn clear_studio_session() {
+    clear_studio_session_in(&studio_state_dir());
 }
 
 /// `~/.config/hayato/record.conf`: what the next recording includes.
@@ -213,6 +475,32 @@ fn parse_options(text: &str) -> Options {
                 }
             }
             "webcam" => options.webcam = value.trim() == "on",
+            "quality" => {
+                if let Some(q) = QualityPreset::parse(value) {
+                    options.quality = q;
+                }
+            }
+            "corner" => {
+                if let Some(c) = PipCorner::parse(value) {
+                    options.corner = c;
+                }
+            }
+            "pip_size" => {
+                if let Some(s) = PipSize::parse(value) {
+                    options.pip_size = s;
+                }
+            }
+            "mirror" => options.mirror = value.trim() != "off",
+            "sticky" => options.sticky = value.trim() != "off",
+            "timer" => {
+                if let Ok(t) = value.trim().parse::<u8>() {
+                    options.timer_secs = match t {
+                        3 => 3,
+                        5 => 5,
+                        _ => 0,
+                    };
+                }
+            }
             _ => {}
         }
     }
@@ -221,10 +509,16 @@ fn parse_options(text: &str) -> Options {
 
 fn options_body(options: Options) -> String {
     format!(
-        "# Hayato recording options. Read by `hayato menu capture --start`.\n\
-         audio={}\nwebcam={}\n",
+        "# Hayato Studio & capture options.\n\
+         audio={}\nwebcam={}\nquality={}\ncorner={}\npip_size={}\nmirror={}\nsticky={}\ntimer={}\n",
         options.audio.as_str(),
-        if options.webcam { "on" } else { "off" }
+        if options.webcam { "on" } else { "off" },
+        options.quality.as_str(),
+        options.corner.as_str(),
+        options.pip_size.as_str(),
+        if options.mirror { "on" } else { "off" },
+        if options.sticky { "on" } else { "off" },
+        options.timer_secs,
     )
 }
 
@@ -249,9 +543,9 @@ pub fn is_recording_in(state: &Path) -> bool {
     pid_in(state).is_some_and(is_recorder)
 }
 
-/// Is a capture running in this session?
+/// Is a capture running in this session (either Hayato Studio or legacy capture)?
 pub fn is_recording() -> bool {
-    is_recording_in(&state_dir())
+    read_studio_session().is_some() || is_recording_in(&state_dir())
 }
 
 /// Forget the recorder. Safe when there was none.
@@ -374,12 +668,14 @@ mod tests {
         let options = Options {
             audio: AudioMode::Mic,
             webcam: true,
+            ..Options::default()
         };
         let text = options_body(options);
         assert_eq!(parse_options(&text), options);
         assert_eq!(AudioMode::Off.cycle(), AudioMode::Mic);
         assert_eq!(AudioMode::Mic.cycle(), AudioMode::System);
-        assert_eq!(AudioMode::System.cycle(), AudioMode::Off);
+        assert_eq!(AudioMode::System.cycle(), AudioMode::Both);
+        assert_eq!(AudioMode::Both.cycle(), AudioMode::Off);
         assert_eq!(AudioMode::System.label(), "system audio (line out)");
     }
 

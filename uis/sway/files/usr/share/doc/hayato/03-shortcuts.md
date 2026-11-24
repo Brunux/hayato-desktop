@@ -68,7 +68,8 @@ mapped.
 | Alt+Ctrl+Shift+D | bring the internal panel back when the screen is black (no menu needed: it works with nothing on screen) |
 | Alt+Ctrl+N | notifications: the history, do-not-disturb, copy one |
 | Alt+C (or Alt+Ctrl+Q) | calculator: type it, Enter copies the result |
-| Alt+Ctrl+V | clipboard history: Enter puts an entry back, Alt+1 deletes it |
+| Alt+Ctrl+V | clipboard history: Enter puts an entry back, Alt+1 deletes it, Alt+S shares it via Hayato Share |
+| Alt+Ctrl+R | **Hayato Studio**: screen recording, webcam video, photo snap, and Live Recording HUD (also reachable by clicking the pulsing REC icon on Waybar) |
 | Alt+Ctrl+E | emoji: type a name, Enter inserts the glyph at the cursor |
 | Alt+Return | terminal (foot) |
 | Alt+Shift+Return | the browser (firefox-esr) |

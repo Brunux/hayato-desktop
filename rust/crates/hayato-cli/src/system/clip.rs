@@ -297,6 +297,7 @@ impl ClipScreen {
 
     fn build_rows(&mut self) {
         self.strip.set_items(vec![
+            ActionItem::new("share", "Alt+S", "Share").glyph(Glyph::Qr),
             ActionItem::new("save", "^S", "Save newest image").glyph(Glyph::Image),
             ActionItem::new(
                 "wipe",
@@ -723,6 +724,59 @@ impl ClipScreen {
 
     fn run_strip_action(&mut self, id: &'static str) -> Outcome {
         match id {
+            "share" => {
+                if let Some(row) = self.list.selected_index()
+                    && let Some(&entry_idx) = self.visible_indices.get(row)
+                    && let Some(entry) = self.entries.get(entry_idx)
+                {
+                    let payload = if entry.kind == ClipKind::Image {
+                        let runtime = std::env::var("XDG_RUNTIME_DIR")
+                            .map(std::path::PathBuf::from)
+                            .unwrap_or_else(|_| std::env::temp_dir());
+                        let tmp = runtime.join(format!("hayato-clip-share-{}.png", std::process::id()));
+                        let ok = std::process::Command::new("cliphist")
+                            .args(["decode", &entry.id])
+                            .output()
+                            .ok()
+                            .filter(|o| o.status.success() && !o.stdout.is_empty())
+                            .and_then(|o| std::fs::write(&tmp, &o.stdout).ok())
+                            .is_some();
+                        if ok {
+                            Some(crate::system::share::SharePayload::Image {
+                                path: tmp,
+                                ephemeral: true,
+                                source: crate::system::share::ShareSource::Clipboard,
+                            })
+                        } else {
+                            None
+                        }
+                    } else {
+                        std::process::Command::new("cliphist")
+                            .args(["decode", &entry.id])
+                            .output()
+                            .ok()
+                            .filter(|o| o.status.success())
+                            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                            .filter(|s| !s.trim().is_empty())
+                            .map(|text| {
+                                crate::system::share::SharePayload::from_text_or_url(
+                                    text,
+                                    Some("Clipboard".to_string()),
+                                    crate::system::share::ShareSource::Clipboard,
+                                )
+                            })
+                    };
+                    if let Some(p) = payload
+                        && crate::system::share::spawn_detached(&p).is_ok()
+                    {
+                        return Outcome::Done(hayato_ui::app::exit::OK);
+                    }
+                    self.status_note = Some("Could not share selected entry".to_string());
+                    return Outcome::Consumed;
+                }
+                self.status_note = Some("Select a clipboard entry to share".to_string());
+                Outcome::Consumed
+            }
             "save" => {
                 let img_entry = self.entries.iter().find(|e| e.kind == ClipKind::Image);
                 if let Some(entry) = img_entry {
@@ -878,6 +932,11 @@ impl Screen for ClipScreen {
             ActionStripEvent::Activated(id) => return self.run_strip_action(id),
             ActionStripEvent::Consumed => return Outcome::Consumed,
             ActionStripEvent::Ignored => {}
+        }
+        if key.modifiers.contains(KeyModifiers::ALT)
+            && matches!(key.code, KeyCode::Char('s') | KeyCode::Char('S'))
+        {
+            return self.run_strip_action("share");
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {

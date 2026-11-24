@@ -655,6 +655,7 @@ impl BarModules {
         match self {
             Self::Full => &[
                 "privacy",
+                "custom/rec",
                 "custom/busy",
                 "custom/keyboard-layout",
                 "custom/vnc",
@@ -670,6 +671,7 @@ impl BarModules {
             ],
             Self::Compact => &[
                 "privacy",
+                "custom/rec",
                 "custom/busy",
                 "custom/bluetooth",
                 "custom/vnc",
@@ -679,7 +681,13 @@ impl BarModules {
                 "battery",
                 "tray",
             ],
-            Self::Minimal => &["custom/busy", "network", "pulseaudio", "battery"],
+            Self::Minimal => &[
+                "custom/rec",
+                "custom/busy",
+                "network",
+                "pulseaudio",
+                "battery",
+            ],
         }
     }
 }
