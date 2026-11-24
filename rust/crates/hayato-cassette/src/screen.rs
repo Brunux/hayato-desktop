@@ -15,6 +15,7 @@
 use std::cell::Cell;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
@@ -25,7 +26,7 @@ use hayato_music_core::library::{
     load_cached_tracks, read_track_metadata, save_m3u8_playlist,
 };
 use hayato_music_core::lyrics::Lyrics;
-use hayato_music_core::mpris::{MprisCommand, MprisHandle, notify_track_change};
+use hayato_music_core::mpris::{MprisCommand, MprisHandle};
 use hayato_music_core::providers::{
     Collection, CollectionItems, CollectionKind, PlaybackDevice, ProviderCmd, ProviderEvent,
     ProviderHub, ProviderId, SearchResults,
@@ -202,6 +203,10 @@ pub struct CassetteScreen {
     spotify_authed: bool,
     spotify_user: String,
     spotify_premium: bool,
+    local_connect_ready: bool,
+    local_device_id: Option<String>,
+    preferred_device_id: Option<String>,
+    local_spotify_pcm_active: Arc<AtomicBool>,
     devices: Vec<PlaybackDevice>,
     active_provider: ProviderId,
     remote_state: PlayState,
@@ -258,7 +263,12 @@ impl CassetteScreen {
         let (engine, analyzer) = AudioEngine::spawn(config.volume_pct);
         let (mpris_tx, mpris_rx) = mpsc::channel();
         let mpris = MprisHandle::spawn(mpris_tx);
-        let hub = ProviderHub::spawn(config.music_dirs.clone());
+        let local_spotify_pcm_active = Arc::new(AtomicBool::new(false));
+        let hub = ProviderHub::spawn(
+            config.music_dirs.clone(),
+            engine.shared_tap(),
+            Arc::clone(&local_spotify_pcm_active),
+        );
         let local_tracks = load_cached_tracks();
 
         let mut screen = Self {
@@ -291,6 +301,10 @@ impl CassetteScreen {
             spotify_authed: false,
             spotify_user: String::new(),
             spotify_premium: false,
+            local_connect_ready: false,
+            local_device_id: None,
+            preferred_device_id: None,
+            local_spotify_pcm_active,
             devices: Vec::new(),
             active_provider: ProviderId::Local,
             remote_state: PlayState::Stopped,
@@ -422,6 +436,10 @@ impl CassetteScreen {
             spotify_authed: true,
             spotify_user: "Bruno".into(),
             spotify_premium: true,
+            local_connect_ready: false,
+            local_device_id: None,
+            preferred_device_id: None,
+            local_spotify_pcm_active: Arc::new(AtomicBool::new(false)),
             devices: vec![PlaybackDevice {
                 id: "dev1".into(),
                 provider: ProviderId::Spotify,
@@ -493,12 +511,54 @@ impl CassetteScreen {
         }
     }
 
-    fn active_device_id(&self) -> Option<String> {
+    fn is_local_device(&self, d: &PlaybackDevice) -> bool {
+        if let Some(local_id) = &self.local_device_id
+            && d.id == *local_id
+        {
+            return true;
+        }
+        d.name.eq_ignore_ascii_case("Hayato Cassette")
+    }
+
+    fn target_device(&self) -> Option<&PlaybackDevice> {
+        // 1. Explicit user pick from the D Device Picker takes priority.
+        if let Some(pref) = &self.preferred_device_id
+            && let Some(d) = self.devices.iter().find(|d| &d.id == pref)
+        {
+            return Some(d);
+        }
+        // 2. Default to THIS Chromebook ("Hayato Cassette") even if an external
+        //    speaker (e.g. Echo) was active from an earlier session.
+        if let Some(local) = self.devices.iter().find(|d| self.is_local_device(d)) {
+            return Some(local);
+        }
+        // 3. Fallback to active or first available Spotify Connect device.
         self.devices
             .iter()
             .find(|d| d.is_active)
             .or_else(|| self.devices.first())
-            .map(|d| d.id.clone())
+    }
+
+    fn active_device_id(&self) -> Option<String> {
+        if let Some(dev) = self.target_device() {
+            return Some(dev.id.clone());
+        }
+        // If our embedded receiver is ready before `GET /me/player/devices` refreshes,
+        // still target this Chromebook directly.
+        if self.local_connect_ready && self.preferred_device_id.is_none() {
+            return self.local_device_id.clone();
+        }
+        None
+    }
+
+    fn describe_target_device(&self) -> Option<(bool, String)> {
+        if let Some(dev) = self.target_device() {
+            return Some((self.is_local_device(dev), dev.name.clone()));
+        }
+        if self.local_connect_ready && self.preferred_device_id.is_none() {
+            return Some((true, "Hayato Cassette".to_string()));
+        }
+        None
     }
 
     fn play_local_tracks(&mut self, tracks: Vec<Track>, start_idx: usize) {
@@ -524,9 +584,6 @@ impl CassetteScreen {
             self.engine.play_file(path.clone(), track.duration_secs);
         }
         self.trigger_track_fx();
-        if !self.focused && self.config.notify_when_unfocused && !self.headless_test {
-            notify_track_change(track);
-        }
         self.publish_external_state();
     }
 
@@ -546,6 +603,15 @@ impl CassetteScreen {
         self.trigger_track_fx();
 
         let dev_id = self.active_device_id();
+        if let Some((is_local, dev_name)) = self.describe_target_device() {
+            self.status_line = if is_local {
+                format!("Playing {} on This Device", track.title)
+            } else if !self.local_connect_ready {
+                format!("Playing on {dev_name} · press D then E to enable This Device audio")
+            } else {
+                format!("Playing {} on {dev_name}", track.title)
+            };
+        }
         if let (Some(ctx), SourceKind::Spotify { uri, .. }) = (context_uri, &track.source) {
             self.hub.send(ProviderCmd::PlayContext {
                 provider: ProviderId::Spotify,
@@ -577,7 +643,15 @@ impl CassetteScreen {
                         offset_uri: None,
                         device_id: self.active_device_id(),
                     });
-                    self.status_line = format!("Playing {} on Spotify Connect", col.name);
+                    self.status_line = match self.describe_target_device() {
+                        Some((true, _)) => format!("Playing {} on This Device", col.name),
+                        Some((false, dev_name)) if !self.local_connect_ready => format!(
+                            "Playing {} on {dev_name} · press D then E for This Device audio",
+                            col.name
+                        ),
+                        Some((false, dev_name)) => format!("Playing {} on {dev_name}", col.name),
+                        None => format!("Playing {} on Spotify Connect", col.name),
+                    };
                 } else if self.active_collection.as_ref().is_some_and(|c| c.id == col.id)
                     && let Some(first) = self.active_collection_tracks.first().cloned()
                 {
@@ -1047,6 +1121,11 @@ impl CassetteScreen {
             .map(|p| p.display().to_string())
             .collect::<Vec<_>>()
             .join(", ");
+        let local_audio_detail = if self.local_connect_ready {
+            "Active — defaulting Spotify playback to this Chromebook (Hayato Cassette)"
+        } else {
+            "Play Spotify directly on this Chromebook (1-click browser pairing or LAN Connect)"
+        };
         let rows = vec![
             Row::new(if self.spotify_authed {
                 "Spotify Account (Enter to Sign Out)"
@@ -1056,6 +1135,14 @@ impl CassetteScreen {
             .detail(sp_status)
             .value(if self.spotify_authed { "linked" } else { "login" })
             .glyph(Glyph::Wifi),
+            Row::new("This Device Audio (Spotify Connect)")
+                .detail(local_audio_detail)
+                .value(if self.local_connect_ready {
+                    "ready"
+                } else {
+                    "enable"
+                })
+                .glyph(Glyph::Volume),
             Row::new("Spotify Developer Client ID")
                 .detail("Redirect URI: http://127.0.0.1:8898/callback")
                 .value(if self.config.spotify_client_id.is_empty() {
@@ -1065,17 +1152,9 @@ impl CassetteScreen {
                 })
                 .glyph(Glyph::Key),
             Row::new("Visualizer Mode")
-                .detail("Cycle Spectrum, Oscilloscope, or Off")
+                .detail("Cycle Spectrum, Mirror EQ, Oscilloscope, VU Deck, Cyber Plasma, or Off")
                 .value(self.config.visualizer.label())
                 .glyph(Glyph::Music),
-            Row::new("Unfocused Track Notifications")
-                .detail("Send hayato-notify card on track change while hidden")
-                .value(if self.config.notify_when_unfocused {
-                    "On"
-                } else {
-                    "Off"
-                })
-                .glyph(Glyph::Bell),
             Row::new("Refresh Spotify & Rescan Local Music")
                 .detail(dirs_str)
                 .value("R")
@@ -1087,16 +1166,15 @@ impl CassetteScreen {
     fn rebuild_device_pill(&mut self) {
         if !self.spotify_authed {
             self.device_pill_buf = "○ Spotify: Sign in".to_string();
-        } else if let Some(dev) = self
-            .devices
-            .iter()
-            .find(|d| d.is_active)
-            .or_else(|| self.devices.first())
-        {
-            let short: String = dev.name.chars().take(18).collect();
-            self.device_pill_buf = format!("● {short} ▾");
+        } else if let Some((is_local, name)) = self.describe_target_device() {
+            if is_local {
+                self.device_pill_buf = "● This Device ▾".to_string();
+            } else {
+                let short: String = name.chars().take(16).collect();
+                self.device_pill_buf = format!("◉ {short} ▾");
+            }
         } else {
-            self.device_pill_buf = "○ No Device ▾".to_string();
+            self.device_pill_buf = "○ Enable Audio ▾".to_string();
         }
     }
 
@@ -1107,17 +1185,35 @@ impl CassetteScreen {
             self.sync_chrome();
             return;
         }
-        let mut list = ListState::new().with_empty(
-            "No active Spotify Connect devices — open Spotify on your phone, then press R",
-        );
+        let empty_msg = if self.local_connect_ready {
+            "Connecting This Device (Hayato Cassette)… press R to refresh"
+        } else {
+            "No local audio yet — press E to enable This Device audio, or R to refresh"
+        };
+        let mut list = ListState::new().with_empty(empty_msg);
+        let target_id = self.active_device_id();
         let rows: Vec<Row> = self
             .devices
             .iter()
             .map(|d| {
-                let dot = if d.is_active { "● " } else { "○ " };
-                Row::new(format!("{dot}{}", d.name))
+                let is_local = self.is_local_device(d);
+                let is_target = target_id.as_deref() == Some(d.id.as_str());
+                let dot = if is_target { "● " } else { "○ " };
+                let label = if is_local {
+                    format!("{dot}{} (This Device)", d.name)
+                } else {
+                    format!("{dot}{}", d.name)
+                };
+                let badge = if is_target {
+                    "default"
+                } else if d.is_active {
+                    "active"
+                } else {
+                    "transfer"
+                };
+                Row::new(label)
                     .detail(format!("{} · Vol {}%", d.kind, d.volume_pct))
-                    .value(if d.is_active { "active" } else { "transfer" })
+                    .value(badge)
                     .glyph(Glyph::Volume)
             })
             .collect();
@@ -1178,11 +1274,15 @@ impl CassetteScreen {
 
         // Dynamic per-focus / per-phase keybar keeping Esc on the right
         self.keybar = match &self.phase {
-            CassettePhase::DevicePicker(_) => vec![
-                KeyHint::new("Enter", "transfer"),
-                KeyHint::new("R", "refresh"),
-                KeyHint::new("Esc", "back"),
-            ],
+            CassettePhase::DevicePicker(_) => {
+                let mut hints = vec![KeyHint::new("Enter", "use device")];
+                if !self.local_connect_ready {
+                    hints.push(KeyHint::new("E", "enable this device"));
+                }
+                hints.push(KeyHint::new("R", "refresh"));
+                hints.push(KeyHint::new("Esc", "back"));
+                hints
+            }
             CassettePhase::Help => vec![KeyHint::new("Esc", "close")],
             CassettePhase::Palette(_) => vec![
                 KeyHint::new("Enter", "run"),
@@ -1297,12 +1397,29 @@ impl CassetteScreen {
                         self.rebuild_search_rows();
                     }
                 }
-                ProviderEvent::DevicesUpdated(devs) => {
+                ProviderEvent::DevicesUpdated(mut devs) => {
+                    // Always sort This Device ("Hayato Cassette") to the top of the list.
+                    let local_id = self.local_device_id.clone();
+                    devs.sort_by_key(|d| {
+                        let is_loc = local_id.as_deref() == Some(d.id.as_str())
+                            || d.name.eq_ignore_ascii_case("Hayato Cassette");
+                        if is_loc { 0 } else if d.is_active { 1 } else { 2 }
+                    });
                     self.devices = devs;
                     self.rebuild_device_pill();
                     if matches!(self.phase, CassettePhase::DevicePicker(_)) {
                         self.open_device_picker();
                     }
+                }
+                ProviderEvent::LocalConnectChanged { ready, device_id } => {
+                    self.local_connect_ready = ready;
+                    self.local_device_id = device_id;
+                    self.rebuild_device_pill();
+                    self.rebuild_settings_rows();
+                    if matches!(self.phase, CassettePhase::DevicePicker(_)) {
+                        self.open_device_picker();
+                    }
+                    self.sync_chrome();
                 }
                 ProviderEvent::RemotePlayback(snap) => {
                     let snap = *snap;
@@ -1330,9 +1447,6 @@ impl CassetteScreen {
                         if let Some(t) = snap.track {
                             let changed = prev_id.as_ref() != Some(&t.id);
                             self.art.set_path(t.art_path.as_deref());
-                            if changed && !self.focused && self.config.notify_when_unfocused {
-                                notify_track_change(&t);
-                            }
                             if changed {
                                 self.trigger_track_fx();
                             }
@@ -1626,11 +1740,16 @@ impl CassetteScreen {
                     inner.width,
                     design.style(TextStyle::Dim),
                 );
-                // 2-row live mini spectrum strip across bottom of hero
+                // Live visualizer strip across bottom of hero
                 let viz_y = inner.y + 6;
                 let viz_h = inner.bottom().saturating_sub(viz_y);
                 if viz_h >= 1 {
-                    self.draw_spectrum_bars(buf, Rect::new(inner.x, viz_y, inner.width, viz_h), design);
+                    self.draw_active_visualizer(
+                        buf,
+                        Rect::new(inner.x, viz_y, inner.width, viz_h),
+                        design,
+                        false,
+                    );
                 }
             }
         }
@@ -1721,7 +1840,11 @@ impl CassetteScreen {
         } else {
             self.border_ramp[beat_idx]
         };
-        let inner = draw_beat_card(buf, area, design, "CYBERDECK // FULL VISUALIZER", border);
+        let title_str = format!(
+            "CYBERDECK // {}  [v: next mode]",
+            self.config.visualizer.label().to_uppercase()
+        );
+        let inner = draw_beat_card(buf, area, design, &title_str, border);
         if inner.height < 8 || inner.width < 24 {
             return;
         }
@@ -1756,20 +1879,7 @@ impl CassetteScreen {
         let viz_h = inner.bottom().saturating_sub(viz_y);
         if viz_h >= 2 {
             let vrect = Rect::new(inner.x, viz_y, inner.width, viz_h);
-            match self.config.visualizer {
-                VisualizerMode::Spectrum => self.draw_spectrum_bars(buf, vrect, design),
-                VisualizerMode::Oscilloscope => self.draw_oscilloscope(buf, vrect, design),
-                VisualizerMode::Off => {
-                    let _ = put_trunc(
-                        buf,
-                        vrect.x,
-                        vrect.y + vrect.height / 2,
-                        "Visualizer off — press v to enable",
-                        vrect.width,
-                        design.style(TextStyle::Dim),
-                    );
-                }
-            }
+            self.draw_active_visualizer(buf, vrect, design, true);
         }
     }
 
@@ -1820,10 +1930,11 @@ impl CassetteScreen {
                 }
                 let vy = ty + 4;
                 if vy + 2 <= inner.bottom() {
-                    self.draw_spectrum_bars(
+                    self.draw_active_visualizer(
                         buf,
                         Rect::new(inner.x, vy, inner.width, inner.bottom() - vy),
                         design,
+                        false,
                     );
                 }
             }
@@ -1872,6 +1983,34 @@ impl CassetteScreen {
         }
     }
 
+    fn draw_active_visualizer(
+        &self,
+        buf: &mut Buffer,
+        area: Rect,
+        design: &Design,
+        show_off_hint: bool,
+    ) {
+        match self.config.visualizer {
+            VisualizerMode::Spectrum => self.draw_spectrum_bars(buf, area, design),
+            VisualizerMode::Mirror => self.draw_mirror_eq(buf, area, design),
+            VisualizerMode::Oscilloscope => self.draw_oscilloscope(buf, area, design),
+            VisualizerMode::VuDeck => self.draw_vu_deck(buf, area, design),
+            VisualizerMode::Plasma => self.draw_cyber_plasma(buf, area, design),
+            VisualizerMode::Off => {
+                if show_off_hint && area.height > 0 {
+                    let _ = put_trunc(
+                        buf,
+                        area.x,
+                        area.y + area.height / 2,
+                        "Visualizer off — press v to cycle visualizers",
+                        area.width,
+                        design.style(TextStyle::Dim),
+                    );
+                }
+            }
+        }
+    }
+
     fn draw_spectrum_bars(&self, buf: &mut Buffer, area: Rect, design: &Design) {
         if area.width < 4 || area.height == 0 {
             return;
@@ -1913,20 +2052,158 @@ impl CassetteScreen {
         }
     }
 
+    fn draw_mirror_eq(&self, buf: &mut Buffer, area: Rect, design: &Design) {
+        if area.width < 4 || area.height < 2 {
+            return;
+        }
+        let mid = area.y + area.height / 2;
+        let half_h = (area.height / 2).max(1) as usize;
+        let step = if area.width as usize >= BANDS * 2 { 2 } else { 1 };
+        let count = ((area.width as usize) / step).min(BANDS);
+        let axis_st = design.style(TextStyle::Dim);
+        for col in 0..area.width {
+            let _ = put(buf, area.x + col, mid, "─", 1, axis_st);
+        }
+        for b in 0..count {
+            let x = area.x + (b * step) as u16;
+            let val = self.analyzer.bands[b];
+            let rows = ((val * half_h as f32).round() as usize).min(half_h);
+            for r in 0..rows {
+                let ramp_idx = (r * 5 / half_h.max(1)).min(5);
+                let st = Style::default().fg(self.spectrum_ramp[ramp_idx]);
+                let glyph = if r + 1 == rows { "▀" } else { "█" };
+                let up_y = mid.saturating_sub(r as u16);
+                if up_y >= area.y {
+                    let _ = put(buf, x, up_y, glyph, 1, st);
+                }
+                let dn_y = mid + r as u16;
+                if dn_y < area.bottom() {
+                    let dn_glyph = if r + 1 == rows { "▄" } else { "█" };
+                    let _ = put(buf, x, dn_y, dn_glyph, 1, st);
+                }
+            }
+        }
+    }
+
     fn draw_oscilloscope(&self, buf: &mut Buffer, area: Rect, design: &Design) {
         if area.width < 4 || area.height < 2 {
             return;
         }
         let mid = area.y + area.height / 2;
         let half_h = (area.height / 2).max(1) as f32;
-        let st = Style::default().fg(design.color(ColorRole::Accent));
+        let dim = design.style(TextStyle::Dim);
+        for col in 0..area.width {
+            let _ = put(buf, area.x + col, mid, "·", 1, dim);
+        }
+        let mut prev_y: Option<u16> = None;
         for col in 0..area.width {
             let idx = (col as usize * WAVE_POINTS) / (area.width as usize).max(1);
             let sample = self.analyzer.wave[idx.min(WAVE_POINTS - 1)];
             let dy = (sample * half_h).round() as i32;
             let y = (mid as i32 - dy)
                 .clamp(area.y as i32, area.bottom().saturating_sub(1) as i32) as u16;
-            let _ = put(buf, area.x + col, y, "•", 1, st);
+            let dist = ((mid as i32 - y as i32).unsigned_abs() as usize * 5)
+                / (half_h as usize).max(1);
+            let st = Style::default().fg(self.spectrum_ramp[dist.min(5)]);
+            if let Some(py) = prev_y {
+                let (lo, hi) = if py < y { (py, y) } else { (y, py) };
+                for yy in lo..=hi {
+                    let ch = if yy == y { "●" } else { "│" };
+                    let _ = put(buf, area.x + col, yy, ch, 1, st);
+                }
+            } else {
+                let _ = put(buf, area.x + col, y, "●", 1, st);
+            }
+            prev_y = Some(y);
+        }
+    }
+
+    fn draw_vu_deck(&self, buf: &mut Buffer, area: Rect, design: &Design) {
+        if area.width < 12 || area.height < 2 {
+            return;
+        }
+        let avg = |range: std::ops::Range<usize>| -> f32 {
+            let len = (range.end - range.start).max(1) as f32;
+            self.analyzer.bands[range].iter().sum::<f32>() / len
+        };
+        let bass = avg(0..6).clamp(0.0, 1.0);
+        let low_mid = avg(6..14).clamp(0.0, 1.0);
+        let hi_mid = avg(14..24).clamp(0.0, 1.0);
+        let treble = avg(24..BANDS).clamp(0.0, 1.0);
+        let pulse = self.analyzer.beat_intensity.clamp(0.0, 1.0);
+
+        let meters: [(&str, f32); 5] = [
+            ("SUB ", bass),
+            ("LOW ", low_mid),
+            ("MID ", hi_mid),
+            ("AIR ", treble),
+            ("BEAT", pulse),
+        ];
+        let bar_w = area.width.saturating_sub(10) as usize;
+        let label_st = Style::default()
+            .fg(design.color(ColorRole::Text))
+            .add_modifier(Modifier::BOLD);
+        let dim = design.style(TextStyle::Dim);
+        let rows_to_draw = meters.len().min(area.height as usize);
+        let start_y = area.y + area.height.saturating_sub(rows_to_draw as u16) / 2;
+
+        for (i, (name, level)) in meters.iter().take(rows_to_draw).enumerate() {
+            let y = start_y + i as u16;
+            let _ = put(buf, area.x, y, name, 4, label_st);
+            let filled = ((*level * bar_w as f32).round() as usize).min(bar_w);
+            for c in 0..bar_w {
+                let x = area.x + 5 + c as u16;
+                if c < filled {
+                    let ramp_idx = (c * 5 / bar_w.max(1)).min(5);
+                    let ch = if c % 2 == 0 { "█" } else { "▓" };
+                    let _ = put(
+                        buf,
+                        x,
+                        y,
+                        ch,
+                        1,
+                        Style::default().fg(self.spectrum_ramp[ramp_idx]),
+                    );
+                } else {
+                    let _ = put(buf, x, y, "░", 1, dim);
+                }
+            }
+            let pct = format!("{:>3}%", (*level * 100.0).round() as u8);
+            let _ = put(buf, area.x + 6 + bar_w as u16, y, &pct, 4, dim);
+        }
+    }
+
+    fn draw_cyber_plasma(&self, buf: &mut Buffer, area: Rect, _design: &Design) {
+        if area.width < 4 || area.height < 2 {
+            return;
+        }
+        const SHADES: &[&str] = &[" ", "·", "░", "▒", "▓", "█"];
+        let phase = self.remote_phase;
+        let beat = self.analyzer.beat_intensity;
+        let w = area.width as usize;
+        let h = area.height as usize;
+
+        for row in 0..h {
+            let ry = row as f32 / h.max(1) as f32;
+            for col in 0..w {
+                let band_idx = (col * BANDS) / w.max(1);
+                let energy = self.analyzer.bands[band_idx.min(BANDS - 1)];
+                let rx = col as f32 / w.max(1) as f32;
+                let wave = ((rx * 7.0 + phase).sin() * 0.5 + 0.5)
+                    * ((ry * 5.0 - phase * 0.7).cos() * 0.5 + 0.5);
+                let intensity = (energy * 0.75 + wave * energy * 0.45 + beat * 0.18).clamp(0.0, 1.0);
+                let idx = (intensity * 5.0).round() as usize;
+                if idx > 0 {
+                    let _ = put(
+                        buf,
+                        area.x + col as u16,
+                        area.y + row as u16,
+                        SHADES[idx.min(5)],
+                        1,
+                        Style::default().fg(self.spectrum_ramp[idx.min(5)]),
+                    );
+                }
+            }
         }
     }
 
@@ -2136,10 +2413,12 @@ impl Screen for CassetteScreen {
                 .is_some_and(|t| t.elapsed() >= Duration::from_secs(10));
         if !sleep_viz && self.config.visualizer != VisualizerMode::Off {
             let playing = self.current_play_state() == PlayState::Playing;
-            if self.active_provider == ProviderId::Spotify {
+            let live_spotify_pcm = self.local_spotify_pcm_active.load(Ordering::Relaxed);
+            if self.active_provider == ProviderId::Spotify && !live_spotify_pcm {
                 self.remote_phase += 0.14;
                 self.analyzer.update_synthetic(self.remote_phase, playing);
             } else {
+                self.remote_phase += 0.08;
                 self.analyzer.update(!playing);
             }
         }
@@ -2678,20 +2957,36 @@ impl Screen for CassetteScreen {
                     self.phase = CassettePhase::Normal;
                     self.sync_chrome();
                 }
+                KeyCode::Char('e' | 'E') => {
+                    self.hub.send(ProviderCmd::EnableLocalConnect);
+                    self.status_line = "Opening browser to enable This Device audio…".into();
+                    self.phase = CassettePhase::Normal;
+                    self.sync_chrome();
+                }
                 KeyCode::Char('R') => {
-                    self.hub.send(ProviderCmd::RefreshAll {
-                        music_dirs: self.config.music_dirs.clone(),
-                    });
+                    self.hub.send(ProviderCmd::RefreshDevices);
+                    self.status_line = "Refreshing Spotify Connect devices…".into();
                 }
                 _ => {
                     if let ListAction::Activated(idx) =
                         list.handle(key, self.rows_height.get(), design)
                         && let Some(dev) = self.devices.get(idx).cloned()
                     {
+                        let is_local = self.is_local_device(&dev);
+                        self.preferred_device_id = if is_local {
+                            None
+                        } else {
+                            Some(dev.id.clone())
+                        };
                         self.hub.send(ProviderCmd::TransferDevice {
                             provider: dev.provider,
                             device_id: dev.id,
                         });
+                        self.status_line = if is_local {
+                            "Switched Spotify playback to This Device".into()
+                        } else {
+                            format!("Switched Spotify playback to {}", dev.name)
+                        };
                         self.phase = CassettePhase::Normal;
                         self.sync_chrome();
                     }
@@ -3302,18 +3597,32 @@ impl Screen for CassetteScreen {
                                 }
                             }
                             1 => {
+                                if self.local_connect_ready {
+                                    self.preferred_device_id = None;
+                                    if let Some(id) = self.active_device_id() {
+                                        self.hub.send(ProviderCmd::TransferDevice {
+                                            provider: ProviderId::Spotify,
+                                            device_id: id,
+                                        });
+                                    }
+                                    self.status_line =
+                                        "This Device audio is active (Hayato Cassette)".into();
+                                } else {
+                                    self.hub.send(ProviderCmd::EnableLocalConnect);
+                                    self.status_line =
+                                        "Opening Firefox to enable This Device audio…".into();
+                                }
+                            }
+                            2 => {
                                 let mut inp = Input::new();
                                 inp.set(&self.config.spotify_client_id);
                                 self.phase = CassettePhase::EditClientId(inp);
                             }
-                            2 => {
+                            3 => {
                                 self.config.visualizer = self.config.visualizer.cycle();
                                 let _ = save_config(&self.config);
-                            }
-                            3 => {
-                                self.config.notify_when_unfocused =
-                                    !self.config.notify_when_unfocused;
-                                let _ = save_config(&self.config);
+                                self.status_line =
+                                    format!("Visualizer: {}", self.config.visualizer.label());
                             }
                             4 => {
                                 self.hub.send(ProviderCmd::RefreshAll {
@@ -3456,5 +3765,44 @@ fn draw_cassette_ascii(buf: &mut Buffer, area: Rect, design: &Design) {
             break;
         }
         let _ = put_trunc(buf, area.x, y, line, area.width, st);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prefers_this_device_over_active_external_speaker() {
+        let design = Design::solarized();
+        let mut screen = CassetteScreen::for_test(Vec::new(), false, &design);
+        screen.devices = vec![
+            PlaybackDevice {
+                id: "echo-1".into(),
+                provider: ProviderId::Spotify,
+                name: "Living Room Echo".into(),
+                kind: "Speaker".into(),
+                is_active: true,
+                volume_pct: 60,
+            },
+            PlaybackDevice {
+                id: "local-1".into(),
+                provider: ProviderId::Spotify,
+                name: "Hayato Cassette".into(),
+                kind: "Chromebook".into(),
+                is_active: false,
+                volume_pct: 80,
+            },
+        ];
+        // Defaults to This Device even when Echo is active
+        assert_eq!(screen.active_device_id().as_deref(), Some("local-1"));
+        screen.rebuild_device_pill();
+        assert_eq!(screen.device_pill_buf, "● This Device ▾");
+
+        // Explicit user pick overrides default
+        screen.preferred_device_id = Some("echo-1".into());
+        assert_eq!(screen.active_device_id().as_deref(), Some("echo-1"));
+        screen.rebuild_device_pill();
+        assert!(screen.device_pill_buf.contains("Living Room Echo"));
     }
 }

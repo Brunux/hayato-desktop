@@ -322,7 +322,7 @@ fn api_action(
 pub fn search_tracks(tok: &mut SpotifyToken, query: &str, limit: usize) -> Result<Vec<Track>, String> {
     let url = format!(
         "https://api.spotify.com/v1/search?type=track&limit={}&q={}",
-        limit.clamp(1, 25),
+        limit.clamp(1, 10),
         url_encode(query)
     );
     let v = api_get(tok, &url)?;

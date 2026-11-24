@@ -4,6 +4,8 @@
 //! Zero UI toolkit dependencies so every subsystem is pure, fast to compile,
 //! and independently testable.
 
+#[cfg(feature = "spotify")]
+pub mod connect;
 pub mod dsp;
 pub mod engine;
 pub mod library;
@@ -154,6 +156,7 @@ pub struct CassetteConfig {
     pub visualizer: VisualizerMode,
     pub volume_pct: u8,
     pub show_lyrics: bool,
+    #[serde(default)]
     pub notify_when_unfocused: bool,
     pub spotify_client_id: String,
 }
@@ -162,15 +165,21 @@ pub struct CassetteConfig {
 pub enum VisualizerMode {
     #[default]
     Spectrum,
+    Mirror,
     Oscilloscope,
+    VuDeck,
+    Plasma,
     Off,
 }
 
 impl VisualizerMode {
     pub fn cycle(self) -> Self {
         match self {
-            Self::Spectrum => Self::Oscilloscope,
-            Self::Oscilloscope => Self::Off,
+            Self::Spectrum => Self::Mirror,
+            Self::Mirror => Self::Oscilloscope,
+            Self::Oscilloscope => Self::VuDeck,
+            Self::VuDeck => Self::Plasma,
+            Self::Plasma => Self::Off,
             Self::Off => Self::Spectrum,
         }
     }
@@ -178,7 +187,10 @@ impl VisualizerMode {
     pub fn label(self) -> &'static str {
         match self {
             Self::Spectrum => "Spectrum",
+            Self::Mirror => "Mirror EQ",
             Self::Oscilloscope => "Oscilloscope",
+            Self::VuDeck => "VU Deck",
+            Self::Plasma => "Cyber Plasma",
             Self::Off => "Off",
         }
     }
@@ -193,7 +205,7 @@ impl Default for CassetteConfig {
             visualizer: VisualizerMode::Spectrum,
             volume_pct: 80,
             show_lyrics: false,
-            notify_when_unfocused: true,
+            notify_when_unfocused: false,
             spotify_client_id: String::new(),
         }
     }

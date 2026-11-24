@@ -10,12 +10,15 @@ pub mod local;
 pub mod spotify;
 
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::dsp::PcmTapWriter;
 use crate::{PlayState, RepeatMode, Track};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -182,6 +185,8 @@ pub enum ProviderCmd {
         provider: ProviderId,
         device_id: String,
     },
+    EnableLocalConnect,
+    RefreshDevices,
     SpotifyLogin {
         client_id: String,
     },
@@ -207,6 +212,10 @@ pub enum ProviderEvent {
         spotify: SearchResults,
     },
     DevicesUpdated(Vec<PlaybackDevice>),
+    LocalConnectChanged {
+        ready: bool,
+        device_id: Option<String>,
+    },
     RemotePlayback(Box<PlaybackSnapshot>),
     SpotifyAuthChanged {
         authenticated: bool,
@@ -224,13 +233,17 @@ pub struct ProviderHub {
 }
 
 impl ProviderHub {
-    pub fn spawn(music_dirs: Vec<PathBuf>) -> Self {
+    pub fn spawn(
+        music_dirs: Vec<PathBuf>,
+        tap: Arc<Mutex<PcmTapWriter>>,
+        local_spotify_pcm_active: Arc<AtomicBool>,
+    ) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let (ev_tx, ev_rx) = mpsc::channel();
 
         let _ = thread::Builder::new()
             .name("cassette-providers".into())
-            .spawn(move || worker_loop(music_dirs, cmd_rx, ev_tx));
+            .spawn(move || worker_loop(music_dirs, tap, local_spotify_pcm_active, cmd_rx, ev_tx));
 
         Self {
             tx: cmd_tx,
@@ -265,12 +278,21 @@ impl Drop for ProviderHub {
 
 fn worker_loop(
     initial_dirs: Vec<PathBuf>,
+    #[allow(unused_variables)] tap: Arc<Mutex<PcmTapWriter>>,
+    #[allow(unused_variables)] local_spotify_pcm_active: Arc<AtomicBool>,
     cmd_rx: Receiver<ProviderCmd>,
     ev_tx: Sender<ProviderEvent>,
 ) {
     let mut local_prov = local::LocalProvider::new(initial_dirs);
     #[cfg(feature = "spotify")]
     let mut spotify_prov = spotify::SpotifyProvider::from_saved();
+    #[cfg(feature = "spotify")]
+    let (connect_tx, connect_rx) = mpsc::channel::<crate::connect::ConnectEvent>();
+    #[cfg(feature = "spotify")]
+    let local_connect =
+        crate::connect::LocalConnect::spawn(80, tap, local_spotify_pcm_active, connect_tx);
+    #[cfg(feature = "spotify")]
+    let mut pending_devices_refresh: Option<Instant> = None;
 
     let mut focused = true;
     let mut last_poll = Instant::now() - Duration::from_secs(10);
@@ -341,7 +363,13 @@ fn worker_loop(
             Ok(ProviderCmd::Search { seq, query }) => {
                 #[cfg(feature = "spotify")]
                 let sp = if spotify_prov.is_authenticated() && query.trim().len() >= 2 {
-                    spotify_prov.search(&query, 12).unwrap_or_default()
+                    match spotify_prov.search(&query, 10) {
+                        Ok(res) => res,
+                        Err(e) => {
+                            let _ = ev_tx.send(ProviderEvent::Error(e));
+                            SearchResults::default()
+                        }
+                    }
                 } else {
                     SearchResults::default()
                 };
@@ -470,6 +498,20 @@ fn worker_loop(
                     }
                 }
             }
+            Ok(ProviderCmd::EnableLocalConnect) => {
+                #[cfg(feature = "spotify")]
+                {
+                    local_connect.pair_oauth();
+                }
+            }
+            Ok(ProviderCmd::RefreshDevices) => {
+                #[cfg(feature = "spotify")]
+                if spotify_prov.is_authenticated()
+                    && let Ok(devs) = spotify_prov.list_devices()
+                {
+                    let _ = ev_tx.send(ProviderEvent::DevicesUpdated(devs));
+                }
+            }
             Ok(ProviderCmd::SpotifyLogin { client_id }) => {
                 #[cfg(feature = "spotify")]
                 match spotify_prov.login_pkce(&client_id) {
@@ -492,16 +534,59 @@ fn worker_loop(
                 #[cfg(feature = "spotify")]
                 {
                     spotify_prov.logout();
+                    local_connect.clear_and_disconnect();
                     let _ = ev_tx.send(ProviderEvent::SpotifyAuthChanged {
                         authenticated: false,
                         display_name: String::new(),
                         is_premium: false,
+                    });
+                    let _ = ev_tx.send(ProviderEvent::LocalConnectChanged {
+                        ready: false,
+                        device_id: None,
                     });
                     let _ = ev_tx.send(ProviderEvent::DevicesUpdated(Vec::new()));
                     refresh_everything(&mut local_prov, &mut spotify_prov, &ev_tx);
                 }
             }
             Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+        }
+
+        // Drain embedded local Spotify Connect receiver events
+        #[cfg(feature = "spotify")]
+        while let Ok(cev) = connect_rx.try_recv() {
+            match cev {
+                crate::connect::ConnectEvent::Ready { device_id } => {
+                    let _ = ev_tx.send(ProviderEvent::LocalConnectChanged {
+                        ready: true,
+                        device_id: Some(device_id),
+                    });
+                    pending_devices_refresh = Some(Instant::now() + Duration::from_millis(1200));
+                }
+                crate::connect::ConnectEvent::Unpaired => {
+                    let _ = ev_tx.send(ProviderEvent::LocalConnectChanged {
+                        ready: false,
+                        device_id: None,
+                    });
+                }
+                crate::connect::ConnectEvent::Status(msg) => {
+                    let _ = ev_tx.send(ProviderEvent::Status(msg));
+                }
+                crate::connect::ConnectEvent::Error(msg) => {
+                    let _ = ev_tx.send(ProviderEvent::Error(msg));
+                }
+            }
+        }
+
+        #[cfg(feature = "spotify")]
+        if let Some(at) = pending_devices_refresh
+            && Instant::now() >= at
+        {
+            pending_devices_refresh = None;
+            if spotify_prov.is_authenticated()
+                && let Ok(devs) = spotify_prov.list_devices()
+            {
+                let _ = ev_tx.send(ProviderEvent::DevicesUpdated(devs));
+            }
         }
 
         // Periodic live Spotify Connect state sync (non-blocking)

@@ -228,9 +228,10 @@ impl MusicProvider for SpotifyProvider {
         if q.is_empty() || !self.is_authenticated() {
             return Ok(SearchResults::default());
         }
+        // Spotify 2026 Web API caps `/v1/search` `limit` at 10 (passing >10 returns HTTP 400).
         let url = format!(
             "https://api.spotify.com/v1/search?type=track,playlist&limit={}&q={}",
-            limit.clamp(1, 20),
+            limit.clamp(1, 10),
             spotify::url_encode_public(q)
         );
         let Some(v) = self.get_json(&url).map_err(ApiError::into_string)? else {

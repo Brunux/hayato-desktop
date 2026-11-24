@@ -32,7 +32,7 @@ Opus, WAV, M4A/AAC) side by side.
 | `D` | Open Spotify Connect Device Picker |
 | `1` / `2` / `3` / `4` | Home / Focus Library Sidebar / Queue Drawer / Settings |
 | `b` / `i` / `q` / `L` | Toggle Left Sidebar / Now Playing Drawer / Queue / Synced `.lrc` Lyrics |
-| `v` / `V` | Cycle Visualizer (`Spectrum → Oscilloscope → Off`) / Full-Center Visualizer |
+| `v` / `V` | Cycle Visualizer (`Spectrum → Mirror EQ → Oscilloscope → VU Deck → Cyber Plasma → Off`) / Full-Center Visualizer |
 | `Tab` / `h` / `l` | Switch focus between visible panes |
 | `Enter` / `P` | Open playlist (or play track) / Play entire playlist immediately |
 | `a` / `A` | Enqueue track / Play Next |
@@ -51,10 +51,15 @@ with a micro-HUD tooltip (`CASSETTE // PLAYING`):
 Cassette exposes a standard MPRIS2 service (`org.mpris.MediaPlayer2.hayato_cassette`), so
 hardware media keys (`XF86AudioPlay`, `Next`, `Prev`) and `playerctl` control it natively.
 
-## Spotify Setup
+## Spotify Setup & This Device Audio
 
 1. Press **`4`** (Settings) and choose **Spotify Developer Client ID** to paste your Client ID
    (set redirect URI to `http://127.0.0.1:8898/callback`).
 2. Press **`Enter`** on **Sign in with Spotify (Browser PKCE)** — Firefox opens to authorize
    and returns automatically.
-3. Tokens are stored strictly at `~/.config/hayato/cassette/spotify.json` (`0600`).
+3. To play Spotify audio directly on **this Chromebook** (instead of remote speakers like Echo
+   or your phone), press **`Enter`** on **This Device Audio (Spotify Connect)** (or press
+   **`D`** → **`E`** in the Device Picker) for 1-click pairing — or tap **`Hayato Cassette`**
+   in Spotify on your phone on the same Wi-Fi. Once paired, Cassette defaults Spotify playback
+   to **This Device** (`● This Device ▾`) on every launch and shuts down cleanly when closed.
+4. Credentials are stored strictly at `~/.config/hayato/cassette/` (`0600`).

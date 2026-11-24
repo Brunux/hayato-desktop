@@ -114,6 +114,7 @@ impl EngineTelemetry {
 pub struct AudioEngine {
     tx: Sender<EngineCommand>,
     pub telemetry: Arc<EngineTelemetry>,
+    tap: Arc<Mutex<PcmTapWriter>>,
 }
 
 impl AudioEngine {
@@ -121,14 +122,22 @@ impl AudioEngine {
         let (tx, rx) = mpsc::channel();
         let telemetry = Arc::new(EngineTelemetry::new(initial_volume));
         let (tap_tx, analyzer) = create_tap();
+        let tap = Arc::new(Mutex::new(tap_tx));
+        let tap_engine = Arc::clone(&tap);
         let tel_clone = Arc::clone(&telemetry);
 
         thread::Builder::new()
             .name("cassette-audio".into())
-            .spawn(move || engine_loop(rx, tel_clone, tap_tx))
+            .spawn(move || engine_loop(rx, tel_clone, tap_engine))
             .expect("spawn audio engine thread");
 
-        (Self { tx, telemetry }, analyzer)
+        (Self { tx, telemetry, tap }, analyzer)
+    }
+
+    /// Shared PCM tap writer so the embedded Spotify Connect receiver can feed
+    /// live decoded PCM straight into the same 32-band FFT spectrum analyzer.
+    pub fn shared_tap(&self) -> Arc<Mutex<PcmTapWriter>> {
+        Arc::clone(&self.tap)
     }
 
     pub fn send(&self, cmd: EngineCommand) {
@@ -504,9 +513,8 @@ impl Drop for DecoderBackend {
 fn engine_loop(
     rx: Receiver<EngineCommand>,
     telemetry: Arc<EngineTelemetry>,
-    tap_writer: PcmTapWriter,
+    tap: Arc<Mutex<PcmTapWriter>>,
 ) {
-    let tap = Arc::new(Mutex::new(tap_writer));
     let mut decoder: Option<DecoderBackend> = None;
     let mut output: Option<ActiveOutput> = None;
     let mut pending_samples: Vec<f32> = Vec::with_capacity(8192);
