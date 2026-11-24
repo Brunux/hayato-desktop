@@ -212,6 +212,14 @@ fn exchange_code(client_id: &str, code: &str, verifier: &str) -> Result<SpotifyT
     Ok(tok)
 }
 
+pub(crate) fn ensure_fresh_public(tok: &mut SpotifyToken) -> Result<(), String> {
+    ensure_fresh(tok)
+}
+
+pub(crate) fn url_encode_public(input: &str) -> String {
+    url_encode(input)
+}
+
 fn ensure_fresh(tok: &mut SpotifyToken) -> Result<(), String> {
     if now_unix() < tok.expires_at_unix {
         return Ok(());

@@ -9,6 +9,7 @@ pub mod engine;
 pub mod library;
 pub mod lyrics;
 pub mod mpris;
+pub mod providers;
 #[cfg(feature = "spotify")]
 pub mod spotify;
 

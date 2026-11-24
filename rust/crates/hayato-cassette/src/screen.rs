@@ -1,10 +1,16 @@
-//! Main Cyberdeck TUI for **Hayato Cassette** (`CassetteScreen`).
+//! Hybrid **Spotify Web Player + Hayato Cyber-HUD** UI for **Hayato Cassette**.
 //!
-//! - Single `CassettePhase` enum for mutually exclusive overlays/modals.
+//! Layout grammar:
+//! - **Top Chrome**: `[1 Home]` · always-visible `[/ Search Spotify & local…]` · `[● Device Pill]` · `[⚙]`
+//! - **Left Sidebar ("Your Library")**: `[All | Spotify | Local]` · `♥ Liked Songs` · Playlists (real counts) · Local
+//! - **Center Main Stage**: `Home` (Cyberdeck Hero + Quick Launch) · `Collection` (Playlist Drill-Down + 403 `context_uri` play) · `Search` (auto on type, debounced 250 ms) · `Visualizer` (`V`) · `Settings` (`4`/`,`)
+//! - **Right Drawer** (wide): `NowPlaying` (`i`) · `Queue` (`q`/`3`) · `Lyrics` (`L`) · `Hidden`
+//! - **Persistent Bottom Player Bar**: Always visible across every view (Track/Artist/Source · Transport + Live Scrubber · Device Pill · Volume · Mini `w`)
+//!
+//! Architectural invariants:
 //! - Zero `Color::Rgb` (uses `Design::color` and `Design::ramp` LUTs).
 //! - Renders strictly into `hayato_ui::BodyCtx`.
-//! - Pre-formatted status strings rebuilt only on state/second changes for
-//!   zero steady-state frame allocations.
+//! - Zero blocking network I/O on the UI thread (all provider I/O runs on `ProviderHub`).
 
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -16,16 +22,17 @@ use std::time::{Duration, Instant};
 use hayato_music_core::dsp::{BANDS, SpectrumAnalyzer, WAVE_POINTS};
 use hayato_music_core::engine::AudioEngine;
 use hayato_music_core::library::{
-    load_cached_tracks, load_local_playlists, read_track_metadata, save_m3u8_playlist,
-    scan_directories,
+    load_cached_tracks, read_track_metadata, save_m3u8_playlist,
 };
 use hayato_music_core::lyrics::Lyrics;
 use hayato_music_core::mpris::{MprisCommand, MprisHandle, notify_track_change};
-#[cfg(feature = "spotify")]
-use hayato_music_core::spotify::{self, SpotifyDevice, SpotifyToken};
+use hayato_music_core::providers::{
+    Collection, CollectionItems, CollectionKind, PlaybackDevice, ProviderCmd, ProviderEvent,
+    ProviderHub, ProviderId, SearchResults,
+};
 use hayato_music_core::{
-    CassetteConfig, NowPlayingFile, PlayState, Playlist, Queue, SourceKind, Track, VisualizerMode,
-    cache_dir, format_time, load_config, save_config,
+    CassetteConfig, NowPlayingFile, PlayState, Queue, RepeatMode, SourceKind, Track,
+    VisualizerMode, cache_dir, format_time, load_config, save_config,
 };
 use hayato_ui::widgets::{put, put_trunc};
 use hayato_ui::{
@@ -33,7 +40,9 @@ use hayato_ui::{
     ListAction, ListState, Outcome, Row, Screen, TextStyle, draw_badge, draw_card,
 };
 use ratatui::buffer::Buffer;
-use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
+use ratatui::crossterm::event::{
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind,
+};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::Widget;
@@ -48,92 +57,176 @@ pub static THEME_RELOAD_FLAG: AtomicBool = AtomicBool::new(false);
 
 const BLOCKS: &[&str] = &[" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
 
+const HIT_HOME: usize = 100;
+const HIT_LIB_TOGGLE: usize = 101;
+const HIT_SEARCH_BOX: usize = 102;
+const HIT_DEVICE_PILL: usize = 103;
+const HIT_SETTINGS: usize = 104;
+const HIT_BTN_PREV: usize = 110;
+const HIT_BTN_PLAY: usize = 111;
+const HIT_BTN_NEXT: usize = 112;
+const HIT_BTN_VIZ: usize = 113;
+const HIT_BTN_LYRICS: usize = 114;
+const HIT_BTN_QUEUE: usize = 115;
+const HIT_BTN_MINI: usize = 116;
+const HIT_SCRUB_BASE: usize = 1000;
+const HIT_SIDEBAR_BASE: usize = 2000;
+const HIT_MAIN_BASE: usize = 4000;
+const HIT_DRAWER_BASE: usize = 6000;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Tab {
-    Deck,
-    Library,
-    Queue,
-    Search,
-    Playlists,
-    Spotify,
-    Settings,
+enum Focus {
+    Sidebar,
+    Main,
+    RightDrawer,
+    SearchBar,
 }
 
-impl Tab {
-    const ALL: &[Tab] = &[
-        Tab::Deck,
-        Tab::Library,
-        Tab::Queue,
-        Tab::Search,
-        Tab::Playlists,
-        Tab::Spotify,
-        Tab::Settings,
-    ];
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SourceFilter {
+    All,
+    Spotify,
+    Local,
+}
+
+impl SourceFilter {
+    fn cycle(self) -> Self {
+        match self {
+            Self::All => Self::Spotify,
+            Self::Spotify => Self::Local,
+            Self::Local => Self::All,
+        }
+    }
 
     fn label(self) -> &'static str {
         match self {
-            Tab::Deck => "1 Deck",
-            Tab::Library => "2 Library",
-            Tab::Queue => "3 Queue",
-            Tab::Search => "4 Search",
-            Tab::Playlists => "5 Playlists",
-            Tab::Spotify => "6 Spotify",
-            Tab::Settings => ", Settings",
+            Self::All => "All",
+            Self::Spotify => "Spotify",
+            Self::Local => "Local",
+        }
+    }
+
+    fn matches(self, provider: ProviderId) -> bool {
+        match self {
+            Self::All => true,
+            Self::Spotify => provider == ProviderId::Spotify,
+            Self::Local => provider == ProviderId::Local,
         }
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum MainStage {
+    Home,
+    Collection,
+    Search,
+    Visualizer,
+    Settings,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RightDrawer {
+    NowPlaying,
+    Queue,
+    Lyrics,
+    Hidden,
+}
+
 enum CassettePhase {
     Normal,
+    DevicePicker(ListState),
+    Help,
+    Palette(ListState),
     ConfirmClearQueue(Confirm),
     ConfirmLogoutSpotify(Confirm),
-    Palette(ListState),
     EditClientId(Input),
+}
+
+#[derive(Clone)]
+enum SearchRowItem {
+    Track(Track),
+    Collection(Collection),
+}
+
+#[derive(Clone, Copy, Default)]
+struct HitRects {
+    home: Rect,
+    lib: Rect,
+    search: Rect,
+    device: Rect,
+    settings: Rect,
+    sidebar_list: Rect,
+    main_list: Rect,
+    drawer_list: Rect,
+    scrubber: Rect,
+    btn_prev: Rect,
+    btn_play: Rect,
+    btn_next: Rect,
+    btn_viz: Rect,
+    btn_lyrics: Rect,
+    btn_queue: Rect,
+    btn_mini: Rect,
 }
 
 pub struct CassetteScreen {
     config: CassetteConfig,
-    tab: Tab,
+    focus: Focus,
+    stage: MainStage,
+    prev_stage: MainStage,
+    drawer: RightDrawer,
+    sidebar_open: bool,
+    source_filter: SourceFilter,
     mini: bool,
     focused: bool,
     unfocused_since: Option<Instant>,
     phase: CassettePhase,
 
-    // Core audio & library state
+    // Core audio & modular provider hub
     engine: AudioEngine,
     analyzer: SpectrumAnalyzer,
+    hub: ProviderHub,
     queue: Queue,
-    library: Vec<Track>,
-    playlists: Vec<Playlist>,
+    local_tracks: Vec<Track>,
+    collections: Vec<Collection>,
+    filtered_collections: Vec<Collection>,
+    active_collection: Option<Collection>,
+    active_collection_tracks: Vec<Track>,
+    active_collection_restricted: Option<(String, String)>,
+    loading_collection: bool,
     lyrics: Option<Lyrics>,
     art: AlbumArt,
     mpris: MprisHandle,
     mpris_rx: Receiver<MprisCommand>,
-    scan_rx: Option<Receiver<Vec<Track>>>,
 
-    // Spotify state
-    #[cfg(feature = "spotify")]
-    spotify_token: Option<SpotifyToken>,
-    #[cfg(feature = "spotify")]
-    spotify_devices: Vec<SpotifyDevice>,
-    #[cfg(feature = "spotify")]
-    spotify_search: Vec<Track>,
-    #[cfg(feature = "spotify")]
-    spotify_remote_playing: bool,
-    #[cfg(feature = "spotify")]
-    spotify_phase: f32,
+    // Spotify / Remote Connect live state
+    spotify_authed: bool,
+    spotify_user: String,
+    spotify_premium: bool,
+    devices: Vec<PlaybackDevice>,
+    active_provider: ProviderId,
+    remote_state: PlayState,
+    remote_track: Option<Track>,
+    remote_pos_ms: u64,
+    remote_dur_ms: u64,
+    remote_synced_at: Instant,
+    remote_phase: f32,
 
-    // Cached lists & UI state
-    lib_list: ListState,
-    queue_list: ListState,
+    // Search state (instant local + 250ms debounced Spotify)
     search_input: Input,
     search_list: ListState,
-    search_results: Vec<Track>,
-    playlist_list: ListState,
-    spotify_list: ListState,
+    search_items: Vec<SearchRowItem>,
+    spotify_search_cache: SearchResults,
+    search_gen: u64,
+    pending_search_at: Option<Instant>,
+
+    // Lists
+    sidebar_list: ListState,
+    home_list: ListState,
+    collection_list: ListState,
+    queue_list: ListState,
     settings_list: ListState,
     rows_height: Cell<u16>,
-    scrubber_rect: Cell<Rect>,
+    hits: Cell<HitRects>,
 
     // Telemetry & pre-formatted strings (zero per-frame format!)
     last_finished_gen: u64,
@@ -141,11 +234,16 @@ pub struct CassetteScreen {
     last_dur_sec: u64,
     time_buf: String,
     codec_buf: String,
+    device_pill_buf: String,
+    vol_buf: String,
+    queue_title_buf: String,
+    collection_title_buf: String,
+    search_title_buf: String,
     status_line: String,
     header: Header,
     keybar: Vec<KeyHint>,
 
-    // Motion & precomputed colour LUTs
+    // Theme & motion
     design_override: Option<Design>,
     border_ramp: [Color; 8],
     spectrum_ramp: [Color; 6],
@@ -160,68 +258,73 @@ impl CassetteScreen {
         let (engine, analyzer) = AudioEngine::spawn(config.volume_pct);
         let (mpris_tx, mpris_rx) = mpsc::channel();
         let mpris = MprisHandle::spawn(mpris_tx);
-
-        let library = load_cached_tracks();
-        let playlists = load_local_playlists(&config.music_dirs, &library);
-
-        // Kick off incremental background rescan
-        let dirs_clone = config.music_dirs.clone();
-        let (scan_tx, scan_rx) = mpsc::channel();
-        let _ = std::thread::Builder::new()
-            .name("cassette-scan".into())
-            .spawn(move || {
-                let tracks = scan_directories(&dirs_clone);
-                let _ = scan_tx.send(tracks);
-            });
-
-        #[cfg(feature = "spotify")]
-        let spotify_token = spotify::load_token();
+        let hub = ProviderHub::spawn(config.music_dirs.clone());
+        let local_tracks = load_cached_tracks();
 
         let mut screen = Self {
             config,
-            tab: Tab::Deck,
+            focus: Focus::Main,
+            stage: MainStage::Home,
+            prev_stage: MainStage::Home,
+            drawer: RightDrawer::NowPlaying,
+            sidebar_open: true,
+            source_filter: SourceFilter::All,
             mini: start_mini,
             focused: true,
             unfocused_since: None,
             phase: CassettePhase::Normal,
             engine,
             analyzer,
+            hub,
             queue: Queue::new(),
-            library,
-            playlists,
+            local_tracks,
+            collections: Vec::new(),
+            filtered_collections: Vec::new(),
+            active_collection: None,
+            active_collection_tracks: Vec::new(),
+            active_collection_restricted: None,
+            loading_collection: false,
             lyrics: None,
             art: AlbumArt::from_env(),
             mpris,
             mpris_rx,
-            scan_rx: Some(scan_rx),
-            #[cfg(feature = "spotify")]
-            spotify_token,
-            #[cfg(feature = "spotify")]
-            spotify_devices: Vec::new(),
-            #[cfg(feature = "spotify")]
-            spotify_search: Vec::new(),
-            #[cfg(feature = "spotify")]
-            spotify_remote_playing: false,
-            #[cfg(feature = "spotify")]
-            spotify_phase: 0.0,
-            lib_list: ListState::new().with_empty("No audio files found — press R to scan ~/Music"),
-            queue_list: ListState::new().with_empty("Queue is empty — press 2 to browse Library"),
+            spotify_authed: false,
+            spotify_user: String::new(),
+            spotify_premium: false,
+            devices: Vec::new(),
+            active_provider: ProviderId::Local,
+            remote_state: PlayState::Stopped,
+            remote_track: None,
+            remote_pos_ms: 0,
+            remote_dur_ms: 0,
+            remote_synced_at: Instant::now(),
+            remote_phase: 0.0,
             search_input: Input::new(),
-            search_list: ListState::new().with_empty("Type to search local library & Spotify"),
-            search_results: Vec::new(),
-            playlist_list: ListState::new().with_empty("No playlists yet — press s in Queue to save"),
-            spotify_list: ListState::new().with_empty("Not connected to Spotify"),
+            search_list: ListState::new().with_empty("Type to search Spotify & Local library"),
+            search_items: Vec::new(),
+            spotify_search_cache: SearchResults::default(),
+            search_gen: 0,
+            pending_search_at: None,
+            sidebar_list: ListState::new().with_empty("No playlists yet — press R to refresh"),
+            home_list: ListState::new().with_empty("Press R to scan or 4 to connect Spotify"),
+            collection_list: ListState::new().with_empty("Empty playlist"),
+            queue_list: ListState::new().with_empty("Queue is empty"),
             settings_list: ListState::new(),
             rows_height: Cell::new(14),
-            scrubber_rect: Cell::new(Rect::default()),
+            hits: Cell::new(HitRects::default()),
             last_finished_gen: 0,
             last_pos_sec: 0,
             last_dur_sec: 0,
             time_buf: "00:00 / 00:00".to_string(),
             codec_buf: "IDLE".to_string(),
-            status_line: "Ready · Space play · / search · : palette · Alt+M hide".to_string(),
+            device_pill_buf: "○ Spotify: Sign in".to_string(),
+            vol_buf: "80%".to_string(),
+            queue_title_buf: "UP NEXT // 0 TRACKS".to_string(),
+            collection_title_buf: "PLAYLIST".to_string(),
+            search_title_buf: "SEARCH // SPOTIFY + LOCAL".to_string(),
+            status_line: "Ready · / search · D device · Space play/pause · ? help".to_string(),
             header: Header::new("Hayato").subtitle("Cassette"),
-            keybar: default_keybar(),
+            keybar: Vec::new(),
             design_override: None,
             border_ramp: design.ramp(ColorRole::Border, ColorRole::Accent),
             spectrum_ramp: design.ramp(ColorRole::AccentAlt, ColorRole::Accent),
@@ -230,9 +333,8 @@ impl CassetteScreen {
             headless_test: false,
         };
 
-        screen.rebuild_library_rows();
-        screen.rebuild_playlist_rows();
-        screen.rebuild_spotify_rows();
+        screen.vol_buf = format!("{}%", screen.config.volume_pct);
+        screen.rebuild_sidebar_and_home();
         screen.rebuild_settings_rows();
         screen.sync_chrome();
 
@@ -240,13 +342,13 @@ impl CassetteScreen {
             && path.is_file()
         {
             let t = read_track_metadata(&path, &cache_dir().join("art"));
-            screen.play_tracks(vec![t], 0);
+            screen.play_local_tracks(vec![t], 0);
         }
 
         screen
     }
 
-    /// Deterministic constructor for snapshot & `no_alloc` tests (no background threads/DBus).
+    /// Deterministic constructor for snapshot tests (no background threads/DBus).
     #[allow(dead_code)]
     pub fn for_test(tracks: Vec<Track>, mini: bool, design: &Design) -> Self {
         let config = CassetteConfig::default();
@@ -257,51 +359,110 @@ impl CassetteScreen {
         if !tracks.is_empty() {
             queue.set_and_play(tracks.clone(), 0);
         }
+        let sample_cols = vec![
+            Collection {
+                id: "spotify:liked".into(),
+                provider: ProviderId::Spotify,
+                kind: CollectionKind::LikedSongs,
+                name: "Liked Songs".into(),
+                owner: Some("Bruno".into()),
+                track_count: Some(842),
+                context_uri: None,
+                tracks_restricted: false,
+            },
+            Collection {
+                id: "spotify:playlist:demo".into(),
+                provider: ProviderId::Spotify,
+                kind: CollectionKind::Playlist,
+                name: "Night Drive Synth".into(),
+                owner: Some("Bruno".into()),
+                track_count: Some(47),
+                context_uri: Some("spotify:playlist:demo".into()),
+                tracks_restricted: false,
+            },
+            Collection {
+                id: "local:all".into(),
+                provider: ProviderId::Local,
+                kind: CollectionKind::AllTracks,
+                name: "All Local Tracks".into(),
+                owner: Some("This Machine".into()),
+                track_count: Some(tracks.len() as u32),
+                context_uri: None,
+                tracks_restricted: false,
+            },
+        ];
+
         let mut screen = Self {
             config,
-            tab: Tab::Deck,
+            focus: Focus::Main,
+            stage: MainStage::Home,
+            prev_stage: MainStage::Home,
+            drawer: RightDrawer::NowPlaying,
+            sidebar_open: true,
+            source_filter: SourceFilter::All,
             mini,
             focused: true,
             unfocused_since: None,
             phase: CassettePhase::Normal,
             engine,
             analyzer,
+            hub: ProviderHub::inert(),
             queue,
-            library: tracks,
-            playlists: Vec::new(),
+            local_tracks: tracks,
+            collections: sample_cols,
+            filtered_collections: Vec::new(),
+            active_collection: None,
+            active_collection_tracks: Vec::new(),
+            active_collection_restricted: None,
+            loading_collection: false,
             lyrics: None,
             art: AlbumArt::off(),
             mpris,
             mpris_rx,
-            scan_rx: None,
-            #[cfg(feature = "spotify")]
-            spotify_token: None,
-            #[cfg(feature = "spotify")]
-            spotify_devices: Vec::new(),
-            #[cfg(feature = "spotify")]
-            spotify_search: Vec::new(),
-            #[cfg(feature = "spotify")]
-            spotify_remote_playing: false,
-            #[cfg(feature = "spotify")]
-            spotify_phase: 0.0,
-            lib_list: ListState::new(),
-            queue_list: ListState::new(),
+            spotify_authed: true,
+            spotify_user: "Bruno".into(),
+            spotify_premium: true,
+            devices: vec![PlaybackDevice {
+                id: "dev1".into(),
+                provider: ProviderId::Spotify,
+                name: "Living Room Speaker".into(),
+                kind: "Speaker".into(),
+                is_active: true,
+                volume_pct: 80,
+            }],
+            active_provider: ProviderId::Local,
+            remote_state: PlayState::Stopped,
+            remote_track: None,
+            remote_pos_ms: 0,
+            remote_dur_ms: 0,
+            remote_synced_at: Instant::now(),
+            remote_phase: 0.0,
             search_input: Input::new(),
             search_list: ListState::new(),
-            search_results: Vec::new(),
-            playlist_list: ListState::new(),
-            spotify_list: ListState::new(),
+            search_items: Vec::new(),
+            spotify_search_cache: SearchResults::default(),
+            search_gen: 0,
+            pending_search_at: None,
+            sidebar_list: ListState::new(),
+            home_list: ListState::new(),
+            collection_list: ListState::new(),
+            queue_list: ListState::new(),
             settings_list: ListState::new(),
             rows_height: Cell::new(14),
-            scrubber_rect: Cell::new(Rect::default()),
+            hits: Cell::new(HitRects::default()),
             last_finished_gen: 0,
             last_pos_sec: 134,
             last_dur_sec: 245,
             time_buf: "02:14 / 04:05".to_string(),
             codec_buf: "FLAC · 48kHz · 24-bit".to_string(),
+            device_pill_buf: "● Living Room Speaker ▾".to_string(),
+            vol_buf: "80%".to_string(),
+            queue_title_buf: "UP NEXT // 2 TRACKS (07:47)".to_string(),
+            collection_title_buf: "PLAYLIST".to_string(),
+            search_title_buf: "SEARCH // SPOTIFY + LOCAL".to_string(),
             status_line: "Ready".to_string(),
             header: Header::new("Hayato").subtitle("Cassette"),
-            keybar: default_keybar(),
+            keybar: Vec::new(),
             design_override: None,
             border_ramp: design.ramp(ColorRole::Border, ColorRole::Accent),
             spectrum_ramp: design.ramp(ColorRole::AccentAlt, ColorRole::Accent),
@@ -309,35 +470,47 @@ impl CassetteScreen {
             last_fx_tick: Instant::now(),
             headless_test: true,
         };
-        screen.rebuild_library_rows();
+        screen.rebuild_sidebar_and_home();
         screen.rebuild_queue_rows();
         screen.rebuild_settings_rows();
         screen.sync_chrome();
         screen
     }
 
-    fn current_play_state(&self) -> PlayState {
-        #[cfg(feature = "spotify")]
-        if self.queue.current_track().is_some_and(Track::is_spotify) {
-            return if self.spotify_remote_playing {
-                PlayState::Playing
-            } else {
-                PlayState::Paused
-            };
+    fn current_track(&self) -> Option<&Track> {
+        if self.active_provider == ProviderId::Spotify {
+            self.remote_track.as_ref().or_else(|| self.queue.current_track())
+        } else {
+            self.queue.current_track().or(self.remote_track.as_ref())
         }
-        self.engine.telemetry.play_state()
     }
 
-    fn play_tracks(&mut self, tracks: Vec<Track>, start_idx: usize) {
+    fn current_play_state(&self) -> PlayState {
+        if self.active_provider == ProviderId::Spotify {
+            self.remote_state
+        } else {
+            self.engine.telemetry.play_state()
+        }
+    }
+
+    fn active_device_id(&self) -> Option<String> {
+        self.devices
+            .iter()
+            .find(|d| d.is_active)
+            .or_else(|| self.devices.first())
+            .map(|d| d.id.clone())
+    }
+
+    fn play_local_tracks(&mut self, tracks: Vec<Track>, start_idx: usize) {
         if let Some(track) = self.queue.set_and_play(tracks, start_idx).cloned() {
-            self.start_track(&track);
+            self.active_provider = ProviderId::Local;
+            self.start_local_track(&track);
             self.rebuild_queue_rows();
-            self.tab = Tab::Deck;
             self.sync_chrome();
         }
     }
 
-    fn start_track(&mut self, track: &Track) {
+    fn start_local_track(&mut self, track: &Track) {
         self.art.set_path(track.art_path.as_deref());
         self.lyrics = match &track.source {
             SourceKind::Local { path, .. } => Lyrics::load_sidecar(path),
@@ -346,95 +519,140 @@ impl CassetteScreen {
         self.last_pos_sec = 0;
         self.last_dur_sec = track.duration_secs;
         self.time_buf = format!("00:00 / {}", format_time(track.duration_secs));
-
-        match &track.source {
-            SourceKind::Local { path, codec } => {
-                self.codec_buf = codec.short_label();
-                #[cfg(feature = "spotify")]
-                {
-                    self.spotify_remote_playing = false;
-                }
-                self.engine.play_file(path.clone(), track.duration_secs);
-            }
-            SourceKind::Spotify { uri, url } => {
-                self.engine.stop();
-                self.codec_buf = "SPOTIFY · CONNECT".to_string();
-                #[cfg(feature = "spotify")]
-                {
-                    if let Some(tok) = self.spotify_token.as_mut() {
-                        if tok.is_premium {
-                            let active_dev = self
-                                .spotify_devices
-                                .iter()
-                                .find(|d| d.is_active)
-                                .or_else(|| self.spotify_devices.first())
-                                .map(|d| d.id.clone());
-                            match spotify::play_uri(tok, uri, active_dev.as_deref()) {
-                                Ok(()) => {
-                                    self.spotify_remote_playing = true;
-                                    self.status_line =
-                                        format!("Playing on Spotify Connect: {}", track.title);
-                                }
-                                Err(e) => {
-                                    self.spotify_remote_playing = false;
-                                    self.status_line = format!("Spotify Connect error: {e}");
-                                }
-                            }
-                        } else {
-                            self.status_line =
-                                "Spotify Free account: opening track in Firefox".to_string();
-                            let _ = Command::new("xdg-open")
-                                .arg(if url.is_empty() { uri } else { url })
-                                .stdin(Stdio::null())
-                                .stdout(Stdio::null())
-                                .stderr(Stdio::null())
-                                .spawn();
-                        }
-                    } else {
-                        self.status_line = "Sign in to Spotify (tab 6) to play".to_string();
-                    }
-                }
-                #[cfg(not(feature = "spotify"))]
-                {
-                    let _ = (uri, url);
-                }
-            }
+        if let SourceKind::Local { path, codec } = &track.source {
+            self.codec_buf = codec.short_label();
+            self.engine.play_file(path.clone(), track.duration_secs);
         }
-
-        // Trigger bounded track-change dissolve effect
-        self.fx = Some(fx::coalesce(EffectTimer::from_ms(
-            240,
-            Interpolation::CubicOut,
-        )));
-        self.last_fx_tick = Instant::now();
-
+        self.trigger_track_fx();
         if !self.focused && self.config.notify_when_unfocused && !self.headless_test {
             notify_track_change(track);
         }
         self.publish_external_state();
     }
 
-    fn toggle_play_pause(&mut self) {
-        if self.queue.current_track().is_none() {
-            if !self.library.is_empty() {
-                let all = self.library.clone();
-                self.play_tracks(all, 0);
-            }
-            return;
+    fn play_spotify_track(&mut self, track: &Track, context_uri: Option<&str>) {
+        self.engine.stop();
+        self.active_provider = ProviderId::Spotify;
+        self.remote_track = Some(track.clone());
+        self.remote_state = PlayState::Playing;
+        self.remote_pos_ms = 0;
+        self.remote_dur_ms = track.duration_secs.saturating_mul(1000);
+        self.remote_synced_at = Instant::now();
+        self.last_pos_sec = 0;
+        self.last_dur_sec = track.duration_secs;
+        self.time_buf = format!("00:00 / {}", format_time(track.duration_secs));
+        self.codec_buf = "SPOTIFY · CONNECT".to_string();
+        self.art.set_path(track.art_path.as_deref());
+        self.trigger_track_fx();
+
+        let dev_id = self.active_device_id();
+        if let (Some(ctx), SourceKind::Spotify { uri, .. }) = (context_uri, &track.source) {
+            self.hub.send(ProviderCmd::PlayContext {
+                provider: ProviderId::Spotify,
+                context_uri: ctx.to_string(),
+                offset_uri: Some(uri.clone()),
+                device_id: dev_id,
+            });
+        } else {
+            self.hub.send(ProviderCmd::PlayTrack {
+                provider: ProviderId::Spotify,
+                track: track.clone(),
+                device_id: dev_id,
+            });
         }
-        #[cfg(feature = "spotify")]
-        if self.queue.current_track().is_some_and(Track::is_spotify) {
-            if let Some(tok) = self.spotify_token.as_mut() {
-                let res = if self.spotify_remote_playing {
-                    spotify::pause_remote(tok)
+        self.publish_external_state();
+    }
+
+    fn play_collection_now(&mut self, col: &Collection) {
+        match col.provider {
+            ProviderId::Spotify => {
+                if let Some(ctx) = &col.context_uri {
+                    self.engine.stop();
+                    self.active_provider = ProviderId::Spotify;
+                    self.remote_state = PlayState::Playing;
+                    self.codec_buf = "SPOTIFY · CONNECT".to_string();
+                    self.hub.send(ProviderCmd::PlayContext {
+                        provider: ProviderId::Spotify,
+                        context_uri: ctx.clone(),
+                        offset_uri: None,
+                        device_id: self.active_device_id(),
+                    });
+                    self.status_line = format!("Playing {} on Spotify Connect", col.name);
+                } else if self.active_collection.as_ref().is_some_and(|c| c.id == col.id)
+                    && let Some(first) = self.active_collection_tracks.first().cloned()
+                {
+                    self.play_spotify_track(&first, None);
                 } else {
-                    spotify::resume_remote(tok)
-                };
-                if res.is_ok() {
-                    self.spotify_remote_playing = !self.spotify_remote_playing;
+                    self.open_collection(col.clone());
                 }
             }
+            ProviderId::Local => {
+                if self.active_collection.as_ref().is_some_and(|c| c.id == col.id)
+                    && !self.active_collection_tracks.is_empty()
+                {
+                    let list = self.active_collection_tracks.clone();
+                    self.play_local_tracks(list, 0);
+                } else if col.id == "local:all" && !self.local_tracks.is_empty() {
+                    let list = self.local_tracks.clone();
+                    self.play_local_tracks(list, 0);
+                } else {
+                    self.open_collection(col.clone());
+                }
+            }
+        }
+    }
+
+    fn open_collection(&mut self, col: Collection) {
+        self.prev_stage = self.stage.clone();
+        self.stage = MainStage::Collection;
+        self.focus = Focus::Main;
+        self.active_collection = Some(col.clone());
+        self.active_collection_tracks.clear();
+        self.active_collection_restricted = None;
+        self.loading_collection = true;
+        let count_txt = col
+            .track_count
+            .map(|n| format!("{n} TRACKS"))
+            .unwrap_or_else(|| "LOADING…".into());
+        self.collection_title_buf = format!(
+            "{} // {} · {count_txt}",
+            col.name.to_uppercase(),
+            col.provider.label()
+        );
+        self.collection_list.set_rows(vec![
+            Row::new("Loading tracks…").glyph(Glyph::Music),
+        ]);
+        self.hub.send(ProviderCmd::LoadCollection(col));
+        self.sync_chrome();
+    }
+
+    fn trigger_track_fx(&mut self) {
+        self.fx = Some(fx::coalesce(EffectTimer::from_ms(
+            220,
+            Interpolation::CubicOut,
+        )));
+        self.last_fx_tick = Instant::now();
+    }
+
+    fn toggle_play_pause(&mut self) {
+        if self.active_provider == ProviderId::Spotify {
+            if self.remote_state == PlayState::Playing {
+                self.remote_state = PlayState::Paused;
+                self.hub.send(ProviderCmd::RemotePause(ProviderId::Spotify));
+            } else {
+                self.remote_state = PlayState::Playing;
+                self.remote_synced_at = Instant::now();
+                self.hub.send(ProviderCmd::RemoteResume(ProviderId::Spotify));
+            }
+            self.sync_chrome();
             self.publish_external_state();
+            return;
+        }
+        if self.queue.current_track().is_none() {
+            if !self.local_tracks.is_empty() {
+                let all = self.local_tracks.clone();
+                self.play_local_tracks(all, 0);
+            }
             return;
         }
         match self.engine.telemetry.play_state() {
@@ -442,16 +660,21 @@ impl CassetteScreen {
             PlayState::Paused => self.engine.resume(),
             PlayState::Stopped => {
                 if let Some(t) = self.queue.current_track().cloned() {
-                    self.start_track(&t);
+                    self.start_local_track(&t);
                 }
             }
         }
+        self.sync_chrome();
         self.publish_external_state();
     }
 
     fn next_track(&mut self, auto_end: bool) {
+        if self.active_provider == ProviderId::Spotify {
+            self.hub.send(ProviderCmd::RemoteNext(ProviderId::Spotify));
+            return;
+        }
         if let Some(t) = self.queue.advance_next(auto_end).cloned() {
-            self.start_track(&t);
+            self.start_local_track(&t);
             self.rebuild_queue_rows();
         } else {
             self.engine.stop();
@@ -461,14 +684,16 @@ impl CassetteScreen {
     }
 
     fn prev_track(&mut self) {
+        if self.active_provider == ProviderId::Spotify {
+            self.hub.send(ProviderCmd::RemotePrev(ProviderId::Spotify));
+            return;
+        }
         if self.last_pos_sec > 3 {
-            self.engine.seek_secs(0);
-            self.last_pos_sec = 0;
-            self.time_buf = format!("00:00 / {}", format_time(self.last_dur_sec));
+            self.seek_to_secs(0);
             return;
         }
         if let Some(t) = self.queue.advance_prev().cloned() {
-            self.start_track(&t);
+            self.start_local_track(&t);
             self.rebuild_queue_rows();
         }
         self.sync_chrome();
@@ -476,26 +701,81 @@ impl CassetteScreen {
 
     fn seek_delta(&mut self, delta: i64) {
         let target = (self.last_pos_sec as i64 + delta).clamp(0, self.last_dur_sec as i64) as u64;
-        self.engine.seek_secs(target);
-        self.last_pos_sec = target;
+        self.seek_to_secs(target);
+    }
+
+    fn seek_to_secs(&mut self, secs: u64) {
+        self.last_pos_sec = secs;
         self.time_buf = format!(
             "{} / {}",
             format_time(self.last_pos_sec),
             format_time(self.last_dur_sec)
         );
+        if self.active_provider == ProviderId::Spotify {
+            self.remote_pos_ms = secs.saturating_mul(1000);
+            self.remote_synced_at = Instant::now();
+            self.hub.send(ProviderCmd::RemoteSeekMs(
+                ProviderId::Spotify,
+                self.remote_pos_ms,
+            ));
+        } else {
+            self.engine.seek_secs(secs);
+        }
     }
 
     fn adjust_volume(&mut self, delta: i16) {
         let next = (i16::from(self.config.volume_pct) + delta).clamp(0, 100) as u8;
         self.config.volume_pct = next;
-        self.engine.set_volume(next);
+        self.vol_buf = format!("{next}%");
         let _ = save_config(&self.config);
+        if self.active_provider == ProviderId::Spotify {
+            self.hub
+                .send(ProviderCmd::RemoteVolume(ProviderId::Spotify, next));
+        } else {
+            self.engine.set_volume(next);
+        }
         self.status_line = format!("Volume {next}%");
         self.publish_external_state();
     }
 
+    fn toggle_mute(&mut self) {
+        let muted = !self.engine.telemetry.muted();
+        self.engine.set_muted(muted);
+        if self.active_provider == ProviderId::Spotify {
+            self.hub.send(ProviderCmd::RemoteVolume(
+                ProviderId::Spotify,
+                if muted { 0 } else { self.config.volume_pct },
+            ));
+        }
+        self.vol_buf = if muted {
+            "MUTE".to_string()
+        } else {
+            format!("{}%", self.config.volume_pct)
+        };
+    }
+
+    fn toggle_shuffle(&mut self) {
+        self.queue.shuffle = !self.queue.shuffle;
+        if self.active_provider == ProviderId::Spotify {
+            self.hub.send(ProviderCmd::RemoteShuffle(
+                ProviderId::Spotify,
+                self.queue.shuffle,
+            ));
+        }
+    }
+
+    fn cycle_repeat(&mut self) {
+        self.queue.repeat = self.queue.repeat.cycle();
+        if self.active_provider == ProviderId::Spotify {
+            self.hub.send(ProviderCmd::RemoteRepeat(
+                ProviderId::Spotify,
+                self.queue.repeat,
+            ));
+        }
+    }
+
     fn share_current(&mut self) {
-        let Some(track) = self.queue.current_track() else {
+        let Some(track) = self.current_track().cloned() else {
             self.status_line = "Nothing playing to share".to_string();
             return;
         };
@@ -519,7 +799,7 @@ impl CassetteScreen {
             return;
         }
         let state = self.current_play_state();
-        let track = self.queue.current_track();
+        let track = self.current_track();
         self.mpris.update(state, track, self.last_pos_sec);
 
         let now_file = NowPlayingFile {
@@ -545,18 +825,103 @@ impl CassetteScreen {
             .spawn();
     }
 
-    fn rebuild_library_rows(&mut self) {
-        let rows: Vec<Row> = self
-            .library
+    fn rebuild_sidebar_and_home(&mut self) {
+        self.filtered_collections = self
+            .collections
             .iter()
-            .map(|t| {
-                Row::new(&t.title)
+            .filter(|c| self.source_filter.matches(c.provider))
+            .cloned()
+            .collect();
+
+        let mut s_rows = Vec::new();
+        for c in &self.filtered_collections {
+            let count = c
+                .track_count
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| "…".into());
+            let glyph = match c.kind {
+                CollectionKind::LikedSongs => Glyph::Star,
+                CollectionKind::Playlist => Glyph::Music,
+                CollectionKind::AllTracks => Glyph::Folder,
+            };
+            let prefix = if c.kind == CollectionKind::LikedSongs {
+                "♥ "
+            } else {
+                ""
+            };
+            s_rows.push(
+                Row::new(format!("{prefix}{}", c.name))
+                    .value(count)
+                    .glyph(glyph),
+            );
+        }
+        self.sidebar_list.update_rows(s_rows);
+
+        // Home Quick Launch shelf: Spotify CTA if unlinked, else Liked Songs + top playlists
+        let mut h_rows = Vec::new();
+        if !self.spotify_authed {
+            h_rows.push(
+                Row::new("Sign in with Spotify (Browser PKCE)")
+                    .detail("Connect your playlists, Liked Songs & Connect speakers")
+                    .value("Enter")
+                    .glyph(Glyph::Key),
+            );
+            h_rows.push(
+                Row::new("Set Spotify Developer Client ID")
+                    .detail(if self.config.spotify_client_id.is_empty() {
+                        "Paste your Client ID from Spotify Developer Dashboard"
+                    } else {
+                        "Client ID saved — press Enter to edit"
+                    })
+                    .value("4")
+                    .glyph(Glyph::Gear),
+            );
+        }
+        for c in self.collections.iter().take(12) {
+            let count = c
+                .track_count
+                .map(|n| format!("{n} tracks"))
+                .unwrap_or_else(|| c.provider.label().to_string());
+            let detail = match &c.owner {
+                Some(o) => format!("{} · {o}", c.provider.label()),
+                None => c.provider.label().to_string(),
+            };
+            let prefix = if c.kind == CollectionKind::LikedSongs {
+                "♥ "
+            } else {
+                ""
+            };
+            h_rows.push(
+                Row::new(format!("{prefix}{}", c.name))
+                    .detail(detail)
+                    .value(count)
+                    .glyph(if c.provider == ProviderId::Spotify {
+                        Glyph::Wifi
+                    } else {
+                        Glyph::Music
+                    }),
+            );
+        }
+        self.home_list.update_rows(h_rows);
+    }
+
+    fn rebuild_collection_rows(&mut self) {
+        let rows: Vec<Row> = self
+            .active_collection_tracks
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                Row::new(format!("{:02}  {}", i + 1, t.title))
                     .detail(format!("{} · {}", t.artist, t.album))
                     .value(format_time(t.duration_secs))
-                    .glyph(Glyph::Music)
+                    .glyph(if t.is_spotify() {
+                        Glyph::Wifi
+                    } else {
+                        Glyph::Music
+                    })
             })
             .collect();
-        self.lib_list.update_rows(rows);
+        self.collection_list.update_rows(rows);
     }
 
     fn rebuild_queue_rows(&mut self) {
@@ -575,74 +940,106 @@ impl CassetteScreen {
             })
             .collect();
         self.queue_list.update_rows(rows);
+        self.queue_title_buf = format!(
+            "UP NEXT // {} TRACKS ({})",
+            self.queue.len(),
+            format_time(self.queue.remaining_duration_secs())
+        );
     }
 
-    fn rebuild_playlist_rows(&mut self) {
-        let rows: Vec<Row> = self
-            .playlists
-            .iter()
-            .map(|p| {
-                let kind = if p.is_spotify { "Spotify" } else { "Local .m3u8" };
-                Row::new(&p.name)
-                    .detail(kind)
-                    .value(format!("{} tracks", p.tracks.len()))
-                    .glyph(Glyph::Folder)
-            })
-            .collect();
-        self.playlist_list.update_rows(rows);
-    }
+    fn rebuild_search_rows(&mut self) {
+        let q = self.search_input.text().trim().to_lowercase();
+        self.search_items.clear();
+        let mut rows = Vec::new();
 
-    fn rebuild_spotify_rows(&mut self) {
-        #[cfg(feature = "spotify")]
+        if q.is_empty() {
+            self.search_title_buf = "SEARCH // SPOTIFY + LOCAL".to_string();
+            self.search_list.update_rows(rows);
+            return;
+        }
+
+        // 1. Spotify Tracks (from debounced background worker)
+        if self.source_filter.matches(ProviderId::Spotify) && !self.spotify_search_cache.tracks.is_empty()
         {
-            let mut rows = Vec::new();
-            if let Some(tok) = &self.spotify_token {
-                let tier = if tok.is_premium { "PREMIUM" } else { "FREE" };
+            rows.push(Row::heading("Spotify Tracks"));
+            for t in &self.spotify_search_cache.tracks {
                 rows.push(
-                    Row::new(format!("Account: {} [{tier}]", tok.display_name))
-                        .detail("Press r to refresh devices · x to sign out")
+                    Row::new(&t.title)
+                        .detail(format!("{} · {} [SPOTIFY]", t.artist, t.album))
+                        .value(format_time(t.duration_secs))
                         .glyph(Glyph::Wifi),
                 );
-                if self.spotify_devices.is_empty() {
-                    rows.push(
-                        Row::new("No active Spotify Connect devices found")
-                            .detail("Open Spotify on your phone or start librespot, then press r")
-                            .glyph(Glyph::Volume),
-                    );
-                } else {
-                    for d in &self.spotify_devices {
-                        let dot = if d.is_active { "● " } else { "○ " };
-                        rows.push(
-                            Row::new(format!("{dot}{}", d.name))
-                                .detail(format!("{} · Vol {}%", d.device_type, d.volume_percent))
-                                .value(if d.is_active { "active" } else { "transfer" })
-                                .glyph(Glyph::Volume),
-                        );
-                    }
-                }
-            } else {
-                rows.push(
-                    Row::new("Sign in with Spotify (Browser OAuth PKCE)")
-                        .detail(format!("Redirect URI: {}", spotify::REDIRECT_URI))
-                        .value("Enter")
-                        .glyph(Glyph::Key),
-                );
-                rows.push(
-                    Row::new("Set Spotify Developer Client ID")
-                        .detail(if self.config.spotify_client_id.is_empty() {
-                            "Required for Spotify 2026 Web API (press c to paste)"
-                        } else {
-                            "Client ID configured (press c to edit)"
-                        })
-                        .value("c")
-                        .glyph(Glyph::Gear),
-                );
+                self.search_items.push(SearchRowItem::Track(t.clone()));
             }
-            self.spotify_list.update_rows(rows);
         }
+
+        // 2. Spotify Playlists
+        if self.source_filter.matches(ProviderId::Spotify)
+            && !self.spotify_search_cache.collections.is_empty()
+        {
+            rows.push(Row::heading("Spotify Playlists"));
+            for c in &self.spotify_search_cache.collections {
+                let cnt = c
+                    .track_count
+                    .map(|n| format!("{n} tracks"))
+                    .unwrap_or_else(|| "open".into());
+                rows.push(
+                    Row::new(&c.name)
+                        .detail("Spotify Playlist")
+                        .value(cnt)
+                        .glyph(Glyph::Folder),
+                );
+                self.search_items.push(SearchRowItem::Collection(c.clone()));
+            }
+        }
+
+        // 3. Instant Local Matches (0 ms)
+        if self.source_filter.matches(ProviderId::Local) {
+            let local_hits: Vec<Track> = self
+                .local_tracks
+                .iter()
+                .filter(|t| {
+                    t.title.to_lowercase().contains(&q)
+                        || t.artist.to_lowercase().contains(&q)
+                        || t.album.to_lowercase().contains(&q)
+                })
+                .take(25)
+                .cloned()
+                .collect();
+            if !local_hits.is_empty() {
+                rows.push(Row::heading("Local Library"));
+                for t in local_hits {
+                    rows.push(
+                        Row::new(&t.title)
+                            .detail(format!("{} · {} [LOCAL]", t.artist, t.album))
+                            .value(format_time(t.duration_secs))
+                            .glyph(Glyph::Music),
+                    );
+                    self.search_items.push(SearchRowItem::Track(t));
+                }
+            }
+        }
+
+        self.search_title_buf = format!(
+            "SEARCH // \"{}\" ({}) [{}]",
+            self.search_input.text().trim(),
+            self.search_items.len(),
+            self.source_filter.label()
+        );
+        self.search_list.update_rows(rows);
     }
 
     fn rebuild_settings_rows(&mut self) {
+        let sp_status = if self.spotify_authed {
+            let tier = if self.spotify_premium {
+                "PREMIUM"
+            } else {
+                "FREE"
+            };
+            format!("{} [{tier}]", self.spotify_user)
+        } else {
+            "Not signed in".to_string()
+        };
         let dirs_str: String = self
             .config
             .music_dirs
@@ -651,14 +1048,26 @@ impl CassetteScreen {
             .collect::<Vec<_>>()
             .join(", ");
         let rows = vec![
+            Row::new(if self.spotify_authed {
+                "Spotify Account (Enter to Sign Out)"
+            } else {
+                "Sign in with Spotify (Browser PKCE)"
+            })
+            .detail(sp_status)
+            .value(if self.spotify_authed { "linked" } else { "login" })
+            .glyph(Glyph::Wifi),
+            Row::new("Spotify Developer Client ID")
+                .detail("Redirect URI: http://127.0.0.1:8898/callback")
+                .value(if self.config.spotify_client_id.is_empty() {
+                    "unset"
+                } else {
+                    "configured"
+                })
+                .glyph(Glyph::Key),
             Row::new("Visualizer Mode")
                 .detail("Cycle Spectrum, Oscilloscope, or Off")
                 .value(self.config.visualizer.label())
                 .glyph(Glyph::Music),
-            Row::new("Synced Lyrics Drawer")
-                .detail("Show sidecar .lrc lyrics on Now Playing deck")
-                .value(if self.config.show_lyrics { "On" } else { "Off" })
-                .glyph(Glyph::File),
             Row::new("Unfocused Track Notifications")
                 .detail("Send hayato-notify card on track change while hidden")
                 .value(if self.config.notify_when_unfocused {
@@ -667,92 +1076,82 @@ impl CassetteScreen {
                     "Off"
                 })
                 .glyph(Glyph::Bell),
-            Row::new("Rescan Music Folders")
+            Row::new("Refresh Spotify & Rescan Local Music")
                 .detail(dirs_str)
-                .value("Enter")
+                .value("R")
                 .glyph(Glyph::Folder),
-            Row::new("Spotify Developer Client ID")
-                .detail("For PKCE OAuth & Web API search/playlists")
-                .value(if self.config.spotify_client_id.is_empty() {
-                    "unset"
-                } else {
-                    "configured"
-                })
-                .glyph(Glyph::Key),
         ];
         self.settings_list.update_rows(rows);
     }
 
-    fn run_unified_search(&mut self) {
-        let q = self.search_input.text().trim().to_lowercase();
-        self.search_results.clear();
-        if q.is_empty() {
-            self.search_list.update_rows(Vec::new());
+    fn rebuild_device_pill(&mut self) {
+        if !self.spotify_authed {
+            self.device_pill_buf = "○ Spotify: Sign in".to_string();
+        } else if let Some(dev) = self
+            .devices
+            .iter()
+            .find(|d| d.is_active)
+            .or_else(|| self.devices.first())
+        {
+            let short: String = dev.name.chars().take(18).collect();
+            self.device_pill_buf = format!("● {short} ▾");
+        } else {
+            self.device_pill_buf = "○ No Device ▾".to_string();
+        }
+    }
+
+    fn open_device_picker(&mut self) {
+        if !self.spotify_authed {
+            self.stage = MainStage::Settings;
+            self.focus = Focus::Main;
+            self.sync_chrome();
             return;
         }
-        let mut rows = Vec::new();
-        let local_matches: Vec<Track> = self
-            .library
+        let mut list = ListState::new().with_empty(
+            "No active Spotify Connect devices — open Spotify on your phone, then press R",
+        );
+        let rows: Vec<Row> = self
+            .devices
             .iter()
-            .filter(|t| {
-                t.title.to_lowercase().contains(&q)
-                    || t.artist.to_lowercase().contains(&q)
-                    || t.album.to_lowercase().contains(&q)
+            .map(|d| {
+                let dot = if d.is_active { "● " } else { "○ " };
+                Row::new(format!("{dot}{}", d.name))
+                    .detail(format!("{} · Vol {}%", d.kind, d.volume_pct))
+                    .value(if d.is_active { "active" } else { "transfer" })
+                    .glyph(Glyph::Volume)
             })
-            .take(40)
-            .cloned()
             .collect();
-        for t in local_matches {
-            rows.push(
-                Row::new(&t.title)
-                    .detail(format!("{} · {} [LOCAL]", t.artist, t.album))
-                    .value(format_time(t.duration_secs))
-                    .glyph(Glyph::Music),
-            );
-            self.search_results.push(t);
-        }
-
-        #[cfg(feature = "spotify")]
-        if let Some(tok) = self.spotify_token.as_mut()
-            && q.len() >= 2
-            && let Ok(sp_tracks) = spotify::search_tracks(tok, &q, 12)
-        {
-            self.spotify_search = sp_tracks.clone();
-            for t in sp_tracks {
-                rows.push(
-                    Row::new(&t.title)
-                        .detail(format!("{} · {} [SPOTIFY]", t.artist, t.album))
-                        .value(format_time(t.duration_secs))
-                        .glyph(Glyph::Wifi),
-                );
-                self.search_results.push(t);
-            }
-        }
-        self.search_list.update_rows(rows);
+        list.set_rows(rows);
+        self.phase = CassettePhase::DevicePicker(list);
+        self.sync_chrome();
     }
 
     fn open_palette(&mut self) {
         let mut list = ListState::new().ranked();
         list.set_rows(vec![
             Row::new("Play / Pause").value("Space").glyph(Glyph::Play),
-            Row::new("Next Track").value("n").glyph(Glyph::Music),
-            Row::new("Previous Track").value("p").glyph(Glyph::Music),
-            Row::new("Toggle Mini HUD").value("m").glyph(Glyph::Window),
-            Row::new("Cycle Visualizer").value("v").glyph(Glyph::Music),
-            Row::new("Toggle Lyrics").value("L").glyph(Glyph::File),
+            Row::new("Spotify Connect Devices").value("D").glyph(Glyph::Volume),
+            Row::new("Search Spotify & Local").value("/").glyph(Glyph::Search),
+            Row::new("Full Cyberdeck Visualizer").value("V").glyph(Glyph::Music),
+            Row::new("Toggle Mini HUD").value("w").glyph(Glyph::Window),
+            Row::new("Toggle Left Library Sidebar").value("b").glyph(Glyph::Folder),
+            Row::new("Toggle Right Queue Drawer").value("q").glyph(Glyph::Music),
+            Row::new("Toggle Synced Lyrics").value("L").glyph(Glyph::File),
             Row::new("Share Current Track (Hayato Share)")
                 .value("Ctrl+S")
                 .glyph(Glyph::Qr),
-            Row::new("Rescan Local Music Library")
+            Row::new("Refresh Spotify & Local Library")
                 .value("R")
                 .glyph(Glyph::Folder),
             Row::new("Save Queue as .m3u8 Playlist")
-                .value("s")
+                .value("S")
                 .glyph(Glyph::Save),
+            Row::new("Keymap Help").value("?").glyph(Glyph::Info),
             Row::new("Hide to Scratchpad").value("Esc").glyph(Glyph::Window),
             Row::new("Quit Hayato Cassette").value("Q").glyph(Glyph::Power),
         ]);
         self.phase = CassettePhase::Palette(list);
+        self.sync_chrome();
     }
 
     fn sync_chrome(&mut self) {
@@ -766,345 +1165,740 @@ impl CassetteScreen {
             PlayState::Paused => "⏸ PAUSED",
             PlayState::Stopped => "○ IDLE",
         };
+        let src = if self.active_provider == ProviderId::Spotify {
+            "Spotify"
+        } else {
+            "Local"
+        };
         self.header = Header::new("Hayato")
             .subtitle(sub)
-            .status(format!("{state_dot} · {} tracks", self.library.len()));
+            .status(format!("{state_dot} · {src} · {} local", self.local_tracks.len()));
+
+        self.rebuild_device_pill();
+
+        // Dynamic per-focus / per-phase keybar keeping Esc on the right
+        self.keybar = match &self.phase {
+            CassettePhase::DevicePicker(_) => vec![
+                KeyHint::new("Enter", "transfer"),
+                KeyHint::new("R", "refresh"),
+                KeyHint::new("Esc", "back"),
+            ],
+            CassettePhase::Help => vec![KeyHint::new("Esc", "close")],
+            CassettePhase::Palette(_) => vec![
+                KeyHint::new("Enter", "run"),
+                KeyHint::new("Esc", "back"),
+            ],
+            CassettePhase::EditClientId(_) => vec![
+                KeyHint::new("Enter", "save"),
+                KeyHint::new("Esc", "cancel"),
+            ],
+            CassettePhase::ConfirmClearQueue(_) | CassettePhase::ConfirmLogoutSpotify(_) => vec![
+                KeyHint::new("←/→", "choose"),
+                KeyHint::new("Enter", "confirm"),
+                KeyHint::new("Esc", "cancel"),
+            ],
+            CassettePhase::Normal => match self.focus {
+                Focus::SearchBar => vec![
+                    KeyHint::new("Enter", "play/open"),
+                    KeyHint::new("Ctrl+A", "enqueue"),
+                    KeyHint::new("Tab", "scope"),
+                    KeyHint::new("Esc", "clear/back"),
+                ],
+                Focus::Sidebar => vec![
+                    KeyHint::new("Enter", "open"),
+                    KeyHint::new("P", "play list"),
+                    KeyHint::new("f", "filter"),
+                    KeyHint::new("Tab", "pane"),
+                    KeyHint::new("Esc", "hide"),
+                ],
+                Focus::RightDrawer => vec![
+                    KeyHint::new("Enter", "jump"),
+                    KeyHint::new("J/K", "reorder"),
+                    KeyHint::new("Ctrl+X", "clear"),
+                    KeyHint::new("S", "save"),
+                    KeyHint::new("Esc", "back"),
+                ],
+                Focus::Main => match self.stage {
+                    MainStage::Collection => vec![
+                        KeyHint::new("Enter", "play"),
+                        KeyHint::new("P", "play all"),
+                        KeyHint::new("a/A", "queue"),
+                        KeyHint::new("/", "search"),
+                        KeyHint::new("D", "device"),
+                        KeyHint::new("Esc", "back"),
+                    ],
+                    _ => vec![
+                        KeyHint::new("Space", "play/pause"),
+                        KeyHint::new("/", "search"),
+                        KeyHint::new("D", "device"),
+                        KeyHint::new("V", "viz"),
+                        KeyHint::new("Tab", "pane"),
+                        KeyHint::new("?", "help"),
+                        KeyHint::new("Esc", "hide"),
+                    ],
+                },
+            },
+        };
     }
 
-    fn draw_deck_full(&mut self, ctx: &mut BodyCtx) {
-        let area = ctx.area;
-        let left_w = (area.width / 3).clamp(28, 38);
-        let right_w = area.width.saturating_sub(left_w + 1);
-        let left_rect = Rect::new(area.x, area.y, left_w, area.height);
-        let right_rect = Rect::new(area.x + left_w + 1, area.y, right_w, area.height);
-
-        // Left pane: Album Art + Up Next
-        let left_inner = draw_card(ctx.buf, left_rect, ctx.design, Some("ALBUM ART"), false);
-        if left_inner.height >= 8 && left_inner.width >= 12 {
-            let art_h = (left_inner.height / 2).clamp(6, 14);
-            let art_rect = Rect::new(left_inner.x + 1, left_inner.y, left_inner.width.saturating_sub(2), art_h);
-            if self.art.has_image() {
-                self.art.render(art_rect, ctx.buf);
-            } else {
-                draw_cassette_ascii(ctx.buf, art_rect, ctx.design);
-            }
-
-            let info_y = art_rect.bottom() + 1;
-            if info_y + 2 < left_inner.bottom() {
-                let state_str = match self.current_play_state() {
-                    PlayState::Playing => "● PLAYING",
-                    PlayState::Paused => "⏸ PAUSED",
-                    PlayState::Stopped => "○ STOPPED",
-                };
-                let role = match self.current_play_state() {
-                    PlayState::Playing => ColorRole::Ok,
-                    PlayState::Paused => ColorRole::Warn,
-                    PlayState::Stopped => ColorRole::Muted,
-                };
-                let bx = draw_badge(ctx.buf, left_inner.x, info_y, ctx.design, state_str, role);
-                let _ = put_trunc(
-                    ctx.buf,
-                    bx + 1,
-                    info_y,
-                    &self.time_buf,
-                    left_inner.right().saturating_sub(bx + 1),
-                    ctx.design.style(TextStyle::Dim),
-                );
-                let _ = put_trunc(
-                    ctx.buf,
-                    left_inner.x,
-                    info_y + 1,
-                    &self.codec_buf,
-                    left_inner.width,
-                    ctx.design.style(TextStyle::Dim),
-                );
-            }
-
-            let up_y = info_y + 3;
-            if up_y + 2 < left_inner.bottom() {
-                let _ = put_trunc(
-                    ctx.buf,
-                    left_inner.x,
-                    up_y,
-                    "UP NEXT",
-                    left_inner.width,
-                    Style::default()
-                        .fg(ctx.design.color(ColorRole::Accent))
-                        .add_modifier(Modifier::BOLD),
-                );
-                let cur = self.queue.current_index().unwrap_or(0);
-                for (offset, t) in self.queue.items().iter().skip(cur + 1).take(4).enumerate() {
-                    let y = up_y + 1 + offset as u16;
-                    if y >= left_inner.bottom() {
-                        break;
+    fn drain_provider_events(&mut self) {
+        while let Some(ev) = self.hub.try_recv() {
+            match ev {
+                ProviderEvent::CollectionsUpdated {
+                    collections,
+                    local_tracks,
+                } => {
+                    self.collections = collections;
+                    self.local_tracks = local_tracks;
+                    self.rebuild_sidebar_and_home();
+                    if self.stage == MainStage::Search {
+                        self.rebuild_search_rows();
                     }
-                    let line = format!("{}. {}", offset + 1, t.title);
-                    let _ = put_trunc(
-                        ctx.buf,
-                        left_inner.x,
-                        y,
-                        &line,
-                        left_inner.width,
-                        ctx.design.style(TextStyle::Dim),
-                    );
+                    self.sync_chrome();
+                }
+                ProviderEvent::CollectionLoaded {
+                    collection_id,
+                    items,
+                } => {
+                    if self
+                        .active_collection
+                        .as_ref()
+                        .is_some_and(|c| c.id == collection_id)
+                    {
+                        self.loading_collection = false;
+                        match items {
+                            CollectionItems::Tracks(tracks) => {
+                                self.active_collection_restricted = None;
+                                let cnt = tracks.len();
+                                self.active_collection_tracks = tracks;
+                                if let Some(c) = &self.active_collection {
+                                    self.collection_title_buf = format!(
+                                        "{} // {} · {cnt} TRACKS",
+                                        c.name.to_uppercase(),
+                                        c.provider.label()
+                                    );
+                                }
+                                self.rebuild_collection_rows();
+                            }
+                            CollectionItems::Restricted {
+                                context_uri,
+                                reason,
+                            } => {
+                                self.active_collection_tracks.clear();
+                                self.active_collection_restricted = Some((context_uri, reason));
+                                self.collection_list.update_rows(Vec::new());
+                            }
+                        }
+                    }
+                }
+                ProviderEvent::SearchCompleted { seq, spotify, .. } => {
+                    if seq == self.search_gen {
+                        self.spotify_search_cache = spotify;
+                        self.rebuild_search_rows();
+                    }
+                }
+                ProviderEvent::DevicesUpdated(devs) => {
+                    self.devices = devs;
+                    self.rebuild_device_pill();
+                    if matches!(self.phase, CassettePhase::DevicePicker(_)) {
+                        self.open_device_picker();
+                    }
+                }
+                ProviderEvent::RemotePlayback(snap) => {
+                    let snap = *snap;
+                    let local_playing = self.engine.telemetry.play_state() == PlayState::Playing;
+                    if !local_playing || self.active_provider == ProviderId::Spotify {
+                        let prev_id = self.remote_track.as_ref().map(|t| t.id.clone());
+                        if let Some(dev) = snap.device {
+                            if let Some(slot) = self.devices.iter_mut().find(|d| d.id == dev.id) {
+                                *slot = dev;
+                            } else {
+                                self.devices.push(dev);
+                            }
+                        }
+                        self.active_provider = ProviderId::Spotify;
+                        self.remote_state = snap.state;
+                        self.remote_pos_ms = snap.position_ms;
+                        self.remote_dur_ms = snap.duration_ms;
+                        self.remote_synced_at = Instant::now();
+                        self.queue.shuffle = snap.shuffle;
+                        self.queue.repeat = snap.repeat;
+                        self.config.volume_pct = snap.volume_pct;
+                        self.vol_buf = format!("{}%", snap.volume_pct);
+                        self.codec_buf = "SPOTIFY · CONNECT".to_string();
+
+                        if let Some(t) = snap.track {
+                            let changed = prev_id.as_ref() != Some(&t.id);
+                            self.art.set_path(t.art_path.as_deref());
+                            if changed && !self.focused && self.config.notify_when_unfocused {
+                                notify_track_change(&t);
+                            }
+                            if changed {
+                                self.trigger_track_fx();
+                            }
+                            self.remote_track = Some(t);
+                        }
+                        self.last_pos_sec = self.remote_pos_ms / 1000;
+                        self.last_dur_sec = self.remote_dur_ms / 1000;
+                        self.time_buf = format!(
+                            "{} / {}",
+                            format_time(self.last_pos_sec),
+                            format_time(self.last_dur_sec)
+                        );
+                        self.sync_chrome();
+                        self.publish_external_state();
+                    }
+                }
+                ProviderEvent::SpotifyAuthChanged {
+                    authenticated,
+                    display_name,
+                    is_premium,
+                } => {
+                    self.spotify_authed = authenticated;
+                    self.spotify_user = display_name;
+                    self.spotify_premium = is_premium;
+                    self.rebuild_sidebar_and_home();
+                    self.rebuild_settings_rows();
+                    self.sync_chrome();
+                }
+                ProviderEvent::Status(msg) | ProviderEvent::Error(msg) => {
+                    self.status_line = msg;
+                }
+            }
+        }
+    }
+
+    fn handle_mpris(&mut self) -> Outcome {
+        while let Ok(cmd) = self.mpris_rx.try_recv() {
+            match cmd {
+                MprisCommand::Play => {
+                    if self.current_play_state() != PlayState::Playing {
+                        self.toggle_play_pause();
+                    }
+                }
+                MprisCommand::Pause => {
+                    if self.current_play_state() == PlayState::Playing {
+                        self.toggle_play_pause();
+                    }
+                }
+                MprisCommand::PlayPause => self.toggle_play_pause(),
+                MprisCommand::Stop => {
+                    self.engine.stop();
+                    if self.active_provider == ProviderId::Spotify {
+                        self.remote_state = PlayState::Paused;
+                        self.hub.send(ProviderCmd::RemotePause(ProviderId::Spotify));
+                    }
+                }
+                MprisCommand::Next => self.next_track(false),
+                MprisCommand::Previous => self.prev_track(),
+                MprisCommand::Raise => {
+                    let _ = sway_ipc::show_from_scratchpad(self.mini);
+                }
+                MprisCommand::Quit => {
+                    self.engine.stop();
+                    NowPlayingFile::clear();
+                    return Outcome::Done(hayato_ui::app::exit::OK);
+                }
+            }
+        }
+        Outcome::Continue
+    }
+
+    fn draw_top_chrome(&self, buf: &mut Buffer, area: Rect, design: &Design, hits: &mut HitRects) {
+        let mut x = area.x;
+        // [1 Home]
+        let home_lbl = " ⌂ Home ";
+        let home_w = home_lbl.chars().count() as u16;
+        let home_st = if self.stage == MainStage::Home && self.focus != Focus::SearchBar {
+            design.style(TextStyle::Key)
+        } else {
+            design.style(TextStyle::Dim)
+        };
+        let _ = put(buf, x, area.y, home_lbl, home_w, home_st);
+        hits.home = Rect::new(x, area.y, home_w, 1);
+        x += home_w + 1;
+
+        // [2 Lib]
+        let lib_lbl = if self.sidebar_open { " ◧ Lib " } else { " ▢ Lib " };
+        let lib_w = lib_lbl.chars().count() as u16;
+        let lib_st = if self.focus == Focus::Sidebar {
+            design.style(TextStyle::Key)
+        } else {
+            design.style(TextStyle::Dim)
+        };
+        let _ = put(buf, x, area.y, lib_lbl, lib_w, lib_st);
+        hits.lib = Rect::new(x, area.y, lib_w, 1);
+        x += lib_w + 1;
+
+        // Right-aligned [Device Pill] + [⚙]
+        let gear_w = 5u16;
+        let gear_x = area.right().saturating_sub(gear_w);
+        let gear_st = if self.stage == MainStage::Settings {
+            design.style(TextStyle::Key)
+        } else {
+            design.style(TextStyle::Dim)
+        };
+        let _ = put(buf, gear_x, area.y, " ⚙ 4 ", gear_w, gear_st);
+        hits.settings = Rect::new(gear_x, area.y, gear_w, 1);
+
+        let dev_w = (self.device_pill_buf.chars().count() as u16 + 2).min(24);
+        let dev_x = gear_x.saturating_sub(dev_w + 1);
+        if dev_x > x + 12 {
+            let dev_st = Style::default().fg(design.color(if self.spotify_authed {
+                ColorRole::Ok
+            } else {
+                ColorRole::Warn
+            }));
+            let _ = put_trunc(buf, dev_x, area.y, &self.device_pill_buf, dev_w, dev_st);
+            hits.device = Rect::new(dev_x, area.y, dev_w, 1);
+        }
+
+        // Centered Always-Visible Search Box
+        let search_right = if hits.device.width > 0 {
+            dev_x.saturating_sub(1)
+        } else {
+            gear_x.saturating_sub(1)
+        };
+        let search_w = search_right.saturating_sub(x).min(46);
+        if search_w >= 12 {
+            let sx = x + search_right.saturating_sub(x + search_w) / 2;
+            let srect = Rect::new(sx, area.y, search_w, 1);
+            hits.search = srect;
+            self.search_input.render_field(
+                srect,
+                buf,
+                design,
+                "/ Search Spotify & local…",
+                self.focus == Focus::SearchBar,
+                true,
+                ColorRole::Surface,
+                TextStyle::Body,
+            );
+        }
+    }
+
+    fn draw_bottom_bar(&self, buf: &mut Buffer, area: Rect, design: &Design, hits: &mut HitRects) {
+        if area.height < 2 || area.width < 20 {
+            return;
+        }
+        // Subtle separator on top of bottom bar if height >= 3
+        let (row0, row1) = if area.height >= 3 {
+            let sep = Style::default().fg(design.color(ColorRole::Border));
+            for cx in area.x..area.right() {
+                let _ = put(buf, cx, area.y, "─", 1, sep);
+            }
+            (area.y + 1, area.y + 2)
+        } else {
+            (area.y, area.y + 1)
+        };
+
+        let track = self.current_track();
+        let title = track.map(|t| t.title.as_str()).unwrap_or("Nothing playing");
+        let artist = track.map(|t| t.artist.as_str()).unwrap_or("Pick a playlist or press / to search");
+
+        let left_w = (area.width / 3).clamp(16, 34);
+        let right_w = (area.width / 3).clamp(18, 36);
+        let mid_x = area.x + left_w + 1;
+        let mid_w = area.width.saturating_sub(left_w + right_w + 2);
+
+        // Left: Track + Artist + Source badge
+        let badge = track.map(Track::source_badge).unwrap_or("IDLE");
+        let badge_role = if track.is_some_and(Track::is_spotify) {
+            ColorRole::Ok
+        } else {
+            ColorRole::AccentAlt
+        };
+        let bx = draw_badge(buf, area.x, row0, design, badge, badge_role);
+        let _ = put_trunc(
+            buf,
+            bx + 1,
+            row0,
+            title,
+            (area.x + left_w).saturating_sub(bx + 1),
+            Style::default()
+                .fg(design.color(ColorRole::Text))
+                .add_modifier(Modifier::BOLD),
+        );
+        let _ = put_trunc(buf, area.x, row1, artist, left_w, design.style(TextStyle::Dim));
+
+        // Center Row 0: Transport buttons
+        let play_icon = if self.current_play_state() == PlayState::Playing {
+            "[ ⏸ ]"
+        } else {
+            "[ ▶ ]"
+        };
+        let shuf_st = if self.queue.shuffle {
+            Style::default().fg(design.color(ColorRole::Accent))
+        } else {
+            design.style(TextStyle::Dim)
+        };
+        let rep_st = if self.queue.repeat != RepeatMode::Off {
+            Style::default().fg(design.color(ColorRole::Accent))
+        } else {
+            design.style(TextStyle::Dim)
+        };
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        let dim = design.style(TextStyle::Dim);
+
+        let transport_w = 27u16;
+        let tx = mid_x + mid_w.saturating_sub(transport_w) / 2;
+        if mid_w >= 18 {
+            let _ = put(buf, tx, row0, "⇄", 1, shuf_st);
+            let _ = put(buf, tx + 3, row0, "[⏮]", 3, dim);
+            hits.btn_prev = Rect::new(tx + 3, row0, 3, 1);
+            let _ = put(buf, tx + 8, row0, play_icon, 5, accent);
+            hits.btn_play = Rect::new(tx + 8, row0, 5, 1);
+            let _ = put(buf, tx + 15, row0, "[⏭]", 3, dim);
+            hits.btn_next = Rect::new(tx + 15, row0, 3, 1);
+            let _ = put(buf, tx + 20, row0, self.queue.repeat.short_label(), 5, rep_st);
+        }
+
+        // Center Row 1: Interactive Scrubber
+        if mid_w >= 14 {
+            let srect = Rect::new(mid_x, row1, mid_w, 1);
+            hits.scrubber = srect;
+            draw_scrubber(
+                buf,
+                srect,
+                design,
+                self.last_pos_sec,
+                self.last_dur_sec,
+                &self.time_buf,
+            );
+        }
+
+        // Right: [V] [L] [≡] [Vol] [w]
+        let rx = area.right().saturating_sub(right_w);
+        if right_w >= 18 {
+            let _ = put(buf, rx, row0, "[V]", 3, if self.stage == MainStage::Visualizer { accent } else { dim });
+            hits.btn_viz = Rect::new(rx, row0, 3, 1);
+            let _ = put(buf, rx + 4, row0, "[L]", 3, if self.drawer == RightDrawer::Lyrics { accent } else { dim });
+            hits.btn_lyrics = Rect::new(rx + 4, row0, 3, 1);
+            let _ = put(buf, rx + 8, row0, "[≡]", 3, if self.drawer == RightDrawer::Queue { accent } else { dim });
+            hits.btn_queue = Rect::new(rx + 8, row0, 3, 1);
+            let _ = put(buf, rx + 12, row0, "[w]", 3, dim);
+            hits.btn_mini = Rect::new(rx + 12, row0, 3, 1);
+            let _ = put_trunc(
+                buf,
+                rx + 16,
+                row0,
+                &self.vol_buf,
+                right_w.saturating_sub(16),
+                Style::default().fg(design.color(ColorRole::AccentAlt)),
+            );
+            let _ = put_trunc(buf, rx, row1, &self.status_line, right_w, dim);
+        }
+    }
+
+    fn draw_home_stage(&mut self, buf: &mut Buffer, area: Rect, design: &Design, hits: &mut HitRects) {
+        let hero_h = if area.height >= 20 { 10 } else { 0 };
+        if hero_h > 0 {
+            let hero_rect = Rect::new(area.x, area.y, area.width, hero_h);
+            let beat_idx = ((self.analyzer.beat_intensity * 7.0).round() as usize).min(7);
+            let border = if design.reduced_motion() {
+                design.color(ColorRole::Border)
+            } else {
+                self.border_ramp[beat_idx]
+            };
+            let inner = draw_beat_card(buf, hero_rect, design, "HAYATO // CASSETTE DECK", border);
+            let track = self.current_track();
+            let title = track.map(|t| t.title.as_str()).unwrap_or("CASSETTE");
+            let artist = track.map(|t| t.artist.as_str()).unwrap_or("Spotify & Local Cyberdeck");
+            if inner.height >= 6 && inner.width >= 26 {
+                let bt_rect = Rect::new(inner.x, inner.y, inner.width, 4);
+                let big = BigText::builder()
+                    .pixel_size(PixelSize::Quadrant)
+                    .style(
+                        Style::default()
+                            .fg(design.color(ColorRole::Text))
+                            .add_modifier(Modifier::BOLD),
+                    )
+                    .lines(vec![title.into()])
+                    .build();
+                big.render(bt_rect, buf);
+                let _ = put_trunc(
+                    buf,
+                    inner.x,
+                    inner.y + 4,
+                    artist,
+                    inner.width,
+                    design.style(TextStyle::Dim),
+                );
+                // 2-row live mini spectrum strip across bottom of hero
+                let viz_y = inner.y + 6;
+                let viz_h = inner.bottom().saturating_sub(viz_y);
+                if viz_h >= 1 {
+                    self.draw_spectrum_bars(buf, Rect::new(inner.x, viz_y, inner.width, viz_h), design);
                 }
             }
         }
 
-        // Right pane: Beat-reactive border + BigText title + Spectrum/Lyrics + Scrubber
-        let beat_idx = ((self.analyzer.beat_intensity * 7.0).round() as usize).min(7);
-        let beat_color = if ctx.design.reduced_motion() {
-            ctx.design.color(ColorRole::Border)
-        } else {
-            self.border_ramp[beat_idx]
-        };
-        let right_inner = draw_beat_card(
-            ctx.buf,
-            right_rect,
-            ctx.design,
-            "NOW PLAYING // CASSETTE DECK",
-            beat_color,
+        let quick_rect = Rect::new(
+            area.x,
+            area.y + hero_h,
+            area.width,
+            area.height.saturating_sub(hero_h),
         );
-        if right_inner.height < 8 || right_inner.width < 20 {
+        let q_inner = draw_card(
+            buf,
+            quick_rect,
+            design,
+            Some("QUICK LAUNCH // SPOTIFY & LOCAL"),
+            self.focus == Focus::Main,
+        );
+        if q_inner.height > 0 {
+            self.rows_height.set(q_inner.height);
+            hits.main_list = q_inner;
+            self.home_list
+                .render(q_inner, buf, design, self.focus == Focus::Main);
+        }
+    }
+
+    fn draw_collection_stage(
+        &mut self,
+        buf: &mut Buffer,
+        area: Rect,
+        design: &Design,
+        hits: &mut HitRects,
+    ) {
+        let inner = draw_card(
+            buf,
+            area,
+            design,
+            Some(&self.collection_title_buf),
+            self.focus == Focus::Main,
+        );
+        if inner.height < 3 {
+            return;
+        }
+        let _ = put_trunc(
+            buf,
+            inner.x,
+            inner.y,
+            "[▶ Play all (P)]   [Enter] Play from track   [a] Enqueue   [Esc] Back",
+            inner.width,
+            Style::default().fg(design.color(ColorRole::Accent)),
+        );
+
+        if let Some((_, reason)) = &self.active_collection_restricted {
+            let _ = put_trunc(
+                buf,
+                inner.x,
+                inner.y + 2,
+                reason,
+                inner.width,
+                Style::default().fg(design.color(ColorRole::Warn)),
+            );
+            let _ = put_trunc(
+                buf,
+                inner.x,
+                inner.y + 4,
+                "Press [P] or [Enter] to start this playlist directly on Spotify Connect.",
+                inner.width,
+                design.style(TextStyle::Dim),
+            );
             return;
         }
 
-        let track = self.queue.current_track();
-        let title_str = track.map(|t| t.title.as_str()).unwrap_or("HAYATO CASSETTE");
-        let subtitle_str = track
-            .map(|t| format!("{}  ·  {}", t.artist, t.album))
-            .unwrap_or_else(|| "Press 2 for Library, / to Search, or 6 for Spotify".to_string());
+        let list_rect = Rect::new(
+            inner.x,
+            inner.y + 2,
+            inner.width,
+            inner.height.saturating_sub(2),
+        );
+        self.rows_height.set(list_rect.height);
+        hits.main_list = list_rect;
+        self.collection_list
+            .render(list_rect, buf, design, self.focus == Focus::Main);
+    }
 
-        // BigText title (4 rows) when tall enough, else bold single-line
-        let meta_y = if right_inner.height >= 16 {
-            let bt_rect = Rect::new(right_inner.x, right_inner.y, right_inner.width, 4);
+    fn draw_visualizer_stage(&mut self, buf: &mut Buffer, area: Rect, design: &Design) {
+        let beat_idx = ((self.analyzer.beat_intensity * 7.0).round() as usize).min(7);
+        let border = if design.reduced_motion() {
+            design.color(ColorRole::Border)
+        } else {
+            self.border_ramp[beat_idx]
+        };
+        let inner = draw_beat_card(buf, area, design, "CYBERDECK // FULL VISUALIZER", border);
+        if inner.height < 8 || inner.width < 24 {
+            return;
+        }
+        let art_w = if inner.width >= 60 { 24 } else { 0 };
+        if art_w > 0 {
+            let art_rect = Rect::new(inner.x, inner.y, art_w, inner.height.min(12));
+            if self.art.has_image() {
+                self.art.render(art_rect, buf);
+            } else {
+                draw_cassette_ascii(buf, art_rect, design);
+            }
+        }
+        let rx = inner.x + if art_w > 0 { art_w + 2 } else { 0 };
+        let rw = inner.right().saturating_sub(rx);
+        let title = self
+            .current_track()
+            .map(|t| t.title.as_str())
+            .unwrap_or("HAYATO CASSETTE");
+        if inner.height >= 12 {
             let big = BigText::builder()
                 .pixel_size(PixelSize::Quadrant)
                 .style(
                     Style::default()
-                        .fg(ctx.design.color(ColorRole::Text))
+                        .fg(design.color(ColorRole::Text))
                         .add_modifier(Modifier::BOLD),
                 )
-                .lines(vec![title_str.into()])
+                .lines(vec![title.into()])
                 .build();
-            big.render(bt_rect, ctx.buf);
-            right_inner.y + 4
-        } else {
-            let _ = put_trunc(
-                ctx.buf,
-                right_inner.x,
-                right_inner.y,
-                title_str,
-                right_inner.width,
-                Style::default()
-                    .fg(ctx.design.color(ColorRole::Text))
-                    .add_modifier(Modifier::BOLD),
-            );
-            right_inner.y + 1
-        };
-
-        let _ = put_trunc(
-            ctx.buf,
-            right_inner.x,
-            meta_y,
-            &subtitle_str,
-            right_inner.width,
-            ctx.design.style(TextStyle::Dim),
-        );
-
-        // Badges row: source + volume + shuffle + repeat
-        let badge_y = meta_y + 1;
-        let src_badge = track.map(Track::source_badge).unwrap_or("LOCAL");
-        let src_role = if track.is_some_and(Track::is_spotify) {
-            ColorRole::Accent
-        } else {
-            ColorRole::Ok
-        };
-        let mut bx = draw_badge(ctx.buf, right_inner.x, badge_y, ctx.design, src_badge, src_role);
-        let vol_lbl = if self.engine.telemetry.muted() {
-            "MUTED".to_string()
-        } else {
-            format!("VOL {}%", self.config.volume_pct)
-        };
-        bx = draw_badge(ctx.buf, bx + 1, badge_y, ctx.design, &vol_lbl, ColorRole::AccentAlt);
-        if self.queue.shuffle {
-            bx = draw_badge(ctx.buf, bx + 1, badge_y, ctx.design, "SHUF", ColorRole::Accent);
+            big.render(Rect::new(rx, inner.y, rw, 4), buf);
         }
-        let _ = draw_badge(
-            ctx.buf,
-            bx + 1,
-            badge_y,
-            ctx.design,
-            self.queue.repeat.short_label(),
-            ColorRole::Muted,
-        );
-
-        // Scrubber + transport at bottom of right_inner
-        let transport_y = right_inner.bottom().saturating_sub(1);
-        let scrub_y = transport_y.saturating_sub(2);
-        let viz_y = badge_y + 2;
-        let viz_h = scrub_y.saturating_sub(viz_y + 1);
-
-        if viz_h >= 3 {
-            let viz_rect = Rect::new(right_inner.x, viz_y, right_inner.width, viz_h);
-            if self.config.show_lyrics {
-                self.draw_lyrics(ctx.buf, viz_rect, ctx.design);
-            } else {
-                match self.config.visualizer {
-                    VisualizerMode::Spectrum => self.draw_spectrum(ctx.buf, viz_rect, ctx.design),
-                    VisualizerMode::Oscilloscope => {
-                        self.draw_oscilloscope(ctx.buf, viz_rect, ctx.design)
-                    }
-                    VisualizerMode::Off => {
-                        let _ = put_trunc(
-                            ctx.buf,
-                            viz_rect.x,
-                            viz_rect.y + viz_rect.height / 2,
-                            "Visualizer off · press v to enable",
-                            viz_rect.width,
-                            ctx.design.style(TextStyle::Dim),
-                        );
-                    }
-                }
-            }
-        }
-
-        // Scrubber bar
-        let scrub_rect = Rect::new(right_inner.x, scrub_y, right_inner.width, 1);
-        self.scrubber_rect.set(scrub_rect);
-        draw_scrubber(
-            ctx.buf,
-            scrub_rect,
-            ctx.design,
-            self.last_pos_sec,
-            self.last_dur_sec,
-            &self.time_buf,
-        );
-
-        // Transport hints
-        let _ = put_trunc(
-            ctx.buf,
-            right_inner.x,
-            transport_y,
-            "[p] Prev   [Space] Play/Pause   [n] Next   [v] Viz   [L] Lyrics   [^S] Share   [m] Mini",
-            right_inner.width,
-            ctx.design.style(TextStyle::Dim),
-        );
-
-        // Apply bounded tachyonfx strictly to right_inner (never touching Sixel art rect!)
-        if let Some(effect) = self.fx.as_mut() {
-            if ctx.design.reduced_motion() {
-                self.fx = None;
-            } else {
-                let dt = self.last_fx_tick.elapsed();
-                self.last_fx_tick = Instant::now();
-                effect.process(dt.into(), ctx.buf, right_inner);
-                if effect.done() {
-                    self.fx = None;
+        let viz_y = inner.y + 5;
+        let viz_h = inner.bottom().saturating_sub(viz_y);
+        if viz_h >= 2 {
+            let vrect = Rect::new(inner.x, viz_y, inner.width, viz_h);
+            match self.config.visualizer {
+                VisualizerMode::Spectrum => self.draw_spectrum_bars(buf, vrect, design),
+                VisualizerMode::Oscilloscope => self.draw_oscilloscope(buf, vrect, design),
+                VisualizerMode::Off => {
+                    let _ = put_trunc(
+                        buf,
+                        vrect.x,
+                        vrect.y + vrect.height / 2,
+                        "Visualizer off — press v to enable",
+                        vrect.width,
+                        design.style(TextStyle::Dim),
+                    );
                 }
             }
         }
     }
 
-    fn draw_deck_mini(&mut self, ctx: &mut BodyCtx) {
-        let inner = draw_card(ctx.buf, ctx.area, ctx.design, Some("CASSETTE // MINI"), true);
-        if inner.height < 4 || inner.width < 20 {
-            return;
-        }
-        let track = self.queue.current_track();
-        let title = track.map(|t| t.title.as_str()).unwrap_or("Hayato Cassette");
-        let sub = track
-            .map(|t| format!("{} · {}", t.artist, t.album))
-            .unwrap_or_else(|| "Idle — press m for Full Deck".to_string());
-
-        let art_w = if self.art.has_image() && inner.width >= 36 {
-            10
-        } else {
-            0
-        };
-        if art_w > 0 {
-            let art_rect = Rect::new(inner.x, inner.y, art_w, inner.height.min(5));
-            self.art.render(art_rect, ctx.buf);
-        }
-        let tx = inner.x + if art_w > 0 { art_w + 1 } else { 0 };
-        let tw = inner.right().saturating_sub(tx);
-
-        let _ = put_trunc(
-            ctx.buf,
-            tx,
-            inner.y,
-            title,
-            tw,
-            Style::default()
-                .fg(ctx.design.color(ColorRole::Text))
-                .add_modifier(Modifier::BOLD),
-        );
-        let _ = put_trunc(ctx.buf, tx, inner.y + 1, &sub, tw, ctx.design.style(TextStyle::Dim));
-
-        // 1-row mini spectrum
-        if inner.height >= 6 {
-            let mini_viz = Rect::new(tx, inner.y + 2, tw.min(BANDS as u16), 1);
-            for i in 0..mini_viz.width as usize {
-                let b = (self.analyzer.bands[i % BANDS] * 8.0).round() as usize;
-                let ch = BLOCKS[b.min(8)];
-                let col = self.spectrum_ramp[(b * 5 / 8).min(5)];
-                let _ = put(
-                    ctx.buf,
-                    mini_viz.x + i as u16,
-                    mini_viz.y,
-                    ch,
-                    1,
-                    Style::default().fg(col),
-                );
+    fn draw_right_drawer(
+        &mut self,
+        buf: &mut Buffer,
+        area: Rect,
+        design: &Design,
+        hits: &mut HitRects,
+    ) {
+        let focused = self.focus == Focus::RightDrawer;
+        match self.drawer {
+            RightDrawer::Hidden => {}
+            RightDrawer::NowPlaying => {
+                let inner = draw_card(buf, area, design, Some("NOW PLAYING"), focused);
+                if inner.height < 6 {
+                    return;
+                }
+                let art_h = (inner.height / 2).clamp(6, 12);
+                let art_rect = Rect::new(inner.x, inner.y, inner.width, art_h);
+                if self.art.has_image() {
+                    self.art.render(art_rect, buf);
+                } else {
+                    draw_cassette_ascii(buf, art_rect, design);
+                }
+                let ty = art_rect.bottom() + 1;
+                if ty + 2 < inner.bottom() {
+                    let title = self
+                        .current_track()
+                        .map(|t| t.title.as_str())
+                        .unwrap_or("Idle");
+                    let artist = self
+                        .current_track()
+                        .map(|t| t.artist.as_str())
+                        .unwrap_or("—");
+                    let _ = put_trunc(
+                        buf,
+                        inner.x,
+                        ty,
+                        title,
+                        inner.width,
+                        Style::default()
+                            .fg(design.color(ColorRole::Text))
+                            .add_modifier(Modifier::BOLD),
+                    );
+                    let _ = put_trunc(buf, inner.x, ty + 1, artist, inner.width, design.style(TextStyle::Dim));
+                    let _ = put_trunc(buf, inner.x, ty + 2, &self.codec_buf, inner.width, design.style(TextStyle::Dim));
+                }
+                let vy = ty + 4;
+                if vy + 2 <= inner.bottom() {
+                    self.draw_spectrum_bars(
+                        buf,
+                        Rect::new(inner.x, vy, inner.width, inner.bottom() - vy),
+                        design,
+                    );
+                }
+            }
+            RightDrawer::Queue => {
+                let inner = draw_card(buf, area, design, Some(&self.queue_title_buf), focused);
+                hits.drawer_list = inner;
+                if focused {
+                    self.rows_height.set(inner.height);
+                }
+                self.queue_list.render(inner, buf, design, focused);
+            }
+            RightDrawer::Lyrics => {
+                let inner = draw_card(buf, area, design, Some("LYRICS // .LRC"), focused);
+                let Some(lyr) = &self.lyrics else {
+                    let _ = put_trunc(
+                        buf,
+                        inner.x,
+                        inner.y + inner.height / 2,
+                        "No sidecar .lrc lyrics file",
+                        inner.width,
+                        design.style(TextStyle::Dim),
+                    );
+                    return;
+                };
+                let active = lyr
+                    .active_index(self.last_pos_sec.saturating_mul(1000))
+                    .unwrap_or(0);
+                let start = active.saturating_sub((inner.height / 2) as usize);
+                for (row, line) in lyr
+                    .lines
+                    .iter()
+                    .skip(start)
+                    .take(inner.height as usize)
+                    .enumerate()
+                {
+                    let st = if start + row == active {
+                        Style::default()
+                            .fg(design.color(ColorRole::Accent))
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        design.style(TextStyle::Dim)
+                    };
+                    let _ = put_trunc(buf, inner.x, inner.y + row as u16, &line.text, inner.width, st);
+                }
             }
         }
-
-        let scrub_y = inner.bottom().saturating_sub(2);
-        let scrub_rect = Rect::new(inner.x, scrub_y, inner.width, 1);
-        self.scrubber_rect.set(scrub_rect);
-        draw_scrubber(
-            ctx.buf,
-            scrub_rect,
-            ctx.design,
-            self.last_pos_sec,
-            self.last_dur_sec,
-            &self.time_buf,
-        );
-        let _ = put_trunc(
-            ctx.buf,
-            inner.x,
-            inner.bottom().saturating_sub(1),
-            "[p] Prev  [Space] Play  [n] Next  [m] Full  [^S] Share  [Esc] Hide",
-            inner.width,
-            ctx.design.style(TextStyle::Dim),
-        );
     }
 
-    fn draw_spectrum(&self, buf: &mut Buffer, area: Rect, design: &Design) {
-        let inner = draw_card(buf, area, design, Some("SPECTRUM // 32-BAND FFT"), false);
-        if inner.width < 8 || inner.height < 2 {
+    fn draw_spectrum_bars(&self, buf: &mut Buffer, area: Rect, design: &Design) {
+        if area.width < 4 || area.height == 0 {
             return;
         }
-        let h = inner.height as usize;
-        let cols = (inner.width as usize).min(BANDS * 2);
-        let step = if cols >= BANDS * 2 { 2 } else { 1 };
-        let count = (cols / step).min(BANDS);
-
+        let h = area.height as usize;
+        let step = if area.width as usize >= BANDS * 2 { 2 } else { 1 };
+        let count = ((area.width as usize) / step).min(BANDS);
         for b in 0..count {
-            let x = inner.x + (b * step) as u16;
+            let x = area.x + (b * step) as u16;
             let val = self.analyzer.bands[b];
             let peak = self.analyzer.peaks[b];
             let total_eighths = (val * (h * 8) as f32).round() as usize;
             let peak_row = ((1.0 - peak) * h.saturating_sub(1) as f32).round() as usize;
-
             for row in 0..h {
-                let y = inner.y + row as u16;
+                let y = area.y + row as u16;
                 let from_bottom = h - 1 - row;
                 let cell_eighths = total_eighths.saturating_sub(from_bottom * 8).min(8);
                 if cell_eighths > 0 {
                     let ramp_idx = (from_bottom * 5 / h.max(1)).min(5);
-                    let st = Style::default().fg(self.spectrum_ramp[ramp_idx]);
-                    let _ = put(buf, x, y, BLOCKS[cell_eighths], 1, st);
+                    let _ = put(
+                        buf,
+                        x,
+                        y,
+                        BLOCKS[cell_eighths],
+                        1,
+                        Style::default().fg(self.spectrum_ramp[ramp_idx]),
+                    );
                 } else if row == peak_row && peak > 0.04 {
                     let _ = put(
                         buf,
@@ -1120,112 +1914,131 @@ impl CassetteScreen {
     }
 
     fn draw_oscilloscope(&self, buf: &mut Buffer, area: Rect, design: &Design) {
-        let inner = draw_card(buf, area, design, Some("OSCILLOSCOPE // LIVE PCM"), false);
-        if inner.width < 8 || inner.height < 2 {
+        if area.width < 4 || area.height < 2 {
             return;
         }
-        let mid = inner.y + inner.height / 2;
-        let half_h = (inner.height / 2).max(1) as f32;
+        let mid = area.y + area.height / 2;
+        let half_h = (area.height / 2).max(1) as f32;
         let st = Style::default().fg(design.color(ColorRole::Accent));
-        for col in 0..inner.width {
-            let idx = (col as usize * WAVE_POINTS) / (inner.width as usize).max(1);
+        for col in 0..area.width {
+            let idx = (col as usize * WAVE_POINTS) / (area.width as usize).max(1);
             let sample = self.analyzer.wave[idx.min(WAVE_POINTS - 1)];
             let dy = (sample * half_h).round() as i32;
-            let y = (mid as i32 - dy).clamp(inner.y as i32, inner.bottom().saturating_sub(1) as i32)
-                as u16;
-            let _ = put(buf, inner.x + col, y, "•", 1, st);
+            let y = (mid as i32 - dy)
+                .clamp(area.y as i32, area.bottom().saturating_sub(1) as i32) as u16;
+            let _ = put(buf, area.x + col, y, "•", 1, st);
         }
     }
 
-    fn draw_lyrics(&self, buf: &mut Buffer, area: Rect, design: &Design) {
-        let inner = draw_card(buf, area, design, Some("LYRICS // .LRC"), false);
-        let Some(lyr) = &self.lyrics else {
-            let _ = put_trunc(
-                buf,
-                inner.x,
-                inner.y + inner.height / 2,
-                "No sidecar .lrc lyrics file found for this track",
-                inner.width,
-                design.style(TextStyle::Dim),
-            );
+    fn draw_mini(&mut self, ctx: &mut BodyCtx, hits: &mut HitRects) {
+        let inner = draw_card(ctx.buf, ctx.area, ctx.design, Some("CASSETTE // MINI"), true);
+        if inner.height < 4 || inner.width < 20 {
             return;
+        }
+        let art_w = if self.art.has_image() && inner.width >= 36 {
+            10
+        } else {
+            0
         };
-        let pos_ms = self.engine.telemetry.position_ms();
-        let active = lyr.active_index(pos_ms).unwrap_or(0);
-        let half = (inner.height / 2) as usize;
-        let start = active.saturating_sub(half);
-        for (row, line) in lyr.lines.iter().skip(start).take(inner.height as usize).enumerate() {
-            let idx = start + row;
-            let st = if idx == active {
-                Style::default()
-                    .fg(design.color(ColorRole::Accent))
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                design.style(TextStyle::Dim)
-            };
-            let _ = put_trunc(buf, inner.x, inner.y + row as u16, &line.text, inner.width, st);
+        if art_w > 0 {
+            self.art
+                .render(Rect::new(inner.x, inner.y, art_w, inner.height.min(5)), ctx.buf);
         }
+        let track = self.current_track();
+        let title = track.map(|t| t.title.as_str()).unwrap_or("Hayato Cassette");
+        let sub = track
+            .map(|t| format!("{} · {}", t.artist, t.album))
+            .unwrap_or_else(|| "Idle — press w for Full Deck".to_string());
+        let tx = inner.x + if art_w > 0 { art_w + 1 } else { 0 };
+        let tw = inner.right().saturating_sub(tx);
+
+        let _ = put_trunc(
+            ctx.buf,
+            tx,
+            inner.y,
+            title,
+            tw,
+            Style::default()
+                .fg(ctx.design.color(ColorRole::Text))
+                .add_modifier(Modifier::BOLD),
+        );
+        let _ = put_trunc(ctx.buf, tx, inner.y + 1, &sub, tw, ctx.design.style(TextStyle::Dim));
+        let _ = put_trunc(
+            ctx.buf,
+            tx,
+            inner.y + 2,
+            &self.device_pill_buf,
+            tw,
+            Style::default().fg(ctx.design.color(ColorRole::Ok)),
+        );
+        if inner.height >= 6 {
+            self.draw_spectrum_bars(ctx.buf, Rect::new(tx, inner.y + 3, tw.min(BANDS as u16), 1), ctx.design);
+        }
+
+        let scrub_y = inner.bottom().saturating_sub(2);
+        let srect = Rect::new(inner.x, scrub_y, inner.width, 1);
+        hits.scrubber = srect;
+        draw_scrubber(
+            ctx.buf,
+            srect,
+            ctx.design,
+            self.last_pos_sec,
+            self.last_dur_sec,
+            &self.time_buf,
+        );
+        let _ = put_trunc(
+            ctx.buf,
+            inner.x,
+            inner.bottom().saturating_sub(1),
+            "[p] Prev  [Space] Play  [n] Next  [D] Device  [w] Full  [Esc] Hide",
+            inner.width,
+            ctx.design.style(TextStyle::Dim),
+        );
     }
 
-    fn draw_tab_bar(&self, buf: &mut Buffer, area: Rect, design: &Design) {
-        let mut x = area.x;
-        for &t in Tab::ALL {
-            let lbl = t.label();
-            let active = self.tab == t;
-            let st = if active {
-                design.style(TextStyle::Key)
-            } else {
-                design.style(TextStyle::Dim)
-            };
-            let pill = format!(" {lbl} ");
-            let w = pill.len() as u16;
-            if x + w > area.right() {
-                break;
-            }
-            let _ = put(buf, x, area.y, &pill, w, st);
-            x += w + 1;
+    fn cycle_pane(&mut self, reverse: bool) {
+        let mut panes = Vec::new();
+        if self.sidebar_open {
+            panes.push(Focus::Sidebar);
         }
-    }
-
-    fn handle_mpris(&mut self) -> Outcome {
-        while let Ok(cmd) = self.mpris_rx.try_recv() {
-            match cmd {
-                MprisCommand::Play => self.engine.resume(),
-                MprisCommand::Pause => self.engine.pause(),
-                MprisCommand::PlayPause => self.toggle_play_pause(),
-                MprisCommand::Stop => self.engine.stop(),
-                MprisCommand::Next => self.next_track(false),
-                MprisCommand::Previous => self.prev_track(),
-                MprisCommand::Raise => {
-                    let _ = sway_ipc::show_from_scratchpad(self.mini);
-                }
-                MprisCommand::Quit => {
-                    self.engine.stop();
-                    NowPlayingFile::clear();
-                    return Outcome::Done(hayato_ui::app::exit::OK);
-                }
-            }
+        panes.push(Focus::Main);
+        if self.drawer != RightDrawer::Hidden {
+            panes.push(Focus::RightDrawer);
         }
-        Outcome::Continue
+        let idx = panes.iter().position(|&f| f == self.focus).unwrap_or(0);
+        let next = if reverse {
+            if idx == 0 { panes.len() - 1 } else { idx - 1 }
+        } else {
+            (idx + 1) % panes.len()
+        };
+        self.focus = panes[next];
+        self.sync_chrome();
     }
 }
 
 impl Screen for CassetteScreen {
     fn phase(&self) -> Option<&'static str> {
-        Some(match self.phase {
-            CassettePhase::Normal => match self.tab {
-                Tab::Deck if self.mini => "cassette.mini",
-                Tab::Deck => "cassette.deck",
-                Tab::Library => "cassette.library",
-                Tab::Queue => "cassette.queue",
-                Tab::Search => "cassette.search",
-                Tab::Playlists => "cassette.playlists",
-                Tab::Spotify => "cassette.spotify",
-                Tab::Settings => "cassette.settings",
-            },
+        Some(match &self.phase {
+            CassettePhase::Normal => {
+                if self.mini {
+                    "cassette.mini"
+                } else if self.focus == Focus::SearchBar {
+                    "cassette.search"
+                } else {
+                    match self.stage {
+                        MainStage::Home => "cassette.home",
+                        MainStage::Collection => "cassette.collection",
+                        MainStage::Search => "cassette.search",
+                        MainStage::Visualizer => "cassette.visualizer",
+                        MainStage::Settings => "cassette.settings",
+                    }
+                }
+            }
+            CassettePhase::DevicePicker(_) => "cassette.devices",
+            CassettePhase::Help => "cassette.help",
+            CassettePhase::Palette(_) => "cassette.palette",
             CassettePhase::ConfirmClearQueue(_) => "cassette.confirm_clear",
             CassettePhase::ConfirmLogoutSpotify(_) => "cassette.confirm_logout",
-            CassettePhase::Palette(_) => "cassette.palette",
             CassettePhase::EditClientId(_) => "cassette.edit_client_id",
         })
     }
@@ -1235,27 +2048,21 @@ impl Screen for CassetteScreen {
     }
 
     fn needs_tick(&self) -> Option<Duration> {
-        let playing = self.current_play_state() == PlayState::Playing;
-        if self.fx.is_some() {
+        if self.fx.is_some() || self.pending_search_at.is_some() {
             return Some(Duration::from_millis(33));
         }
-        if playing {
-            let idle_unfocused = !self.focused
+        if self.current_play_state() == PlayState::Playing {
+            let sleep = !self.focused
                 && self
                     .unfocused_since
                     .is_some_and(|t| t.elapsed() >= Duration::from_secs(10));
-            if idle_unfocused {
-                Some(Duration::from_millis(250))
-            } else {
-                Some(Duration::from_millis(33))
-            }
+            Some(Duration::from_millis(if sleep { 250 } else { 33 }))
         } else {
-            Some(Duration::from_millis(300))
+            Some(Duration::from_millis(250))
         }
     }
 
     fn tick(&mut self) -> Outcome {
-        // 1. Live theme reload via SIGUSR1
         if THEME_RELOAD_FLAG.swap(false, Ordering::Relaxed) {
             let d = Design::for_session(std::env::var("XDG_RUNTIME_DIR").ok().as_deref());
             self.border_ramp = d.ramp(ColorRole::Border, ColorRole::Accent);
@@ -1263,25 +2070,28 @@ impl Screen for CassetteScreen {
             self.design_override = Some(d);
         }
 
-        // 2. Background library scan completion
-        if let Some(rx) = &self.scan_rx
-            && let Ok(tracks) = rx.try_recv()
+        self.drain_provider_events();
+
+        // Fire debounced Spotify search (250ms) on background worker
+        if let Some(due) = self.pending_search_at
+            && Instant::now() >= due
         {
-            self.library = tracks;
-            self.playlists = load_local_playlists(&self.config.music_dirs, &self.library);
-            self.rebuild_library_rows();
-            self.rebuild_playlist_rows();
-            self.sync_chrome();
-            self.scan_rx = None;
+            self.pending_search_at = None;
+            let q = self.search_input.text().trim().to_string();
+            if q.len() >= 2 {
+                self.search_gen += 1;
+                self.hub.send(ProviderCmd::Search {
+                    seq: self.search_gen,
+                    query: q,
+                });
+            }
         }
 
-        // 3. MPRIS commands
         let mpris_out = self.handle_mpris();
         if mpris_out != Outcome::Continue {
             return mpris_out;
         }
 
-        // 4. Audio engine errors & track completion
         if let Some(err) = self.engine.telemetry.take_error() {
             self.status_line = err;
         }
@@ -1291,9 +2101,21 @@ impl Screen for CassetteScreen {
             self.next_track(true);
         }
 
-        // 5. Update pre-formatted time buffer only when the second changes
-        let pos_s = self.engine.telemetry.position_ms() / 1000;
-        let dur_s = self.engine.telemetry.duration_ms() / 1000;
+        // Update position timer (interpolates Spotify Connect smoothly between 2.5s polls)
+        let (pos_s, dur_s) = if self.active_provider == ProviderId::Spotify {
+            let extra = if self.remote_state == PlayState::Playing {
+                self.remote_synced_at.elapsed().as_millis() as u64
+            } else {
+                0
+            };
+            let p = self.remote_pos_ms.saturating_add(extra).min(self.remote_dur_ms);
+            (p / 1000, self.remote_dur_ms / 1000)
+        } else {
+            (
+                self.engine.telemetry.position_ms() / 1000,
+                self.engine.telemetry.duration_ms() / 1000,
+            )
+        };
         if pos_s != self.last_pos_sec || (dur_s > 0 && dur_s != self.last_dur_sec) {
             self.last_pos_sec = pos_s;
             if dur_s > 0 {
@@ -1307,75 +2129,248 @@ impl Screen for CassetteScreen {
             self.publish_external_state();
         }
 
-        // 6. DSP spectrum/beat update (focus-gated to save CPU when hidden!)
+        // Focus-gated DSP update
         let sleep_viz = !self.focused
             && self
                 .unfocused_since
                 .is_some_and(|t| t.elapsed() >= Duration::from_secs(10));
         if !sleep_viz && self.config.visualizer != VisualizerMode::Off {
             let playing = self.current_play_state() == PlayState::Playing;
-            #[cfg(feature = "spotify")]
-            if self.queue.current_track().is_some_and(Track::is_spotify) {
-                self.spotify_phase += 0.14;
-                self.analyzer.update_synthetic(self.spotify_phase, playing);
-                return Outcome::Continue;
+            if self.active_provider == ProviderId::Spotify {
+                self.remote_phase += 0.14;
+                self.analyzer.update_synthetic(self.remote_phase, playing);
+            } else {
+                self.analyzer.update(!playing);
             }
-            self.analyzer.update(!playing);
         }
 
         Outcome::Continue
     }
 
-    fn event(&mut self, event: &Event, _design: &Design) -> Outcome {
+    fn event(&mut self, event: &Event, design: &Design) -> Outcome {
         match event {
             Event::FocusGained => {
                 self.focused = true;
                 self.unfocused_since = None;
+                self.hub.send(ProviderCmd::SetFocused(true));
                 Outcome::Consumed
             }
             Event::FocusLost => {
                 self.focused = false;
                 self.unfocused_since = Some(Instant::now());
+                self.hub.send(ProviderCmd::SetFocused(false));
                 Outcome::Consumed
             }
-            Event::Mouse(m) => match m.kind {
-                MouseEventKind::ScrollUp => {
-                    self.adjust_volume(5);
-                    Outcome::Consumed
+            Event::Mouse(m) => {
+                let hits = self.hits.get();
+                let in_rect = |r: Rect| {
+                    r.width > 0
+                        && r.height > 0
+                        && m.column >= r.x
+                        && m.column < r.right()
+                        && m.row >= r.y
+                        && m.row < r.bottom()
+                };
+                match m.kind {
+                    MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                        let code = if m.kind == MouseEventKind::ScrollUp {
+                            KeyCode::Up
+                        } else {
+                            KeyCode::Down
+                        };
+                        let synth = KeyEvent::new(code, KeyModifiers::NONE);
+                        if in_rect(hits.sidebar_list) {
+                            let _ = self.sidebar_list.handle(synth, hits.sidebar_list.height, design);
+                        } else if in_rect(hits.main_list) {
+                            match self.stage {
+                                MainStage::Home => {
+                                    let _ = self.home_list.handle(synth, hits.main_list.height, design);
+                                }
+                                MainStage::Collection => {
+                                    let _ = self.collection_list.handle(synth, hits.main_list.height, design);
+                                }
+                                MainStage::Search => {
+                                    let _ = self.search_list.handle(synth, hits.main_list.height, design);
+                                }
+                                MainStage::Settings => {
+                                    let _ = self.settings_list.handle(synth, hits.main_list.height, design);
+                                }
+                                MainStage::Visualizer => {}
+                            }
+                        } else if in_rect(hits.drawer_list) {
+                            let _ = self.queue_list.handle(synth, hits.drawer_list.height, design);
+                        } else {
+                            self.adjust_volume(if m.kind == MouseEventKind::ScrollUp { 5 } else { -5 });
+                        }
+                        Outcome::Consumed
+                    }
+                    _ => Outcome::Continue,
                 }
-                MouseEventKind::ScrollDown => {
-                    self.adjust_volume(-5);
-                    Outcome::Consumed
-                }
-                _ => Outcome::Continue,
-            },
+            }
             _ => Outcome::Continue,
         }
     }
 
-    fn hit(&self, area: Rect, x: u16, y: u16, _design: &Design) -> Option<usize> {
-        let scrub = self.scrubber_rect.get();
-        if y == scrub.y && x >= scrub.x && x < scrub.right() && scrub.width > 0 {
-            let pct = ((x - scrub.x) as usize * 100) / scrub.width as usize;
-            return Some(1000 + pct);
+    fn hit(&self, _area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        let h = self.hits.get();
+        let inside = |r: Rect| r.width > 0 && r.height > 0 && x >= r.x && x < r.right() && y >= r.y && y < r.bottom();
+        if inside(h.home) {
+            return Some(HIT_HOME);
         }
-        let _ = area;
+        if inside(h.lib) {
+            return Some(HIT_LIB_TOGGLE);
+        }
+        if inside(h.search) {
+            return Some(HIT_SEARCH_BOX);
+        }
+        if inside(h.device) {
+            return Some(HIT_DEVICE_PILL);
+        }
+        if inside(h.settings) {
+            return Some(HIT_SETTINGS);
+        }
+        if inside(h.btn_prev) {
+            return Some(HIT_BTN_PREV);
+        }
+        if inside(h.btn_play) {
+            return Some(HIT_BTN_PLAY);
+        }
+        if inside(h.btn_next) {
+            return Some(HIT_BTN_NEXT);
+        }
+        if inside(h.btn_viz) {
+            return Some(HIT_BTN_VIZ);
+        }
+        if inside(h.btn_lyrics) {
+            return Some(HIT_BTN_LYRICS);
+        }
+        if inside(h.btn_queue) {
+            return Some(HIT_BTN_QUEUE);
+        }
+        if inside(h.btn_mini) {
+            return Some(HIT_BTN_MINI);
+        }
+        if inside(h.scrubber) {
+            let pct = ((x - h.scrubber.x) as usize * 100) / h.scrubber.width as usize;
+            return Some(HIT_SCRUB_BASE + pct);
+        }
+        if inside(h.sidebar_list) {
+            let row = ((y - h.sidebar_list.y) / design.row_stride().max(1)) as usize;
+            return Some(HIT_SIDEBAR_BASE + row);
+        }
+        if inside(h.main_list) {
+            let row = ((y - h.main_list.y) / design.row_stride().max(1)) as usize;
+            return Some(HIT_MAIN_BASE + row);
+        }
+        if inside(h.drawer_list) {
+            let row = ((y - h.drawer_list.y) / design.row_stride().max(1)) as usize;
+            return Some(HIT_DRAWER_BASE + row);
+        }
         None
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
-        if let Some(code) = row
-            && code >= 1000
-        {
-            let pct = (code - 1000).min(100) as u64;
-            let target = self.last_dur_sec * pct / 100;
-            self.engine.seek_secs(target);
-            return Outcome::Consumed;
+        let Some(code) = row else {
+            return Outcome::Continue;
+        };
+        match code {
+            HIT_HOME => {
+                self.stage = MainStage::Home;
+                self.focus = Focus::Main;
+                self.sync_chrome();
+            }
+            HIT_LIB_TOGGLE => {
+                self.sidebar_open = !self.sidebar_open;
+                if self.sidebar_open {
+                    self.focus = Focus::Sidebar;
+                }
+                self.sync_chrome();
+            }
+            HIT_SEARCH_BOX => {
+                if self.stage != MainStage::Search {
+                    self.prev_stage = self.stage.clone();
+                }
+                self.stage = MainStage::Search;
+                self.focus = Focus::SearchBar;
+                self.sync_chrome();
+            }
+            HIT_DEVICE_PILL => self.open_device_picker(),
+            HIT_SETTINGS => {
+                self.stage = MainStage::Settings;
+                self.focus = Focus::Main;
+                self.sync_chrome();
+            }
+            HIT_BTN_PREV => self.prev_track(),
+            HIT_BTN_PLAY => self.toggle_play_pause(),
+            HIT_BTN_NEXT => self.next_track(false),
+            HIT_BTN_VIZ => {
+                self.stage = if self.stage == MainStage::Visualizer {
+                    MainStage::Home
+                } else {
+                    MainStage::Visualizer
+                };
+                self.focus = Focus::Main;
+                self.sync_chrome();
+            }
+            HIT_BTN_LYRICS => {
+                self.drawer = if self.drawer == RightDrawer::Lyrics {
+                    RightDrawer::NowPlaying
+                } else {
+                    RightDrawer::Lyrics
+                };
+                self.sync_chrome();
+            }
+            HIT_BTN_QUEUE => {
+                self.drawer = if self.drawer == RightDrawer::Queue {
+                    RightDrawer::NowPlaying
+                } else {
+                    RightDrawer::Queue
+                };
+                self.sync_chrome();
+            }
+            HIT_BTN_MINI => {
+                self.mini = !self.mini;
+                let _ = sway_ipc::resize_window(self.mini);
+                self.sync_chrome();
+            }
+            c if (HIT_SCRUB_BASE..HIT_SIDEBAR_BASE).contains(&c) => {
+                let pct = (c - HIT_SCRUB_BASE).min(100) as u64;
+                self.seek_to_secs(self.last_dur_sec * pct / 100);
+            }
+            c if (HIT_SIDEBAR_BASE..HIT_MAIN_BASE).contains(&c) => {
+                self.focus = Focus::Sidebar;
+                let idx = c - HIT_SIDEBAR_BASE;
+                self.sidebar_list.set_cursor(idx);
+                if let Some(col) = self.filtered_collections.get(idx).cloned() {
+                    self.open_collection(col);
+                }
+            }
+            c if (HIT_MAIN_BASE..HIT_DRAWER_BASE).contains(&c) => {
+                self.focus = Focus::Main;
+                let idx = c - HIT_MAIN_BASE;
+                match self.stage {
+                    MainStage::Home => self.home_list.set_cursor(idx),
+                    MainStage::Collection => self.collection_list.set_cursor(idx),
+                    MainStage::Search => self.search_list.set_cursor(idx),
+                    MainStage::Settings => self.settings_list.set_cursor(idx),
+                    MainStage::Visualizer => {}
+                }
+                self.sync_chrome();
+            }
+            c if c >= HIT_DRAWER_BASE => {
+                self.focus = Focus::RightDrawer;
+                self.queue_list.set_cursor(c - HIT_DRAWER_BASE);
+                self.sync_chrome();
+            }
+            _ => return Outcome::Continue,
         }
-        Outcome::Continue
+        Outcome::Consumed
     }
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
+        let mut hits = HitRects::default();
+
+        // Body-replacing modals (AGENTS.md Rule 11)
         if let CassettePhase::ConfirmClearQueue(c) = &mut self.phase {
             c.render(ctx.area, ctx.buf, ctx.design);
             return;
@@ -1384,14 +2379,47 @@ impl Screen for CassetteScreen {
             c.render(ctx.area, ctx.buf, ctx.design);
             return;
         }
-        if let CassettePhase::Palette(list) = &mut self.phase {
+        if let CassettePhase::DevicePicker(list) = &mut self.phase {
             let inner = draw_card(
                 ctx.buf,
                 ctx.area,
                 ctx.design,
-                Some("COMMAND PALETTE"),
+                Some("SPOTIFY CONNECT // DEVICES"),
                 true,
             );
+            self.rows_height.set(inner.height);
+            list.render(inner, ctx.buf, ctx.design, true);
+            return;
+        }
+        if let CassettePhase::Help = &self.phase {
+            let inner = draw_card(ctx.buf, ctx.area, ctx.design, Some("CASSETTE // KEYMAP"), true);
+            const LINES: &[&str] = &[
+                "GLOBAL:  Space play/pause · n/p next/prev · [/] seek ±5s · +/- vol · m mute",
+                "         z shuffle · r repeat · R refresh · v viz · V full deck · w mini",
+                "         D devices · / search · b sidebar · i info · q queue · L lyrics",
+                "         Tab / h / l switch panes · Ctrl+S share · : palette · Esc hide · Q quit",
+                "",
+                "LIBRARY: Enter open playlist · P play whole playlist · f filter (All/Spotify/Local)",
+                "TRACKS:  Enter play from track · P play all · a enqueue · A play next · Bksp back",
+                "QUEUE:   Enter jump · J/K reorder · d remove · Ctrl+X clear · S save .m3u8",
+            ];
+            for (i, line) in LINES.iter().enumerate() {
+                if inner.y + i as u16 >= inner.bottom() {
+                    break;
+                }
+                let _ = put_trunc(
+                    ctx.buf,
+                    inner.x,
+                    inner.y + i as u16,
+                    line,
+                    inner.width,
+                    ctx.design.style(TextStyle::Body),
+                );
+            }
+            return;
+        }
+        if let CassettePhase::Palette(list) = &mut self.phase {
+            let inner = draw_card(ctx.buf, ctx.area, ctx.design, Some("COMMAND PALETTE"), true);
             self.rows_height.set(inner.height);
             list.render(inner, ctx.buf, ctx.design, true);
             return;
@@ -1413,9 +2441,8 @@ impl Screen for CassetteScreen {
                     inner.width,
                     ctx.design.style(TextStyle::Dim),
                 );
-                let field = Rect::new(inner.x, inner.y + 2, inner.width, 1);
                 input.render_field(
-                    field,
+                    Rect::new(inner.x, inner.y + 2, inner.width, 1),
                     ctx.buf,
                     ctx.design,
                     "e.g. 4f8b9c...",
@@ -1428,158 +2455,155 @@ impl Screen for CassetteScreen {
             return;
         }
 
-        if self.mini || ctx.area.width < 74 || ctx.area.height < 14 {
-            self.draw_deck_mini(ctx);
+        if self.mini || ctx.area.width < 70 || ctx.area.height < 14 {
+            self.draw_mini(ctx, &mut hits);
+            self.hits.set(hits);
             return;
         }
 
-        // Top tab strip (1 row) + main body
-        let tab_rect = Rect::new(ctx.area.x, ctx.area.y, ctx.area.width, 1);
-        self.draw_tab_bar(ctx.buf, tab_rect, ctx.design);
-        let body_rect = Rect::new(
-            ctx.area.x,
-            ctx.area.y + 1,
-            ctx.area.width,
-            ctx.area.height.saturating_sub(1),
-        );
-        let mut sub_ctx = BodyCtx {
-            area: body_rect,
-            buf: ctx.buf,
-            design: ctx.design,
-        };
+        // 1. Top Chrome Bar (1 row)
+        let top_rect = Rect::new(ctx.area.x, ctx.area.y, ctx.area.width, 1);
+        self.draw_top_chrome(ctx.buf, top_rect, ctx.design, &mut hits);
 
-        match self.tab {
-            Tab::Deck => self.draw_deck_full(&mut sub_ctx),
-            Tab::Library => {
-                let inner = draw_card(
-                    sub_ctx.buf,
-                    sub_ctx.area,
-                    sub_ctx.design,
-                    Some("LIBRARY // LOCAL AUDIO"),
-                    true,
-                );
-                let list_h = inner.height.saturating_sub(1);
-                self.rows_height.set(list_h);
-                self.lib_list.render(
-                    Rect::new(inner.x, inner.y, inner.width, list_h),
-                    sub_ctx.buf,
-                    sub_ctx.design,
-                    true,
-                );
+        // 2. Bottom Player Bar (3 rows)
+        let bot_h = 3u16.min(ctx.area.height.saturating_sub(4));
+        let bot_rect = Rect::new(
+            ctx.area.x,
+            ctx.area.bottom().saturating_sub(bot_h),
+            ctx.area.width,
+            bot_h,
+        );
+        self.draw_bottom_bar(ctx.buf, bot_rect, ctx.design, &mut hits);
+
+        // 3. Middle Workspace (Left Sidebar + Center Main Stage + Right Drawer)
+        let mid_y = ctx.area.y + 1;
+        let mid_h = bot_rect.y.saturating_sub(mid_y);
+        let mid_rect = Rect::new(ctx.area.x, mid_y, ctx.area.width, mid_h);
+
+        let show_sidebar = self.sidebar_open && mid_rect.width >= 96;
+        let show_drawer = self.drawer != RightDrawer::Hidden
+            && mid_rect.width >= 116
+            && self.stage != MainStage::Visualizer;
+
+        let sb_w = if show_sidebar { 27u16 } else { 0 };
+        let dr_w = if show_drawer { 30u16 } else { 0 };
+        let main_x = mid_rect.x + if sb_w > 0 { sb_w + 1 } else { 0 };
+        let main_w = mid_rect
+            .width
+            .saturating_sub(sb_w + dr_w + u16::from(sb_w > 0) + u16::from(dr_w > 0));
+
+        // Compact single-column fallback when sidebar is focused on <96 cols
+        if !show_sidebar && self.focus == Focus::Sidebar {
+            let inner = draw_card(
+                ctx.buf,
+                mid_rect,
+                ctx.design,
+                Some("YOUR LIBRARY // [f] FILTER"),
+                true,
+            );
+            hits.sidebar_list = inner;
+            self.rows_height.set(inner.height);
+            self.sidebar_list.render(inner, ctx.buf, ctx.design, true);
+            self.hits.set(hits);
+            return;
+        }
+
+        if show_sidebar {
+            let sb_rect = Rect::new(mid_rect.x, mid_rect.y, sb_w, mid_rect.height);
+            let sb_inner = draw_card(
+                ctx.buf,
+                sb_rect,
+                ctx.design,
+                Some("YOUR LIBRARY"),
+                self.focus == Focus::Sidebar,
+            );
+            if sb_inner.height >= 2 {
                 let _ = put_trunc(
-                    sub_ctx.buf,
-                    inner.x,
-                    inner.bottom().saturating_sub(1),
-                    "[Enter] play   [e] enqueue   [E] play next   [R] rescan ~/Music",
-                    inner.width,
-                    sub_ctx.design.style(TextStyle::Dim),
+                    ctx.buf,
+                    sb_inner.x,
+                    sb_inner.y,
+                    match self.source_filter {
+                        SourceFilter::All => "[All] Spotify Local",
+                        SourceFilter::Spotify => "All [Spotify] Local",
+                        SourceFilter::Local => "All Spotify [Local]",
+                    },
+                    sb_inner.width,
+                    Style::default().fg(ctx.design.color(ColorRole::Accent)),
                 );
-            }
-            Tab::Queue => {
-                let title = format!(
-                    "UP NEXT // {} TRACKS ({})",
-                    self.queue.len(),
-                    format_time(self.queue.remaining_duration_secs())
+                let lrect = Rect::new(
+                    sb_inner.x,
+                    sb_inner.y + 1,
+                    sb_inner.width,
+                    sb_inner.height.saturating_sub(1),
                 );
-                let inner = draw_card(sub_ctx.buf, sub_ctx.area, sub_ctx.design, Some(&title), true);
-                let list_h = inner.height.saturating_sub(1);
-                self.rows_height.set(list_h);
-                self.queue_list.render(
-                    Rect::new(inner.x, inner.y, inner.width, list_h),
-                    sub_ctx.buf,
-                    sub_ctx.design,
-                    true,
-                );
-                let _ = put_trunc(
-                    sub_ctx.buf,
-                    inner.x,
-                    inner.bottom().saturating_sub(1),
-                    "[Enter] jump   [J/K] reorder   [d] remove   [c] clear   [s] save .m3u8",
-                    inner.width,
-                    sub_ctx.design.style(TextStyle::Dim),
-                );
-            }
-            Tab::Search => {
-                let inner = draw_card(
-                    sub_ctx.buf,
-                    sub_ctx.area,
-                    sub_ctx.design,
-                    Some("SEARCH // LOCAL + SPOTIFY"),
-                    true,
-                );
-                if inner.height >= 3 {
-                    let field = Rect::new(inner.x, inner.y, inner.width, 1);
-                    self.search_input.render_field(
-                        field,
-                        sub_ctx.buf,
-                        sub_ctx.design,
-                        "Type artist, track, or album and press Enter…",
-                        true,
-                        true,
-                        ColorRole::Bg,
-                        TextStyle::Body,
-                    );
-                    let list_rect = Rect::new(
-                        inner.x,
-                        inner.y + 2,
-                        inner.width,
-                        inner.height.saturating_sub(2),
-                    );
-                    self.rows_height.set(list_rect.height);
-                    self.search_list
-                        .render(list_rect, sub_ctx.buf, sub_ctx.design, true);
+                hits.sidebar_list = lrect;
+                if self.focus == Focus::Sidebar {
+                    self.rows_height.set(lrect.height);
                 }
-            }
-            Tab::Playlists => {
-                let inner = draw_card(
-                    sub_ctx.buf,
-                    sub_ctx.area,
-                    sub_ctx.design,
-                    Some("PLAYLISTS // .M3U8 & SPOTIFY"),
-                    true,
-                );
-                self.rows_height.set(inner.height);
-                self.playlist_list
-                    .render(inner, sub_ctx.buf, sub_ctx.design, true);
-            }
-            Tab::Spotify => {
-                let inner = draw_card(
-                    sub_ctx.buf,
-                    sub_ctx.area,
-                    sub_ctx.design,
-                    Some("SPOTIFY // CONNECT & ACCOUNT"),
-                    true,
-                );
-                let list_h = inner.height.saturating_sub(1);
-                self.rows_height.set(list_h);
-                self.spotify_list.render(
-                    Rect::new(inner.x, inner.y, inner.width, list_h),
-                    sub_ctx.buf,
-                    sub_ctx.design,
-                    true,
-                );
-                let _ = put_trunc(
-                    sub_ctx.buf,
-                    inner.x,
-                    inner.bottom().saturating_sub(1),
-                    &self.status_line,
-                    inner.width,
-                    sub_ctx.design.style(TextStyle::Dim),
-                );
-            }
-            Tab::Settings => {
-                let inner = draw_card(
-                    sub_ctx.buf,
-                    sub_ctx.area,
-                    sub_ctx.design,
-                    Some("SETTINGS // CASSETTE"),
-                    true,
-                );
-                self.rows_height.set(inner.height);
-                self.settings_list
-                    .render(inner, sub_ctx.buf, sub_ctx.design, true);
+                self.sidebar_list
+                    .render(lrect, ctx.buf, ctx.design, self.focus == Focus::Sidebar);
             }
         }
+
+        let main_rect = Rect::new(main_x, mid_rect.y, main_w, mid_rect.height);
+        match self.stage {
+            MainStage::Home => self.draw_home_stage(ctx.buf, main_rect, ctx.design, &mut hits),
+            MainStage::Collection => {
+                self.draw_collection_stage(ctx.buf, main_rect, ctx.design, &mut hits)
+            }
+            MainStage::Search => {
+                let inner = draw_card(
+                    ctx.buf,
+                    main_rect,
+                    ctx.design,
+                    Some(&self.search_title_buf),
+                    self.focus == Focus::SearchBar || self.focus == Focus::Main,
+                );
+                hits.main_list = inner;
+                self.rows_height.set(inner.height);
+                self.search_list.render(
+                    inner,
+                    ctx.buf,
+                    ctx.design,
+                    self.focus == Focus::SearchBar || self.focus == Focus::Main,
+                );
+            }
+            MainStage::Visualizer => self.draw_visualizer_stage(ctx.buf, main_rect, ctx.design),
+            MainStage::Settings => {
+                let inner = draw_card(
+                    ctx.buf,
+                    main_rect,
+                    ctx.design,
+                    Some("SETTINGS // PROVIDERS & AUDIO"),
+                    self.focus == Focus::Main,
+                );
+                hits.main_list = inner;
+                self.rows_height.set(inner.height);
+                self.settings_list
+                    .render(inner, ctx.buf, ctx.design, self.focus == Focus::Main);
+            }
+        }
+
+        if show_drawer {
+            let dr_rect = Rect::new(mid_rect.right().saturating_sub(dr_w), mid_rect.y, dr_w, mid_rect.height);
+            self.draw_right_drawer(ctx.buf, dr_rect, ctx.design, &mut hits);
+        }
+
+        // Bounded tachyonfx on Main Stage only (never over Sixel drawer!)
+        if let Some(effect) = self.fx.as_mut() {
+            if ctx.design.reduced_motion() {
+                self.fx = None;
+            } else {
+                let dt = self.last_fx_tick.elapsed();
+                self.last_fx_tick = Instant::now();
+                effect.process(dt.into(), ctx.buf, main_rect);
+                if effect.done() {
+                    self.fx = None;
+                }
+            }
+        }
+
+        self.hits.set(hits);
     }
 
     fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
@@ -1587,7 +2611,7 @@ impl Screen for CassetteScreen {
             return Outcome::Continue;
         }
 
-        // Handle active modal phases first
+        // 1. Active modal phases
         if let CassettePhase::ConfirmClearQueue(c) = &mut self.phase {
             match c.handle(key) {
                 ConfirmAction::Chosen(1) => {
@@ -1599,6 +2623,7 @@ impl Screen for CassetteScreen {
                 }
                 ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
                     self.phase = CassettePhase::Normal;
+                    self.sync_chrome();
                 }
                 ConfirmAction::None => {}
             }
@@ -1607,19 +2632,22 @@ impl Screen for CassetteScreen {
         if let CassettePhase::ConfirmLogoutSpotify(c) = &mut self.phase {
             match c.handle(key) {
                 ConfirmAction::Chosen(1) => {
-                    #[cfg(feature = "spotify")]
-                    {
-                        spotify::clear_token();
-                        self.spotify_token = None;
-                        self.spotify_devices.clear();
-                        self.rebuild_spotify_rows();
-                    }
+                    self.hub.send(ProviderCmd::SpotifyLogout);
                     self.phase = CassettePhase::Normal;
+                    self.sync_chrome();
                 }
                 ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
                     self.phase = CassettePhase::Normal;
+                    self.sync_chrome();
                 }
                 ConfirmAction::None => {}
+            }
+            return Outcome::Consumed;
+        }
+        if let CassettePhase::Help = &self.phase {
+            if matches!(key.code, KeyCode::Esc | KeyCode::Char('?') | KeyCode::Enter) {
+                self.phase = CassettePhase::Normal;
+                self.sync_chrome();
             }
             return Outcome::Consumed;
         }
@@ -1627,76 +2655,182 @@ impl Screen for CassetteScreen {
             match key.code {
                 KeyCode::Esc => {
                     self.phase = CassettePhase::Normal;
-                    return Outcome::Consumed;
+                    self.sync_chrome();
                 }
                 KeyCode::Enter => {
                     self.config.spotify_client_id = input.text().trim().to_string();
                     let _ = save_config(&self.config);
                     self.phase = CassettePhase::Normal;
-                    self.rebuild_spotify_rows();
+                    self.rebuild_sidebar_and_home();
                     self.rebuild_settings_rows();
-                    self.status_line = "Saved Spotify Client ID".to_string();
-                    return Outcome::Consumed;
+                    self.status_line = "Saved Spotify Client ID".into();
+                    self.sync_chrome();
                 }
                 _ => {
                     let _ = input.handle(key);
-                    return Outcome::Consumed;
                 }
             }
+            return Outcome::Consumed;
+        }
+        if let CassettePhase::DevicePicker(list) = &mut self.phase {
+            match key.code {
+                KeyCode::Esc => {
+                    self.phase = CassettePhase::Normal;
+                    self.sync_chrome();
+                }
+                KeyCode::Char('R') => {
+                    self.hub.send(ProviderCmd::RefreshAll {
+                        music_dirs: self.config.music_dirs.clone(),
+                    });
+                }
+                _ => {
+                    if let ListAction::Activated(idx) =
+                        list.handle(key, self.rows_height.get(), design)
+                        && let Some(dev) = self.devices.get(idx).cloned()
+                    {
+                        self.hub.send(ProviderCmd::TransferDevice {
+                            provider: dev.provider,
+                            device_id: dev.id,
+                        });
+                        self.phase = CassettePhase::Normal;
+                        self.sync_chrome();
+                    }
+                }
+            }
+            return Outcome::Consumed;
         }
         if let CassettePhase::Palette(list) = &mut self.phase {
             if key.code == KeyCode::Esc {
                 self.phase = CassettePhase::Normal;
+                self.sync_chrome();
                 return Outcome::Consumed;
             }
             if let ListAction::Activated(idx) = list.handle(key, self.rows_height.get(), design) {
                 self.phase = CassettePhase::Normal;
                 match idx {
                     0 => self.toggle_play_pause(),
-                    1 => self.next_track(false),
-                    2 => self.prev_track(),
+                    1 => self.open_device_picker(),
+                    2 => {
+                        self.prev_stage = self.stage.clone();
+                        self.stage = MainStage::Search;
+                        self.focus = Focus::SearchBar;
+                    }
                     3 => {
-                        self.mini = !self.mini;
-                        let _ = sway_ipc::resize_window(self.mini);
-                        self.sync_chrome();
+                        self.stage = MainStage::Visualizer;
+                        self.focus = Focus::Main;
                     }
                     4 => {
-                        self.config.visualizer = self.config.visualizer.cycle();
-                        let _ = save_config(&self.config);
+                        self.mini = !self.mini;
+                        let _ = sway_ipc::resize_window(self.mini);
                     }
-                    5 => {
-                        self.config.show_lyrics = !self.config.show_lyrics;
-                        let _ = save_config(&self.config);
+                    5 => self.sidebar_open = !self.sidebar_open,
+                    6 => {
+                        self.drawer = if self.drawer == RightDrawer::Queue {
+                            RightDrawer::NowPlaying
+                        } else {
+                            RightDrawer::Queue
+                        };
                     }
-                    6 => self.share_current(),
                     7 => {
-                        self.library = scan_directories(&self.config.music_dirs);
-                        self.rebuild_library_rows();
-                        self.sync_chrome();
+                        self.drawer = if self.drawer == RightDrawer::Lyrics {
+                            RightDrawer::NowPlaying
+                        } else {
+                            RightDrawer::Lyrics
+                        };
                     }
-                    8 => {
+                    8 => self.share_current(),
+                    9 => self.hub.send(ProviderCmd::RefreshAll {
+                        music_dirs: self.config.music_dirs.clone(),
+                    }),
+                    10 => {
                         let _ = save_m3u8_playlist(
                             &self.config.music_dirs,
                             "Cassette Mix",
                             self.queue.items(),
                         );
-                        self.playlists = load_local_playlists(&self.config.music_dirs, &self.library);
-                        self.rebuild_playlist_rows();
                     }
-                    9 => {
+                    11 => self.phase = CassettePhase::Help,
+                    12 => {
                         let _ = sway_ipc::hide_to_scratchpad();
                     }
-                    10 => {
+                    13 => {
                         self.engine.stop();
                         NowPlayingFile::clear();
                         return Outcome::Done(hayato_ui::app::exit::OK);
                     }
                     _ => {}
                 }
+                self.sync_chrome();
             }
             return Outcome::Consumed;
         }
 
+        // 2. Top Search Box focused
+        if self.focus == Focus::SearchBar {
+            let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+            match key.code {
+                KeyCode::Esc => {
+                    if !self.search_input.text().is_empty() {
+                        self.search_input.set("");
+                        self.spotify_search_cache = SearchResults::default();
+                        self.rebuild_search_rows();
+                    } else {
+                        self.focus = Focus::Main;
+                        self.stage = self.prev_stage.clone();
+                        self.sync_chrome();
+                    }
+                    return Outcome::Consumed;
+                }
+                KeyCode::Tab => {
+                    self.source_filter = self.source_filter.cycle();
+                    self.rebuild_search_rows();
+                    return Outcome::Consumed;
+                }
+                KeyCode::Up | KeyCode::Down => {
+                    let _ = self.search_list.handle(key, self.rows_height.get(), design);
+                    return Outcome::Consumed;
+                }
+                KeyCode::Char('a') if ctrl => {
+                    if let Some(item) = self.selected_search_item()
+                        && let SearchRowItem::Track(t) = item
+                    {
+                        self.queue.push_back(t);
+                        self.rebuild_queue_rows();
+                        self.status_line = "Added track to Queue".into();
+                    }
+                    return Outcome::Consumed;
+                }
+                KeyCode::Enter => {
+                    if let Some(item) = self.selected_search_item() {
+                        match item {
+                            SearchRowItem::Track(t) => {
+                                self.focus = Focus::Main;
+                                if t.is_spotify() {
+                                    self.play_spotify_track(&t, None);
+                                } else {
+                                    self.play_local_tracks(vec![t], 0);
+                                }
+                            }
+                            SearchRowItem::Collection(c) => {
+                                self.open_collection(c);
+                            }
+                        }
+                    }
+                    return Outcome::Consumed;
+                }
+                _ => {
+                    if matches!(self.search_input.handle(key), InputAction::Changed) {
+                        self.stage = MainStage::Search;
+                        self.rebuild_search_rows();
+                        self.pending_search_at = Some(Instant::now() + Duration::from_millis(250));
+                        return Outcome::Consumed;
+                    }
+                    return Outcome::Consumed;
+                }
+            }
+        }
+
+        // 3. Global Ctrl shortcuts
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         if ctrl {
             match key.code {
@@ -1704,45 +2838,35 @@ impl Screen for CassetteScreen {
                     self.share_current();
                     return Outcome::Consumed;
                 }
+                KeyCode::Char('k') => {
+                    if self.stage != MainStage::Search {
+                        self.prev_stage = self.stage.clone();
+                    }
+                    self.stage = MainStage::Search;
+                    self.focus = Focus::SearchBar;
+                    self.sync_chrome();
+                    return Outcome::Consumed;
+                }
                 KeyCode::Char('p') => {
                     self.open_palette();
+                    return Outcome::Consumed;
+                }
+                KeyCode::Char('x') if self.focus == Focus::RightDrawer && !self.queue.is_empty() => {
+                    let confirm = Confirm::new(
+                        "Clear Queue",
+                        format!("Clear all {} queued tracks?", self.queue.len()),
+                    )
+                    .with_options(&["Cancel", "Clear"])
+                    .destructive(true);
+                    self.phase = CassettePhase::ConfirmClearQueue(confirm);
+                    self.sync_chrome();
                     return Outcome::Consumed;
                 }
                 _ => {}
             }
         }
 
-        // Search tab text input handling
-        if self.tab == Tab::Search {
-            match key.code {
-                KeyCode::Esc => {
-                    self.tab = Tab::Deck;
-                    return Outcome::Consumed;
-                }
-                KeyCode::Up | KeyCode::Down => {
-                    let _ = self.search_list.handle(key, self.rows_height.get(), design);
-                    return Outcome::Consumed;
-                }
-                KeyCode::Enter => {
-                    if let Some(idx) = self.search_list.selected_index()
-                        && let Some(t) = self.search_results.get(idx).cloned()
-                    {
-                        self.play_tracks(vec![t], 0);
-                    } else {
-                        self.run_unified_search();
-                    }
-                    return Outcome::Consumed;
-                }
-                _ => {
-                    if matches!(self.search_input.handle(key), InputAction::Changed) {
-                        self.run_unified_search();
-                        return Outcome::Consumed;
-                    }
-                }
-            }
-        }
-
-        // Global shortcuts
+        // 4. Global single-key zero-conflict bindings
         match key.code {
             KeyCode::Char('Q') => {
                 self.engine.stop();
@@ -1750,8 +2874,10 @@ impl Screen for CassetteScreen {
                 return Outcome::Done(hayato_ui::app::exit::OK);
             }
             KeyCode::Esc => {
-                if self.tab != Tab::Deck {
-                    self.tab = Tab::Deck;
+                if self.stage != MainStage::Home {
+                    self.stage = MainStage::Home;
+                    self.focus = Focus::Main;
+                    self.sync_chrome();
                 } else if !sway_ipc::hide_to_scratchpad() {
                     self.engine.stop();
                     NowPlayingFile::clear();
@@ -1771,20 +2897,20 @@ impl Screen for CassetteScreen {
                 self.prev_track();
                 return Outcome::Consumed;
             }
-            KeyCode::Left => {
-                self.seek_delta(if key.modifiers.contains(KeyModifiers::SHIFT) {
-                    -30
-                } else {
-                    -5
-                });
+            KeyCode::Char('[') => {
+                self.seek_delta(-5);
                 return Outcome::Consumed;
             }
-            KeyCode::Right => {
-                self.seek_delta(if key.modifiers.contains(KeyModifiers::SHIFT) {
-                    30
-                } else {
-                    5
-                });
+            KeyCode::Char(']') => {
+                self.seek_delta(5);
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('{') => {
+                self.seek_delta(-30);
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('}') => {
+                self.seek_delta(30);
                 return Outcome::Consumed;
             }
             KeyCode::Char('+') | KeyCode::Char('=') => {
@@ -1795,45 +2921,38 @@ impl Screen for CassetteScreen {
                 self.adjust_volume(-5);
                 return Outcome::Consumed;
             }
-            KeyCode::Char('M') => {
-                let m = !self.engine.telemetry.muted();
-                self.engine.set_muted(m);
+            KeyCode::Char('m') => {
+                self.toggle_mute();
                 return Outcome::Consumed;
             }
             KeyCode::Char('z') => {
-                self.queue.shuffle = !self.queue.shuffle;
+                self.toggle_shuffle();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('r') if self.tab != Tab::Spotify => {
-                self.queue.repeat = self.queue.repeat.cycle();
+            KeyCode::Char('r') => {
+                self.cycle_repeat();
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('R') | KeyCode::F(5) => {
+                self.hub.send(ProviderCmd::RefreshAll {
+                    music_dirs: self.config.music_dirs.clone(),
+                });
+                self.status_line = "Refreshing Spotify & local library…".into();
                 return Outcome::Consumed;
             }
             KeyCode::Char('v') => {
                 self.config.visualizer = self.config.visualizer.cycle();
                 let _ = save_config(&self.config);
+                self.rebuild_settings_rows();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('L') => {
-                self.config.show_lyrics = !self.config.show_lyrics;
-                let _ = save_config(&self.config);
-                return Outcome::Consumed;
-            }
-            KeyCode::Char('m') => {
-                self.mini = !self.mini;
-                let _ = sway_ipc::resize_window(self.mini);
-                self.sync_chrome();
-                return Outcome::Consumed;
-            }
-            KeyCode::Char(':') => {
-                self.open_palette();
-                return Outcome::Consumed;
-            }
-            KeyCode::Char('/') => {
-                self.tab = Tab::Search;
-                return Outcome::Consumed;
-            }
-            KeyCode::Char('1') => {
-                self.tab = Tab::Deck;
+            KeyCode::Char('V') => {
+                self.stage = if self.stage == MainStage::Visualizer {
+                    MainStage::Home
+                } else {
+                    MainStage::Visualizer
+                };
+                self.focus = Focus::Main;
                 self.fx = Some(fx::sweep_in(
                     Motion::LeftToRight,
                     6,
@@ -1842,73 +2961,139 @@ impl Screen for CassetteScreen {
                     EffectTimer::from_ms(140, Interpolation::QuadOut),
                 ));
                 self.last_fx_tick = Instant::now();
+                self.sync_chrome();
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('w') => {
+                self.mini = !self.mini;
+                let _ = sway_ipc::resize_window(self.mini);
+                self.sync_chrome();
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('D') => {
+                self.open_device_picker();
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('/') => {
+                if self.stage != MainStage::Search {
+                    self.prev_stage = self.stage.clone();
+                }
+                self.stage = MainStage::Search;
+                self.focus = Focus::SearchBar;
+                self.sync_chrome();
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('1') => {
+                self.stage = MainStage::Home;
+                self.focus = Focus::Main;
+                self.sync_chrome();
                 return Outcome::Consumed;
             }
             KeyCode::Char('2') => {
-                self.tab = Tab::Library;
+                self.sidebar_open = true;
+                self.focus = Focus::Sidebar;
+                self.sync_chrome();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('3') => {
-                self.tab = Tab::Queue;
+            KeyCode::Char('3') | KeyCode::Char('q') => {
+                self.drawer = if self.drawer == RightDrawer::Queue && self.focus == Focus::RightDrawer {
+                    RightDrawer::NowPlaying
+                } else {
+                    RightDrawer::Queue
+                };
+                self.focus = Focus::RightDrawer;
+                self.sync_chrome();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('4') => {
-                self.tab = Tab::Search;
+            KeyCode::Char('4') | KeyCode::Char(',') => {
+                self.stage = MainStage::Settings;
+                self.focus = Focus::Main;
+                self.sync_chrome();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('5') => {
-                self.tab = Tab::Playlists;
+            KeyCode::Char('b') => {
+                self.sidebar_open = !self.sidebar_open;
+                if !self.sidebar_open && self.focus == Focus::Sidebar {
+                    self.focus = Focus::Main;
+                }
+                self.sync_chrome();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('6') | KeyCode::Char('S') => {
-                self.tab = Tab::Spotify;
+            KeyCode::Char('i') => {
+                self.drawer = if self.drawer == RightDrawer::NowPlaying {
+                    RightDrawer::Hidden
+                } else {
+                    RightDrawer::NowPlaying
+                };
+                self.sync_chrome();
                 return Outcome::Consumed;
             }
-            KeyCode::Char(',') => {
-                self.tab = Tab::Settings;
+            KeyCode::Char('L') => {
+                self.drawer = if self.drawer == RightDrawer::Lyrics {
+                    RightDrawer::NowPlaying
+                } else {
+                    RightDrawer::Lyrics
+                };
+                self.sync_chrome();
+                return Outcome::Consumed;
+            }
+            KeyCode::Tab => {
+                self.cycle_pane(false);
+                return Outcome::Consumed;
+            }
+            KeyCode::BackTab => {
+                self.cycle_pane(true);
+                return Outcome::Consumed;
+            }
+            KeyCode::Char(':') => {
+                self.open_palette();
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('?') => {
+                self.phase = CassettePhase::Help;
+                self.sync_chrome();
                 return Outcome::Consumed;
             }
             _ => {}
         }
 
-        // Per-tab list interactions
-        match self.tab {
-            Tab::Library => match key.code {
-                KeyCode::Char('R') => {
-                    self.library = scan_directories(&self.config.music_dirs);
-                    self.rebuild_library_rows();
+        // 5. Focused pane context keys
+        match self.focus {
+            Focus::Sidebar => match key.code {
+                KeyCode::Char('l') | KeyCode::Right => {
+                    self.focus = Focus::Main;
                     self.sync_chrome();
                     return Outcome::Consumed;
                 }
-                KeyCode::Char('e') => {
-                    if let Some(i) = self.lib_list.selected_index()
-                        && let Some(t) = self.library.get(i).cloned()
-                    {
-                        self.queue.push_back(t);
-                        self.rebuild_queue_rows();
-                    }
+                KeyCode::Char('f') => {
+                    self.source_filter = self.source_filter.cycle();
+                    self.rebuild_sidebar_and_home();
                     return Outcome::Consumed;
                 }
-                KeyCode::Char('E') => {
-                    if let Some(i) = self.lib_list.selected_index()
-                        && let Some(t) = self.library.get(i).cloned()
+                KeyCode::Char('P') => {
+                    if let Some(i) = self.sidebar_list.selected_index()
+                        && let Some(c) = self.filtered_collections.get(i).cloned()
                     {
-                        self.queue.push_next(t);
-                        self.rebuild_queue_rows();
+                        self.play_collection_now(&c);
                     }
                     return Outcome::Consumed;
                 }
                 _ => {
                     if let ListAction::Activated(i) =
-                        self.lib_list.handle(key, self.rows_height.get(), design)
+                        self.sidebar_list.handle(key, self.rows_height.get(), design)
+                        && let Some(c) = self.filtered_collections.get(i).cloned()
                     {
-                        let all = self.library.clone();
-                        self.play_tracks(all, i);
+                        self.open_collection(c);
                     }
                     return Outcome::Consumed;
                 }
             },
-            Tab::Queue => match key.code {
+            Focus::RightDrawer => match key.code {
+                KeyCode::Char('h') | KeyCode::Left => {
+                    self.focus = Focus::Main;
+                    self.sync_chrome();
+                    return Outcome::Consumed;
+                }
                 KeyCode::Char('J') => {
                     if let Some(i) = self.queue_list.selected_index() {
                         let _ = self.queue.move_down(i);
@@ -1930,27 +3115,17 @@ impl Screen for CassetteScreen {
                     }
                     return Outcome::Consumed;
                 }
-                KeyCode::Char('c') if !self.queue.is_empty() => {
-                    let confirm = Confirm::new(
-                        "Clear Queue",
-                        format!("Clear all {} queued tracks?", self.queue.len()),
-                    )
-                    .with_options(&["Cancel", "Clear"])
-                    .destructive(true);
-                    self.phase = CassettePhase::ConfirmClearQueue(confirm);
-                    return Outcome::Consumed;
-                }
-                KeyCode::Char('s') if !self.queue.is_empty() => {
+                KeyCode::Char('S') if !self.queue.is_empty() => {
                     match save_m3u8_playlist(
                         &self.config.music_dirs,
                         "Cassette Mix",
                         self.queue.items(),
                     ) {
                         Ok(p) => {
-                            self.status_line = format!("Saved playlist {}", p.display());
-                            self.playlists =
-                                load_local_playlists(&self.config.music_dirs, &self.library);
-                            self.rebuild_playlist_rows();
+                            self.status_line = format!("Saved {}", p.display());
+                            self.hub.send(ProviderCmd::RefreshAll {
+                                music_dirs: self.config.music_dirs.clone(),
+                            });
                         }
                         Err(e) => self.status_line = e,
                     }
@@ -1961,140 +3136,204 @@ impl Screen for CassetteScreen {
                         self.queue_list.handle(key, self.rows_height.get(), design)
                         && let Some(t) = self.queue.jump(i).cloned()
                     {
-                        self.start_track(&t);
+                        self.active_provider = ProviderId::Local;
+                        self.start_local_track(&t);
                         self.rebuild_queue_rows();
                     }
                     return Outcome::Consumed;
                 }
             },
-            Tab::Playlists => {
-                if let ListAction::Activated(i) =
-                    self.playlist_list.handle(key, self.rows_height.get(), design)
-                    && let Some(pl) = self.playlists.get(i).cloned()
-                {
-                    let tracks = if pl.is_spotify && pl.tracks.is_empty() {
-                        #[cfg(feature = "spotify")]
+            Focus::Main => match self.stage {
+                MainStage::Home => match key.code {
+                    KeyCode::Char('h') | KeyCode::Left => {
+                        if self.sidebar_open {
+                            self.focus = Focus::Sidebar;
+                            self.sync_chrome();
+                        }
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Char('l') | KeyCode::Right => {
+                        if self.drawer != RightDrawer::Hidden {
+                            self.focus = Focus::RightDrawer;
+                            self.sync_chrome();
+                        }
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Char('P') => {
+                        let offset = usize::from(!self.spotify_authed) * 2;
+                        if let Some(i) = self.home_list.selected_index()
+                            && i >= offset
+                            && let Some(c) = self.collections.get(i - offset).cloned()
                         {
-                            self.spotify_token
-                                .as_mut()
-                                .and_then(|tok| spotify::playlist_tracks(tok, &pl.id).ok())
-                                .unwrap_or_default()
+                            self.play_collection_now(&c);
                         }
-                        #[cfg(not(feature = "spotify"))]
-                        Vec::new()
-                    } else {
-                        pl.tracks
-                    };
-                    if !tracks.is_empty() {
-                        self.play_tracks(tracks, 0);
-                    }
-                }
-                return Outcome::Consumed;
-            }
-            Tab::Spotify => {
-                #[cfg(feature = "spotify")]
-                match key.code {
-                    KeyCode::Char('c') => {
-                        let mut inp = Input::new();
-                        inp.set(&self.config.spotify_client_id);
-                        self.phase = CassettePhase::EditClientId(inp);
-                        return Outcome::Consumed;
-                    }
-                    KeyCode::Char('r') => {
-                        if let Some(tok) = self.spotify_token.as_mut() {
-                            match spotify::list_devices(tok) {
-                                Ok(devs) => {
-                                    self.spotify_devices = devs;
-                                    self.status_line = "Refreshed Spotify Connect devices".into();
-                                }
-                                Err(e) => self.status_line = e,
-                            }
-                            if let Ok(mut sp_pl) = spotify::list_playlists(tok) {
-                                let mut local =
-                                    load_local_playlists(&self.config.music_dirs, &self.library);
-                                local.append(&mut sp_pl);
-                                self.playlists = local;
-                                self.rebuild_playlist_rows();
-                            }
-                            self.rebuild_spotify_rows();
-                        }
-                        return Outcome::Consumed;
-                    }
-                    KeyCode::Char('x') if self.spotify_token.is_some() => {
-                        let confirm = Confirm::new(
-                            "Sign Out of Spotify",
-                            "Remove saved Spotify OAuth token from this machine?",
-                        )
-                        .with_options(&["Cancel", "Sign out"])
-                        .destructive(true);
-                        self.phase = CassettePhase::ConfirmLogoutSpotify(confirm);
                         return Outcome::Consumed;
                     }
                     _ => {
-                        if let ListAction::Activated(idx) =
-                            self.spotify_list.handle(key, self.rows_height.get(), design)
+                        if let ListAction::Activated(i) =
+                            self.home_list.handle(key, self.rows_height.get(), design)
                         {
-                            if self.spotify_token.is_none() {
-                                if idx == 0 {
-                                    match spotify::login_pkce(&self.config.spotify_client_id) {
-                                        Ok(tok) => {
-                                            self.spotify_token = Some(tok);
-                                            self.status_line = "Connected to Spotify!".into();
-                                            self.rebuild_spotify_rows();
-                                        }
-                                        Err(e) => self.status_line = e,
-                                    }
-                                } else {
+                            if !self.spotify_authed {
+                                if i == 0 {
+                                    self.hub.send(ProviderCmd::SpotifyLogin {
+                                        client_id: self.config.spotify_client_id.clone(),
+                                    });
+                                    self.status_line =
+                                        "Opening Firefox for Spotify PKCE login…".into();
+                                    return Outcome::Consumed;
+                                }
+                                if i == 1 {
                                     let mut inp = Input::new();
                                     inp.set(&self.config.spotify_client_id);
                                     self.phase = CassettePhase::EditClientId(inp);
+                                    self.sync_chrome();
+                                    return Outcome::Consumed;
                                 }
-                            } else if idx > 0
-                                && let Some(dev) = self.spotify_devices.get(idx - 1).cloned()
-                                && let Some(tok) = self.spotify_token.as_mut()
-                            {
-                                match spotify::transfer_device(tok, &dev.id) {
-                                    Ok(()) => {
-                                        self.status_line =
-                                            format!("Transferred playback to {}", dev.name);
-                                    }
-                                    Err(e) => self.status_line = e,
+                                if let Some(c) = self.collections.get(i - 2).cloned() {
+                                    self.open_collection(c);
                                 }
+                            } else if let Some(c) = self.collections.get(i).cloned() {
+                                self.open_collection(c);
                             }
                         }
                         return Outcome::Consumed;
                     }
-                }
-                #[cfg(not(feature = "spotify"))]
-                return Outcome::Consumed;
-            }
-            Tab::Settings => {
-                if let ListAction::Activated(idx) =
-                    self.settings_list.handle(key, self.rows_height.get(), design)
-                {
-                    match idx {
-                        0 => self.config.visualizer = self.config.visualizer.cycle(),
-                        1 => self.config.show_lyrics = !self.config.show_lyrics,
-                        2 => self.config.notify_when_unfocused = !self.config.notify_when_unfocused,
-                        3 => {
-                            self.library = scan_directories(&self.config.music_dirs);
-                            self.rebuild_library_rows();
-                            self.sync_chrome();
+                },
+                MainStage::Collection => match key.code {
+                    KeyCode::Backspace | KeyCode::Char('h') | KeyCode::Left => {
+                        if self.sidebar_open {
+                            self.focus = Focus::Sidebar;
+                        } else {
+                            self.stage = MainStage::Home;
                         }
-                        4 => {
-                            let mut inp = Input::new();
-                            inp.set(&self.config.spotify_client_id);
-                            self.phase = CassettePhase::EditClientId(inp);
-                            return Outcome::Consumed;
-                        }
-                        _ => {}
+                        self.sync_chrome();
+                        return Outcome::Consumed;
                     }
-                    let _ = save_config(&self.config);
-                    self.rebuild_settings_rows();
+                    KeyCode::Char('P') => {
+                        if let Some(c) = self.active_collection.clone() {
+                            self.play_collection_now(&c);
+                        }
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Enter if self.active_collection_restricted.is_some() => {
+                        if let Some(c) = self.active_collection.clone() {
+                            self.play_collection_now(&c);
+                        }
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Char('a') => {
+                        if let Some(i) = self.collection_list.selected_index()
+                            && let Some(t) = self.active_collection_tracks.get(i).cloned()
+                        {
+                            self.queue.push_back(t);
+                            self.rebuild_queue_rows();
+                            self.status_line = "Added to Queue".into();
+                        }
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Char('A') => {
+                        if let Some(i) = self.collection_list.selected_index()
+                            && let Some(t) = self.active_collection_tracks.get(i).cloned()
+                        {
+                            self.queue.push_next(t);
+                            self.rebuild_queue_rows();
+                            self.status_line = "Added to Play Next".into();
+                        }
+                        return Outcome::Consumed;
+                    }
+                    _ => {
+                        if let ListAction::Activated(i) =
+                            self.collection_list.handle(key, self.rows_height.get(), design)
+                            && let Some(t) = self.active_collection_tracks.get(i).cloned()
+                        {
+                            if t.is_spotify() {
+                                let ctx = self
+                                    .active_collection
+                                    .as_ref()
+                                    .and_then(|c| c.context_uri.clone());
+                                self.play_spotify_track(&t, ctx.as_deref());
+                            } else {
+                                let all = self.active_collection_tracks.clone();
+                                self.play_local_tracks(all, i);
+                            }
+                        }
+                        return Outcome::Consumed;
+                    }
+                },
+                MainStage::Visualizer => match key.code {
+                    KeyCode::Left => {
+                        self.seek_delta(if key.modifiers.contains(KeyModifiers::SHIFT) {
+                            -30
+                        } else {
+                            -5
+                        });
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Right => {
+                        self.seek_delta(if key.modifiers.contains(KeyModifiers::SHIFT) {
+                            30
+                        } else {
+                            5
+                        });
+                        return Outcome::Consumed;
+                    }
+                    _ => {}
+                },
+                MainStage::Settings => {
+                    if let ListAction::Activated(idx) =
+                        self.settings_list.handle(key, self.rows_height.get(), design)
+                    {
+                        match idx {
+                            0 => {
+                                if self.spotify_authed {
+                                    let confirm = Confirm::new(
+                                        "Sign Out of Spotify",
+                                        "Remove saved Spotify OAuth token from this machine?",
+                                    )
+                                    .with_options(&["Cancel", "Sign out"])
+                                    .destructive(true);
+                                    self.phase = CassettePhase::ConfirmLogoutSpotify(confirm);
+                                } else {
+                                    self.hub.send(ProviderCmd::SpotifyLogin {
+                                        client_id: self.config.spotify_client_id.clone(),
+                                    });
+                                    self.status_line =
+                                        "Opening Firefox for Spotify PKCE login…".into();
+                                }
+                            }
+                            1 => {
+                                let mut inp = Input::new();
+                                inp.set(&self.config.spotify_client_id);
+                                self.phase = CassettePhase::EditClientId(inp);
+                            }
+                            2 => {
+                                self.config.visualizer = self.config.visualizer.cycle();
+                                let _ = save_config(&self.config);
+                            }
+                            3 => {
+                                self.config.notify_when_unfocused =
+                                    !self.config.notify_when_unfocused;
+                                let _ = save_config(&self.config);
+                            }
+                            4 => {
+                                self.hub.send(ProviderCmd::RefreshAll {
+                                    music_dirs: self.config.music_dirs.clone(),
+                                });
+                                self.status_line = "Refreshing Spotify & local library…".into();
+                            }
+                            _ => {}
+                        }
+                        self.rebuild_settings_rows();
+                        self.sync_chrome();
+                    }
+                    return Outcome::Consumed;
                 }
-                return Outcome::Consumed;
-            }
-            Tab::Deck | Tab::Search => {}
+                MainStage::Search => {
+                    self.focus = Focus::SearchBar;
+                    return Outcome::Consumed;
+                }
+            },
+            Focus::SearchBar => {}
         }
 
         Outcome::Continue
@@ -2109,16 +3348,22 @@ impl Screen for CassetteScreen {
     }
 }
 
-fn default_keybar() -> Vec<KeyHint> {
-    vec![
-        KeyHint::new("Space", "play/pause"),
-        KeyHint::new("n/p", "next/prev"),
-        KeyHint::new("/", "search"),
-        KeyHint::new(":", "palette"),
-        KeyHint::new("m", "mini"),
-        KeyHint::new("Esc", "hide"),
-        KeyHint::new("Q", "quit"),
-    ]
+impl CassetteScreen {
+    /// Map the selected row in `search_list` (which contains section headings) back to `search_items`.
+    fn selected_search_item(&self) -> Option<SearchRowItem> {
+        let row_idx = self.search_list.selected_index()?;
+        let mut item_idx = 0usize;
+        for (i, row) in self.search_list.rows().iter().enumerate() {
+            if row.heading {
+                continue;
+            }
+            if i == row_idx {
+                return self.search_items.get(item_idx).cloned();
+            }
+            item_idx += 1;
+        }
+        None
+    }
 }
 
 fn draw_beat_card(
@@ -2135,15 +3380,19 @@ fn draw_beat_card(
         .borders(ratatui::widgets::Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
         .border_style(Style::default().fg(border_color))
-        .title(format!(" {title} "))
-        .title_style(
-            Style::default()
-                .fg(design.color(ColorRole::Accent))
-                .add_modifier(Modifier::BOLD),
-        )
         .style(Style::default().bg(design.color(ColorRole::Surface)));
     let inner = block.inner(area);
     block.render(area, buf);
+    let _ = put_trunc(
+        buf,
+        area.x + 2,
+        area.y,
+        title,
+        area.width.saturating_sub(4),
+        Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD),
+    );
     inner
 }
 
