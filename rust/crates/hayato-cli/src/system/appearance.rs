@@ -656,6 +656,7 @@ impl BarModules {
             Self::Full => &[
                 "privacy",
                 "custom/rec",
+                "custom/cassette",
                 "custom/busy",
                 "custom/keyboard-layout",
                 "custom/vnc",
@@ -672,6 +673,7 @@ impl BarModules {
             Self::Compact => &[
                 "privacy",
                 "custom/rec",
+                "custom/cassette",
                 "custom/busy",
                 "custom/bluetooth",
                 "custom/vnc",

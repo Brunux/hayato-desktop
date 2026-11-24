@@ -6,9 +6,16 @@ version = "0.0.0"
 edition = "2024"
 description = "The Hayato session widgets (spec 001 ships the frame and its two states)"
 
+[features]
+default = []
+# Sixel / half-block terminal query (`hayato_ui::pictures`), shared by
+# `hayato-cli` (file previews) and `hayato-cassette` (album art).
+pictures = ["dep:ratatui-image"]
+
 [dependencies]
 hayato-theme = { path = "../hayato-theme" }
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
+ratatui-image = { version = "11.1.0", default-features = false, features = ["crossterm"], optional = true }
 # Cell width, for right-aligning a row's value and truncating a label with an
 # ellipsis: ratatui clips by cells but does not tell a widget how wide a string
 # is, and a UTF-8 label measured in bytes misaligns the column.

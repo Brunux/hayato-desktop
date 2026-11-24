@@ -24,6 +24,12 @@ Rootfs assembly, bootloaders, image creation, and eMMC installers belong in `hay
   - `hayato-games-core`: the game scan, ids and launch rules, with no UI toolkit; shared by the
     Ratatui library and the GTK host.
   - `hayato-games`: the GTK4 + WebKitGTK host that plays one HTML game fullscreen (`hayato-games`).
+  - `hayato-music-core`: pure-Rust audio engine (`symphonia` + `ffmpeg` Opus fallback + `cpal` ALSA/PipeWire),
+    lock-free `rtrb` PCM tap + `realfft` 32-band spectrum & beat detector, `lofty` library scanner, `.lrc`
+    lyrics, `zbus` MPRIS2 server (`org.mpris.MediaPlayer2.hayato_cassette`), and Spotify OAuth PKCE/Web API.
+  - `hayato-cassette`: terminal-native Cyberdeck music player (`hayato-cassette`, symlink `hayato-music`,
+    `Alt+M` Sway scratchpad toggle via direct `$SWAYSOCK` `i3-ipc`, Waybar `custom/cassette` pill, `SIGUSR1`
+    live theme reload, `Design::ramp` zero-alloc beat-pulse/spectrum LUTs, and `hayato_ui::pictures` Sixel art).
   - `spike-sixel`: Sixel image preview probe.
 
 ## Enforced Architecture & Design-System Invariants

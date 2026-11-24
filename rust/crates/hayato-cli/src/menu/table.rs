@@ -278,6 +278,17 @@ pub const ROOT: &[MenuItem] = &[
         session("hayato-camera"),
     ),
     item(
+        "cassette",
+        "Cassette",
+        "music player: local library & Spotify",
+        Glyph::Music,
+        Open,
+        Action::Run {
+            program: Program::System("hayato-cassette"),
+            args: &[Arg::Lit("--toggle")],
+        },
+    ),
+    item(
         "games",
         "Games",
         "retro and Hayato games",

@@ -134,6 +134,13 @@ pub trait Screen {
         None
     }
 
+    /// Non-key, non-left-click terminal events (focus gained/lost, mouse scroll,
+    /// paste, resize). Screens that do not need them keep the default no-op.
+    fn event(&mut self, event: &Event, design: &Design) -> Outcome {
+        let _ = (event, design);
+        Outcome::Continue
+    }
+
     /// A short, stable name for the screen's current phase, for tests, the
     /// opt-in state log and an agent reading the surface. `None` when the
     /// screen has no phase (a one-shot list or a card).
@@ -476,7 +483,10 @@ impl<'a> App<'a> {
                 }
                 outcome
             }
-            _ => Outcome::Continue,
+            other => match self.screen.as_mut() {
+                Some(screen) => screen.event(&other, &design),
+                None => Outcome::Continue,
+            },
         }
     }
 

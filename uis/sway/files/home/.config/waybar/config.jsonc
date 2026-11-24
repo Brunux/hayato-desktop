@@ -46,6 +46,7 @@
     "modules-right": [
         "privacy",
         "custom/rec",
+        "custom/cassette",
         "custom/busy",
         "custom/keyboard-layout",
         "custom/vnc",
@@ -166,6 +167,17 @@
         "tooltip": true,
         "on-click": "hayato menu studio --hud",
         "on-click-right": "hayato menu studio --stop"
+    },
+    "custom/cassette": {
+        "exec": "hayato-cassette --bar",
+        "return-type": "json",
+        "interval": 2,
+        "signal": 8,
+        "tooltip": true,
+        "on-click": "hayato-cassette --toggle",
+        "on-click-right": "playerctl -p hayato_cassette play-pause",
+        "on-scroll-up": "playerctl -p hayato_cassette next",
+        "on-scroll-down": "playerctl -p hayato_cassette previous"
     },
     "custom/busy": {
         "exec": "~/.config/bin/bar-busy",

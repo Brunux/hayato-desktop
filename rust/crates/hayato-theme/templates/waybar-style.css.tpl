@@ -90,6 +90,7 @@ tooltip label {
    weight. */
 #custom-busy,
 #custom-rec,
+#custom-cassette,
 #privacy,
 #custom-updates,
 #tray,
@@ -199,6 +200,7 @@ tooltip label {
 #custom-updates.empty,
 #custom-busy.empty,
 #custom-rec.empty,
+#custom-cassette.empty,
 #custom-keyboard-layout.empty,
 #custom-vnc.empty,
 #custom-drives.empty {
@@ -206,6 +208,15 @@ tooltip label {
     margin: 0;
     border: none;
     background: transparent;
+}
+
+#custom-cassette.playing {
+    color: {{ accent }};
+    font-weight: 600;
+}
+
+#custom-cassette.paused {
+    color: {{ dim }};
 }
 
 /* Studio recording icon: 0px when idle (.empty), pulsing danger glyph when live. */

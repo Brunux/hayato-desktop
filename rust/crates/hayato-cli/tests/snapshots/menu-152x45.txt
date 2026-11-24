@@ -1,4 +1,4 @@
-Hayato · Menu                                                                                                                               57 commands
+Hayato · Menu                                                                                                                               58 commands
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ Commands ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                                                                                                  │
@@ -13,6 +13,7 @@ Hayato · Menu                                                                  
 │     Eject drive  safely unmount a USB stick or SD card                                                                                       open █ │
 │     Studio  screen record, webcam video, photo snap                                                                                          open █ │
 │     Camera  look through the webcam, take a photo                                                                                            open █ │
+│     Cassette  music player: local library & Spotify                                                                                          open █ │
 │     Games  retro and Hayato games                                                                                                            open █ │
 │     Download  a link, into ~/Downloads                                                                                                       open █ │
 │     Settings  Wi-Fi, Bluetooth, night light, tablet mode, rotation                                                                           open █ │
@@ -25,7 +26,7 @@ Hayato · Menu                                                                  
 │     Emoji  type a name, insert the glyph                                                                                                     open █ │
 │     Clipboard  what was copied, back in one pick                                                                                             open █ │
 │     Lens  capture screen region to text, link, translate, or note                                                                            open █ │
-│     Share  share clipboard, files, links or receive from phone                                                                               open █ │
+│     Share  share clipboard, files, links or receive from phone                                                                               open │ │
 │     Drop  share or receive files over Wi-Fi via QR code                                                                                      open │ │
 │     Password  32 random characters, into the clipboard                                                                                       open │ │
 │     SSH  remote login status                                                                                                                 open │ │
@@ -40,6 +41,5 @@ Hayato · Menu                                                                  
 │     DNS  the resolver this connection uses                                                                                                 system │ │
 │     Bluetooth  scan, connect, disconnect                                                                                                   system │ │
 │     Audio output  switch sink, mute, pavucontrol                                                                                           system │ │
-│     Media  play, pause, next, copy track                                                                                                   system │ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
  [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close

@@ -1,4 +1,4 @@
-Hayato · Menu                                                       57 commands
+Hayato · Menu                                                       58 commands
 ────────────────────────────────────────────────────────────────────────────────
 ╭ Commands ────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                          │
@@ -13,12 +13,12 @@ Hayato · Menu                                                       57 commands
 │     Eject drive  safely unmount a USB stick or SD card               open │ │
 │     Studio  screen record, webcam video, photo snap                  open │ │
 │     Camera  look through the webcam, take a photo                    open │ │
+│     Cassette  music player: local library & Spotify                  open │ │
 │     Games  retro and Hayato games                                    open │ │
 │     Download  a link, into ~/Downloads                               open │ │
 │     Settings  Wi-Fi, Bluetooth, night light, tablet mode, rotation   open │ │
 │     Learn  the manual, with search                                   open │ │
 │     Keybindings  every binding, from the configuration               open │ │
 │     Applications  desktop entries, icons, frecency                   open │ │
-│     Window switcher  focus or close any window                       open │ │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close

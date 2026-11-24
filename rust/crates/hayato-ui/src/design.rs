@@ -375,9 +375,9 @@ impl Design {
         self
     }
 
-    pub fn color(&self, role: ColorRole) -> Color {
+    fn rgb_for(&self, role: ColorRole) -> Rgb {
         let p = &self.palette;
-        color(match role {
+        match role {
             ColorRole::Bg => p.bg,
             ColorRole::Surface => p.surface,
             ColorRole::SurfaceAlt => p.surface_alt,
@@ -394,6 +394,26 @@ impl Design {
             ColorRole::SelectionText => self.selection_text,
             ColorRole::SelectionDim => self.selection_dim,
             ColorRole::KeyText => self.key_text,
+        }
+    }
+
+    pub fn color(&self, role: ColorRole) -> Color {
+        color(self.rgb_for(role))
+    }
+
+    /// Precompute a fixed-size colour ramp between two semantic roles.
+    /// Keeps `Color::Rgb` strictly inside `design.rs` while enabling zero-alloc
+    /// spectrum gradients and beat-reactive border pulses.
+    pub fn ramp<const N: usize>(&self, from: ColorRole, to: ColorRole) -> [Color; N] {
+        let a = self.rgb_for(from);
+        let b = self.rgb_for(to);
+        std::array::from_fn(|i| {
+            let t = if N <= 1 {
+                0.0
+            } else {
+                i as f32 / (N - 1) as f32
+            };
+            color(mix(a, b, t))
         })
     }
 

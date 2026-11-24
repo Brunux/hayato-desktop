@@ -364,6 +364,7 @@ pub fn reload() {
         ("swaymsg", vec!["reload"]),
         ("pkill", vec!["-USR2", "-x", "waybar"]),
         ("pkill", vec!["-USR1", "-x", "hayato-notify"]),
+        ("pkill", vec!["-USR1", "-x", "hayato-cassette"]),
     ] {
         match std::process::Command::new(program).args(&args).output() {
             Ok(output) if output.status.success() => {}
