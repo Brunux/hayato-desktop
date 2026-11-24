@@ -5,7 +5,7 @@
 //!   live machine telemetry, and Hayato's core ethos.
 //! - `[2] HOTKEYS`: visual keycap grid of the essential Sway & desktop chords.
 //! - `[3] TOOLS`: flagship studios and Wave C superpowers (Lens, Drop, Local AI,
-//!   Smart Clipboard, Eject Drive, Games & Ink Notes).
+//!   Voice Dictation, Coding Agents, Games & Ink Notes).
 //! - `[4] LAUNCHPAD`: interactive quick-launch actions (`Open Learn`, `Pick Theme`,
 //!   `Open Settings`, `Enter Desktop`).
 
@@ -190,16 +190,16 @@ const TOOLS: &[ToolEntry] = &[
         desc: "Private Qwen3.5-0.8B Ask & Translate running locally with zero cloud account",
     },
     ToolEntry {
-        glyph: Glyph::Clipboard,
-        name: "Smart Clipboard",
-        badge: "CTRL+T",
-        desc: "History by kind with one-key tracking-param URL stripping & JSON formatting",
+        glyph: Glyph::Mic,
+        name: "Voice Dictation",
+        badge: "WHISPER",
+        desc: "Hold Alt+Ctrl+X to speak — offline whisper.cpp types straight into any window",
     },
     ToolEntry {
-        glyph: Glyph::Disk,
-        name: "Eject Drive",
-        badge: "PLACES",
-        desc: "Safe USB stick & SD card unmount + power-off straight from Places or the bar",
+        glyph: Glyph::Terminal,
+        name: "Coding Agents",
+        badge: "AGENTS",
+        desc: "Launch OpenCode, Claude, Codex or Gemini in ~/Work, plus Alt+` Quake console",
     },
     ToolEntry {
         glyph: Glyph::Book,
@@ -1489,7 +1489,14 @@ mod tests {
             assert!(tools.contains("Hayato Lens"), "{w}x{h} missing Lens");
             assert!(tools.contains("Hayato Drop"), "{w}x{h} missing Drop");
             assert!(tools.contains("Local AI"), "{w}x{h} missing Local AI");
-            assert!(tools.contains("Eject Drive"), "{w}x{h} missing Eject Drive");
+            assert!(
+                tools.contains("Voice Dictation"),
+                "{w}x{h} missing Voice Dictation"
+            );
+            assert!(
+                tools.contains("Coding Agents"),
+                "{w}x{h} missing Coding Agents"
+            );
 
             // Tab 4: LAUNCHPAD
             screen.key(press(KeyCode::Char('4')), &design);

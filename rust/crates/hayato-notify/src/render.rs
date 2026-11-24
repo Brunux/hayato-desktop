@@ -9,14 +9,20 @@ use crate::model::{Notification, Rect, Urgency};
 pub const OSD_WIDTH: f32 = 280.0;
 pub const OSD_HEIGHT: f32 = 44.0;
 pub const CARD_SPACING: f32 = 8.0;
-pub const CORNER_RADIUS: f32 = 6.0;
+pub const CORNER_RADIUS: f32 = 3.0;
+const HEADER_H: f32 = 20.0;
 const OVERFLOW_PILL_H: f32 = 22.0;
-const ACTION_BTN_H: f32 = 26.0;
+const ACTION_BTN_H: f32 = 24.0;
 const ACTION_BTN_GAP: f32 = 6.0;
 const ACTION_ROW_GAP: f32 = 6.0;
-const CONTENT_LEFT_PAD: f32 = 38.0;
-const CONTENT_RIGHT_PAD: f32 = 14.0;
-const CLOSE_HIT_SIZE: f32 = 28.0;
+const CONTENT_LEFT_PAD: f32 = 14.0;
+const CONTENT_RIGHT_PAD: f32 = 12.0;
+const PROMPT_INDENT: f32 = 13.0;
+const PROGRESS_BAR_H: f32 = 6.0;
+const OSD_SEGMENTS: usize = 16;
+const CARD_SEGMENTS: usize = 20;
+const SEGMENT_GAP: f32 = 2.0;
+const CLOSE_HIT_SIZE: f32 = 24.0;
 
 fn with_alpha(c: Color, alpha: f32) -> Color {
     let a = (c.alpha() * alpha).clamp(0.0, 1.0);
@@ -26,18 +32,25 @@ fn with_alpha(c: Color, alpha: f32) -> Color {
 pub struct CardTheme {
     pub bg: Color,
     pub bg_elevated: Color,
+    pub header_bg: Color,
     pub border_subtle: Color,
     pub text_bright: Color,
     pub text_body: Color,
     pub text_dim: Color,
     pub accent: Color,
+    #[allow(dead_code)]
+    pub accent_alt: Color,
     pub danger: Color,
     pub danger_text: Color,
     pub danger_bg: Color,
     #[allow(dead_code)]
     pub warn: Color,
     #[allow(dead_code)]
+    pub warn_text: Color,
+    #[allow(dead_code)]
     pub ok: Color,
+    #[allow(dead_code)]
+    pub ok_text: Color,
     pub track_bg: Color,
     pub btn_bg: Color,
     pub btn_bg_hover: Color,
@@ -48,16 +61,20 @@ impl Default for CardTheme {
         Self {
             bg: Color::from_rgba8(36, 40, 59, 244), // surface: #24283b
             bg_elevated: Color::from_rgba8(41, 46, 66, 250),
+            header_bg: Color::from_rgba8(29, 32, 47, 246),
             border_subtle: Color::from_rgba8(59, 66, 97, 230), // border: #3b4261
             text_bright: Color::from_rgba8(125, 207, 255, 255), // cyan: #7dcfff
             text_body: Color::from_rgba8(192, 202, 245, 245),  // text: #c0caf5
             text_dim: Color::from_rgba8(86, 95, 137, 255),
             accent: Color::from_rgba8(125, 207, 255, 255),
+            accent_alt: Color::from_rgba8(187, 154, 247, 255),
             danger: Color::from_rgba8(247, 118, 142, 255),
             danger_text: Color::from_rgba8(247, 118, 142, 255),
             danger_bg: Color::from_rgba8(72, 34, 48, 220),
             warn: Color::from_rgba8(224, 175, 104, 255),
+            warn_text: Color::from_rgba8(224, 175, 104, 255),
             ok: Color::from_rgba8(158, 206, 106, 255),
+            ok_text: Color::from_rgba8(158, 206, 106, 255),
             track_bg: Color::from_rgba8(41, 46, 66, 175),
             btn_bg: Color::from_rgba8(41, 46, 66, 215),
             btn_bg_hover: Color::from_rgba8(59, 66, 97, 245),
@@ -95,6 +112,7 @@ impl CardTheme {
         Self {
             bg: to_color(r.surface, 244),
             bg_elevated: to_color(r.hover, 250),
+            header_bg: to_color(r.surface_alt, 242),
             border_subtle: to_color(r.border, 230),
             text_bright: to_color(r.accent, 255),
             // Use `r.text` (not `r.strong`) so body copy remains high-contrast
@@ -102,16 +120,68 @@ impl CardTheme {
             text_body: to_color(r.text, 245),
             text_dim: to_color(r.dim, 255),
             accent: to_color(r.accent, 255),
+            accent_alt: to_color(r.accent_alt, 255),
             danger: to_color(r.danger, 255),
             danger_text: to_color(r.danger_text, 255),
             danger_bg: to_color(r.danger_bg, 225),
             warn: to_color(r.warn, 255),
+            warn_text: to_color(r.warn_text, 255),
             ok: to_color(r.ok, 255),
+            ok_text: to_color(r.ok_text, 255),
             track_bg: to_color(r.hover, 175),
             btn_bg: to_color(r.hover, 215),
             btn_bg_hover: to_color(r.border, 245),
         }
     }
+}
+
+/// Format the bracketed Cyber-HUD header tag: `[ SYS // INFO ]`, `[ ALERT // CRIT ]`,
+/// `[ APP // SYNC ]`, etc.
+pub fn format_header_tag(
+    app_name: &str,
+    urgency: Urgency,
+    has_progress: bool,
+    has_open_path: bool,
+) -> String {
+    let trimmed = app_name.trim();
+    let source = if trimmed.is_empty()
+        || trimmed.eq_ignore_ascii_case("hayato")
+        || trimmed.eq_ignore_ascii_case("notify-send")
+    {
+        if urgency == Urgency::Critical {
+            "ALERT".to_string()
+        } else {
+            "SYS".to_string()
+        }
+    } else {
+        let cleaned: String = trimmed
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+            .take(10)
+            .collect::<String>()
+            .to_ascii_uppercase();
+        if cleaned.is_empty() {
+            "APP".to_string()
+        } else {
+            cleaned
+        }
+    };
+
+    let level = match urgency {
+        Urgency::Critical => "CRIT",
+        Urgency::Low => "LOW",
+        Urgency::Normal => {
+            if has_progress {
+                "SYNC"
+            } else if has_open_path {
+                "FILE"
+            } else {
+                "INFO"
+            }
+        }
+    };
+
+    format!("[ {source} // {level} ]")
 }
 
 pub struct LayoutMetrics {
@@ -128,7 +198,6 @@ struct ActionChip {
 }
 
 struct CardLayout {
-    is_compact_single: bool,
     body_lines: Vec<String>,
     progress_y: Option<f32>,
     actions_y: Option<f32>,
@@ -169,6 +238,70 @@ impl Renderer {
         pb.close();
     }
 
+    fn add_top_rounded_rect(pb: &mut PathBuilder, x: f32, y: f32, w: f32, h: f32, r: f32) {
+        let r = r.min(w * 0.5).min(h).max(0.0);
+        pb.move_to(x + r, y);
+        pb.line_to(x + w - r, y);
+        pb.quad_to(x + w, y, x + w, y + r);
+        pb.line_to(x + w, y + h);
+        pb.line_to(x, y + h);
+        pb.line_to(x, y + r);
+        pb.quad_to(x, y, x + r, y);
+        pb.close();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_segmented_bar(
+        &self,
+        pixmap: &mut PixmapMut,
+        transform: Transform,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        segments: usize,
+        pct: u8,
+        muted: bool,
+        fill_color: Color,
+        alpha: f32,
+    ) {
+        let segments = segments.max(1);
+        let total_gap = SEGMENT_GAP * (segments - 1) as f32;
+        let seg_w = ((width - total_gap) / segments as f32).max(2.0);
+        let filled = if muted || pct == 0 {
+            0
+        } else {
+            let raw = ((pct.min(100) as f32 / 100.0) * segments as f32).round() as usize;
+            raw.clamp(1, segments)
+        };
+
+        let mut empty_paint = Paint::default();
+        empty_paint.set_color(with_alpha(self.theme.track_bg, alpha));
+        empty_paint.anti_alias = true;
+
+        let mut fill_paint = Paint::default();
+        fill_paint.set_color(with_alpha(fill_color, alpha));
+        fill_paint.anti_alias = true;
+
+        for i in 0..segments {
+            let sx = x + i as f32 * (seg_w + SEGMENT_GAP);
+            if sx >= x + width {
+                break;
+            }
+            let sw = seg_w.min(x + width - sx);
+            let mut pb = PathBuilder::new();
+            Self::add_rounded_rect(&mut pb, sx, y, sw, height, 1.0);
+            if let Some(path) = pb.finish() {
+                let paint = if i < filled {
+                    &fill_paint
+                } else {
+                    &empty_paint
+                };
+                pixmap.fill_path(&path, paint, FillRule::Winding, transform, None);
+            }
+        }
+    }
+
     #[allow(dead_code)]
     pub fn add_circle(pb: &mut PathBuilder, cx: f32, cy: f32, r: f32) {
         Self::add_rounded_rect(pb, cx - r, cy - r, r * 2.0, r * 2.0, r);
@@ -176,25 +309,28 @@ impl Renderer {
 
     fn plan_card_layout(&self, notif: &Notification, card_w: f32) -> CardLayout {
         let text_max_width = (card_w - CONTENT_LEFT_PAD - CONTENT_RIGHT_PAD).max(80.0);
+        let body_max_width = (text_max_width - PROMPT_INDENT).max(60.0);
         let body_lines = if notif.body.is_empty() {
             Vec::new()
         } else {
             self.font
-                .wrap_text(&notif.body, 12.0, text_max_width, 4, false)
+                .wrap_text(&notif.body, 11.5, body_max_width, 4, false)
         };
 
-        // Plan action button rows so buttons never overflow off the left edge.
+        // Plan keycap-style `[ Label ]` action button rows so buttons never overflow.
         let mut action_rows: Vec<Vec<ActionChip>> = Vec::new();
         if !notif.actions.is_empty() {
             let mut cur_row: Vec<ActionChip> = Vec::new();
             let mut cur_row_w = 0.0f32;
+            let bracket_extra = self.font.measure_width("[  ]", 10.0, true);
             for action in &notif.actions {
-                let max_label_w = (text_max_width - 18.0).max(32.0);
-                let label = self
+                let max_inner_w = (text_max_width - bracket_extra - 16.0).max(32.0);
+                let raw = self
                     .font
-                    .truncate_text(&action.label, 10.5, max_label_w, true);
+                    .truncate_text(&action.label, 10.0, max_inner_w, true);
+                let label = format!("[ {raw} ]");
                 let btn_w =
-                    (self.font.measure_width(&label, 10.5, true) + 18.0).min(text_max_width);
+                    (self.font.measure_width(&label, 10.0, true) + 14.0).min(text_max_width);
                 let needed = if cur_row.is_empty() {
                     btn_w
                 } else {
@@ -219,30 +355,16 @@ impl Renderer {
             }
         }
 
-        let is_compact_single =
-            body_lines.is_empty() && notif.progress.is_none() && action_rows.is_empty();
-
-        if is_compact_single {
-            return CardLayout {
-                is_compact_single: true,
-                body_lines,
-                progress_y: None,
-                actions_y: None,
-                action_rows,
-                height: OSD_HEIGHT,
-            };
-        }
-
-        // Top-aligned multi-part card:
-        // Summary baseline at y + 20.0
-        let mut cursor_y = 22.0f32;
+        // Top terminal header strip occupies 0..HEADER_H.
+        // Summary baseline sits at HEADER_H + 17.0.
+        let mut cursor_y = HEADER_H + 21.0;
         if !body_lines.is_empty() {
-            cursor_y += 4.0 + (body_lines.len() as f32 * 16.0);
+            cursor_y += 4.0 + (body_lines.len() as f32 * 15.5);
         }
 
         let progress_y = if notif.progress.is_some() {
-            let py = cursor_y + 8.0;
-            cursor_y = py + 4.0 + 4.0; // bar height (4) + breathing room (4)
+            let py = cursor_y + 7.0;
+            cursor_y = py + PROGRESS_BAR_H + 6.0;
             Some(py)
         } else {
             None
@@ -258,11 +380,10 @@ impl Renderer {
             None
         };
 
-        let bottom_pad = 12.0f32;
-        let height = (cursor_y + bottom_pad).max(OSD_HEIGHT);
+        let bottom_pad = 10.0f32;
+        let height = (cursor_y + bottom_pad).max(52.0);
 
         CardLayout {
-            is_compact_single: false,
             body_lines,
             progress_y,
             actions_y,
@@ -361,17 +482,17 @@ impl Renderer {
     }
 
     fn render_overflow_pill(&self, pixmap: &mut PixmapMut, max_w: f32, y: f32, hidden: usize) {
-        let label = format!("+{hidden} more");
-        let text_w = self.font.measure_width(&label, 10.5, true);
+        let label = format!("[ +{hidden} queued ]");
+        let text_w = self.font.measure_width(&label, 10.0, true);
         let pill_w = text_w + 18.0;
         let pill_h = OVERFLOW_PILL_H;
         let pill_x = (max_w - pill_w).max(0.0);
 
         let mut pb = PathBuilder::new();
-        Self::add_rounded_rect(&mut pb, pill_x, y, pill_w, pill_h, pill_h * 0.5);
+        Self::add_rounded_rect(&mut pb, pill_x, y, pill_w, pill_h, 2.0);
         if let Some(path) = pb.finish() {
             let mut paint = Paint::default();
-            paint.set_color(self.theme.bg);
+            paint.set_color(self.theme.header_bg);
             paint.anti_alias = true;
             pixmap.fill_path(
                 &path,
@@ -391,13 +512,29 @@ impl Renderer {
             pixmap.stroke_path(&path, &bpaint, &stroke, Transform::identity(), None);
         }
 
+        // Crisp left accent tick
+        let mut tick_pb = PathBuilder::new();
+        Self::add_rounded_rect(&mut tick_pb, pill_x + 2.0, y + 4.0, 2.0, pill_h - 8.0, 1.0);
+        if let Some(path) = tick_pb.finish() {
+            let mut paint = Paint::default();
+            paint.set_color(self.theme.accent);
+            paint.anti_alias = true;
+            pixmap.fill_path(
+                &path,
+                &paint,
+                FillRule::Winding,
+                Transform::identity(),
+                None,
+            );
+        }
+
         self.font.draw_text(
             pixmap,
             &label,
             pill_x + 9.0,
             y + 14.5,
-            10.5,
-            self.theme.text_dim,
+            10.0,
+            self.theme.text_body,
             true,
         );
     }
@@ -494,45 +631,6 @@ impl Renderer {
         let map_x = |x: f32| cx + (x - cx) * scale;
         let map_y = |y: f32| cy + (y - cy) * scale;
 
-        // 1. Background
-        let mut bg_builder = PathBuilder::new();
-        Self::add_rounded_rect(
-            &mut bg_builder,
-            card_x,
-            card_y,
-            card_w,
-            card_h,
-            CORNER_RADIUS,
-        );
-        if let Some(bg_path) = bg_builder.finish() {
-            let mut paint = Paint::default();
-            paint.set_color(with_alpha(self.theme.bg, alpha));
-            paint.anti_alias = true;
-            pixmap.fill_path(&bg_path, &paint, FillRule::Winding, transform, None);
-        }
-
-        // 2. Border
-        let mut border_builder = PathBuilder::new();
-        Self::add_rounded_rect(
-            &mut border_builder,
-            card_x + 0.5,
-            card_y + 0.5,
-            card_w - 1.0,
-            card_h - 1.0,
-            CORNER_RADIUS,
-        );
-        if let Some(border_path) = border_builder.finish() {
-            let stroke = Stroke {
-                width: 1.0,
-                ..Default::default()
-            };
-            let mut paint = Paint::default();
-            paint.set_color(with_alpha(self.theme.border_subtle, alpha));
-            paint.anti_alias = true;
-            pixmap.stroke_path(&border_path, &paint, &stroke, transform, None);
-        }
-
-        // 3. Status checks
         let is_muted = notif.body.to_lowercase().contains("mute")
             || notif.app_icon.contains("muted")
             || notif.summary.to_lowercase().contains("mute");
@@ -554,18 +652,79 @@ impl Renderer {
             self.theme.accent
         };
 
+        // 1. Background
+        let mut bg_builder = PathBuilder::new();
+        Self::add_rounded_rect(
+            &mut bg_builder,
+            card_x,
+            card_y,
+            card_w,
+            card_h,
+            CORNER_RADIUS,
+        );
+        if let Some(bg_path) = bg_builder.finish() {
+            let mut paint = Paint::default();
+            paint.set_color(with_alpha(self.theme.bg, alpha));
+            paint.anti_alias = true;
+            pixmap.fill_path(&bg_path, &paint, FillRule::Winding, transform, None);
+        }
+
+        // 2. Crisp 3px left urgency/status rail
+        let mut rail_builder = PathBuilder::new();
+        Self::add_rounded_rect(
+            &mut rail_builder,
+            card_x + 3.0,
+            card_y + 5.0,
+            3.0,
+            (card_h - 10.0).max(8.0),
+            1.0,
+        );
+        if let Some(rail_path) = rail_builder.finish() {
+            let mut paint = Paint::default();
+            paint.set_color(with_alpha(icon_color, alpha));
+            paint.anti_alias = true;
+            pixmap.fill_path(&rail_path, &paint, FillRule::Winding, transform, None);
+        }
+
+        // 3. Border
+        let mut border_builder = PathBuilder::new();
+        Self::add_rounded_rect(
+            &mut border_builder,
+            card_x + 0.5,
+            card_y + 0.5,
+            card_w - 1.0,
+            card_h - 1.0,
+            CORNER_RADIUS,
+        );
+        if let Some(border_path) = border_builder.finish() {
+            let stroke = Stroke {
+                width: 1.0,
+                ..Default::default()
+            };
+            let mut paint = Paint::default();
+            let bcol = if is_muted {
+                self.theme.danger
+            } else {
+                self.theme.border_subtle
+            };
+            paint.set_color(with_alpha(bcol, alpha));
+            paint.anti_alias = true;
+            pixmap.stroke_path(&border_path, &paint, &stroke, transform, None);
+        }
+
+        // 4. Icon glyph
         self.font.draw_text(
             pixmap,
             icon_glyph,
             map_x(card_x + 12.0),
             map_y(card_y + 26.0),
-            16.0 * scale,
+            15.0 * scale,
             with_alpha(icon_color, alpha),
             false,
         );
 
-        let content_x = card_x + 36.0;
-        let right_margin = card_x + card_w - 14.0;
+        let content_x = card_x + 34.0;
+        let right_margin = card_x + card_w - 12.0;
 
         let effective_pct = if let Some(pct) = notif.progress {
             pct.min(100)
@@ -581,35 +740,49 @@ impl Renderer {
         };
 
         let val_str = if is_muted {
-            "MUTED".to_string()
+            "[ MUTED ]".to_string()
         } else if notif.progress.is_some() || notif.body.trim().ends_with('%') {
-            format!("{effective_pct}%")
+            format!("[ {effective_pct:>3}% ]")
         } else if !notif.body.is_empty() {
-            notif.body.clone()
+            format!("[ {} ]", notif.body.trim())
         } else {
-            "0%".to_string()
+            "[   0% ]".to_string()
         };
 
-        let val_w = self.font.measure_width(&val_str, 12.0 * scale, false);
+        let val_w = self.font.measure_width(&val_str, 10.5 * scale, true);
         let val_color = if is_muted {
             self.theme.danger_text
         } else {
             self.theme.accent
         };
 
-        let summary_max_w = (right_margin - content_x - val_w - 8.0).max(40.0);
+        // Terminal chevron `> ` + uppercase HUD label
+        let chevron = "> ";
+        let chevron_w = self.font.measure_width(chevron, 11.5, true);
+        self.font.draw_text(
+            pixmap,
+            chevron,
+            map_x(content_x),
+            map_y(card_y + 17.0),
+            11.5 * scale,
+            with_alpha(icon_color, alpha),
+            true,
+        );
+
+        let summary_max_w = (right_margin - (content_x + chevron_w) - val_w - 6.0).max(36.0);
+        let label_upper = notif.summary.to_ascii_uppercase();
         let summary = self
             .font
-            .truncate_text(&notif.summary, 12.0, summary_max_w, false);
+            .truncate_text(&label_upper, 11.5, summary_max_w, true);
 
         self.font.draw_text(
             pixmap,
             &summary,
-            map_x(content_x),
+            map_x(content_x + chevron_w),
             map_y(card_y + 17.0),
-            12.0 * scale,
+            11.5 * scale,
             with_alpha(self.theme.text_bright, alpha),
-            false,
+            true,
         );
 
         self.font.draw_text(
@@ -617,58 +790,28 @@ impl Renderer {
             &val_str,
             map_x(right_margin) - val_w,
             map_y(card_y + 17.0),
-            12.0 * scale,
+            10.5 * scale,
             with_alpha(val_color, alpha),
-            false,
+            true,
         );
 
-        // 4. Level track (0% draws empty — no phantom 3px nub)
+        // 5. Segmented block level bar
         let track_x = content_x;
-        let track_y = card_y + 27.0;
-        let track_w = right_margin - content_x;
-        let track_h = 4.0f32;
-        let track_r = 2.0f32;
-
-        let mut track_builder = PathBuilder::new();
-        Self::add_rounded_rect(
-            &mut track_builder,
+        let track_y = card_y + 26.0;
+        let track_w = (right_margin - content_x).max(40.0);
+        self.draw_segmented_bar(
+            pixmap,
+            transform,
             track_x,
             track_y,
             track_w,
-            track_h,
-            track_r,
+            PROGRESS_BAR_H,
+            OSD_SEGMENTS,
+            effective_pct,
+            is_muted,
+            icon_color,
+            alpha,
         );
-        if let Some(track_path) = track_builder.finish() {
-            let mut paint = Paint::default();
-            paint.set_color(with_alpha(self.theme.track_bg, alpha));
-            paint.anti_alias = true;
-            pixmap.fill_path(&track_path, &paint, FillRule::Winding, transform, None);
-        }
-
-        let fill_w = if is_muted || effective_pct == 0 {
-            0.0
-        } else {
-            let fill_pct = (effective_pct as f32 / 100.0).clamp(0.0, 1.0);
-            (track_w * fill_pct).max(3.0)
-        };
-
-        if fill_w > 0.0 {
-            let mut fill_builder = PathBuilder::new();
-            Self::add_rounded_rect(
-                &mut fill_builder,
-                track_x,
-                track_y,
-                fill_w,
-                track_h,
-                track_r,
-            );
-            if let Some(fill_path) = fill_builder.finish() {
-                let mut paint = Paint::default();
-                paint.set_color(with_alpha(icon_color, alpha));
-                paint.anti_alias = true;
-                pixmap.fill_path(&fill_path, &paint, FillRule::Winding, transform, None);
-            }
-        }
     }
 
     fn render_card(&self, pixmap: &mut PixmapMut, notif: &mut Notification) {
@@ -694,6 +837,22 @@ impl Renderer {
         let map_x = |x: f32| cx + (x - cx) * scale;
         let map_y = |y: f32| cy + (y - cy) * scale;
 
+        let strip_color = match notif.urgency {
+            Urgency::Low => self.theme.border_subtle,
+            Urgency::Normal => self.theme.accent,
+            Urgency::Critical => self.theme.danger,
+        };
+        let glyph_color = match notif.urgency {
+            Urgency::Low => self.theme.text_dim,
+            Urgency::Normal => self.theme.accent,
+            Urgency::Critical => self.theme.danger,
+        };
+        let tag_color = match notif.urgency {
+            Urgency::Low => self.theme.text_body,
+            Urgency::Normal => self.theme.accent,
+            Urgency::Critical => self.theme.danger_text,
+        };
+
         // 1. Background
         let mut bg_builder = PathBuilder::new();
         Self::add_rounded_rect(
@@ -716,20 +875,57 @@ impl Renderer {
             pixmap.fill_path(&bg_path, &paint, FillRule::Winding, transform, None);
         }
 
-        // 2. Crisp 3px left urgency accent strip
-        let strip_color = match notif.urgency {
-            Urgency::Low => with_alpha(self.theme.border_subtle, 0.7),
-            Urgency::Normal => self.theme.accent,
-            Urgency::Critical => self.theme.danger,
-        };
+        // 2. Top terminal header strip (recessed Cyber-HUD titlebar)
+        let mut hdr_builder = PathBuilder::new();
+        Self::add_top_rounded_rect(
+            &mut hdr_builder,
+            card_x,
+            card_y,
+            card_w,
+            HEADER_H,
+            CORNER_RADIUS,
+        );
+        if let Some(hdr_path) = hdr_builder.finish() {
+            let mut paint = Paint::default();
+            let hdr_fill = if notif.urgency == Urgency::Critical {
+                with_alpha(self.theme.danger_bg, 0.75)
+            } else {
+                self.theme.header_bg
+            };
+            paint.set_color(with_alpha(hdr_fill, alpha));
+            paint.anti_alias = true;
+            pixmap.fill_path(&hdr_path, &paint, FillRule::Winding, transform, None);
+        }
+
+        // 1px header divider rule
+        let mut rule_builder = PathBuilder::new();
+        rule_builder.move_to(card_x + 1.0, card_y + HEADER_H);
+        rule_builder.line_to(card_x + card_w - 1.0, card_y + HEADER_H);
+        if let Some(rule_path) = rule_builder.finish() {
+            let stroke = Stroke {
+                width: 1.0,
+                ..Default::default()
+            };
+            let mut paint = Paint::default();
+            let rule_color = if notif.urgency == Urgency::Critical {
+                with_alpha(self.theme.danger, 0.55)
+            } else {
+                with_alpha(self.theme.border_subtle, 0.65)
+            };
+            paint.set_color(with_alpha(rule_color, alpha));
+            paint.anti_alias = false;
+            pixmap.stroke_path(&rule_path, &paint, &stroke, transform, None);
+        }
+
+        // 3. Crisp 3px left urgency rail
         let mut strip_builder = PathBuilder::new();
         Self::add_rounded_rect(
             &mut strip_builder,
             card_x + 3.0,
-            card_y + 6.0,
+            card_y + 4.0,
             3.0,
-            (card_h - 12.0).max(8.0),
-            1.5,
+            (card_h - 8.0).max(8.0),
+            1.0,
         );
         if let Some(strip_path) = strip_builder.finish() {
             let mut paint = Paint::default();
@@ -738,7 +934,7 @@ impl Renderer {
             pixmap.fill_path(&strip_path, &paint, FillRule::Winding, transform, None);
         }
 
-        // 3. Border (Critical gets danger border; hovered file cards highlight accent)
+        // 4. Outer border (Critical gets danger border; hovered file cards highlight accent)
         let border_color = if notif.urgency == Urgency::Critical {
             self.theme.danger
         } else if notif.is_hovered && notif.open_path.is_some() {
@@ -766,61 +962,42 @@ impl Renderer {
             pixmap.stroke_path(&border_path, &paint, &stroke, transform, None);
         }
 
-        // 4. Icon glyph
+        // 5. Header strip content: glyph + `[ <APP> // <LVL> ]` + right-aligned badges & close
         let glyph = Self::resolve_glyph(
             &notif.app_icon,
             &notif.app_name,
             &notif.summary,
             notif.urgency,
         );
-        let glyph_color = match notif.urgency {
-            Urgency::Low => self.theme.text_dim,
-            Urgency::Normal => self.theme.accent,
-            Urgency::Critical => self.theme.danger,
-        };
-
-        let icon_y = if plan.is_compact_single {
-            card_y + 26.0
-        } else {
-            card_y + 23.0
-        };
+        let header_baseline = card_y + 13.5;
+        let content_x = card_x + CONTENT_LEFT_PAD;
 
         self.font.draw_text(
             pixmap,
             glyph,
-            map_x(card_x + 14.0),
-            map_y(icon_y),
-            16.0 * scale,
+            map_x(content_x),
+            map_y(header_baseline + 0.5),
+            11.0 * scale,
             with_alpha(glyph_color, alpha),
             false,
         );
 
-        // 5. Close '×' button (sized cleanly to top-right, clamped above action buttons!)
-        let close_x = card_x + card_w - 22.0;
-        let close_y = if plan.is_compact_single {
-            card_y + 26.0
-        } else {
-            card_y + 20.0
-        };
+        // Close `[×]` button lives strictly inside the top header strip (never collides with actions)
         let hit_w = CLOSE_HIT_SIZE * scale;
-        let mut hit_top = map_y(card_y + 2.0);
-        let mut hit_h = (CLOSE_HIT_SIZE * scale).min(card_h * scale - 4.0);
-        if let Some(ay) = plan.actions_y {
-            let max_bottom = map_y(card_y + ay - 2.0);
-            if hit_top + hit_h > max_bottom {
-                hit_h = (max_bottom - hit_top).max(18.0 * scale);
-            }
-        } else if plan.is_compact_single {
-            hit_top = map_y(card_y + (card_h - CLOSE_HIT_SIZE) * 0.5);
-        }
-        let close_rect = Rect::new(map_x(card_x + card_w - 32.0), hit_top, hit_w, hit_h);
+        let hit_h = HEADER_H * scale;
+        let close_rect = Rect::new(
+            map_x(card_x + card_w - CLOSE_HIT_SIZE - 2.0),
+            map_y(card_y),
+            hit_w,
+            hit_h,
+        );
         notif.close_rect = Some(close_rect);
 
         if notif.hovered_close {
-            let pill_x = card_x + card_w - 28.0;
-            let pill_y = close_y - 14.0;
+            let pill_x = card_x + card_w - 23.0;
+            let pill_y = card_y + 2.0;
             let mut pb = PathBuilder::new();
-            Self::add_rounded_rect(&mut pb, pill_x, pill_y, 20.0, 20.0, 4.0);
+            Self::add_rounded_rect(&mut pb, pill_x, pill_y, 19.0, HEADER_H - 4.0, 2.0);
             if let Some(path) = pb.finish() {
                 let mut paint = Paint::default();
                 paint.set_color(with_alpha(self.theme.danger_bg, alpha));
@@ -839,52 +1016,86 @@ impl Renderer {
         self.font.draw_text(
             pixmap,
             "\u{f00d}", // Font Awesome xmark
-            map_x(close_x),
-            map_y(close_y),
-            12.0 * scale,
+            map_x(card_x + card_w - 17.5),
+            map_y(header_baseline + 0.5),
+            10.5 * scale,
             with_alpha(close_color, alpha),
             false,
         );
 
-        // 6. Repeat badge pill (×N) placed cleanly left of the close button
-        let content_x = card_x + CONTENT_LEFT_PAD;
-        let mut summary_right = card_x + card_w - 34.0;
-        let summary_baseline = if plan.is_compact_single {
-            card_y + 26.0
-        } else {
-            card_y + 20.0
-        };
+        let mut header_right = card_x + card_w - 26.0;
 
+        // Repeat badge `[×N]` in header strip
         if notif.repeat_count > 1 {
-            let label = format!("\u{00d7}{}", notif.repeat_count);
-            let label_w = self.font.measure_width(&label, 10.0, true);
-            let pill_w = label_w + 10.0;
-            let pill_h = 16.0f32;
-            let pill_x = summary_right - pill_w - 4.0;
-            let pill_y = summary_baseline - 12.0;
-
-            let mut pb = PathBuilder::new();
-            Self::add_rounded_rect(&mut pb, pill_x, pill_y, pill_w, pill_h, 4.0);
-            if let Some(path) = pb.finish() {
-                let mut paint = Paint::default();
-                paint.set_color(with_alpha(self.theme.btn_bg, alpha));
-                paint.anti_alias = true;
-                pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
-            }
+            let label = format!("[\u{00d7}{}]", notif.repeat_count);
+            let label_w = self.font.measure_width(&label, 9.0, true);
+            let badge_x = header_right - label_w - 4.0;
             self.font.draw_text(
                 pixmap,
                 &label,
-                map_x(pill_x + 5.0),
-                map_y(summary_baseline - 0.5),
-                10.0 * scale,
+                map_x(badge_x),
+                map_y(header_baseline),
+                9.0 * scale,
                 with_alpha(self.theme.text_body, alpha),
                 true,
             );
-            summary_right = pill_x - 6.0;
+            header_right = badge_x - 6.0;
         }
 
-        // 7. Summary (truncated cleanly so it never collides with ×N or ×)
-        let summary_max_w = (summary_right - content_x).max(40.0);
+        // Subtle `[HOLD]` indicator when hovering pauses a timed notification
+        let tag_x = content_x + 15.0;
+        let raw_tag = format_header_tag(
+            &notif.app_name,
+            notif.urgency,
+            notif.progress.is_some(),
+            notif.open_path.is_some(),
+        );
+        let tag_w = self.font.measure_width(&raw_tag, 9.5, true);
+        if notif.is_hovered && notif.remaining_fraction().is_some() {
+            let hold_label = "[HOLD]";
+            let hold_w = self.font.measure_width(hold_label, 8.5, true);
+            if header_right - hold_w - 8.0 > tag_x + tag_w {
+                let hold_x = header_right - hold_w - 2.0;
+                self.font.draw_text(
+                    pixmap,
+                    hold_label,
+                    map_x(hold_x),
+                    map_y(header_baseline),
+                    8.5 * scale,
+                    with_alpha(self.theme.warn_text, alpha),
+                    true,
+                );
+                header_right = hold_x - 6.0;
+            }
+        }
+
+        let tag_max_w = (header_right - tag_x).max(40.0);
+        let tag_text = self.font.truncate_text(&raw_tag, 9.5, tag_max_w, true);
+        self.font.draw_text(
+            pixmap,
+            &tag_text,
+            map_x(tag_x),
+            map_y(header_baseline),
+            9.5 * scale,
+            with_alpha(tag_color, alpha),
+            true,
+        );
+
+        // 6. Summary line with terminal prompt chevron `> `
+        let summary_baseline = card_y + HEADER_H + 17.0;
+        let summary_right = card_x + card_w - CONTENT_RIGHT_PAD;
+        self.font.draw_text(
+            pixmap,
+            ">",
+            map_x(content_x),
+            map_y(summary_baseline),
+            12.0 * scale,
+            with_alpha(glyph_color, alpha),
+            true,
+        );
+
+        let text_x = content_x + PROMPT_INDENT;
+        let summary_max_w = (summary_right - text_x).max(40.0);
         let summary = self
             .font
             .truncate_text(&notif.summary, 12.0, summary_max_w, true);
@@ -895,66 +1106,68 @@ impl Renderer {
         self.font.draw_text(
             pixmap,
             &summary,
-            map_x(content_x),
+            map_x(text_x),
             map_y(summary_baseline),
             12.0 * scale,
             with_alpha(summary_color, alpha),
             true,
         );
 
-        // 8. Body lines
+        // 7. Body lines (indented cleanly under summary text)
         let mut body_y = summary_baseline + 4.0;
         for line in &plan.body_lines {
-            body_y += 16.0;
+            body_y += 15.5;
             self.font.draw_text(
                 pixmap,
                 line,
-                map_x(content_x),
+                map_x(text_x),
                 map_y(body_y),
-                12.0 * scale,
+                11.5 * scale,
                 with_alpha(self.theme.text_body, alpha),
                 false,
             );
         }
 
-        // 9. Progress Bar (using planned non-overlapping Y)
+        // 8. Segmented Block Progress Bar + right-aligned monospace `%` readout
         let text_max_width = (card_w - CONTENT_LEFT_PAD - CONTENT_RIGHT_PAD).max(80.0);
         if let (Some(pct), Some(py_off)) = (notif.progress, plan.progress_y) {
             let bar_y = card_y + py_off;
-            let bar_x = content_x;
-            let bar_w = text_max_width;
-            let bar_h = 4.0f32;
+            let pct_label = format!("{:>3}%", pct.min(100));
+            let pct_w = self.font.measure_width(&pct_label, 10.0, true);
+            let bar_x = text_x;
+            let bar_w = (summary_right - bar_x - pct_w - 8.0).max(40.0);
+            let fill_color = if let Some([r, g, b, a]) = notif.progress_color_override {
+                Color::from_rgba8(r, g, b, a)
+            } else {
+                glyph_color
+            };
 
-            let mut track_builder = PathBuilder::new();
-            Self::add_rounded_rect(&mut track_builder, bar_x, bar_y, bar_w, bar_h, 2.0);
-            if let Some(track_path) = track_builder.finish() {
-                let mut paint = Paint::default();
-                paint.set_color(with_alpha(self.theme.track_bg, alpha));
-                paint.anti_alias = true;
-                pixmap.fill_path(&track_path, &paint, FillRule::Winding, transform, None);
-            }
+            self.draw_segmented_bar(
+                pixmap,
+                transform,
+                bar_x,
+                bar_y,
+                bar_w,
+                PROGRESS_BAR_H,
+                CARD_SEGMENTS,
+                pct,
+                false,
+                fill_color,
+                alpha,
+            );
 
-            if pct > 0 {
-                let fill_pct = (pct as f32 / 100.0).clamp(0.0, 1.0);
-                let fill_w = (bar_w * fill_pct).max(3.0);
-                let fill_color = if let Some([r, g, b, a]) = notif.progress_color_override {
-                    Color::from_rgba8(r, g, b, a)
-                } else {
-                    glyph_color
-                };
-
-                let mut fill_builder = PathBuilder::new();
-                Self::add_rounded_rect(&mut fill_builder, bar_x, bar_y, fill_w, bar_h, 2.0);
-                if let Some(fill_path) = fill_builder.finish() {
-                    let mut paint = Paint::default();
-                    paint.set_color(with_alpha(fill_color, alpha));
-                    paint.anti_alias = true;
-                    pixmap.fill_path(&fill_path, &paint, FillRule::Winding, transform, None);
-                }
-            }
+            self.font.draw_text(
+                pixmap,
+                &pct_label,
+                map_x(summary_right - pct_w),
+                map_y(bar_y + PROGRESS_BAR_H + 1.0),
+                10.0 * scale,
+                with_alpha(tag_color, alpha),
+                true,
+            );
         }
 
-        // 10. Action buttons (wrapped & clamped inside card_bounds, never overlapping progress or close)
+        // 9. Keycap-style `[ Label ]` action pills
         notif.action_rects.clear();
         if let Some(ay_off) = plan.actions_y {
             let mut row_y = card_y + ay_off;
@@ -979,7 +1192,7 @@ impl Renderer {
                         row_y,
                         chip.width,
                         ACTION_BTN_H,
-                        4.0,
+                        2.0,
                     );
                     if let Some(btn_path) = btn_builder.finish() {
                         let mut paint = Paint::default();
@@ -991,6 +1204,34 @@ impl Renderer {
                         paint.set_color(with_alpha(btn_bg, alpha));
                         paint.anti_alias = true;
                         pixmap.fill_path(&btn_path, &paint, FillRule::Winding, transform, None);
+
+                        // Subtle tactile keycap bottom bevel
+                        let mut bevel_pb = PathBuilder::new();
+                        Self::add_rounded_rect(
+                            &mut bevel_pb,
+                            btn_x + 1.0,
+                            row_y + ACTION_BTN_H - 2.0,
+                            (chip.width - 2.0).max(2.0),
+                            1.5,
+                            0.5,
+                        );
+                        if let Some(bevel_path) = bevel_pb.finish() {
+                            let mut bevel_paint = Paint::default();
+                            let bevel_col = if is_btn_hovered {
+                                self.theme.accent
+                            } else {
+                                with_alpha(self.theme.border_subtle, 0.85)
+                            };
+                            bevel_paint.set_color(with_alpha(bevel_col, alpha));
+                            bevel_paint.anti_alias = true;
+                            pixmap.fill_path(
+                                &bevel_path,
+                                &bevel_paint,
+                                FillRule::Winding,
+                                transform,
+                                None,
+                            );
+                        }
 
                         let stroke = Stroke {
                             width: 1.0,
@@ -1016,9 +1257,9 @@ impl Renderer {
                     self.font.draw_text(
                         pixmap,
                         &chip.label,
-                        map_x(btn_x + 9.0),
-                        map_y(row_y + 17.0),
-                        10.5 * scale,
+                        map_x(btn_x + 7.0),
+                        map_y(row_y + 15.5),
+                        10.0 * scale,
                         with_alpha(label_color, alpha),
                         true,
                     );
@@ -1029,18 +1270,31 @@ impl Renderer {
             }
         }
 
-        // 11. Subtle 2px bottom timeout countdown hairline (freezes visibly on hover)
+        // 10. Subtle recessed 2px bottom TTL countdown rail (freezes visibly on hover)
+        let _ = text_max_width;
         if let Some(rem) = notif.remaining_fraction() {
             if rem > 0.01 {
-                let inner_w = (card_w - 12.0).max(0.0);
+                let inner_w = (card_w - 16.0).max(0.0);
+                let line_x = card_x + 8.0;
+                let line_y = card_y + card_h - 3.5;
+
+                // Recessed track
+                let mut track_pb = PathBuilder::new();
+                Self::add_rounded_rect(&mut track_pb, line_x, line_y, inner_w, 2.0, 1.0);
+                if let Some(path) = track_pb.finish() {
+                    let mut paint = Paint::default();
+                    paint.set_color(with_alpha(self.theme.track_bg, alpha * 0.5));
+                    paint.anti_alias = true;
+                    pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
+                }
+
+                // Active remaining TTL fill
                 let line_w = inner_w * rem;
-                let line_x = card_x + 6.0;
-                let line_y = card_y + card_h - 3.0;
                 let mut pb = PathBuilder::new();
                 Self::add_rounded_rect(&mut pb, line_x, line_y, line_w, 2.0, 1.0);
                 if let Some(path) = pb.finish() {
                     let mut paint = Paint::default();
-                    let line_alpha = if notif.is_hovered { 0.65 } else { 0.35 };
+                    let line_alpha = if notif.is_hovered { 0.8 } else { 0.5 };
                     paint.set_color(with_alpha(strip_color, alpha * line_alpha));
                     paint.anti_alias = true;
                     pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
@@ -1243,5 +1497,50 @@ mod tests {
         assert_eq!(fallback.bg, expected.bg, "card background");
         assert_eq!(fallback.accent, expected.accent, "card accent");
         assert_eq!(fallback.text_body, expected.text_body, "card body text");
+    }
+
+    #[test]
+    fn header_tags_follow_cyber_hud_grammar() {
+        assert_eq!(
+            format_header_tag("Hayato", Urgency::Normal, false, false),
+            "[ SYS // INFO ]"
+        );
+        assert_eq!(
+            format_header_tag("Hayato", Urgency::Critical, false, false),
+            "[ ALERT // CRIT ]"
+        );
+        assert_eq!(
+            format_header_tag("Hayato", Urgency::Normal, true, false),
+            "[ SYS // SYNC ]"
+        );
+        assert_eq!(
+            format_header_tag("Hayato", Urgency::Normal, false, true),
+            "[ SYS // FILE ]"
+        );
+        assert_eq!(
+            format_header_tag("Firefox", Urgency::Normal, false, false),
+            "[ FIREFOX // INFO ]"
+        );
+        assert_eq!(
+            format_header_tag("", Urgency::Low, false, false),
+            "[ SYS // LOW ]"
+        );
+    }
+
+    #[test]
+    fn every_builtin_theme_produces_readable_card_theme() {
+        for (slug, text) in hayato_theme::builtin::ALL {
+            let parsed = hayato_theme::Theme::parse(text).expect("builtin theme parses");
+            let theme = CardTheme::from_theme(&parsed);
+            let bg_luma =
+                0.299 * theme.bg.red() + 0.587 * theme.bg.green() + 0.114 * theme.bg.blue();
+            let fg_luma = 0.299 * theme.text_body.red()
+                + 0.587 * theme.text_body.green()
+                + 0.114 * theme.text_body.blue();
+            assert!(
+                (bg_luma - fg_luma).abs() > 0.30,
+                "{slug}: body text must contrast with card surface (bg={bg_luma:.2}, fg={fg_luma:.2})"
+            );
+        }
     }
 }
