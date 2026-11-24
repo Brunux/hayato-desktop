@@ -67,14 +67,14 @@
     "custom/brand": {
         "format": "<span font_desc='JetBrains Mono 14' weight='bold'>H</span>",
         "tooltip": true,
-        "tooltip-format": "Hayato · Menu (Alt+Space)\nClick: menu · Right-click: terminal",
+        "tooltip-format": "<b>[ SYS // MENU ]</b>\n&gt; Hayato Command Center (Alt+Space)\n<span alpha='65%'>[LMB] menu · [RMB] terminal</span>",
         "on-click": "~/.config/bin/bar-menu",
         "on-click-right": "foot"
     },
     "custom/brand-dot": {
         "format": "<span font_desc='JetBrains Mono 14' weight='bold'>_</span>",
         "tooltip": true,
-        "tooltip-format": "Hayato · Menu (Alt+Space)\nClick: menu · Right-click: terminal",
+        "tooltip-format": "<b>[ SYS // MENU ]</b>\n&gt; Hayato Command Center (Alt+Space)\n<span alpha='65%'>[LMB] menu · [RMB] terminal</span>",
         "on-click": "~/.config/bin/bar-menu",
         "on-click-right": "foot"
     },
@@ -103,7 +103,7 @@
     "clock": {
         "format": "<span font_desc='JetBrains Mono 13'>\uf073</span>  {:%a, %d %b  %H:%M}",
         "format-alt": "<span font_desc='JetBrains Mono 13'>\uf073</span>  {:%H:%M:%S}",
-        "tooltip-format": "<big><b>{:%A, %d %B %Y}</b></big>\n\n<tt><small>{calendar}</small></tt>\n\n<span alpha='60%'><small>Click: seconds · Right-click: year · Scroll: months</small></span>",
+        "tooltip-format": "<b>[ CLK // {:%A, %d %B %Y} ]</b>\n\n<tt><small>{calendar}</small></tt>\n\n<span alpha='65%'>[LMB] seconds · [RMB] year · [SCR] months</span>",
         "calendar": {
             "mode": "month",
             "mode-mon-col": 3,
@@ -243,10 +243,10 @@
         "format-ethernet": "<span font_desc='JetBrains Mono 13'>\uf233</span>",
         "format-linked": "<span font_desc='JetBrains Mono 13'>\uf1e6</span>",
         "format-disconnected": "<span font_desc='JetBrains Mono 13'>\udb81\uddaa</span>",
-        "tooltip-format-wifi": "Wi-Fi · {essid} ({signalStrength}%)\n{ifname}: {ipaddr} · gw {gwaddr}\nClick: Wi-Fi · Right-click: nmtui",
-        "tooltip-format-ethernet": "Ethernet · {ifname}\nIP: {ipaddr} · gw {gwaddr}\nClick: network · Right-click: nmtui",
-        "tooltip-format-linked": "Network · {ifname} (no IP)\nClick: network · Right-click: nmtui",
-        "tooltip-format-disconnected": "Network · Disconnected\nClick: Wi-Fi · Right-click: nmtui",
+        "tooltip-format-wifi": "<b>[ NET // WI-FI ]</b>\n&gt; {essid} ({signalStrength}%)\n&gt; {ifname}: {ipaddr} · gw {gwaddr}\n<span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>",
+        "tooltip-format-ethernet": "<b>[ NET // ETH ]</b>\n&gt; {ifname}: {ipaddr} · gw {gwaddr}\n<span alpha='65%'>[LMB] network · [RMB] nmtui</span>",
+        "tooltip-format-linked": "<b>[ NET // LINK ]</b>\n&gt; {ifname} (no IP)\n<span alpha='65%'>[LMB] network · [RMB] nmtui</span>",
+        "tooltip-format-disconnected": "<b>[ NET // OFFLINE ]</b>\n&gt; Disconnected\n<span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>",
         "on-click": "~/.config/bin/bar-net",
         "on-click-right": "foot --app-id=popup nmtui"
     },
@@ -263,8 +263,8 @@
                 "\udb81\udd7e"
             ]
         },
-        "tooltip-format": "Volume · {volume}%\n{desc}\nClick: audio · Right-click: mute · Scroll: level",
-        "tooltip-format-muted": "Volume · Muted ({volume}%)\n{desc}\nClick: audio · Right-click: unmute · Scroll: level",
+        "tooltip-format": "<b>[ AUDIO // {volume}% ]</b>\n&gt; {desc}\n<span alpha='65%'>[LMB] audio · [RMB] mute · [SCR] level</span>",
+        "tooltip-format-muted": "<b>[ AUDIO // MUTED ]</b>\n&gt; {desc} ({volume}%)\n<span alpha='65%'>[LMB] audio · [RMB] unmute · [SCR] level</span>",
         "scroll-step": 5,
         "max-volume": 100,
         "on-click": "~/.config/bin/bar-audio",
@@ -272,7 +272,7 @@
     },
     "backlight": {
         "format": "<span font_desc='JetBrains Mono 13'>\uf185</span>",
-        "tooltip-format": "Brightness · {percent}%\nClick: display · Scroll: brightness",
+        "tooltip-format": "<b>[ DISP // {percent}% ]</b>\n&gt; Backlight brightness\n<span alpha='65%'>[LMB] display · [SCR] brightness</span>",
         "interval": 5,
         "on-click": "~/.config/bin/hayato-display",
         "on-scroll-up": "brightnessctl set 5%+",
@@ -296,8 +296,8 @@
     // mpv asks for its own inhibitor.
     "idle_inhibitor": {
         "format": "<span font_desc='JetBrains Mono 13'>\uf0f4</span>",
-        "tooltip-format-activated": "Keep Awake · On\nClick: allow sleep",
-        "tooltip-format-deactivated": "Keep Awake · Off\nClick: keep screen awake",
+        "tooltip-format-activated": "<b>[ PWR // AWAKE ]</b>\n&gt; Idle inhibitor active\n<span alpha='65%'>[LMB] allow sleep</span>",
+        "tooltip-format-deactivated": "<b>[ PWR // IDLE ]</b>\n&gt; Normal sleep schedule\n<span alpha='65%'>[LMB] keep screen awake</span>",
         "start-activated": false
     },
     "battery": {
@@ -320,10 +320,10 @@
             "\uf241",
             "\uf240"
         ],
-        "tooltip-format": "Battery · {capacity}% ({timeTo})\nDraw: {power:.1f} W\nClick: power menu",
-        "tooltip-format-charging": "Battery · Charging {capacity}% ({timeTo})\nInput: {power:.1f} W\nClick: power menu",
-        "tooltip-format-plugged": "Battery · Plugged in ({capacity}%)\nClick: power menu",
-        "tooltip-format-full": "Battery · Full (100%)\nClick: power menu",
+        "tooltip-format": "<b>[ PWR // {capacity}% ]</b>\n&gt; Discharging ({timeTo}) · {power:.1f} W\n<span alpha='65%'>[LMB] power menu</span>",
+        "tooltip-format-charging": "<b>[ PWR // CHG {capacity}% ]</b>\n&gt; Charging ({timeTo}) · {power:.1f} W\n<span alpha='65%'>[LMB] power menu</span>",
+        "tooltip-format-plugged": "<b>[ PWR // AC {capacity}% ]</b>\n&gt; Plugged in\n<span alpha='65%'>[LMB] power menu</span>",
+        "tooltip-format-full": "<b>[ PWR // FULL 100% ]</b>\n&gt; Battery charged\n<span alpha='65%'>[LMB] power menu</span>",
         "interval": 30,
         "on-click": "~/.config/bin/bar-power",
         "on-click-right": "~/.config/bin/hayato-power"

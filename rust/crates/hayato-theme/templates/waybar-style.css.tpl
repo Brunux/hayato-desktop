@@ -47,16 +47,22 @@ window#waybar {
     margin-right: 4px;
 }
 
+/* Cyber-HUD terminal tooltips matching hayato-notify's 3px left accent rail,
+   3px corners, and monospace telemetry grammar across all 16 themes. */
 tooltip {
-    background: {{ surface }};
+    background: rgba({{ surface:rgb }}, 0.96);
     color: {{ text }};
-    border: 1px solid rgba({{ border:rgb }}, 0.85);
-    border-radius: 6px;
-    padding: 8px 11px;
+    border: 1px solid rgba({{ border:rgb }}, 0.90);
+    border-left: 3px solid {{ accent }};
+    border-radius: 3px;
+    padding: 8px 12px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
 tooltip label {
     color: {{ text }};
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
 }
 
 /* A segment: no card, no outline, the same padding for a built-in module and
