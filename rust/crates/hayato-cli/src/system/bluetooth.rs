@@ -837,6 +837,14 @@ pub fn status() -> String {
     format_status(true, &names)
 }
 
+fn pango_json_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('\\', "\\\\")
+        .replace('"', "'")
+}
+
 fn format_status(powered: bool, connected_names: &[String]) -> String {
     // The state is the picture, not a colour. Both glyphs are Material Design
     // Icons (`fonts-materialdesignicons-legacy`, already in
@@ -848,23 +856,23 @@ fn format_status(powered: bool, connected_names: &[String]) -> String {
     const OFF: &str = "\u{f00b2}";
     if !powered {
         return format!(
-            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"off\",\"tooltip\":\"Bluetooth · Off\\nClick: devices · Right-click: bluetoothctl\"}}",
+            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"off\",\"tooltip\":\"<b>[ BT // OFF ]</b>\\n&gt; Radio disabled\\n<span alpha='35%'>──────────────</span>\\n<span alpha='65%'>[LMB] devices · [RMB] bluetoothctl</span>\"}}",
             OFF
         );
     }
     if connected_names.is_empty() {
         format!(
-            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"on\",\"tooltip\":\"Bluetooth · On (none connected)\\nClick: devices · Right-click: bluetoothctl\"}}",
+            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"on\",\"tooltip\":\"<b>[ BT // READY ]</b>\\n&gt; Powered on · no devices connected\\n<span alpha='35%'>──────────────</span>\\n<span alpha='65%'>[LMB] devices · [RMB] bluetoothctl</span>\"}}",
             ON
         )
     } else {
-        let escaped: Vec<String> = connected_names
+        let lines: Vec<String> = connected_names
             .iter()
-            .map(|name| name.replace('\\', "\\\\").replace('"', "'"))
+            .map(|name| format!("&gt; {}", pango_json_escape(name)))
             .collect();
         let tooltip = format!(
-            "Bluetooth · Connected\\n{}\\nClick: devices · Right-click: bluetoothctl",
-            escaped.join("\\n")
+            "<b>[ BT // ACTIVE ]</b>\\n{}\\n<span alpha='35%'>──────────────</span>\\n<span alpha='65%'>[LMB] devices · [RMB] bluetoothctl</span>",
+            lines.join("\\n")
         );
         // No count on the bar: what is connected lives in the tooltip.
         format!(
@@ -912,10 +920,12 @@ mod tests {
         let off = format_status(false, &[]);
         assert!(off.contains("\"class\":\"off\""));
         assert!(off.contains("\u{f00b2}"));
-        let on = format_status(true, &["Buds".to_string()]);
+        assert!(off.contains("[ BT // OFF ]"));
+        let on = format_status(true, &["Buds & Co".to_string()]);
         assert!(on.contains("\"class\":\"on\""));
         assert!(on.contains("\u{f00af}"));
         assert!(!on.contains("</span> 1\""));
-        assert!(on.contains("Bluetooth · Connected\\nBuds"));
+        assert!(on.contains("[ BT // ACTIVE ]"));
+        assert!(on.contains("&gt; Buds &amp; Co"));
     }
 }

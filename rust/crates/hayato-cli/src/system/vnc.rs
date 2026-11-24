@@ -217,13 +217,13 @@ fn bar_json(mode: Mode) -> String {
         Mode::View => (
             "\u{f06e}", // Font Awesome eye
             format!(
-                "sharing this screen read-only on localhost:{PORT}\\nclick for the menu, right click to stop"
+                "<b>[ VNC // LIVE ]</b>\\n&gt; Mode: read-only · localhost:{PORT}\\n<span alpha='35%'>──────────────</span>\\n<span alpha='65%'>[LMB] menu · [RMB] stop</span>"
             ),
         ),
         Mode::Control => (
             "\u{f11c}", // Font Awesome keyboard
             format!(
-                "remote control is on: a viewer can type and click on localhost:{PORT}\\nclick for the menu, right click to stop"
+                "<b>[ VNC // CONTROL ]</b>\\n&gt; Mode: remote control · localhost:{PORT}\\n&gt; Viewer can type and click\\n<span alpha='35%'>──────────────</span>\\n<span alpha='65%'>[LMB] menu · [RMB] stop</span>"
             ),
         ),
     };
@@ -234,7 +234,7 @@ fn bar_json(mode: Mode) -> String {
 }
 
 fn empty_bar_json() -> String {
-    "{\"text\":\"\",\"class\":\"empty\",\"tooltip\":\"share this screen\"}".to_string()
+    "{\"text\":\"\",\"class\":\"empty\",\"tooltip\":\"<b>[ VNC // IDLE ]</b>\\n&gt; Screen share off\"}".to_string()
 }
 
 /// Start the wayvnc server in `mode`.

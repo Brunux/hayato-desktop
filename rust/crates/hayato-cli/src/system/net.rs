@@ -124,7 +124,7 @@ pub fn parse_nmcli_wifi(raw: &str) -> Vec<WifiAp> {
 pub fn status_json() -> String {
     let radio = out(&["nmcli", "radio", "wifi"]).unwrap_or_default();
     if radio != "enabled" {
-        return r#"{"text":"off","tooltip":"Wi-Fi radio is off","class":"disabled","percentage":0}"#
+        return r#"{"text":"off","tooltip":"<b>[ NET // RADIO OFF ]</b>\n&gt; Wi-Fi radio is disabled\n<span alpha='35%'>──────────────</span>\n<span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"disabled","percentage":0}"#
             .to_string();
     }
 
@@ -143,21 +143,28 @@ pub fn status_json() -> String {
 
     let aps = parse_nmcli_wifi(&scan_raw);
     if let Some(active) = aps.iter().find(|ap| ap.in_use) {
+        let ssid_pango = escape_pango(&active.ssid);
         format!(
-            r#"{{"text":"{}","tooltip":"Connected to {} ({}%)","class":"connected","percentage":{}}}"#,
+            r#"{{"text":"{}","tooltip":"<b>[ NET // WI-FI ]</b>\n&gt; {} ({}%)\n<span alpha='35%'>──────────────</span>\n<span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"connected","percentage":{}}}"#,
             escape_json(&active.ssid),
-            escape_json(&active.ssid),
+            escape_json(&ssid_pango),
             active.signal,
             active.signal
         )
     } else {
-        r#"{"text":"disconnected","tooltip":"Wi-Fi disconnected","class":"disconnected","percentage":0}"#
+        r#"{"text":"disconnected","tooltip":"<b>[ NET // OFFLINE ]</b>\n&gt; Wi-Fi disconnected\n<span alpha='35%'>──────────────</span>\n<span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"disconnected","percentage":0}"#
             .to_string()
     }
 }
 
 fn escape_json(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn escape_pango(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn has_saved_connection(ssid: &str) -> bool {

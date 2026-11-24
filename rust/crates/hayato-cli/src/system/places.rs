@@ -94,6 +94,12 @@ fn json_escape(text: &str) -> String {
         .replace('\n', "\\n")
 }
 
+fn pango_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 /// Render the Waybar JSON payload for `custom/drives` (`hayato menu places --bar`).
 pub fn bar_json_for(drives: &[MountedDrive]) -> String {
     if drives.is_empty() {
@@ -110,15 +116,23 @@ pub fn bar_json_for(drives: &[MountedDrive]) -> String {
     let tooltip = if drives.len() == 1 {
         let d = &drives[0];
         format!(
-            "Removable drive · {}\n{} ({} · {})\nClick: safely eject · Right-click: Places",
-            d.label, d.mountpoint, d.device, d.fstype
+            "<b>[ DRV // EJECT ]</b>\n&gt; {}\n&gt; {} ({} · {})\n<span alpha='35%'>──────────────</span>\n<span alpha='65%'>[LMB] safely eject · [RMB] places</span>",
+            pango_escape(&d.label),
+            pango_escape(&d.mountpoint),
+            pango_escape(&d.device),
+            pango_escape(&d.fstype)
         )
     } else {
-        let mut lines = vec![format!("Removable drives · {} mounted", drives.len())];
+        let mut lines = vec![format!("<b>[ DRV // {} MOUNTED ]</b>", drives.len())];
         for d in drives {
-            lines.push(format!("• {} ({})", d.label, d.mountpoint));
+            lines.push(format!(
+                "&gt; {} ({})",
+                pango_escape(&d.label),
+                pango_escape(&d.mountpoint)
+            ));
         }
-        lines.push("Click: choose drive to eject · Right-click: Places".to_string());
+        lines.push("<span alpha='35%'>──────────────</span>".to_string());
+        lines.push("<span alpha='65%'>[LMB] eject drive · [RMB] places</span>".to_string());
         lines.join("\n")
     };
     format!(
@@ -1352,8 +1366,9 @@ mmcblk0p1 part ext4 ROOT /
         };
         let one = bar_json_for(std::slice::from_ref(&d1));
         assert!(one.contains(r#""class":"mounted""#));
+        assert!(one.contains("[ DRV // EJECT ]"));
         assert!(one.contains("NURA-BACKUP"));
-        assert!(one.contains("Click: safely eject"));
+        assert!(one.contains("[LMB] safely eject"));
 
         let d2 = MountedDrive {
             label: "PHOTOS".into(),
@@ -1363,7 +1378,7 @@ mmcblk0p1 part ext4 ROOT /
         };
         let two = bar_json_for(&[d1, d2]);
         assert!(two.contains(r#""class":"mounted""#));
-        assert!(two.contains("2 mounted"));
+        assert!(two.contains("[ DRV // 2 MOUNTED ]"));
         assert!(two.contains("PHOTOS"));
     }
 

@@ -49,7 +49,8 @@ window#waybar {
 
 /* Cyber-HUD terminal tooltips matching hayato-notify's 3px left accent rail,
    3px corners, and monospace telemetry grammar across all 16 themes. */
-tooltip {
+tooltip,
+tooltip.background {
     background: rgba({{ surface:rgb }}, 0.96);
     color: {{ text }};
     border: 1px solid rgba({{ border:rgb }}, 0.90);
@@ -59,10 +60,26 @@ tooltip {
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
+tooltip decoration {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+tooltip > box {
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+}
+
 tooltip label {
     color: {{ text }};
     font-family: "JetBrains Mono", monospace;
     font-size: 12px;
+    font-weight: 500;
+    padding: 0;
+    margin: 0;
 }
 
 /* A segment: no card, no outline, the same padding for a built-in module and

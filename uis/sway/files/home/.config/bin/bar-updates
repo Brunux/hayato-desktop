@@ -17,11 +17,11 @@ n=${n:-0}
 icon="<span font_desc='JetBrains Mono 13'></span>"
 
 if [ "$n" -eq 0 ]; then
-	printf '{"text":"","class":"empty","tooltip":"System up to date"}\n'
+	printf '{"text":"","class":"empty","tooltip":"<b>[ PKG // SYNCED ]</b>\\n&gt; System up to date"}\n'
 	exit 0
 fi
 
 unit=packages
 [ "$n" -eq 1 ] && unit=package
-printf '{"text":"%s","class":"pending","tooltip":"Updates · %s %s ready\\nClick: open updater"}\n' \
+printf '{"text":"%s","class":"pending","tooltip":"<b>[ PKG // UPDATES ]</b>\\n&gt; %s %s ready to upgrade\\n<span alpha='\''35%'\''>──────────────</span>\\n<span alpha='\''65%'\''>[LMB] open updater</span>"}\n' \
 	"$icon" "$n" "$unit"
