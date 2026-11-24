@@ -48,7 +48,7 @@ use crate::{cache_dir, config_dir, fnv1a_64};
 /// Display name advertised to Spotify Connect for this Chromebook.
 pub const LOCAL_CONNECT_NAME: &str = "Hayato Cassette";
 
-const STREAMING_REDIRECT_URI: &str = "http://127.0.0.1:8899/login";
+const STREAMING_REDIRECT_URI: &str = "http://127.0.0.1:8898/login";
 
 #[derive(Clone, Debug)]
 pub enum ConnectEvent {
@@ -443,8 +443,8 @@ async fn handle_cmd(
 /// Silent browser PKCE flow requesting the `streaming` scope using librespot's
 /// built-in Keymaster client ID (never writes to stdout, safe inside Ratatui TUI).
 fn run_streaming_pkce(client_id: &str) -> Result<String, String> {
-    let listener = TcpListener::bind("127.0.0.1:8899")
-        .map_err(|e| format!("bind 127.0.0.1:8899 for local audio login: {e}"))?;
+    let listener = TcpListener::bind("127.0.0.1:8898")
+        .map_err(|e| format!("bind 127.0.0.1:8898 for local audio login: {e}"))?;
     let _ = listener.set_nonblocking(true);
 
     let (verifier, challenge) = generate_pkce();

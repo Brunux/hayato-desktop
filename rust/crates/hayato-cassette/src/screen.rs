@@ -1192,31 +1192,36 @@ impl CassetteScreen {
         };
         let mut list = ListState::new().with_empty(empty_msg);
         let target_id = self.active_device_id();
-        let rows: Vec<Row> = self
-            .devices
-            .iter()
-            .map(|d| {
-                let is_local = self.is_local_device(d);
-                let is_target = target_id.as_deref() == Some(d.id.as_str());
-                let dot = if is_target { "● " } else { "○ " };
-                let label = if is_local {
-                    format!("{dot}{} (This Device)", d.name)
-                } else {
-                    format!("{dot}{}", d.name)
-                };
-                let badge = if is_target {
-                    "default"
-                } else if d.is_active {
-                    "active"
-                } else {
-                    "transfer"
-                };
-                Row::new(label)
-                    .detail(format!("{} · Vol {}%", d.kind, d.volume_pct))
-                    .value(badge)
-                    .glyph(Glyph::Volume)
-            })
-            .collect();
+        let mut rows: Vec<Row> = Vec::new();
+        if !self.local_connect_ready {
+            rows.push(
+                Row::new("★ Enable This Device Audio (Play on this Chromebook)")
+                    .detail("1-click Spotify pairing · defaults playback to this Chromebook")
+                    .value("enable")
+                    .glyph(Glyph::Volume),
+            );
+        }
+        rows.extend(self.devices.iter().map(|d| {
+            let is_local = self.is_local_device(d);
+            let is_target = target_id.as_deref() == Some(d.id.as_str());
+            let dot = if is_target { "● " } else { "○ " };
+            let label = if is_local {
+                format!("{dot}{} (This Device)", d.name)
+            } else {
+                format!("{dot}{}", d.name)
+            };
+            let badge = if is_target {
+                "default"
+            } else if d.is_active {
+                "active"
+            } else {
+                "transfer"
+            };
+            Row::new(label)
+                .detail(format!("{} · Vol {}%", d.kind, d.volume_pct))
+                .value(badge)
+                .glyph(Glyph::Volume)
+        }));
         list.set_rows(rows);
         self.phase = CassettePhase::DevicePicker(list);
         self.sync_chrome();
@@ -2970,25 +2975,39 @@ impl Screen for CassetteScreen {
                 _ => {
                     if let ListAction::Activated(idx) =
                         list.handle(key, self.rows_height.get(), design)
-                        && let Some(dev) = self.devices.get(idx).cloned()
                     {
-                        let is_local = self.is_local_device(&dev);
-                        self.preferred_device_id = if is_local {
-                            None
+                        if !self.local_connect_ready && idx == 0 {
+                            self.hub.send(ProviderCmd::EnableLocalConnect);
+                            self.status_line =
+                                "Opening Firefox to enable This Device audio…".into();
+                            self.phase = CassettePhase::Normal;
+                            self.sync_chrome();
+                            return Outcome::Consumed;
+                        }
+                        let dev_idx = if self.local_connect_ready {
+                            idx
                         } else {
-                            Some(dev.id.clone())
+                            idx.saturating_sub(1)
                         };
-                        self.hub.send(ProviderCmd::TransferDevice {
-                            provider: dev.provider,
-                            device_id: dev.id,
-                        });
-                        self.status_line = if is_local {
-                            "Switched Spotify playback to This Device".into()
-                        } else {
-                            format!("Switched Spotify playback to {}", dev.name)
-                        };
-                        self.phase = CassettePhase::Normal;
-                        self.sync_chrome();
+                        if let Some(dev) = self.devices.get(dev_idx).cloned() {
+                            let is_local = self.is_local_device(&dev);
+                            self.preferred_device_id = if is_local {
+                                None
+                            } else {
+                                Some(dev.id.clone())
+                            };
+                            self.hub.send(ProviderCmd::TransferDevice {
+                                provider: dev.provider,
+                                device_id: dev.id,
+                            });
+                            self.status_line = if is_local {
+                                "Switched Spotify playback to This Device".into()
+                            } else {
+                                format!("Switched Spotify playback to {}", dev.name)
+                            };
+                            self.phase = CassettePhase::Normal;
+                            self.sync_chrome();
+                        }
                     }
                 }
             }
