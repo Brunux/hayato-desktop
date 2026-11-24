@@ -1,10 +1,11 @@
 # Hayato Cassette — Music Player
 
 **Hayato Cassette** (`hayato-cassette`, also linked as `hayato-music`) is Hayato OS's
-terminal-native music player combining a **Spotify Web Player-inspired layout** (Left Library
-Sidebar, Center Main Stage, Always-Visible Top Search Box, Toggleable Right Drawer, and
-Persistent Bottom Player Bar) with Hayato's **Cyber-HUD** aesthetic (Sixel album art,
-`tui-big-text`, 32-band FFT spectrum, and beat-reactive theme borders).
+terminal-native music player combining a **streamlined deck + library layout** (Top Source Filter
+Tabs `[ All ] [ Spotify ] [ Local ]` + Search Box, Left Library Sidebar, Persistent
+`HAYATO // CASSETTE DECK` with Album Art, Transport Controls, Live Visualizer, Scrubber &
+Volume, Center Track List, Toggleable Right Drawer, and Shortcut Keybar) with Hayato's
+**Cyber-HUD** aesthetic (Sixel album art, 32-band FFT spectrum, and beat-reactive theme borders).
 
 Built on a modular `MusicProvider` architecture (`hayato-music-core/src/providers/`), it
 supports **Spotify** (OAuth 2.0 PKCE + 2026 Web API `/items` + Connect live sync + Liked Songs
@@ -14,9 +15,9 @@ Opus, WAV, M4A/AAC) side by side.
 ## Opening & Scratchpad
 
 - Press **`Alt+M`** (or choose **Cassette** in `Alt+Space`) to summon Hayato Cassette.
-- Press **`Alt+M`** or **`Esc`** on Home to hide it to Sway's scratchpad while music keeps playing.
+- Press **`Alt+M`** or **`Esc`** on the library view to hide it to Sway's scratchpad while music keeps playing.
 - Press **`Q`** to stop playback and quit cleanly (zero background processes).
-- Press **`w`** to toggle between the full Cyberdeck (`1120×680`) and the compact **Mini HUD** (`560×300`).
+- Press **`w`** to toggle between the full Cyberdeck (`1120×680`) and the compact **Mini HUD** (`560×300`). Your chosen size persists across Waybar clicks, `Alt+M` toggles, and restarts.
 
 ## Controls (Zero-Conflict Keymap)
 
@@ -30,8 +31,8 @@ Opus, WAV, M4A/AAC) side by side.
 | `R` / `F5` | Refresh Spotify playlists/devices & rescan local `~/Music` |
 | `/` or `Ctrl+K` | Focus always-visible Top Search Box (auto-switches to Search) |
 | `D` | Open Spotify Connect Device Picker |
-| `1` / `2` / `3` / `4` | Home / Focus Library Sidebar / Queue Drawer / Settings |
-| `b` / `i` / `q` / `L` | Toggle Left Sidebar / Now Playing Drawer / Queue / Synced `.lrc` Lyrics |
+| `1` / `2` / `3` / `4` | Library View / Focus Library Sidebar / Queue Drawer / Settings |
+| `b` / `q` / `L` | Toggle Left Sidebar / Queue Drawer / Synced `.lrc` Lyrics |
 | `v` / `V` | Cycle Visualizer (`Spectrum → Mirror EQ → Oscilloscope → VU Deck → Cyber Plasma → Off`) / Full-Center Visualizer |
 | `Tab` / `h` / `l` | Switch focus between visible panes |
 | `Enter` / `P` | Open playlist (or play track) / Play entire playlist immediately |

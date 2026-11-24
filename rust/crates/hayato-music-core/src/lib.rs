@@ -158,6 +158,8 @@ pub struct CassetteConfig {
     pub show_lyrics: bool,
     #[serde(default)]
     pub notify_when_unfocused: bool,
+    #[serde(default)]
+    pub mini_mode: bool,
     pub spotify_client_id: String,
 }
 
@@ -206,6 +208,7 @@ impl Default for CassetteConfig {
             volume_pct: 80,
             show_lyrics: false,
             notify_when_unfocused: false,
+            mini_mode: false,
             spotify_client_id: String::new(),
         }
     }

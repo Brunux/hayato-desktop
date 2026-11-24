@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::Ordering;
 
-use hayato_music_core::{NowPlayingFile, PlayState, format_time, runtime_dir};
+use hayato_music_core::{NowPlayingFile, PlayState, format_time, load_config, runtime_dir};
 use hayato_ui::{App, Design, Header};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -80,6 +80,7 @@ fn main() {
     let code = run_tui(play_file, start_mini);
 
     NowPlayingFile::clear();
+    let _ = std::fs::remove_file(runtime_dir().join("mode"));
     let _ = std::fs::remove_file(&pid_file);
     std::process::exit(code);
 }
@@ -133,16 +134,25 @@ fn run_tui(play_file: Option<PathBuf>, start_mini: bool) -> i32 {
     code
 }
 
+fn is_mini_state() -> bool {
+    let mode_path = runtime_dir().join("mode");
+    if let Ok(text) = std::fs::read_to_string(mode_path) {
+        return text.trim() == "mini";
+    }
+    load_config().mini_mode
+}
+
 fn toggle_window() {
+    let mini = is_mini_state();
     match sway_ipc::window_state() {
         sway_ipc::WindowState::Visible => {
             let _ = sway_ipc::hide_to_scratchpad();
         }
         sway_ipc::WindowState::Hidden => {
-            let _ = sway_ipc::show_from_scratchpad(false);
+            let _ = sway_ipc::show_from_scratchpad(mini);
         }
         sway_ipc::WindowState::Absent => {
-            spawn_in_foot(false, None);
+            spawn_in_foot(mini, None);
         }
     }
 }
