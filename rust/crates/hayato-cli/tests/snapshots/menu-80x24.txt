@@ -1,4 +1,4 @@
-Hayato · Menu                                                       37 commands
+Hayato · Menu                                                       38 commands
 ────────────────────────────────────────────────────────────────────────────────
 ╭ Commands ────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                          │
@@ -6,9 +6,10 @@ Hayato · Menu                                                       37 commands
 │  Workspace  ────────────────────────────────────────────────────────────── █ │
 │ ▍   Terminal  foot                                              workspace █ │
 │     Files  browse folders with preview                          workspace █ │
+│     Files (window)  favnyr: folders, drag and drop, trash       workspace █ │
 │     Notes  quick notes, ink notes, sign a PDF                   workspace █ │
 │     Search inside files  full-text ripgrep over home            workspace █ │
-│     Places & Drives  bookmarks, USB/SD mount, eject, format     workspace █ │
+│     Places & Drives  bookmarks, USB/SD mount, eject, format     workspace │ │
 │     Download  video or audio link → ~/Downloads                 workspace │ │
 │     Cassette  music player: local library & Spotify             workspace │ │
 │     Games  retro ROMs & Hayato games                            workspace │ │
@@ -19,6 +20,5 @@ Hayato · Menu                                                       37 commands
 │     Share  send/receive files, links, clipboard & Wi-Fi QR        capture │ │
 │  Utilities  ────────────────────────────────────────────────────────────── │ │
 │     Clipboard  paste history & saved images                     utilities │ │
-│     Calculator  live math, Enter copies the result              utilities │ │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close

@@ -257,7 +257,9 @@ impl Screen for StudioScreen {
 
         if let StudioPhase::Countdown { remaining, started } = self.phase {
             let inner = draw_card(ctx.buf, ctx.area, ctx.design, Some("Photo Snap"), true);
-            let left = remaining.saturating_sub(started.elapsed().as_secs() as u8).max(1);
+            let left = remaining
+                .saturating_sub(started.elapsed().as_secs() as u8)
+                .max(1);
             let txt = left.to_string();
             let pw = pixel_width(&txt);
             let cx = inner.x + inner.width.saturating_sub(pw) / 2;
@@ -327,7 +329,14 @@ impl Screen for StudioScreen {
                 } else {
                     "[t] Target  : ● Whole screen   ○ Area (drag slurp)"
                 };
-                let _ = put_trunc(ctx.buf, inner.x, y, target_line, inner.width, ctx.design.style(TextStyle::Body));
+                let _ = put_trunc(
+                    ctx.buf,
+                    inner.x,
+                    y,
+                    target_line,
+                    inner.width,
+                    ctx.design.style(TextStyle::Body),
+                );
                 y += 2;
                 let _ = put_trunc(
                     ctx.buf,
@@ -342,7 +351,10 @@ impl Screen for StudioScreen {
                     ctx.buf,
                     inner.x,
                     y,
-                    &format!("[a] Audio   : {} (live-switchable)", self.options.audio.short_label()),
+                    &format!(
+                        "[a] Audio   : {} (live-switchable)",
+                        self.options.audio.short_label()
+                    ),
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
@@ -367,7 +379,11 @@ impl Screen for StudioScreen {
                     y,
                     &format!(
                         "[s] Sticky  : {} · [m] Mirror: {}",
-                        if self.options.sticky { "ALL WS" } else { "CURRENT WS" },
+                        if self.options.sticky {
+                            "ALL WS"
+                        } else {
+                            "CURRENT WS"
+                        },
                         if self.options.mirror { "ON" } else { "OFF" }
                     ),
                     inner.width,
@@ -375,7 +391,14 @@ impl Screen for StudioScreen {
                 );
                 y += 2;
                 if y < inner.bottom().saturating_sub(1) {
-                    let _ = draw_badge(ctx.buf, inner.x, y, ctx.design, "  [ Enter ]  ● START SCREEN RECORDING  ", ColorRole::Danger);
+                    let _ = draw_badge(
+                        ctx.buf,
+                        inner.x,
+                        y,
+                        ctx.design,
+                        "  [ Enter ]  ● START SCREEN RECORDING  ",
+                        ColorRole::Danger,
+                    );
                 }
             }
             StudioMode::Webcam => {
@@ -401,7 +424,10 @@ impl Screen for StudioScreen {
                     ctx.buf,
                     inner.x,
                     y,
-                    &format!("[a] Audio   : {} (live-switchable)", self.options.audio.short_label()),
+                    &format!(
+                        "[a] Audio   : {} (live-switchable)",
+                        self.options.audio.short_label()
+                    ),
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
@@ -410,13 +436,23 @@ impl Screen for StudioScreen {
                     ctx.buf,
                     inner.x,
                     y,
-                    &format!("[m] Mirror  : {}", if self.options.mirror { "ON" } else { "OFF" }),
+                    &format!(
+                        "[m] Mirror  : {}",
+                        if self.options.mirror { "ON" } else { "OFF" }
+                    ),
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
                 y += 2;
                 if y < inner.bottom().saturating_sub(1) {
-                    let _ = draw_badge(ctx.buf, inner.x, y, ctx.design, "  [ Enter ]  ● START WEBCAM RECORDING  ", ColorRole::Danger);
+                    let _ = draw_badge(
+                        ctx.buf,
+                        inner.x,
+                        y,
+                        ctx.design,
+                        "  [ Enter ]  ● START WEBCAM RECORDING  ",
+                        ColorRole::Danger,
+                    );
                 }
             }
             StudioMode::Photo => {
@@ -442,7 +478,10 @@ impl Screen for StudioScreen {
                     ctx.buf,
                     inner.x,
                     y,
-                    &format!("[m] Mirror  : {}", if self.options.mirror { "ON" } else { "OFF" }),
+                    &format!(
+                        "[m] Mirror  : {}",
+                        if self.options.mirror { "ON" } else { "OFF" }
+                    ),
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
@@ -464,7 +503,14 @@ impl Screen for StudioScreen {
                 );
                 y += 2;
                 if y < inner.bottom().saturating_sub(1) {
-                    let _ = draw_badge(ctx.buf, inner.x, y, ctx.design, "  [ Space ]  SNAP PHOTO  ", ColorRole::Accent);
+                    let _ = draw_badge(
+                        ctx.buf,
+                        inner.x,
+                        y,
+                        ctx.design,
+                        "  [ Space ]  SNAP PHOTO  ",
+                        ColorRole::Accent,
+                    );
                 }
             }
         }
@@ -498,7 +544,14 @@ impl Screen for StudioScreen {
                     }
                     let tag = if item.is_photo { "[IMG]" } else { "[VID]" };
                     let line = format!("{tag} {} ({})", item.name, item.size);
-                    let _ = put_trunc(ctx.buf, r_in.x, ry, &line, r_in.width, ctx.design.style(TextStyle::Body));
+                    let _ = put_trunc(
+                        ctx.buf,
+                        r_in.x,
+                        ry,
+                        &line,
+                        r_in.width,
+                        ctx.design.style(TextStyle::Body),
+                    );
                     ry += 1;
                 }
             }
@@ -654,7 +707,9 @@ impl Screen for StudioScreen {
                     self.phase = StudioPhase::ConfirmDelete {
                         path: p,
                         confirm: Confirm::new("Delete last photo?", "Delete")
-                            .with_detail("This permanently removes the photo from ~/Pictures/Camera.")
+                            .with_detail(
+                                "This permanently removes the photo from ~/Pictures/Camera.",
+                            )
                             .destructive(true),
                     };
                 }
@@ -705,10 +760,7 @@ impl Screen for StudioScreen {
 
 fn scan_recent() -> Vec<RecentItem> {
     let mut found = Vec::new();
-    let dirs = [
-        dirs::video_dir().unwrap_or_default(),
-        camera_photos_dir(),
-    ];
+    let dirs = [dirs::video_dir().unwrap_or_default(), camera_photos_dir()];
     for dir in dirs {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
@@ -731,9 +783,7 @@ fn scan_recent() -> Vec<RecentItem> {
             let Ok(meta) = entry.metadata() else {
                 continue;
             };
-            let modified = meta
-                .modified()
-                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            let modified = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
             let name = path
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())

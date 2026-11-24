@@ -311,7 +311,9 @@ fn api_action(
         cmd.args(["--data", ""]);
     }
     cmd.arg(url).stdin(Stdio::null());
-    let out = cmd.output().map_err(|e| format!("curl {method} failed: {e}"))?;
+    let out = cmd
+        .output()
+        .map_err(|e| format!("curl {method} failed: {e}"))?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
@@ -319,7 +321,11 @@ fn api_action(
 }
 
 /// Search Spotify tracks via Web API.
-pub fn search_tracks(tok: &mut SpotifyToken, query: &str, limit: usize) -> Result<Vec<Track>, String> {
+pub fn search_tracks(
+    tok: &mut SpotifyToken,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<Track>, String> {
     let url = format!(
         "https://api.spotify.com/v1/search?type=track&limit={}&q={}",
         limit.clamp(1, 10),
@@ -409,16 +415,31 @@ pub fn play_uri(tok: &mut SpotifyToken, uri: &str, device_id: Option<&str>) -> R
 }
 
 pub fn pause_remote(tok: &mut SpotifyToken) -> Result<(), String> {
-    api_action(tok, "PUT", "https://api.spotify.com/v1/me/player/pause", None)
+    api_action(
+        tok,
+        "PUT",
+        "https://api.spotify.com/v1/me/player/pause",
+        None,
+    )
 }
 
 pub fn resume_remote(tok: &mut SpotifyToken) -> Result<(), String> {
-    api_action(tok, "PUT", "https://api.spotify.com/v1/me/player/play", None)
+    api_action(
+        tok,
+        "PUT",
+        "https://api.spotify.com/v1/me/player/play",
+        None,
+    )
 }
 
 pub fn transfer_device(tok: &mut SpotifyToken, device_id: &str) -> Result<(), String> {
     let body = serde_json::json!({ "device_ids": [device_id], "play": true }).to_string();
-    api_action(tok, "PUT", "https://api.spotify.com/v1/me/player", Some(&body))
+    api_action(
+        tok,
+        "PUT",
+        "https://api.spotify.com/v1/me/player",
+        Some(&body),
+    )
 }
 
 fn parse_spotify_track(item: &Value) -> Option<Track> {
@@ -472,8 +493,16 @@ fn base64url_encode(data: &[u8]) -> String {
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b0 = u32::from(chunk[0]);
-        let b1 = if chunk.len() > 1 { u32::from(chunk[1]) } else { 0 };
-        let b2 = if chunk.len() > 2 { u32::from(chunk[2]) } else { 0 };
+        let b1 = if chunk.len() > 1 {
+            u32::from(chunk[1])
+        } else {
+            0
+        };
+        let b2 = if chunk.len() > 2 {
+            u32::from(chunk[2])
+        } else {
+            0
+        };
         let triple = (b0 << 16) | (b1 << 8) | b2;
         out.push(TABLE[((triple >> 18) & 0x3F) as usize] as char);
         out.push(TABLE[((triple >> 12) & 0x3F) as usize] as char);

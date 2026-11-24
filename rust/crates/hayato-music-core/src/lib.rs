@@ -99,7 +99,11 @@ impl Track {
         match &self.source {
             SourceKind::Local { path, .. } => (true, path.to_string_lossy().into_owned()),
             SourceKind::Spotify { url, uri } => {
-                let target = if url.is_empty() { uri.clone() } else { url.clone() };
+                let target = if url.is_empty() {
+                    uri.clone()
+                } else {
+                    url.clone()
+                };
                 (false, target)
             }
         }
@@ -200,8 +204,8 @@ impl VisualizerMode {
 
 impl Default for CassetteConfig {
     fn default() -> Self {
-        let default_dir = dirs::audio_dir()
-            .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Music"));
+        let default_dir =
+            dirs::audio_dir().unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Music"));
         Self {
             music_dirs: vec![default_dir],
             visualizer: VisualizerMode::Spectrum,

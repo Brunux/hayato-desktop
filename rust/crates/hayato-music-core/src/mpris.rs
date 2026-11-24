@@ -222,7 +222,9 @@ impl MprisHandle {
             .spawn(move || {
                 let conn = Builder::session()
                     .and_then(|b| b.name("org.mpris.MediaPlayer2.hayato_cassette"))
-                    .and_then(|b| b.serve_at("/org/mpris/MediaPlayer2", RootIface { tx: tx.clone() }))
+                    .and_then(|b| {
+                        b.serve_at("/org/mpris/MediaPlayer2", RootIface { tx: tx.clone() })
+                    })
                     .and_then(|b| {
                         b.serve_at(
                             "/org/mpris/MediaPlayer2",

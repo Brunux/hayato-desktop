@@ -276,7 +276,10 @@ impl Screen for LiveHudScreen {
                 ctx.buf,
                 inner.x,
                 cam_y + 3,
-                &format!("[c] Corner: {} (TL/TR/BL/BR/CTR)", self.session.cam_corner.short()),
+                &format!(
+                    "[c] Corner: {} (TL/TR/BL/BR/CTR)",
+                    self.session.cam_corner.short()
+                ),
                 inner.width.saturating_sub(20),
                 ctx.design.style(TextStyle::Code),
             );

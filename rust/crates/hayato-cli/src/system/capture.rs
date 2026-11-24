@@ -1634,10 +1634,7 @@ mod tests {
 
     #[test]
     fn find_webcam_skips_vcodec_and_uvc_metadata_nodes() {
-        let base = std::env::temp_dir().join(format!(
-            "hayato-v4l2-test-{}",
-            std::process::id()
-        ));
+        let base = std::env::temp_dir().join(format!("hayato-v4l2-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         let drivers = base.join("drivers");
         for drv in ["mtk-vcodec-enc", "mtk-vcodec-dec", "uvcvideo"] {

@@ -185,10 +185,7 @@ impl ShareServer {
     }
 
     pub fn snapshot(&self) -> TransferTelemetry {
-        self.telemetry
-            .lock()
-            .map(|t| t.clone())
-            .unwrap_or_default()
+        self.telemetry.lock().map(|t| t.clone()).unwrap_or_default()
     }
 }
 
@@ -478,9 +475,7 @@ fn prepare_serve_kind(
         SharePayload::Text { content, label, .. } => Ok((
             ServeKind::Text {
                 content: content.clone(),
-                label: label
-                    .clone()
-                    .unwrap_or_else(|| "Shared Text".to_string()),
+                label: label.clone().unwrap_or_else(|| "Shared Text".to_string()),
             },
             None,
         )),
@@ -769,10 +764,7 @@ fn handle_client(
                     let disp = if sub == "/raw" {
                         "inline".to_string()
                     } else {
-                        format!(
-                            "attachment; filename=\"{}\"",
-                            sanitize_filename(filename)
-                        )
+                        format!("attachment; filename=\"{}\"", sanitize_filename(filename))
                     };
                     let hdr = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: {mime}\r\n\

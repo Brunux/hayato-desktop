@@ -174,7 +174,13 @@ pub fn push_to_peer(peer: &LocalSendPeer, payload: &SharePayload) -> Result<Stri
                 .and_then(|s| s.to_str())
                 .unwrap_or("file.bin")
                 .to_string();
-            (name, "application/octet-stream", meta.len(), None, p.clone())
+            (
+                name,
+                "application/octet-stream",
+                meta.len(),
+                None,
+                p.clone(),
+            )
         }
         SharePayload::Text { content, .. } => {
             let tmp = std::env::temp_dir().join(format!(

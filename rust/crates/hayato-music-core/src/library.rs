@@ -272,7 +272,11 @@ pub fn sort_tracks(tracks: &mut [Track]) {
             .to_lowercase()
             .cmp(&b.artist.to_lowercase())
             .then_with(|| a.album.to_lowercase().cmp(&b.album.to_lowercase()))
-            .then_with(|| a.track_number.unwrap_or(9999).cmp(&b.track_number.unwrap_or(9999)))
+            .then_with(|| {
+                a.track_number
+                    .unwrap_or(9999)
+                    .cmp(&b.track_number.unwrap_or(9999))
+            })
             .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
     });
 }
@@ -367,7 +371,10 @@ pub fn save_m3u8_playlist(
     let mut body = String::from("#EXTM3U\n");
     for t in tracks {
         if let SourceKind::Local { path, .. } = &t.source {
-            body.push_str(&format!("#EXTINF:{},{} - {}\n", t.duration_secs, t.artist, t.title));
+            body.push_str(&format!(
+                "#EXTINF:{},{} - {}\n",
+                t.duration_secs, t.artist, t.title
+            ));
             body.push_str(&format!("{}\n", path.display()));
         }
     }
@@ -390,7 +397,7 @@ mod tests {
             "Night Drive",
             std::slice::from_ref(&track),
         )
-            .unwrap();
+        .unwrap();
         assert!(saved.exists());
         let loaded = load_local_playlists(&[tmp.path().to_path_buf()], &[track]);
         assert_eq!(loaded.len(), 1);

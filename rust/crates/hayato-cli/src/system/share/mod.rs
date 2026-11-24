@@ -171,7 +171,8 @@ pub fn try_capture_stdin(args: &[String]) -> Option<i32> {
         return None;
     }
     let text = String::from_utf8_lossy(&buf).to_string();
-    let payload = SharePayload::from_text_or_url(text, Some("Piped input".into()), ShareSource::Stdin);
+    let payload =
+        SharePayload::from_text_or_url(text, Some("Piped input".into()), ShareSource::Stdin);
     match spawn_detached(&payload) {
         Ok(()) => Some(0),
         Err(e) => {
@@ -244,8 +245,8 @@ pub fn open_with_preset(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
-    let mut screen = ShareScreen::new(payload, preset)
-        .map_err(|e| crate::Failure::new("Hayato Share", e))?;
+    let mut screen =
+        ShareScreen::new(payload, preset).map_err(|e| crate::Failure::new("Hayato Share", e))?;
     crate::run_screen(terminal, design, "Hayato Share", &mut screen)
 }
 
@@ -258,8 +259,8 @@ fn parse_cli(args: &[String]) -> Result<(SharePayload, SharePreset), String> {
                 let path = args
                     .get(i + 1)
                     .ok_or_else(|| "--manifest requires a file path".to_string())?;
-                let raw = std::fs::read(path)
-                    .map_err(|e| format!("cannot read share manifest: {e}"))?;
+                let raw =
+                    std::fs::read(path).map_err(|e| format!("cannot read share manifest: {e}"))?;
                 let _ = std::fs::remove_file(path);
                 let payload: SharePayload = serde_json::from_slice(&raw)
                     .map_err(|e| format!("invalid share manifest: {e}"))?;
@@ -271,7 +272,10 @@ fn parse_cli(args: &[String]) -> Result<(SharePayload, SharePreset), String> {
                     .filter(|s| !s.starts_with('-'))
                     .map(PathBuf::from)
                     .unwrap_or_else(default_downloads_dir);
-                return Ok((SharePayload::Receive { dest_dir: dest }, SharePreset::Receive));
+                return Ok((
+                    SharePayload::Receive { dest_dir: dest },
+                    SharePreset::Receive,
+                ));
             }
             "--clipboard" => {
                 if let Some(p) = clipboard_payload() {
@@ -361,8 +365,7 @@ pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
-    let (payload, preset) =
-        parse_cli(args).map_err(|e| crate::Failure::new("Hayato Share", e))?;
+    let (payload, preset) = parse_cli(args).map_err(|e| crate::Failure::new("Hayato Share", e))?;
     open_with_preset(payload, preset, terminal, design)
 }
 

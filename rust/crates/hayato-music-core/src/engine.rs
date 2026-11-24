@@ -459,7 +459,8 @@ impl DecoderBackend {
                     Ok(decoded) => {
                         let spec = *decoded.spec();
                         let cap = decoded.capacity() as u64;
-                        let sbuf = sample_buf.get_or_insert_with(|| SampleBuffer::<f32>::new(cap, spec));
+                        let sbuf =
+                            sample_buf.get_or_insert_with(|| SampleBuffer::<f32>::new(cap, spec));
                         if sbuf.capacity() < decoded.frames() * spec.channels.count() {
                             *sbuf = SampleBuffer::<f32>::new(cap, spec);
                         }
@@ -554,7 +555,9 @@ fn engine_loop(
                     }
                 }
                 EngineCommand::SetVolume(v) => {
-                    telemetry.volume_pct.store(u32::from(v.min(100)), Ordering::Relaxed);
+                    telemetry
+                        .volume_pct
+                        .store(u32::from(v.min(100)), Ordering::Relaxed);
                 }
                 EngineCommand::SetMuted(m) => {
                     telemetry.muted.store(m, Ordering::Relaxed);
@@ -582,9 +585,9 @@ fn engine_loop(
                         Ok(dec) => {
                             let sr = dec.sample_rate();
                             let ch = dec.channels();
-                            let need_reopen = output.as_ref().is_none_or(|o| {
-                                o.sample_rate != sr || o.channels != ch
-                            });
+                            let need_reopen = output
+                                .as_ref()
+                                .is_none_or(|o| o.sample_rate != sr || o.channels != ch);
                             if need_reopen {
                                 output = None;
                                 match open_output(

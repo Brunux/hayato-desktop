@@ -733,7 +733,8 @@ impl ClipScreen {
                         let runtime = std::env::var("XDG_RUNTIME_DIR")
                             .map(std::path::PathBuf::from)
                             .unwrap_or_else(|_| std::env::temp_dir());
-                        let tmp = runtime.join(format!("hayato-clip-share-{}.png", std::process::id()));
+                        let tmp =
+                            runtime.join(format!("hayato-clip-share-{}.png", std::process::id()));
                         let ok = std::process::Command::new("cliphist")
                             .args(["decode", &entry.id])
                             .output()

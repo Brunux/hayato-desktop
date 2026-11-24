@@ -203,8 +203,9 @@ impl ShareScreen {
     fn activate_lan(&mut self, check_large: bool) -> Result<(), String> {
         if check_large && self.server.is_none() && self.is_large_bundle() {
             self.phase = SharePhase::ConfirmLargeZip(
-                Confirm::new("Archive folder over 100 MiB?", "Zip & Share")
-                    .with_detail("Bundling a large folder into an ephemeral ZIP may take a moment."),
+                Confirm::new("Archive folder over 100 MiB?", "Zip & Share").with_detail(
+                    "Bundling a large folder into an ephemeral ZIP may take a moment.",
+                ),
             );
             self.sync_chrome();
             return Ok(());
@@ -335,9 +336,7 @@ impl ShareScreen {
 
             if matches!(
                 self.payload,
-                SharePayload::Url { .. }
-                    | SharePayload::File(_)
-                    | SharePayload::Image { .. }
+                SharePayload::Url { .. } | SharePayload::File(_) | SharePayload::Image { .. }
             ) {
                 rows.push(
                     Row::new("Open in Default App")
@@ -648,13 +647,7 @@ impl Screen for ShareScreen {
 
         match &self.phase {
             SharePhase::DirectQr { qr, title, text } => {
-                let inner = draw_card(
-                    ctx.buf,
-                    ctx.area,
-                    ctx.design,
-                    Some(title.as_str()),
-                    true,
-                );
+                let inner = draw_card(ctx.buf, ctx.area, ctx.design, Some(title.as_str()), true);
                 if inner.height >= 6 {
                     let footer_y = inner.bottom().saturating_sub(1);
                     let qr_area = Rect::new(
@@ -712,7 +705,14 @@ impl Screen for ShareScreen {
 
         let inner = draw_card(ctx.buf, left_area, ctx.design, Some("Share Targets"), true);
         if inner.width >= 16 && inner.height >= 6 {
-            let x = draw_badge(ctx.buf, inner.x, inner.y, ctx.design, self.badge, self.badge_role);
+            let x = draw_badge(
+                ctx.buf,
+                inner.x,
+                inner.y,
+                ctx.design,
+                self.badge,
+                self.badge_role,
+            );
             let _ = put_trunc(
                 ctx.buf,
                 x + 2,
@@ -820,9 +820,7 @@ impl Screen for ShareScreen {
                                 Ok(p) => {
                                     self.status_line = format!(
                                         "Saved {}",
-                                        p.file_name()
-                                            .unwrap_or_default()
-                                            .to_string_lossy()
+                                        p.file_name().unwrap_or_default().to_string_lossy()
                                     );
                                 }
                                 Err(e) => self.status_line = e,
@@ -854,7 +852,9 @@ impl Screen for ShareScreen {
         }
 
         match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => return Outcome::Done(hayato_ui::app::exit::ESCAPE),
+            KeyCode::Esc | KeyCode::Char('q') => {
+                return Outcome::Done(hayato_ui::app::exit::ESCAPE);
+            }
             KeyCode::Char('v') => {
                 if let Err(e) = self.activate_receive() {
                     self.status_line = e;
@@ -947,10 +947,7 @@ fn describe_payload(payload: &SharePayload) -> (&'static str, ColorRole, String,
                 .chars()
                 .take(48)
                 .collect();
-            let title = label
-                .clone()
-                .filter(|s| !s.is_empty())
-                .unwrap_or(preview);
+            let title = label.clone().filter(|s| !s.is_empty()).unwrap_or(preview);
             (
                 "TEXT",
                 ColorRole::Accent,

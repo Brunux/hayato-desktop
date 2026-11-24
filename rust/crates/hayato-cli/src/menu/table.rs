@@ -197,6 +197,17 @@ pub const ROOT: &[MenuItem] = &[
         session("hayato-files"),
     ),
     item(
+        "files-window",
+        "Files (window)",
+        "favnyr: folders, drag and drop, trash",
+        Glyph::Window,
+        Workspace,
+        Action::Run {
+            program: Program::System("favnyr"),
+            args: &[Arg::Home],
+        },
+    ),
+    item(
         "notes",
         "Notes",
         "quick notes, ink notes, sign a PDF",
@@ -598,17 +609,6 @@ pub const POWER: &[MenuItem] = &[
 /// Granular, power-user, and compatibility rows exposed in `hayato menu palette`
 /// so nothing is ever lost while keeping `Alt+Space` crisp and zero-overlap.
 pub const PALETTE_EXTRA: &[MenuItem] = &[
-    item(
-        "files-window",
-        "Files (window)",
-        "favnyr: folders, drag and drop, trash",
-        Glyph::Window,
-        Workspace,
-        Action::Run {
-            program: Program::System("favnyr"),
-            args: &[Arg::Home],
-        },
-    ),
     item(
         "eject",
         "Eject drive",

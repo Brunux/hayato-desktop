@@ -37,7 +37,10 @@ fn main() {
         return;
     }
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!("hayato-cassette {} — Hayato OS Cyberdeck music player", VERSION.trim());
+        println!(
+            "hayato-cassette {} — Hayato OS Cyberdeck music player",
+            VERSION.trim()
+        );
         println!();
         println!("usage: hayato-cassette [--toggle | --bar | --mini | --play FILE]");
         return;
@@ -56,11 +59,7 @@ fn main() {
         .windows(2)
         .find(|w| w[0] == "--play")
         .map(|w| PathBuf::from(&w[1]))
-        .or_else(|| {
-            args.iter()
-                .find(|a| !a.starts_with('-'))
-                .map(PathBuf::from)
-        });
+        .or_else(|| args.iter().find(|a| !a.starts_with('-')).map(PathBuf::from));
 
     // If invoked without a TTY (e.g. from root menu or keybinding), spawn foot
     if !io::stdout().is_terminal() && std::env::var_os("WAYLAND_DISPLAY").is_some() {

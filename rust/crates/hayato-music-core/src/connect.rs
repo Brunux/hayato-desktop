@@ -242,10 +242,10 @@ async fn start_spirc(
 
     let backend = audio_backend::find(None)
         .ok_or_else(|| "No local audio backend available for Spotify Connect".to_string())?;
-    let mixer_fn =
-        mixer::find(None).ok_or_else(|| "No audio mixer available for Spotify Connect".to_string())?;
-    let mixer = mixer_fn(MixerConfig::default())
-        .map_err(|e| format!("init Spotify Connect mixer: {e}"))?;
+    let mixer_fn = mixer::find(None)
+        .ok_or_else(|| "No audio mixer available for Spotify Connect".to_string())?;
+    let mixer =
+        mixer_fn(MixerConfig::default()).map_err(|e| format!("init Spotify Connect mixer: {e}"))?;
 
     let player_cfg = PlayerConfig {
         bitrate: Bitrate::Bitrate320,

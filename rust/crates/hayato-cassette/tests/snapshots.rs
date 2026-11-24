@@ -70,10 +70,24 @@ fn renders_full_120x36_and_mini_60x16_cleanly() {
         assert!(text.contains("02:14 / 04:05"), "{w}x{h}:\n{text}");
         if !mini {
             assert!(text.contains(" All "), "missing All filter tab:\n{text}");
-            assert!(text.contains("Spotify"), "missing Spotify filter tab:\n{text}");
+            assert!(
+                text.contains("Spotify"),
+                "missing Spotify filter tab:\n{text}"
+            );
             assert!(text.contains("Local"), "missing Local filter tab:\n{text}");
-            assert!(text.contains("VOL 80%"), "missing labeled volume:\n{text}");
-            assert!(!text.contains("[⌂ Home]"), "Home tab should be removed:\n{text}");
+            assert!(
+                text.contains("[-] VOL 80% [+]"),
+                "missing volume -/+ controls:\n{text}"
+            );
+            assert!(
+                !text.contains("[≡]"),
+                "burger queue icon should be removed:\n{text}"
+            );
+            assert!(text.contains("⌕"), "missing search icon:\n{text}");
+            assert!(
+                !text.contains("[⌂ Home]"),
+                "Home tab should be removed:\n{text}"
+            );
         }
     }
 }

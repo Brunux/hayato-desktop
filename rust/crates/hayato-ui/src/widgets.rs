@@ -377,6 +377,9 @@ pub struct Row {
     /// A section label, not a row: it is drawn, never selected, and it leaves
     /// the list as soon as the person types a filter.
     pub heading: bool,
+    /// Optional semantic foreground color override (e.g. `ColorRole::Accent`
+    /// for an actively playing track or playlist).
+    pub tone: Option<ColorRole>,
 }
 
 impl Row {
@@ -388,7 +391,13 @@ impl Row {
             value: None,
             boost: 0,
             heading: false,
+            tone: None,
         }
+    }
+
+    pub fn tone(mut self, role: ColorRole) -> Self {
+        self.tone = Some(role);
+        self
     }
 
     /// A section label above a group of rows.
@@ -1184,13 +1193,16 @@ impl ListState {
                 );
             }
             if self.glyph_width > 0 {
-                let glyph_style = design
+                let mut glyph_style = design
                     .style(if selected {
                         TextStyle::Selected
                     } else {
                         TextStyle::Body
                     })
                     .bg(row_bg);
+                if let Some(role) = row.tone {
+                    glyph_style = glyph_style.fg(design.color(role));
+                }
                 let mut room = self.glyph_width;
                 if let Some(glyph) = &row.glyph {
                     let width = UnicodeWidthStr::width(glyph.as_str()) as u16;
@@ -1212,11 +1224,16 @@ impl ListState {
                 .map(|v| UnicodeWidthStr::width(v) as u16 + 2)
                 .unwrap_or(0);
             let label_room = area.right().saturating_sub(x + value_width + 1);
-            let style = if selected {
+            let mut style = if selected {
                 design.style(TextStyle::Selected).bg(row_bg)
             } else {
                 design.style(TextStyle::Body).bg(row_bg)
             };
+            if let Some(role) = row.tone {
+                style = style
+                    .fg(design.color(role))
+                    .add_modifier(ratatui::style::Modifier::BOLD);
+            }
             let detail_style = if selected {
                 design.style(TextStyle::SelectedDim).bg(row_bg)
             } else {

@@ -782,7 +782,11 @@ fn build_rows(section: Section) -> (Vec<hayato_ui::Row>, Vec<String>) {
             rows.push(row("Firewall (UFW)", firewall_detail(), Glyph::Lock));
             keys.push("firewall".to_string());
 
-            rows.push(row("Remote Desktop (VNC)", super::vnc::status(), Glyph::Eye));
+            rows.push(row(
+                "Remote Desktop (VNC)",
+                super::vnc::status(),
+                Glyph::Eye,
+            ));
             keys.push("vnc".to_string());
 
             rows.push(row(

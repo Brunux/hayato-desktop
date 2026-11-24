@@ -98,12 +98,7 @@ impl SpotifyProvider {
         }
     }
 
-    fn send_action(
-        &mut self,
-        method: &str,
-        url: &str,
-        body: Option<&str>,
-    ) -> Result<(), String> {
+    fn send_action(&mut self, method: &str, url: &str, body: Option<&str>) -> Result<(), String> {
         let tok = self.token_mut()?;
         spotify::ensure_fresh_public(tok)?;
         match raw_curl(method, url, &tok.access_token, body, false) {
@@ -345,6 +340,24 @@ impl MusicProvider for SpotifyProvider {
         self.send_action("PUT", &endpoint, Some(&body))
     }
 
+    fn add_to_queue(&mut self, track: &Track, device_id: Option<&str>) -> Result<(), String> {
+        let SourceKind::Spotify { uri, .. } = &track.source else {
+            return Err("Not a Spotify track".into());
+        };
+        let url = match device_id {
+            Some(id) => format!(
+                "https://api.spotify.com/v1/me/player/queue?uri={}&device_id={}",
+                spotify::url_encode_public(uri),
+                spotify::url_encode_public(id)
+            ),
+            None => format!(
+                "https://api.spotify.com/v1/me/player/queue?uri={}",
+                spotify::url_encode_public(uri)
+            ),
+        };
+        self.send_action("POST", &url, None)
+    }
+
     fn pause(&mut self) -> Result<(), String> {
         self.send_action("PUT", "https://api.spotify.com/v1/me/player/pause", None)
     }
@@ -525,7 +538,10 @@ fn raw_curl(
             .ok()
             .and_then(|v| v["error"]["message"].as_str().map(String::from))
             .unwrap_or_else(|| resp_body.chars().take(120).collect());
-        return Err(ApiError::Http { status, message: msg });
+        return Err(ApiError::Http {
+            status,
+            message: msg,
+        });
     }
     if !expect_json || resp_body.trim().is_empty() {
         return Ok(None);
@@ -615,7 +631,11 @@ fn parse_track_obj(item: &Value, fetch_art: bool) -> Option<Track> {
             .and_then(|imgs| {
                 // Prefer ~300px thumbnail (middle entry) for fast Sixel decoding
                 imgs.iter()
-                    .find(|i| i["width"].as_u64().is_some_and(|w| (200..=400).contains(&w)))
+                    .find(|i| {
+                        i["width"]
+                            .as_u64()
+                            .is_some_and(|w| (200..=400).contains(&w))
+                    })
                     .or_else(|| imgs.first())
             })
             .and_then(|i| i["url"].as_str())

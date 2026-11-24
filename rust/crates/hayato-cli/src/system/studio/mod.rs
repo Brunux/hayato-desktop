@@ -134,7 +134,9 @@ pub fn start_webcam_overlay(
     let _ = std::fs::remove_file(&sock);
     let log = state.join("camera.log");
     let log_out = File::create(&log).map_err(|e| format!("camera log: {e}"))?;
-    let log_err = log_out.try_clone().map_err(|e| format!("camera log: {e}"))?;
+    let log_err = log_out
+        .try_clone()
+        .map_err(|e| format!("camera log: {e}"))?;
     let (w, h) = size.dims();
     let url = format!("av://v4l2:{}", cam.device);
 
@@ -420,7 +422,12 @@ pub fn start_headless(kind: &str, area: bool) -> i32 {
             "yuv420p".to_string(),
         ]);
         if mixer_ok {
-            a.extend(["-c:a".to_string(), "aac".to_string(), "-b:a".to_string(), "128k".to_string()]);
+            a.extend([
+                "-c:a".to_string(),
+                "aac".to_string(),
+                "-b:a".to_string(),
+                "128k".to_string(),
+            ]);
         }
         a.push(file.to_string_lossy().into_owned());
         ("ffmpeg", a, "ffmpeg")

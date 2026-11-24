@@ -131,6 +131,9 @@ pub trait MusicProvider: Send {
         offset_uri: Option<&str>,
         device_id: Option<&str>,
     ) -> Result<(), String>;
+    fn add_to_queue(&mut self, _track: &Track, _device_id: Option<&str>) -> Result<(), String> {
+        Ok(())
+    }
     fn pause(&mut self) -> Result<(), String>;
     fn resume(&mut self) -> Result<(), String>;
     fn next(&mut self) -> Result<(), String>;
@@ -172,6 +175,18 @@ pub enum ProviderCmd {
         context_uri: String,
         offset_uri: Option<String>,
         device_id: Option<String>,
+    },
+    AddToQueue {
+        provider: ProviderId,
+        track: Track,
+        device_id: Option<String>,
+    },
+    FetchLyrics {
+        track_id: crate::TrackId,
+        title: String,
+        artist: String,
+        album: String,
+        duration_secs: u64,
     },
     RemotePause(ProviderId),
     RemoteResume(ProviderId),
@@ -221,6 +236,10 @@ pub enum ProviderEvent {
         authenticated: bool,
         display_name: String,
         is_premium: bool,
+    },
+    LyricsLoaded {
+        track_id: crate::TrackId,
+        lyrics: Option<crate::lyrics::Lyrics>,
     },
     Status(String),
     Error(String),
@@ -429,6 +448,45 @@ fn worker_loop(
                         }
                     }
                 }
+            }
+            Ok(ProviderCmd::AddToQueue {
+                provider,
+                track,
+                device_id,
+            }) => {
+                if provider == ProviderId::Spotify {
+                    #[cfg(feature = "spotify")]
+                    match spotify_prov.add_to_queue(&track, device_id.as_deref()) {
+                        Ok(()) => {
+                            let _ = ev_tx
+                                .send(ProviderEvent::Status(format!("Queued: {}", track.title)));
+                        }
+                        Err(e) => {
+                            let _ = ev_tx.send(ProviderEvent::Error(format!("Queue failed: {e}")));
+                        }
+                    }
+                }
+            }
+            Ok(ProviderCmd::FetchLyrics {
+                track_id,
+                title,
+                artist,
+                album,
+                duration_secs,
+            }) => {
+                let tx = ev_tx.clone();
+                let _ = thread::Builder::new()
+                    .name("hayato-lyrics".into())
+                    .spawn(move || {
+                        let lyrics = crate::lyrics::Lyrics::fetch_or_cache(
+                            &title,
+                            &artist,
+                            &album,
+                            duration_secs,
+                            &crate::cache_dir(),
+                        );
+                        let _ = tx.send(ProviderEvent::LyricsLoaded { track_id, lyrics });
+                    });
             }
             Ok(ProviderCmd::RemotePause(ProviderId::Spotify)) => {
                 #[cfg(feature = "spotify")]

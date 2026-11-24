@@ -249,9 +249,7 @@ pub fn glide_pip(corner: PipCorner, size: PipSize, sticky: bool, reduced_motion:
                     st_owned
                 )
             } else if w0 != w1 || h0 != h1 {
-                format!(
-                    "[app_id=\"hayato-webcam\"] resize set {iw} {ih}, move position {ix} {iy}"
-                )
+                format!("[app_id=\"hayato-webcam\"] resize set {iw} {ih}, move position {ix} {iy}")
             } else {
                 format!("[app_id=\"hayato-webcam\"] move position {ix} {iy}")
             };
@@ -276,9 +274,19 @@ mod tests {
 
     #[test]
     fn target_pip_rect_clears_waybar_top_margin() {
-        let (x, y, w, h) = target_pip_rect((0, 0, 1366, 912), (0, 0), PipCorner::TopLeft, PipSize::Medium);
+        let (x, y, w, h) = target_pip_rect(
+            (0, 0, 1366, 912),
+            (0, 0),
+            PipCorner::TopLeft,
+            PipSize::Medium,
+        );
         assert_eq!((x, y, w, h), (20, 54, 320, 240));
-        let (rx, ry, _, _) = target_pip_rect((0, 0, 1366, 912), (0, 0), PipCorner::BottomRight, PipSize::Medium);
+        let (rx, ry, _, _) = target_pip_rect(
+            (0, 0, 1366, 912),
+            (0, 0),
+            PipCorner::BottomRight,
+            PipSize::Medium,
+        );
         assert_eq!((rx, ry), (1366 - 320 - 20, 912 - 240 - 20));
     }
 }

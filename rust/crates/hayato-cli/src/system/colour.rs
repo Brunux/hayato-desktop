@@ -192,32 +192,35 @@ notify-send -a Hayato -i color-picker "Colour" "$hex copied to the clipboard (${
         // The active theme's palette swatches (falling back to Tokyo Night).
         let paths = hayato_theme::store::Paths::from_env();
         let slug = hayato_theme::store::active(&paths).unwrap_or_else(|| "tokyo-night".to_string());
-        let active_swatches: Vec<(&'static str, String, &'static str)> =
-            crate::theme::theme(&slug)
-                .or_else(|_| crate::theme::theme("tokyo-night"))
-                .ok()
-                .map(|t| {
-                    let c = t.colors;
-                    vec![
-                        ("background", c.background.hashed(), "the session's background"),
-                        ("foreground", c.foreground.hashed(), "body text"),
-                        ("black", c.regular0.hashed(), "regular 0"),
-                        ("red", c.regular1.hashed(), "error"),
-                        ("green", c.regular2.hashed(), "success"),
-                        ("yellow", c.regular3.hashed(), "warning"),
-                        ("blue", c.regular4.hashed(), "accent / links"),
-                        ("magenta", c.regular5.hashed(), "magenta"),
-                        ("cyan", c.regular6.hashed(), "accent / cyan"),
-                        ("white", c.regular7.hashed(), "regular 7"),
-                        ("bright black", c.bright0.hashed(), "comments"),
-                        ("bright red", c.bright1.hashed(), "error, bright"),
-                        ("bright green", c.bright2.hashed(), "success, bright"),
-                        ("bright yellow", c.bright3.hashed(), "warning, bright"),
-                        ("bright blue", c.bright4.hashed(), "accent, bright"),
-                        ("bright cyan", c.bright6.hashed(), "accent / cyan, bright"),
-                    ]
-                })
-                .unwrap_or_default();
+        let active_swatches: Vec<(&'static str, String, &'static str)> = crate::theme::theme(&slug)
+            .or_else(|_| crate::theme::theme("tokyo-night"))
+            .ok()
+            .map(|t| {
+                let c = t.colors;
+                vec![
+                    (
+                        "background",
+                        c.background.hashed(),
+                        "the session's background",
+                    ),
+                    ("foreground", c.foreground.hashed(), "body text"),
+                    ("black", c.regular0.hashed(), "regular 0"),
+                    ("red", c.regular1.hashed(), "error"),
+                    ("green", c.regular2.hashed(), "success"),
+                    ("yellow", c.regular3.hashed(), "warning"),
+                    ("blue", c.regular4.hashed(), "accent / links"),
+                    ("magenta", c.regular5.hashed(), "magenta"),
+                    ("cyan", c.regular6.hashed(), "accent / cyan"),
+                    ("white", c.regular7.hashed(), "regular 7"),
+                    ("bright black", c.bright0.hashed(), "comments"),
+                    ("bright red", c.bright1.hashed(), "error, bright"),
+                    ("bright green", c.bright2.hashed(), "success, bright"),
+                    ("bright yellow", c.bright3.hashed(), "warning, bright"),
+                    ("bright blue", c.bright4.hashed(), "accent, bright"),
+                    ("bright cyan", c.bright6.hashed(), "accent / cyan, bright"),
+                ]
+            })
+            .unwrap_or_default();
         for (name, hex, role) in &active_swatches {
             rows.push(
                 Row::new(format!("{}  {}", name, hex.to_uppercase()))
