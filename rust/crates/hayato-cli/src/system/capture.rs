@@ -1307,12 +1307,69 @@ fn place_webcam(geometry: Option<&str>) {
     let _ = Command::new("swaymsg").arg(command).status();
 }
 
+/// Discover the V4L2 webcam capture node under `sys_dir` (normally
+/// `/sys/class/video4linux`), never assuming `/dev/video0`.
+///
+/// On MediaTek SoCs (MT8192/MT8183), hardware codec nodes (`mtk-vcodec-enc` /
+/// `mtk-vcodec-dec`) can probe before USB UVC and take `/dev/video0`, pushing
+/// the webcam to `/dev/video1` (with `/dev/video2` as its UVC metadata node).
+fn find_webcam_device_in(sys_dir: &Path) -> Option<String> {
+    let entries = std::fs::read_dir(sys_dir).ok()?;
+    let mut nodes: Vec<(u32, String, PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let num: u32 = name.strip_prefix("video")?.parse().ok()?;
+            Some((num, name, entry.path()))
+        })
+        .collect();
+    nodes.sort_by_key(|(num, _, _)| *num);
+
+    let mut fallback: Option<String> = None;
+    for (_, name, path) in nodes {
+        // UVC cameras expose index 0 for video capture and index 1 for metadata.
+        let index = std::fs::read_to_string(path.join("index"))
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|_| "0".to_string());
+        if index != "0" {
+            continue;
+        }
+        let driver = std::fs::canonicalize(path.join("device/driver"))
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_default();
+        if driver == "uvcvideo" {
+            return Some(format!("/dev/{name}"));
+        }
+        let dev_name = std::fs::read_to_string(path.join("name"))
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let drv_low = driver.to_ascii_lowercase();
+        let is_codec = [
+            "vcodec", "codec", "m2m", "encoder", "decoder", "isp", "meta",
+        ]
+        .iter()
+        .any(|needle| dev_name.contains(needle) || drv_low.contains(needle));
+        if !is_codec && fallback.is_none() {
+            fallback = Some(format!("/dev/{name}"));
+        }
+    }
+    fallback
+}
+
+fn find_webcam_device() -> Result<String, String> {
+    find_webcam_device_in(Path::new("/sys/class/video4linux"))
+        .ok_or_else(|| "no webcam device found under /sys/class/video4linux".to_string())
+}
+
 /// Start the webcam preview window. It is a normal mpv window, placed as a
 /// floating bottom-right overlay; wf-recorder records it as part of the screen.
 fn start_webcam(geometry: Option<&str>) -> Result<u32, String> {
     if !crate::system::have("mpv") {
         return Err("mpv is not installed, so the webcam overlay cannot start".to_string());
     }
+    let dev = find_webcam_device()?;
+    let url = format!("av://v4l2:{dev}");
     let state = hayato_ui::recording::state_dir();
     let _ = std::fs::create_dir_all(&state);
     let log = state.join("camera.log");
@@ -1324,7 +1381,7 @@ fn start_webcam(geometry: Option<&str>) -> Result<u32, String> {
     command
         .args([
             "--no-config",
-            "--really-quiet",
+            "--msg-level=all=error",
             "--vo=wlshm",
             "--no-osc",
             "--no-input-default-bindings",
@@ -1333,7 +1390,7 @@ fn start_webcam(geometry: Option<&str>) -> Result<u32, String> {
             "--wayland-app-id=hayato-webcam",
             "--title=Hayato Webcam",
             "--geometry=320x240",
-            "av://v4l2:/dev/video0",
+            &url,
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::from(log_out))
@@ -1676,6 +1733,35 @@ mod tests {
         let (left_c, right_c) = CaptureScreen::split_panes(compact);
         assert_eq!(left_c, compact);
         assert!(right_c.is_none());
+    }
+
+    #[test]
+    fn find_webcam_skips_vcodec_and_uvc_metadata_nodes() {
+        let base = std::env::temp_dir().join(format!(
+            "hayato-v4l2-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        let drivers = base.join("drivers");
+        for drv in ["mtk-vcodec-enc", "mtk-vcodec-dec", "uvcvideo"] {
+            std::fs::create_dir_all(drivers.join(drv)).unwrap();
+        }
+        let sys = base.join("video4linux");
+        for (node, name, idx, drv) in [
+            ("video0", "mtk-vcodec-enc", "0", "mtk-vcodec-enc"),
+            ("video1", "USB2.0 HD UVC WebCam", "0", "uvcvideo"),
+            ("video2", "USB2.0 HD UVC WebCam", "1", "uvcvideo"),
+            ("video3", "mtk-vcodec-dec", "0", "mtk-vcodec-dec"),
+        ] {
+            let dir = sys.join(node);
+            std::fs::create_dir_all(dir.join("device")).unwrap();
+            std::fs::write(dir.join("name"), format!("{name}\n")).unwrap();
+            std::fs::write(dir.join("index"), format!("{idx}\n")).unwrap();
+            std::os::unix::fs::symlink(drivers.join(drv), dir.join("device/driver")).unwrap();
+        }
+
+        assert_eq!(find_webcam_device_in(&sys).as_deref(), Some("/dev/video1"));
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

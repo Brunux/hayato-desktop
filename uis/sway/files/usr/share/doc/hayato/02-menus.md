@@ -369,7 +369,7 @@ no hardware encoder (`veryfast`, crf 28, 30 fps - the point where a full-screen
 recording still leaves the compositor its frame budget). **Recording audio**
 uses the default PipeWire source for **microphone** or the default sink's
 `.monitor` source for **system audio (line out)**; `wf-recorder` writes it into
-the same `.mp4`. **Webcam overlay** starts `mpv` on `/dev/video0` as a floating
+the same `.mp4`. **Webcam overlay** auto-detects the `uvcvideo` V4L2 capture node under `/sys/class/video4linux` (skipping `mtk-vcodec-*` hardware codec nodes and UVC metadata nodes) and starts `mpv` as a floating
 bottom-right window, so the camera is part of the recorded screen; for an area
 recording the overlay is placed inside the selected area. The options are saved
 in `~/.config/hayato/record.conf` and shown in the record row. The file is
