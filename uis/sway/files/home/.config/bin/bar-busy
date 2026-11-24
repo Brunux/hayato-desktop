@@ -112,9 +112,9 @@ glyph=$(printf '%s\n' ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏ | sed -n "${i}p")
 pango_esc=$(printf '%s' "$label" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
 esc=$(printf '%s' "$pango_esc" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
 if [ -r "$state/$tag.stop" ]; then
-	tip="<b>[ TASK // BUSY ]</b>\\n&gt; $esc\\n<span alpha='35%'>──────────────</span>\\n<span alpha='65%'>[LMB] stop task</span>"
+	tip="<span alpha='50%'>╭─</span> <b>TASK // RUNNING</b>\\n<span alpha='45%'>│</span> <span alpha='60%'>JOB</span>  $glyph $esc\\n<span alpha='45%'>│</span> <span alpha='60%'>CTL</span>  cancellable\\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] stop task</span>"
 else
-	tip="<b>[ TASK // BUSY ]</b>\\n&gt; $esc\\n<span alpha='35%'>──────────────</span>\\n<span alpha='65%'>Running in background</span>"
+	tip="<span alpha='50%'>╭─</span> <b>TASK // RUNNING</b>\\n<span alpha='45%'>│</span> <span alpha='60%'>JOB</span>  $glyph $esc\\n<span alpha='45%'>│</span> <span alpha='60%'>CTL</span>  protected (cannot interrupt)\\n<span alpha='50%'>╰─</span> <span alpha='65%'>running in background</span>"
 fi
 
 printf '{"text":"<span font_desc=%s>%s</span>  %s","class":"busy","tooltip":"%s"}\n' \

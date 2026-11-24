@@ -48,17 +48,17 @@ window#waybar {
     margin-right: 4px;
 }
 
-/* Cyber-HUD terminal tooltips matching hayato-notify's 3px left accent rail,
+/* Terminal micro-HUD tooltips matching hayato-notify's 3px left accent rail,
    3px corners, and monospace telemetry grammar across all 16 themes. */
 tooltip,
 tooltip.background {
-    background: rgba(21, 24, 40, 0.96);
+    background: rgba(21, 24, 40, 0.97);
     color: #ddf7ff;
-    border: 1px solid rgba(130, 251, 156, 0.90);
+    border: 1px solid rgba(130, 251, 156, 0.92);
     border-left: 3px solid #82fb9c;
     border-radius: 3px;
-    padding: 8px 12px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    padding: 9px 13px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
 }
 
 tooltip decoration {

@@ -113,28 +113,29 @@ pub fn bar_json_for(drives: &[MountedDrive]) -> String {
             drives.len()
         )
     };
-    let tooltip = if drives.len() == 1 {
-        let d = &drives[0];
-        format!(
-            "<b>[ DRV // EJECT ]</b>\n&gt; {}\n&gt; {} ({} · {})\n<span alpha='35%'>──────────────</span>\n<span alpha='65%'>[LMB] safely eject · [RMB] places</span>",
+    let mut lines = vec![format!(
+        "<span alpha='50%'>╭─</span> <b>DRV // {} MOUNTED</b>",
+        drives.len()
+    )];
+    for d in drives {
+        lines.push(format!(
+            "<span alpha='45%'>│</span> ▸ {}  <span alpha='60%'>[{}]</span>  {}",
             pango_escape(&d.label),
-            pango_escape(&d.mountpoint),
-            pango_escape(&d.device),
-            pango_escape(&d.fstype)
-        )
-    } else {
-        let mut lines = vec![format!("<b>[ DRV // {} MOUNTED ]</b>", drives.len())];
-        for d in drives {
-            lines.push(format!(
-                "&gt; {} ({})",
-                pango_escape(&d.label),
-                pango_escape(&d.mountpoint)
-            ));
-        }
-        lines.push("<span alpha='35%'>──────────────</span>".to_string());
-        lines.push("<span alpha='65%'>[LMB] eject drive · [RMB] places</span>".to_string());
-        lines.join("\n")
-    };
+            pango_escape(&d.fstype),
+            pango_escape(&d.mountpoint)
+        ));
+    }
+    if drives.len() == 1 {
+        lines.push(format!(
+            "<span alpha='45%'>│</span> <span alpha='60%'>DEV</span>  {}",
+            pango_escape(&drives[0].device)
+        ));
+    }
+    lines.push(
+        "<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] eject · [RMB] places</span>"
+            .to_string(),
+    );
+    let tooltip = lines.join("\n");
     format!(
         r#"{{"text":"{}","class":"mounted","tooltip":"{}"}}"#,
         json_escape(&text),
@@ -1366,9 +1367,10 @@ mmcblk0p1 part ext4 ROOT /
         };
         let one = bar_json_for(std::slice::from_ref(&d1));
         assert!(one.contains(r#""class":"mounted""#));
-        assert!(one.contains("[ DRV // EJECT ]"));
-        assert!(one.contains("NURA-BACKUP"));
-        assert!(one.contains("[LMB] safely eject"));
+        assert!(one.contains("DRV // 1 MOUNTED"));
+        assert!(one.contains("▸ NURA-BACKUP"));
+        assert!(one.contains("[exfat]"));
+        assert!(one.contains("[LMB] eject · [RMB] places"));
 
         let d2 = MountedDrive {
             label: "PHOTOS".into(),
@@ -1378,8 +1380,9 @@ mmcblk0p1 part ext4 ROOT /
         };
         let two = bar_json_for(&[d1, d2]);
         assert!(two.contains(r#""class":"mounted""#));
-        assert!(two.contains("[ DRV // 2 MOUNTED ]"));
-        assert!(two.contains("PHOTOS"));
+        assert!(two.contains("DRV // 2 MOUNTED"));
+        assert!(two.contains("▸ PHOTOS"));
+        assert!(two.contains("[vfat]"));
     }
 
     #[test]

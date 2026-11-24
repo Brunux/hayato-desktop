@@ -120,12 +120,50 @@ pub fn parse_nmcli_wifi(raw: &str) -> Vec<WifiAp> {
     list
 }
 
+fn signal_bars_4(signal: u8) -> &'static str {
+    match signal {
+        0 => "<span alpha='30%'>▂▄▆█</span>",
+        1..=24 => "▂<span alpha='30%'>▄▆█</span>",
+        25..=49 => "▂▄<span alpha='30%'>▆█</span>",
+        50..=74 => "▂▄▆<span alpha='30%'>█</span>",
+        _ => "▂▄▆█",
+    }
+}
+
+fn format_status_json(radio_enabled: bool, active: Option<&WifiAp>) -> String {
+    if !radio_enabled {
+        return r#"{"text":"off","tooltip":"<span alpha='50%'>╭─</span> <b>NET // RADIO OFF</b>\n<span alpha='45%'>│</span> <span alpha='60%'>WIFI</span>  disabled\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"disabled","percentage":0}"#
+            .to_string();
+    }
+
+    if let Some(active) = active {
+        let ssid_pango = escape_pango(&active.ssid);
+        let sec = if active.security.is_empty() {
+            "open".to_string()
+        } else {
+            escape_pango(&active.security)
+        };
+        let bars = signal_bars_4(active.signal);
+        format!(
+            r#"{{"text":"{}","tooltip":"<span alpha='50%'>╭─</span> <b>NET // WI-FI</b>\n<span alpha='45%'>│</span> <span alpha='60%'>SSID</span>  {}\n<span alpha='45%'>│</span> <span alpha='60%'>SIG </span>  {}  {}%\n<span alpha='45%'>│</span> <span alpha='60%'>SEC </span>  {}\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"connected","percentage":{}}}"#,
+            escape_json(&active.ssid),
+            escape_json(&ssid_pango),
+            bars,
+            active.signal,
+            escape_json(&sec),
+            active.signal
+        )
+    } else {
+        r#"{"text":"disconnected","tooltip":"<span alpha='50%'>╭─</span> <b>NET // OFFLINE</b>\n<span alpha='45%'>│</span> <span alpha='60%'>WIFI</span>  disconnected\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"disconnected","percentage":0}"#
+            .to_string()
+    }
+}
+
 /// Headless query for waybar `custom/net` module: emits JSON.
 pub fn status_json() -> String {
     let radio = out(&["nmcli", "radio", "wifi"]).unwrap_or_default();
     if radio != "enabled" {
-        return r#"{"text":"off","tooltip":"<b>[ NET // RADIO OFF ]</b>\n&gt; Wi-Fi radio is disabled\n<span alpha='35%'>──────────────</span>\n<span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"disabled","percentage":0}"#
-            .to_string();
+        return format_status_json(false, None);
     }
 
     let scan_raw = out(&[
@@ -142,19 +180,8 @@ pub fn status_json() -> String {
     .unwrap_or_default();
 
     let aps = parse_nmcli_wifi(&scan_raw);
-    if let Some(active) = aps.iter().find(|ap| ap.in_use) {
-        let ssid_pango = escape_pango(&active.ssid);
-        format!(
-            r#"{{"text":"{}","tooltip":"<b>[ NET // WI-FI ]</b>\n&gt; {} ({}%)\n<span alpha='35%'>──────────────</span>\n<span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"connected","percentage":{}}}"#,
-            escape_json(&active.ssid),
-            escape_json(&ssid_pango),
-            active.signal,
-            active.signal
-        )
-    } else {
-        r#"{"text":"disconnected","tooltip":"<b>[ NET // OFFLINE ]</b>\n&gt; Wi-Fi disconnected\n<span alpha='35%'>──────────────</span>\n<span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"disconnected","percentage":0}"#
-            .to_string()
-    }
+    let active = aps.iter().find(|ap| ap.in_use);
+    format_status_json(true, active)
 }
 
 fn escape_json(s: &str) -> String {
@@ -1323,8 +1350,24 @@ mod tests {
 
     #[test]
     fn status_json_disabled_format() {
-        let json =
-            r#"{"text":"off","tooltip":"Wi-Fi radio is off","class":"disabled","percentage":0}"#;
-        assert!(json.contains("\"class\":\"disabled\""));
+        let disabled = format_status_json(false, None);
+        assert!(disabled.contains("\"class\":\"disabled\""));
+        assert!(disabled.contains("NET // RADIO OFF"));
+
+        let disconnected = format_status_json(true, None);
+        assert!(disconnected.contains("\"class\":\"disconnected\""));
+        assert!(disconnected.contains("NET // OFFLINE"));
+
+        let ap = WifiAp {
+            in_use: true,
+            ssid: "Lab & Ops".into(),
+            security: "WPA2".into(),
+            signal: 82,
+        };
+        let connected = format_status_json(true, Some(&ap));
+        assert!(connected.contains("\"class\":\"connected\""));
+        assert!(connected.contains("Lab &amp; Ops"));
+        assert!(connected.contains("▂▄▆█  82%"));
+        assert!(connected.contains("WPA2"));
     }
 }

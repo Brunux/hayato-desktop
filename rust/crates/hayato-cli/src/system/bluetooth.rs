@@ -856,22 +856,23 @@ fn format_status(powered: bool, connected_names: &[String]) -> String {
     const OFF: &str = "\u{f00b2}";
     if !powered {
         return format!(
-            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"off\",\"tooltip\":\"<b>[ BT // OFF ]</b>\\n&gt; Radio disabled\\n<span alpha='35%'>──────────────</span>\\n<span alpha='65%'>[LMB] devices · [RMB] bluetoothctl</span>\"}}",
+            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"off\",\"tooltip\":\"<span alpha='50%'>╭─</span> <b>BT // OFF</b>\\n<span alpha='45%'>│</span> ○ radio disabled\\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] devices · [RMB] bluetoothctl</span>\"}}",
             OFF
         );
     }
     if connected_names.is_empty() {
         format!(
-            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"on\",\"tooltip\":\"<b>[ BT // READY ]</b>\\n&gt; Powered on · no devices connected\\n<span alpha='35%'>──────────────</span>\\n<span alpha='65%'>[LMB] devices · [RMB] bluetoothctl</span>\"}}",
+            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"on\",\"tooltip\":\"<span alpha='50%'>╭─</span> <b>BT // READY</b>\\n<span alpha='45%'>│</span> ○ powered · no devices connected\\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] devices · [RMB] bluetoothctl</span>\"}}",
             ON
         )
     } else {
         let lines: Vec<String> = connected_names
             .iter()
-            .map(|name| format!("&gt; {}", pango_json_escape(name)))
+            .map(|name| format!("<span alpha='45%'>│</span> ● {}", pango_json_escape(name)))
             .collect();
         let tooltip = format!(
-            "<b>[ BT // ACTIVE ]</b>\\n{}\\n<span alpha='35%'>──────────────</span>\\n<span alpha='65%'>[LMB] devices · [RMB] bluetoothctl</span>",
+            "<span alpha='50%'>╭─</span> <b>BT // {} CONNECTED</b>\\n{}\\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] devices · [RMB] bluetoothctl</span>",
+            connected_names.len(),
             lines.join("\\n")
         );
         // No count on the bar: what is connected lives in the tooltip.
@@ -920,12 +921,12 @@ mod tests {
         let off = format_status(false, &[]);
         assert!(off.contains("\"class\":\"off\""));
         assert!(off.contains("\u{f00b2}"));
-        assert!(off.contains("[ BT // OFF ]"));
+        assert!(off.contains("BT // OFF"));
         let on = format_status(true, &["Buds & Co".to_string()]);
         assert!(on.contains("\"class\":\"on\""));
         assert!(on.contains("\u{f00af}"));
         assert!(!on.contains("</span> 1\""));
-        assert!(on.contains("[ BT // ACTIVE ]"));
-        assert!(on.contains("&gt; Buds &amp; Co"));
+        assert!(on.contains("BT // 1 CONNECTED"));
+        assert!(on.contains("● Buds &amp; Co"));
     }
 }

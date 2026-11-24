@@ -62,7 +62,7 @@ fi
 active=${active:-default}
 active_esc=$(printf '%s' "$active" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/\\/\\\\/g' -e 's/"/\\"/g')
 if [ "${layouts:-0}" -le 1 ]; then
-	printf '{"text":"","class":"empty","tooltip":"<b>[ KEY // LAYOUT ]</b>\\n&gt; Single layout: %s"}\n' "$active_esc"
+	printf '{"text":"","class":"empty","tooltip":"<span alpha='\''50%'\''>╭─</span> <b>KEY // LAYOUT</b>\\n<span alpha='\''45%'\''>│</span> <span alpha='\''60%'\''>MAP</span>  %s"}\n' "$active_esc"
 	exit 0
 fi
 
@@ -70,6 +70,6 @@ fi
 # does not fit the bar, so the code is shown, upper-cased.
 code=$(printf '%s' "${code:-$active}" | tr '[:lower:]' '[:upper:]')
 code_esc=$(printf '%s' "$code" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/\\/\\\\/g' -e 's/"/\\"/g')
-tooltip="<b>[ KEY // LAYOUT ]</b>\\n&gt; Active: $active_esc ($code_esc)\\n<span alpha='35%'>──────────────</span>\\n<span alpha='65%'>[LMB] next · [RMB] layouts</span>"
+tooltip="<span alpha='50%'>╭─</span> <b>KEY // LAYOUT</b>\\n<span alpha='45%'>│</span> <span alpha='60%'>ACT</span>  $active_esc [$code_esc]\\n<span alpha='45%'>│</span> <span alpha='60%'>SET</span>  $layouts layouts configured\\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] next · [RMB] layouts</span>"
 
 printf '{"text":"%s  %s","class":"on","tooltip":"%s"}\n' "$icon" "$code_esc" "$tooltip"
