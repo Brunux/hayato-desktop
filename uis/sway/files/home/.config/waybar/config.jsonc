@@ -272,7 +272,7 @@
     },
     "backlight": {
         "format": "<span font_desc='JetBrains Mono 13'>\uf185</span>",
-        "tooltip-format": "<span alpha='50%'>╭─</span> <b>DISP // {percent}%</b>\n<span alpha='45%'>│</span> <span alpha='60%'>LUM</span>  panel backlight\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] display · [SCR] ±5%</span>",
+        "tooltip-format": "╭─ DISP // {percent}%\n│ LUM  panel backlight\n╰─ [LMB] display · [SCR] ±5%",
         "interval": 5,
         "on-click": "~/.config/bin/hayato-display",
         "on-scroll-up": "brightnessctl set 5%+",
