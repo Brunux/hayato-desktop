@@ -249,7 +249,38 @@ pub fn parse_findmnt(raw: &str) -> Vec<(String, String)> {
 pub fn parse_lsblk(raw: &str) -> Vec<(String, String)> {
     let mut devices = Vec::new();
     for line in raw.lines() {
-        // NAME TYPE FSTYPE LABEL MOUNTPOINT
+        let line = line.trim_end();
+        if line.is_empty() {
+            continue;
+        }
+        // `lsblk -rno NAME,TYPE,FSTYPE,LABEL,MOUNTPOINT` separates the 5 columns
+        // with a single space ' ' and escapes internal spaces as `\x20`.
+        let exact: Vec<&str> = line.split(' ').collect();
+        if exact.len() == 5 && !exact[0].is_empty() && !exact[1].is_empty() {
+            let name = exact[0];
+            let ptype = exact[1];
+            let fstype = exact[2];
+            let raw_label = exact[3];
+            let mount = exact[4];
+            if ptype != "part" && ptype != "disk" {
+                continue;
+            }
+            if fstype.is_empty() || fstype == "swap" || fstype == "crypto_LUKS" {
+                continue;
+            }
+            if !mount.is_empty() {
+                continue;
+            }
+            let label = if !raw_label.is_empty() {
+                raw_label.replace("\\x20", " ")
+            } else {
+                name.to_string()
+            };
+            devices.push((label, format!("/dev/{name}")));
+            continue;
+        }
+
+        // Fallback for whitespace-aligned test fixtures
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 3 {
             continue;
@@ -264,10 +295,6 @@ pub fn parse_lsblk(raw: &str) -> Vec<(String, String)> {
         if fstype.is_empty() || fstype == "swap" || fstype == "crypto_LUKS" {
             continue;
         }
-        // If there are 5 parts, parts[4] is mountpoint; if 4 parts and fstype is set,
-        // it may or may not have a mountpoint. Check if line ends with a mountpoint or if parts len indicates mounted.
-        // In raw lsblk: if MOUNTPOINT is non-empty, it's mounted.
-        // We can inspect lines where mountpoint column is empty.
         let is_mounted = parts.len() >= 5 || (parts.len() == 4 && parts[3].starts_with('/'));
         if is_mounted {
             continue;

@@ -492,11 +492,8 @@ impl Screen for DownloadScreen {
                     return Outcome::Consumed;
                 }
                 KeyCode::Char('o') | KeyCode::Char('O') => {
-                    let dl = downloads_dir();
-                    crate::system::spawn_detached(&format!(
-                        "exec hayato menu files '{}'",
-                        dl.display()
-                    ));
+                    let dl = downloads_dir().to_string_lossy().into_owned();
+                    crate::system::spawn_detached_argv("hayato", &["menu", "files", &dl]);
                     return Outcome::Done(hayato_ui::app::exit::OK);
                 }
                 KeyCode::Char('k') | KeyCode::Char('K') if self.active_bg => {

@@ -94,14 +94,18 @@ fi
 if [ -d "$UI_FILES/etc" ]; then
 	install -d -m 0755 "$PKG/etc"
 	cp -a "$UI_FILES/etc/." "$PKG/etc/"
-	# /etc/sway/config is owned by sway/swayfx and /etc/yt-dlp.conf by yt-dlp;
-	# ship them under /usr/share/hayato/etc/ and install them in postinst so dpkg
-	# never reports a file conflict during apt upgrades.
+	# /etc/sway/config is owned by sway/swayfx, /etc/yt-dlp.conf by yt-dlp, and
+	# /etc/environment by libpam-modules; ship them under /usr/share/hayato/etc/
+	# and install them in postinst so dpkg never reports a file conflict during
+	# apt upgrades.
 	if [ -f "$PKG/etc/sway/config" ]; then
 		mv "$PKG/etc/sway/config" "$PKG/usr/share/hayato/etc/sway/config"
 	fi
 	if [ -f "$PKG/etc/yt-dlp.conf" ]; then
 		mv "$PKG/etc/yt-dlp.conf" "$PKG/usr/share/hayato/etc/yt-dlp.conf"
+	fi
+	if [ -f "$PKG/etc/environment" ]; then
+		mv "$PKG/etc/environment" "$PKG/usr/share/hayato/etc/environment"
 	fi
 fi
 if [ -d "$UI_FILES/home" ]; then
@@ -116,7 +120,9 @@ if [ -f "$DESKTOP_DIR/tools/favnyr/SHA256SUMS" ] && [ -f "$PKG/usr/bin/favnyr" ]
 		die "favnyr checksum mismatch against tools/favnyr/SHA256SUMS"
 fi
 
-DEPS="$(deb_depends "$BIN" "$NOTIFY_BIN" "$GAMES_BIN")"
+EXTRA_BINS=()
+[ -f "$PKG/usr/bin/favnyr" ] && EXTRA_BINS+=("$PKG/usr/bin/favnyr")
+DEPS="$(deb_depends "$BIN" "$NOTIFY_BIN" "$GAMES_BIN" "${EXTRA_BINS[@]}")"
 INSTALLED_SIZE="$(du -sk --exclude=DEBIAN "$PKG" | cut -f1)"
 mkdir -p "$PKG/DEBIAN"
 cat >"$PKG/DEBIAN/control" <<EOF
@@ -146,12 +152,31 @@ fi
 if [ -f /usr/share/hayato/etc/yt-dlp.conf ]; then
 	install -m 0644 /usr/share/hayato/etc/yt-dlp.conf /etc/yt-dlp.conf
 fi
+if [ -f /usr/share/hayato/etc/environment ]; then
+	if [ ! -f /etc/environment ]; then
+		install -m 0644 /usr/share/hayato/etc/environment /etc/environment
+	else
+		while IFS= read -r _line; do
+			case "$_line" in
+				'' | '#'*) continue ;;
+			esac
+			_key="${_line%%=*}"
+			grep -qE "^${_key}=" /etc/environment 2>/dev/null || printf '%s\n' "$_line" >>/etc/environment
+		done </usr/share/hayato/etc/environment
+	fi
+fi
 
 # Preserve non-default desktop user home paths across apt upgrades: shipped
-# Sway configs and .desktop entries reference /home/brunux by default.
-_desktop_home="$(awk -F: '$3 == 1000 && $6 != "" { print $6; exit }' /etc/passwd 2>/dev/null || true)"
+# Sway configs, skeleton configs, and .desktop entries reference /home/brunux by default.
+_user="$(awk -F: '$3 == 1000 { print $1; exit }' /etc/passwd 2>/dev/null || true)"
+[ -n "$_user" ] || _user="$(awk -F: '$3 >= 1000 && $3 < 60000 { print $1; exit }' /etc/passwd 2>/dev/null || true)"
+_desktop_home="$(awk -F: -v u="$_user" '$1 == u && $6 != "" { print $6; exit }' /etc/passwd 2>/dev/null || true)"
 if [ -n "$_desktop_home" ] && [ "$_desktop_home" != "/home/brunux" ]; then
-	for _f in /etc/sway/config /etc/sway/config.d/*.conf /usr/share/applications/org.hayato.*.desktop; do
+	for _f in /etc/sway/config /etc/sway/config.d/*.conf /usr/share/applications/org.hayato.*.desktop \
+		/usr/share/hayato/skel/.config/sway/config /usr/share/hayato/skel/.config/sway/config.d/*.conf \
+		/usr/share/hayato/skel/.config/glow/glow.yml /usr/share/hayato/skel/.config/swaylock/config \
+		"$_desktop_home/.config/sway/config" "$_desktop_home/.config/sway/config.d/"*.conf \
+		"$_desktop_home/.config/glow/glow.yml" "$_desktop_home/.config/swaylock/config"; do
 		[ -f "$_f" ] || continue
 		if grep -q '/home/brunux' "$_f" 2>/dev/null; then
 			sed -i "s|/home/brunux|${_desktop_home}|g" "$_f"
@@ -178,8 +203,7 @@ if command -v plymouth-set-default-theme >/dev/null 2>&1 &&
 	plymouth-set-default-theme hayato >/dev/null 2>&1 || true
 fi
 
-_user="$(awk -F: '$3 == 1000 { print $1; exit }' /etc/passwd 2>/dev/null || true)"
-_home="/home/$_user"
+_home="${_desktop_home:-/home/$_user}"
 if [ -n "$_user" ] && [ -d "$_home" ] && [ -d /usr/share/hayato/skel ]; then
 	if [ -d /usr/share/hayato/skel/.config/bin ]; then
 		install -d -m 0755 -o "$_user" -g "$_user" "$_home/.config/bin"

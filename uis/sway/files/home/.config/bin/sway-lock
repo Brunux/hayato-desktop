@@ -33,7 +33,7 @@ APP_ID="org.hayato.screensaver"
 # like another machine.  Missing picture is not fatal: the colour stays.
 WALLPAPER="$HOME/Pictures/Wallpapers/mountains.jpg"
 # Tokyo Night's background, the same backdrop as the terminal and the bar.
-BACKDROP="002b36"
+BACKDROP="1a1b26"
 
 wait_secs=3
 case "${1:-}" in

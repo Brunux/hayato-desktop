@@ -38,7 +38,7 @@ Essential keys:
   Alt+Ctrl+K        every key binding, generated live from Sway
 
 Studios & tools:
-  Hayato Lens       Alt+Ctrl+Shift+L -- local Circle-to-Search (OCR, QR, URLs)
+  Hayato Lens       Alt+I -- local Circle-to-Search (OCR, QR, URLs)
   Hayato Drop       LAN nearby file share via scannable QR code
   Local AI          offline Qwen3.5-0.8B Ask & Translate with zero cloud
   Smart Clipboard   Alt+Ctrl+V -- history by kind, Ctrl+T URL clean / JSON

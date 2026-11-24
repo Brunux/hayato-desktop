@@ -575,15 +575,17 @@ impl LearnScreen {
                             let desc = &line[dash_pos + 3..];
                             if let Some(paren) = left.rfind('(') {
                                 let name = left[..paren].trim();
-                                let section = left[paren + 1..left.len() - 1].trim();
-                                results.push(SearchResult {
-                                    title: format!("{name}({section})"),
-                                    detail: desc.to_string(),
-                                    action: SearchAction::OpenManPage(
-                                        name.to_string(),
-                                        section.to_string(),
-                                    ),
-                                });
+                                let section = left[paren + 1..].trim_end_matches(')').trim();
+                                if !name.is_empty() && !section.is_empty() {
+                                    results.push(SearchResult {
+                                        title: format!("{name}({section})"),
+                                        detail: desc.to_string(),
+                                        action: SearchAction::OpenManPage(
+                                            name.to_string(),
+                                            section.to_string(),
+                                        ),
+                                    });
+                                }
                             }
                         }
                     }

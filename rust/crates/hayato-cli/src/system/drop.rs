@@ -153,14 +153,37 @@ fn handle_client(
     }
     let sub = &req_path[prefix.len()..];
 
+    let paths = hayato_theme::store::Paths::from_env();
+    let slug = hayato_theme::store::active(&paths).unwrap_or_else(|| "tokyo-night".to_string());
+    let (bg, surface, fg, accent) = crate::theme::theme(&slug)
+        .or_else(|_| crate::theme::theme("tokyo-night"))
+        .ok()
+        .map(|theme| {
+            let r = theme.roles();
+            (
+                theme.colors.background.hashed(),
+                r.surface.hashed(),
+                r.text.hashed(),
+                r.accent.hashed(),
+            )
+        })
+        .unwrap_or_else(|| {
+            (
+                "#1a1b26".to_string(),
+                "#24283b".to_string(),
+                "#c0caf5".to_string(),
+                "#7aa2f7".to_string(),
+            )
+        });
+
     match (method, sub, mode) {
         ("GET", "" | "/", DropMode::Send { filename, size, .. }) => {
             let html = format!(
                 "<!doctype html><html><head><meta name=viewport content='width=device-width,initial-scale=1'>\
-                 <title>Hayato Drop</title><style>body{{font-family:system-ui;background:#1a1b26;color:#c0caf5;\
+                 <title>Hayato Drop</title><style>body{{font-family:system-ui;background:{bg};color:{fg};\
                  display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}\
-                 .card{{background:#24283b;padding:2rem;border-radius:14px;text-align:center;max-width:90vw}}\
-                 a{{display:inline-block;margin-top:1rem;padding:.9rem 1.8rem;background:#7aa2f7;color:#1a1b26;\
+                 .card{{background:{surface};padding:2rem;border-radius:14px;text-align:center;max-width:90vw}}\
+                 a{{display:inline-block;margin-top:1rem;padding:.9rem 1.8rem;background:{accent};color:{bg};\
                  font-weight:700;text-decoration:none;border-radius:10px}}</style></head>\
                  <body><div class=card><h2>Hayato Drop</h2><p>{filename} ({})</p>\
                  <a href='/{token}/download'>Download File</a></div></body></html>",
@@ -200,10 +223,10 @@ fn handle_client(
         ("GET", "" | "/", DropMode::Receive { .. }) => {
             let html = format!(
                 "<!doctype html><html><head><meta name=viewport content='width=device-width,initial-scale=1'>\
-                 <title>Hayato Drop</title><style>body{{font-family:system-ui;background:#1a1b26;color:#c0caf5;\
+                 <title>Hayato Drop</title><style>body{{font-family:system-ui;background:{bg};color:{fg};\
                  display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}\
-                 .card{{background:#24283b;padding:2rem;border-radius:14px;text-align:center;max-width:90vw}}\
-                 button{{margin-top:1rem;padding:.9rem 1.8rem;background:#7aa2f7;color:#1a1b26;border:none;\
+                 .card{{background:{surface};padding:2rem;border-radius:14px;text-align:center;max-width:90vw}}\
+                 button{{margin-top:1rem;padding:.9rem 1.8rem;background:{accent};color:{bg};border:none;\
                  font-weight:700;border-radius:10px;font-size:1rem}}</style></head>\
                  <body><div class=card><h2>Send to Hayato</h2>\
                  <input id=f type=file><br><button onclick='go()'>Upload</button><p id=s></p></div>\

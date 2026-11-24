@@ -154,7 +154,7 @@ if have sway; then
 	# display, and it ships in mesa-utils (already a package here).
 	if have eglinfo; then
 		_gpu_renderer="$(eglinfo -B 2>/dev/null | awk -F': ' '/OpenGL ES profile renderer/ { print $2; exit }')"
-		_dev_codename="$(tr -d ' \t\r\n' </etc/hayato/device 2>/dev/null || echo google-asurada)"
+		_dev_codename="$(tr -d ' \t\r\n' </etc/hayato/device 2>/dev/null || echo generic)"
 		case "$_gpu_renderer" in
 		*Panfrost*) ok "GPU renderer is $_gpu_renderer" ;;
 		"") warn "eglinfo reported no renderer: cannot confirm the GPU driver" ;;
@@ -317,10 +317,10 @@ for b in bad:
 		_kitty_font=$(sed -n 's/^font=//p' <<<"$_kitty_out")
 		_kitty_sym=$(sed -n 's/^symbols=//p' <<<"$_kitty_out")
 		_kitty_off=
-		[ "$_kitty_bg" = 002b36 ] ||
-			_kitty_off="$_kitty_off background=#$_kitty_bg (not solarized base03)"
-		[ "$_kitty_fg" = 93a1a1 ] ||
-			_kitty_off="$_kitty_off foreground=#$_kitty_fg (not base1)"
+		[ "$_kitty_bg" = 1a1b26 ] || [ "$_kitty_bg" = 002b36 ] ||
+			_kitty_off="$_kitty_off background=#$_kitty_bg (not session default)"
+		[ "$_kitty_fg" = c0caf5 ] || [ "$_kitty_fg" = 93a1a1 ] ||
+			_kitty_off="$_kitty_off foreground=#$_kitty_fg (not session default)"
 		awk -v o="$_kitty_op" 'BEGIN { exit !(o > 0 && o < 1) }' ||
 			_kitty_off="$_kitty_off opacity=$_kitty_op (opaque: swayfx has no blur to draw behind it)"
 		[ "$_kitty_font" = "JetBrains Mono" ] ||
@@ -1852,12 +1852,12 @@ fi
 # top-right corner of every capture and looked like a broken region). The
 # recorder is pure Rust now: the check reads the argv it builds, runs a fake
 # session end to end, and then asks the notification daemon itself.
-_rec_argv=$(hayato menu capture --argv /home/brunux/Videos/a.mp4 2>/dev/null || true)
+_rec_argv=$(hayato menu capture --argv "$HOME/Videos/a.mp4" 2>/dev/null || true)
 _rec_argv_area=$(hayato menu capture --argv /tmp/a.mp4 "10,20 300x200" 2>/dev/null || true)
 if [ "$(printf '%s\n' "$_rec_argv" | sed -n '1p')" = "wf-recorder" ] &&
 	printf '%s\n' "$_rec_argv" | grep -qsx -- 'libx264' &&
 	printf '%s\n' "$_rec_argv" | grep -qsx -- '-f' &&
-	printf '%s\n' "$_rec_argv" | grep -qsx '/home/brunux/Videos/a.mp4'; then
+	printf '%s\n' "$_rec_argv" | grep -qsx "$HOME/Videos/a.mp4"; then
 	ok "the recorder is one argv (wf-recorder ... -f FILE), never a shell line"
 else
 	fail "hayato menu capture --argv is not wf-recorder's own argv: Stop cannot trust the pid"
@@ -4808,7 +4808,7 @@ else
 	fail "no binding runs 'hayato-display --panel-on': a black screen has no way back"
 fi
 case "$("$_disp" --panel-on --command 2>/dev/null)" in
-"swaymsg output eDP-1 enable"|"swaymsg output DSI-1 enable")
+"swaymsg output "*+" enable"|"swaymsg output "*" enable")
 	ok "hayato-display --panel-on exists" ;;
 *)
 	fail "$_disp has no --panel-on mode: the recovery key would run nothing" ;;

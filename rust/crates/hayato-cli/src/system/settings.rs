@@ -192,15 +192,33 @@ fn wifi_detail() -> String {
     }
 }
 
+fn bt_adapter_path() -> String {
+    if let Ok(entries) = std::fs::read_dir("/sys/class/bluetooth") {
+        let mut names: Vec<String> = entries
+            .flatten()
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                name.starts_with("hci").then_some(name)
+            })
+            .collect();
+        names.sort();
+        if let Some(first) = names.first() {
+            return format!("/org/bluez/{first}");
+        }
+    }
+    "/org/bluez/hci0".to_string()
+}
+
 fn bt_on() -> bool {
     // busctl is one property read; bluetoothctl connects a whole D-Bus client
     // and asks bluez for everything, which is the slow half of this panel.
+    let adapter = bt_adapter_path();
     let powered = out(&[
         "busctl",
         "--system",
         "get-property",
         "org.bluez",
-        "/org/bluez/hci0",
+        &adapter,
         "org.bluez.Adapter1",
         "Powered",
     ])
@@ -279,6 +297,7 @@ fn focused_output() -> String {
                 outputs
                     .iter()
                     .find(|o| o["focused"].as_bool().unwrap_or(false))
+                    .or_else(|| outputs.first())
                     .and_then(|o| o["name"].as_str())
                     .map(|s| s.to_string())
             })
@@ -529,8 +548,16 @@ fn battery_detail() -> String {
     };
     for entry in entries.flatten() {
         let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with("hid-") {
+            continue;
+        }
         let kind = std::fs::read_to_string(path.join("type")).unwrap_or_default();
         if kind.trim() != "Battery" {
+            continue;
+        }
+        let scope = std::fs::read_to_string(path.join("scope")).unwrap_or_default();
+        if scope.trim() == "Device" {
             continue;
         }
         let c = std::fs::read_to_string(path.join("capacity")).ok();
@@ -2537,8 +2564,7 @@ pub fn menu(
                         .unwrap_or(100);
                     let next = if cur <= 85 { "100" } else { "80" };
                     let p = path.to_string_lossy().to_string();
-                    let cmd = format!("printf '%s\\n' {next} > '{p}'");
-                    match sudo(&["sh", "-c", &cmd]) {
+                    match sudo(&["sh", "-c", "printf '%s\\n' \"$1\" > \"$2\"", "sh", next, &p]) {
                         Ok(_) => banner = Some(format!("Battery charge limit set to {next}%")),
                         Err(e) => banner = Some(format!("Could not set charge limit: {e}")),
                     }

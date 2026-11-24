@@ -696,7 +696,7 @@ cmd_export() {
 	_busy_msg='Packing & writing profile directly to target…'
 	[ "$_mode" = home ] && _busy_msg='Streaming profile & home folder to target…'
 	_busy_started=
-	if BUSY_STOP='pkill -f "[l]azyos-profile\."' \
+	if BUSY_STOP='pkill -f "[h]ayato-profile"' \
 		"$UI_BIN/busy" start dev 'Developer' "$_busy_msg" package-x-generic 2>/dev/null; then
 		_busy_started=yes
 	fi

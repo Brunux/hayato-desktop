@@ -212,12 +212,9 @@ fn send_sync_card(summary: &str, body: &str, urgency: &str, timeout_ms: i32, ico
 }
 
 fn spawn_notify_watcher(hands_free: bool) {
-    let exe = std::env::current_exe()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "/usr/bin/hayato".to_string());
+    let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("/usr/bin/hayato"));
     let mode_arg = if hands_free { "hands-free" } else { "hold" };
-    let cmd = format!("exec '{exe}' menu dictate --watch-notify {mode_arg}");
-    crate::system::spawn_detached(&cmd);
+    crate::system::spawn_detached_argv(exe, &["menu", "dictate", "--watch-notify", mode_arg]);
 }
 
 fn watch_notify(hands_free: bool) -> i32 {
@@ -463,7 +460,7 @@ pub fn stop_and_transcribe() -> i32 {
         "-nt",
         "-np",
     ];
-    let out = if have("taskset") {
+    let out = if have("taskset") && Path::new("/sys/devices/system/cpu/cpu7").exists() {
         Command::new("taskset")
             .args(["-c", "4-7", "whisper-cli"])
             .args(whisper_args)

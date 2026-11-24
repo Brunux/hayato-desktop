@@ -149,6 +149,13 @@ fn parse_outputs(json: &str) -> Vec<Output> {
     outputs
 }
 
+fn is_internal_panel_name(name: &str) -> bool {
+    name.starts_with("eDP-")
+        || name.starts_with("DSI-")
+        || name.starts_with("LVDS-")
+        || name.starts_with("DPI-")
+}
+
 /// The active outputs, internal panel first, for the workspace picker.
 pub fn active_outputs() -> Vec<String> {
     let mut names: Vec<String> = read_outputs()
@@ -157,7 +164,7 @@ pub fn active_outputs() -> Vec<String> {
         .map(|output| output.name)
         .collect();
     names.sort_by_key(|name| {
-        let internal = name.starts_with("eDP-") || name.starts_with("DSI-");
+        let internal = is_internal_panel_name(name);
         (!internal, name.clone())
     });
     names
@@ -180,14 +187,15 @@ fn read_outputs() -> Vec<Output> {
     parse_outputs(&output)
 }
 
-/// Find the external monitor (DP-* or HDMI-*) and the internal panel (eDP-* or DSI-*).
+/// Find the external monitor (DP-* or HDMI-*) and the internal panel (eDP-*, DSI-*, LVDS-*, DPI-*).
 fn find_monitor_and_panel(outputs: &[Output]) -> (Option<Output>, Option<Output>) {
     let mut mon = None;
     let mut panel: Option<Output> = None;
     for o in outputs {
         if o.name.starts_with("DP-") || o.name.starts_with("HDMI-") {
             mon = Some(o.clone());
-        } else if o.name.starts_with("eDP-") || (o.name.starts_with("DSI-") && panel.is_none()) {
+        } else if o.name.starts_with("eDP-") || (is_internal_panel_name(&o.name) && panel.is_none())
+        {
             panel = Some(o.clone());
         }
     }

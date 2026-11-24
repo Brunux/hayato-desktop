@@ -39,6 +39,7 @@ COMPOSITOR_PKG_VERSION="$COMPOSITOR_VERSION-$PACKAGING_REVISION"
 fetch() {
 	# fetch <tarball> <url>: download once, then verify against SHA256SUMS.
 	local tarball="$1" url="$2"
+	mkdir -p "$SRC_DIR"
 	if [ ! -f "$SRC_DIR/$tarball" ]; then
 		log "Downloading $tarball"
 		curl -fL --retry 3 --progress-bar -o "$SRC_DIR/$tarball.part" "$url"

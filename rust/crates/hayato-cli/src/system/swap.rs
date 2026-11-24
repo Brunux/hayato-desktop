@@ -360,8 +360,26 @@ fn apply(dev: &str, end: &str, alloc: &str, fstab_text: &str) -> Result<String, 
     ))
 }
 
+/// Ensure `/etc/initramfs-tools/conf.d/resume` is set to `RESUME=none` so
+/// `update-initramfs` never bakes a removable SD/USB auxiliary swap UUID into
+/// initramfs (which would stall boot for 30s whenever the card is unplugged).
+fn ensure_resume_none() {
+    if std::fs::read_to_string("/etc/initramfs-tools/conf.d/resume")
+        .map(|s| s.lines().any(|l| l.trim() == "RESUME=none"))
+        .unwrap_or(false)
+    {
+        return;
+    }
+    let _ = crate::system::sudo(&[
+        "sh",
+        "-c",
+        "mkdir -p /etc/initramfs-tools/conf.d && printf 'RESUME=none\\n' >/etc/initramfs-tools/conf.d/resume",
+    ]);
+}
+
 /// Turn the auxiliary swap off, given its current `status` and the current fstab.
 fn turn_off(status: &Status, fstab_text: &str) -> Result<String, Failed> {
+    ensure_resume_none();
     let part = match status.part {
         Some(ref p) => p.clone(),
         None => {
@@ -765,6 +783,7 @@ pub fn menu(
 
         let stripped = fstab::strip(&fstab_text);
         fstab::replace(&stripped).map_err(|f| crate::Failure::new("Auxiliary swap", f))?;
+        ensure_resume_none();
 
         let mut steps_meta: Vec<String> = Vec::new();
         let mut commands = Vec::new();
@@ -868,6 +887,7 @@ fn adopt(
     part: &str,
     fstab_text: &str,
 ) -> Result<i32, crate::Failure> {
+    ensure_resume_none();
     fstab::replace(&fstab::with_swap(fstab_text))
         .map_err(|f| crate::Failure::new("Auxiliary swap", f))?;
 
@@ -1006,6 +1026,7 @@ fn create(
     let part = fstab::partition(&dev);
 
     let new_fstab = fstab::with_swap(fstab_text);
+    ensure_resume_none();
     fstab::replace(&new_fstab).map_err(|f| crate::Failure::new("Auxiliary swap", f))?;
 
     let mut commands = Vec::new();

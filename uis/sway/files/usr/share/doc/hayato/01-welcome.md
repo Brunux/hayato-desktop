@@ -114,7 +114,7 @@ Beyond the core launcher and file browser, Hayato ships focused local-first stud
 | Studio / Tool | Shortcut or Command | What it does |
 |---|---|---|
 | **Mission Briefing** | `hayato menu welcome` | Interactive 4-tab first-boot welcome screen (Boot telemetry, Hotkeys, Tools, Launchpad); shown once per install via `hayato-welcome` |
-| **Hayato Lens** | **Alt+Ctrl+Shift+L** (`hayato menu lens`) | Local Circle-to-Search: drag a region to extract OCR text or QR codes, open or clean URLs, translate, or save to Notes |
+| **Hayato Lens** | **Alt+I** (`hayato menu lens`) | Local Circle-to-Search: drag a region to extract OCR text or QR codes, open or clean URLs, translate, or save to Notes |
 | **Hayato Drop** | `hayato menu drop` | Ephemeral LAN nearby share: send or receive files over local Wi-Fi via an in-TUI scannable QR code |
 | **Local AI** | **Alt+Space** → Ask / **Alt+Ctrl+T** | Offline `Qwen3.5-0.8B` Ask & Translate running locally on the machine with no cloud account required |
 | **Smart Clipboard** | **Alt+Ctrl+V** (`hayato menu clip`) | Clipboard history by kind with `Ctrl+T` one-key URL tracking-parameter cleanup and JSON formatting |

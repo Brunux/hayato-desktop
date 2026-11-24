@@ -355,7 +355,11 @@ pub fn menu_for_path(
                 if let Ok(o) = res {
                     let text = String::from_utf8_lossy(&o.stdout);
                     if let Some(pos) = text.find("/dev/loop") {
-                        let loop_dev = text[pos..].split_whitespace().next().unwrap_or("");
+                        let loop_dev = text[pos..]
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or("")
+                            .trim_end_matches('.');
                         let mount_res = Command::new("udisksctl")
                             .args(["mount", "-b", loop_dev])
                             .output();
@@ -367,6 +371,12 @@ pub fn menu_for_path(
                                 return Ok(0);
                             }
                         }
+                        let _ = Command::new("udisksctl")
+                            .args(["loop-delete", "-b", loop_dev])
+                            .stdin(std::process::Stdio::null())
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .status();
                     }
                 }
                 status_note = Some(format!("Could not mount disk image {base}"));

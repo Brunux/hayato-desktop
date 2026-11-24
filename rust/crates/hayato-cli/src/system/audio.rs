@@ -406,17 +406,24 @@ impl AudioScreen {
 
     fn toggle_selected_mute(&mut self) {
         if let Some(idx) = self.list.selected_index()
-            && self.keys.get(idx).map(String::as_str) == Some("mute-source")
+            && let Some(key) = self.keys.get(idx).map(String::as_str)
         {
-            let _ = Command::new("pactl")
-                .args(["set-source-mute", "@DEFAULT_SOURCE@", "toggle"])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-            self.status = "Toggled microphone mute".to_string();
-            self.reload(true);
-            return;
+            if key == "mute-source" || key.starts_with("source:") {
+                let target_src = key
+                    .strip_prefix("source:")
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("@DEFAULT_SOURCE@")
+                    .to_string();
+                let _ = Command::new("pactl")
+                    .args(["set-source-mute", &target_src, "toggle"])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+                self.status = "Toggled microphone mute".to_string();
+                self.reload(true);
+                return;
+            }
         }
         let target = self.target_sink();
         let _ = Command::new("pactl")
