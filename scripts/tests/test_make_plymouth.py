@@ -73,6 +73,9 @@ class PlymouthThemeTests(unittest.TestCase):
             "BOOT // TELEMETRY",
             "SHUTDOWN // TELEMETRY",
             "[ Esc: raw vt ]",
+            "[  OK  ]",
+            "[ WAIT ]",
+            "[ FAIL ]",
         ):
             self.assertIn(required, script_text)
 

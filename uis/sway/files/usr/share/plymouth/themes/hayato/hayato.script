@@ -162,7 +162,28 @@ if (card_x + 16 + hud_title_img.GetWidth() + 12 > hud_hint_x) {
     hud_hint_spr.SetOpacity(0.0);
 }
 
-# 7-line rolling log sprites
+# Pre-rendered classic right-aligned status badges
+badge_ok = Image.Text("[  OK  ]", 0.620, 0.808, 0.416, 1.0, "monospace Bold 10");
+badge_wait = Image.Text("[ WAIT ]", 0.878, 0.686, 0.408, 1.0, "monospace Bold 10");
+badge_fail = Image.Text("[ FAIL ]", 0.969, 0.463, 0.557, 1.0, "monospace Bold 10");
+badge_info = Image.Text("[ INFO ]", 0.490, 0.812, 1.000, 1.0, "monospace Bold 10");
+badge_stop = Image.Text("[ STOP ]", 0.878, 0.686, 0.408, 1.0, "monospace Bold 10");
+
+# Dynamically measure monospace cell width so dot-leaders align to the badge edge
+sample_10_w = Image.Text("0123456789", 0.753, 0.792, 0.961, 1.0, "monospace 10").GetWidth();
+char_w = sample_10_w / 10;
+if (char_w < 6) {
+    char_w = 8;
+}
+badge_w = badge_ok.GetWidth();
+badge_x = card_x + card_w - 16 - badge_w;
+left_avail_px = badge_x - (card_x + 16) - 10;
+inner_cols = Math.Int(left_avail_px / char_w);
+if (inner_cols < 20) {
+    inner_cols = 20;
+}
+
+# 7-line rolling log sprites (left label+dots + right classic status badge)
 log_base_y = card_y + 1 + header_h + 1 + body_pad_top;
 for (i = 0; i < log_max; i++) {
     log_spr[i] = Sprite();
@@ -170,6 +191,12 @@ for (i = 0; i < log_max; i++) {
     log_spr[i].SetY(log_base_y + (i * line_h));
     log_spr[i].SetZ(36);
     log_spr[i].SetOpacity(0.0);
+
+    log_badge_spr[i] = Sprite();
+    log_badge_spr[i].SetX(badge_x);
+    log_badge_spr[i].SetY(log_base_y + (i * line_h));
+    log_badge_spr[i].SetZ(36);
+    log_badge_spr[i].SetOpacity(0.0);
 }
 
 # Smooth upward opacity fade indexed by age (0 = newest at bottom, 6 = oldest at top)
@@ -349,70 +376,223 @@ fun sanitize_line(raw, limit) {
     return local.out;
 }
 
-fun render_log_line(line) {
-    # Default Tokyo Night reading text (#c0caf5)
+fun starts_with(str, prefix) {
+    if (!str || !prefix) {
+        return 0;
+    }
+    local.slen = str.Length();
+    local.plen = prefix.Length();
+    if (local.plen > local.slen) {
+        return 0;
+    }
+    for (local.i = 0; local.i < local.plen; local.i++) {
+        if (str.CharAt(local.i) != prefix.CharAt(local.i)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+fun ends_with(str, suffix) {
+    if (!str || !suffix) {
+        return 0;
+    }
+    local.slen = str.Length();
+    local.xlen = suffix.Length();
+    if (local.xlen > local.slen) {
+        return 0;
+    }
+    local.off = local.slen - local.xlen;
+    for (local.i = 0; local.i < local.xlen; local.i++) {
+        if (str.CharAt(local.off + local.i) != suffix.CharAt(local.i)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+fun substr(str, start, count) {
+    local.out = "";
+    local.slen = str.Length();
+    for (local.i = 0; local.i < count; local.i++) {
+        if (start + local.i < local.slen) {
+            local.out = local.out + str.CharAt(start + local.i);
+        }
+    }
+    return local.out;
+}
+
+fun strip_suffix(str, suffix) {
+    if (ends_with(str, suffix)) {
+        return substr(str, 0, str.Length() - suffix.Length());
+    }
+    return str;
+}
+
+fun make_dots(count) {
+    local.out = "";
+    for (local.i = 0; local.i < count; local.i++) {
+        local.out = local.out + ".";
+    }
+    return local.out;
+}
+
+fun is_noisy_unit(unit) {
+    if (ends_with(unit, ".device") || ends_with(unit, ".slice") || ends_with(unit, ".scope") || ends_with(unit, ".socket") || ends_with(unit, ".path") || ends_with(unit, ".timer")) {
+        return 1;
+    }
+    if (ends_with(unit, ".mount")) {
+        if (starts_with(unit, "sys-") || starts_with(unit, "dev-") || starts_with(unit, "run-") || starts_with(unit, "proc-") || unit == "tmp.mount" || unit == "-.mount") {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+fun extract_tail_segment(str) {
+    local.len = str.Length();
+    local.last_dash = -1;
+    for (local.i = 0; local.i < local.len; local.i++) {
+        if (str.CharAt(local.i) == "-") {
+            local.last_dash = local.i;
+        }
+    }
+    if (local.last_dash >= 0 && local.last_dash < local.len - 1) {
+        return substr(str, local.last_dash + 1, local.len - local.last_dash - 1);
+    }
+    return str;
+}
+
+fun format_unit_label(raw) {
+    if (ends_with(raw, ".service")) {
+        return strip_suffix(raw, ".service");
+    }
+    if (ends_with(raw, ".target")) {
+        return strip_suffix(raw, ".target") + " target";
+    }
+    if (ends_with(raw, ".swap")) {
+        local.stem = strip_suffix(raw, ".swap");
+        return "swap: " + extract_tail_segment(local.stem);
+    }
+    if (ends_with(raw, ".mount")) {
+        local.stem = strip_suffix(raw, ".mount");
+        return "mount: " + local.stem;
+    }
+    return raw;
+}
+
+fun badge_for_kind(kind) {
+    if (kind == "FAIL") {
+        return badge_fail;
+    }
+    if (kind == "WAIT") {
+        return badge_wait;
+    }
+    if (kind == "STOP") {
+        return badge_stop;
+    }
+    if (kind == "INFO") {
+        return badge_info;
+    }
+    return badge_ok;
+}
+
+fun render_row_left(label, kind) {
+    # Pad classic dot-leaders out to the right-aligned status badge
+    local.max_label = inner_cols - 4;
+    if (local.max_label < 10) {
+        local.max_label = 10;
+    }
+    local.text = sanitize_line(label, local.max_label);
+    local.dot_n = inner_cols - local.text.Length() - 1;
+    if (local.dot_n < 3) {
+        local.dot_n = 3;
+    }
+    local.full = local.text + " " + make_dots(local.dot_n);
+
+    # Default Tokyo Night reading text (#c0caf5); tint warnings/failures so issues pop
     local.r = 0.753;
     local.g = 0.792;
     local.b = 0.961;
-
-    if (contains_ci(line, "fail") || contains_ci(line, "error") || contains_ci(line, "timed out") || contains_ci(line, "timeout")) {
-        # Danger red (#f7768e)
+    if (kind == "FAIL") {
         local.r = 0.969;
         local.g = 0.463;
         local.b = 0.557;
-    } else if (contains_ci(line, "start job") || contains_ci(line, "waiting") || contains_ci(line, "warn") || contains_ci(line, "swap") || contains_ci(line, "fsck")) {
-        # Warning amber (#e0af68)
+    } else if (kind == "WAIT") {
         local.r = 0.878;
         local.g = 0.686;
         local.b = 0.408;
-    } else if (contains_ci(line, "started") || contains_ci(line, "reached") || contains_ci(line, "mounted") || contains_exact(line, "OK")) {
-        # OK green (#9ece6a)
-        local.r = 0.620;
-        local.g = 0.808;
-        local.b = 0.416;
     }
 
-    return Image.Text("> " + line, local.r, local.g, local.b, 1.0, "monospace 10");
+    return Image.Text(local.full, local.r, local.g, local.b, 1.0, "monospace 10");
 }
 
-fun push_log_line(raw_text) {
-    local.clean = sanitize_line(raw_text, max_chars);
+fun push_entry(raw_label, kind, replace_active) {
+    local.clean = sanitize_line(raw_label, inner_cols - 4);
     if (local.clean == "") {
         return;
     }
 
-    # Deduplicate consecutive identical messages
-    if (log_count > 0 && log_lines[log_count - 1] == local.clean) {
+    # Deduplicate consecutive identical rows
+    if (log_count > 0 && log_lines[log_count - 1] == local.clean && log_kinds[log_count - 1] == kind) {
         return;
     }
 
-    local.rendered = render_log_line(local.clean);
+    local.rendered = render_row_left(local.clean, kind);
+    local.badge = badge_for_kind(kind);
 
-    if (log_count < log_max) {
+    # Live-update ticking countdown lines (e.g. "A start job is running...") in place
+    if (replace_active == 1 && log_count > 0 && log_kinds[log_count - 1] == "WAIT") {
+        log_lines[log_count - 1] = local.clean;
+        log_kinds[log_count - 1] = kind;
+        log_img[log_count - 1] = local.rendered;
+        log_badge_img[log_count - 1] = local.badge;
+    } else if (log_count < log_max) {
         log_lines[log_count] = local.clean;
+        log_kinds[log_count] = kind;
         log_img[log_count] = local.rendered;
+        log_badge_img[log_count] = local.badge;
         log_count++;
     } else {
         for (local.i = 0; local.i < log_max - 1; local.i++) {
             log_lines[local.i] = log_lines[local.i + 1];
+            log_kinds[local.i] = log_kinds[local.i + 1];
             log_img[local.i] = log_img[local.i + 1];
+            log_badge_img[local.i] = log_badge_img[local.i + 1];
         }
         log_lines[log_max - 1] = local.clean;
+        log_kinds[log_max - 1] = kind;
         log_img[log_max - 1] = local.rendered;
+        log_badge_img[log_max - 1] = local.badge;
     }
 
     for (local.i = 0; local.i < log_count; local.i++) {
         local.age = (log_count - 1) - local.i;
         log_spr[local.i].SetImage(log_img[local.i]);
         log_spr[local.i].SetOpacity(log_opacity[local.age]);
+        log_badge_spr[local.i].SetImage(log_badge_img[local.i]);
+        log_badge_spr[local.i].SetOpacity(log_opacity[local.age]);
     }
+}
+
+fun classify_message(line) {
+    if (contains_ci(line, "fail") || contains_ci(line, "error") || contains_ci(line, "timed out") || contains_ci(line, "timeout") || contains_ci(line, "dependency") || contains_ci(line, "corrupt")) {
+        return "FAIL";
+    }
+    if (contains_ci(line, "start job") || contains_ci(line, "stop job") || contains_ci(line, "waiting") || contains_ci(line, "warn") || contains_ci(line, "fsck") || contains_ci(line, "checking") || contains_ci(line, "resuming")) {
+        return "WAIT";
+    }
+    if (contains_ci(line, "started") || contains_ci(line, "reached") || contains_ci(line, "mounted") || contains_exact(line, "OK")) {
+        return "OK";
+    }
+    return "INFO";
 }
 
 # Seed frame 1 so the telemetry widget is alive before the first systemd event
 if (is_shutdown) {
-    push_log_line("Stopping services...");
+    push_entry("Stopping system services", "STOP", 0);
 } else {
-    push_log_line("Kernel handoff complete — awaiting systemd...");
+    push_entry("Kernel handoff complete", "OK", 0);
 }
 
 # ---------------------------------------------------------------------------
@@ -474,17 +654,35 @@ fun refresh_callback() {
 Plymouth.SetRefreshFunction(refresh_callback);
 
 fun update_status_callback(status) {
-    if (status && status != "") {
-        push_log_line(status);
+    if (!status || status == "") {
+        return;
     }
+    local.trimmed = sanitize_line(status, 128);
+    if (local.trimmed == "" || is_noisy_unit(local.trimmed)) {
+        return;
+    }
+    local.label = format_unit_label(local.trimmed);
+    local.kind = "OK";
+    if (is_shutdown) {
+        local.kind = "STOP";
+    } else if (contains_ci(local.trimmed, "fail") || contains_ci(local.trimmed, "error")) {
+        local.kind = "FAIL";
+    }
+    push_entry(local.label, local.kind, 0);
 }
 
 Plymouth.SetUpdateStatusFunction(update_status_callback);
 
 fun message_callback(text) {
-    if (text && text != "") {
-        push_log_line(text);
+    if (!text || text == "") {
+        return;
     }
+    local.kind = classify_message(text);
+    local.is_ticking = 0;
+    if (contains_ci(text, "start job") || contains_ci(text, "stop job") || contains_ci(text, "fsck")) {
+        local.is_ticking = 1;
+    }
+    push_entry(text, local.kind, local.is_ticking);
 }
 
 Plymouth.SetMessageFunction(message_callback);
@@ -534,6 +732,7 @@ fun quit_callback() {
     hud_hint_spr.SetOpacity(0.0);
     for (local.i = 0; local.i < log_max; local.i++) {
         log_spr[local.i].SetOpacity(0.0);
+        log_badge_spr[local.i].SetOpacity(0.0);
     }
     password_spr.SetOpacity(0.0);
 }
