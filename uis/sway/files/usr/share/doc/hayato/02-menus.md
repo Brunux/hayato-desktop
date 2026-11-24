@@ -30,7 +30,11 @@ symlinks to `/usr/bin/hayato`.
 | **Alt+Ctrl+V** | `hayato menu clip` (`hayato-clip`) | **clipboard history**: what was copied, Enter puts it back, Alt+1 deletes that entry |
 | **Alt+Ctrl+E** | `hayato menu emoji` (`hayato-emoji`) | **emoji**: type a name, Enter inserts the glyph at the cursor, Alt+1 only copies it |
 | **Alt+Ctrl+T** | `hayato menu translate` (`translate`) | **translate** the selected text (or the clipboard) into the language Settings sets, English until it is set; the answer is copied, and a long one opens in a read window |
-| **Alt+Shift+C** | `hayato menu theme` (`hayato-theme-picker`) | interactive dual-pane theme picker with live preview and wallpaper switching |
+| **Alt+Ctrl+Shift+T** | `hayato menu theme` (`hayato-theme-picker`) | interactive dual-pane theme picker with live preview and wallpaper switching |
+| **Alt+Ctrl+R** | `hayato-studio` (`hayato menu studio`) | screen recording (PipeWire mixer + live webcam PiP), webcam video, and camera photos |
+| **Alt+I** | `hayato menu lens` | local "Circle to Search": drag a region for OCR text, QR/barcode scan, URL, or translate |
+| **Alt+Ctrl+U** | `hayato share` | send/receive files, links, clipboard text, and Wi-Fi QR codes with a phone or nearby device |
+| **Alt+M** | `hayato-cassette` | music player for local audio and Spotify Connect (This Device audio + 5 live visualizers) |
 | **Learn** (root menu) | `hayato menu learn` (`hayato-learn`) | these pages, rendered with glow, plus a search across all of them |
 
 The root menu is also a launcher entry: **Hayato Menu** (`Alt+D`, type
@@ -121,7 +125,7 @@ the kernel's generator, straight into the clipboard: hex, so there is no shift k
 `/` or `=` to re-quote when it is pasted into a file or a URL, and the value never
 appears in a notification - mako keeps a history, and a password in it is a
 password on disk), **SSH** (hosts from `~/.ssh/config`),
-**Share this screen** (Settings and the root menu: `wayvnc` serves the session
+**Remote Desktop (VNC)** (Settings → Network and Command Palette: `wayvnc` serves the session
 read-only on the loopback address, so another machine can look at it through the
 ssh login — the menu carries the tunnel command, and `05-system.md` has the how
 and the why),
@@ -343,9 +347,9 @@ the image, which is why it has a stylesheet and not a theme of its own, and it
 needs `gvfs` for the trash; SMB and phone mounts are not installed, so its
 Network places are off. `04-software.md` § *Files in a window* has the rest.
 
-## Capture: the screen as a picture, as text, or as a video
+## Screenshot, Studio, Lens & Share
 
-**Alt+Ctrl+C** (`hayato-capture`, and "Capture" in the root menu and the launcher)
+**Alt+Ctrl+C** (`hayato-capture`, **Screenshot** in `Alt+Space`) snaps still images (whole screen, area, window) and annotates with `swappy`. For screen recording or webcam video/photos use **Studio** (**Alt+Ctrl+R**), for OCR / QR scanning use **Lens** (**Alt+I**), and for sending/receiving files, clipboard text, or Wi-Fi QR codes use **Share** (**Alt+Ctrl+U**).
 is the list behind the screenshot keys. Everything on it is one command that
 ends before the list closes again:
 

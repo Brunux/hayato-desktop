@@ -375,7 +375,7 @@ impl VncScreen {
             }
             None => (
                 vec![
-                    Row::new("Share this screen (read-only)")
+                    Row::new("Remote Desktop (read-only)")
                         .glyph(Glyph::Eye)
                         .detail(format!("localhost:{PORT} · pixels out, no input")),
                     Row::new("Allow remote control")
@@ -607,7 +607,7 @@ pub fn menu(
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
         return Err(crate::Failure::new(
-            "Share this screen",
+            "Remote Desktop (VNC)",
             format!("{said} (wayvnc, iproute2)"),
         ));
     }

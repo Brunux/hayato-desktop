@@ -8,7 +8,7 @@ Hayato · Settings                                                              
 │      Night light, display, rota… │ │     Bluetooth radio  on                                                                                        │
 │                                  │ │     Bluetooth devices  1 device connected                                                                      │
 │     Appearance                  │ │     DNS  the resolver this connection uses                                                                     │
-│      Theme, wallpaper, bar, win… │ │     Share this screen  off                                                                                     │
+│      Theme, wallpaper, bar, win… │ │     Remote Desktop (VNC)  off                                                                                  │
 │                                  │ │     Remote login (SSH)  remote login status                                                                    │
 │     Input                       │ │                                                                                                                 │
 │      Touchpad, keyboard, tablet… │ │                                                                                                                 │

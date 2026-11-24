@@ -204,11 +204,9 @@ impl CaptureScreen {
             day_str,
             list: ListState::new().with_empty("no matching capture actions"),
             keys: Vec::new(),
-            header: Header::new("Hayato").subtitle("Capture"),
+            header: Header::new("Hayato").subtitle("Screenshot"),
             keybar: vec![
-                KeyHint::new("Enter", "run"),
-                KeyHint::new("^A", "audio"),
-                KeyHint::new("^W", "webcam"),
+                KeyHint::new("Enter", "capture"),
                 KeyHint::new("^O", "folder"),
                 KeyHint::new("Esc", "close"),
             ],
@@ -275,15 +273,15 @@ impl CaptureScreen {
     fn update_header(&mut self) {
         let status = match &self.mode {
             CaptureMode::Idle => format!(
-                "Ready \u{00b7} {} \u{00b7} {}",
-                self.options.summary(),
-                self.shot_dir.display()
+                "Ready \u{00b7} {}/{}",
+                self.shot_dir.display(),
+                self.day_str
             ),
             CaptureMode::Recording { elapsed, size, .. } => {
                 format!("● REC {elapsed} \u{00b7} {size} \u{00b7} Enter stops")
             }
         };
-        self.header = Header::new("Hayato").subtitle("Capture").status(status);
+        self.header = Header::new("Hayato").subtitle("Screenshot").status(status);
     }
 
     fn cycle_audio(&mut self) {
@@ -357,43 +355,10 @@ impl CaptureScreen {
                     .detail("arrows, text, crop"),
             );
             keys.push(Some("annotate"));
-
-            rows.push(Row::heading("Record"));
-            keys.push(None);
-            rows.push(
-                Row::new("Record · Whole screen")
-                    .glyph(Glyph::Video)
-                    .detail(format!("wf-recorder · {}", self.options.summary())),
-            );
-            keys.push(Some("rec:none"));
-            rows.push(
-                Row::new("Record · Area")
-                    .glyph(Glyph::Video)
-                    .detail(format!("pick region · {}", self.options.summary())),
-            );
-            keys.push(Some("rec:area"));
         }
 
-        rows.push(Row::heading("Extract & Share"));
+        rows.push(Row::heading("Library"));
         keys.push(None);
-        rows.push(
-            Row::new("OCR text → clipboard")
-                .glyph(Glyph::File)
-                .detail("tesseract region scan"),
-        );
-        keys.push(Some("ocr"));
-        rows.push(
-            Row::new("Scan QR from area")
-                .glyph(Glyph::Qr)
-                .detail("zbarimg → clipboard"),
-        );
-        keys.push(Some("qr"));
-        rows.push(
-            Row::new("Make a QR code")
-                .glyph(Glyph::Qr)
-                .detail("Wi-Fi password or custom text"),
-        );
-        keys.push(Some("make-qr"));
         rows.push(
             Row::new("Open Screenshots folder")
                 .glyph(Glyph::Folder)
@@ -457,7 +422,7 @@ impl CaptureScreen {
 
     fn draw_studio_deck(&self, ctx: &mut BodyCtx, right: Rect) -> StudioHits {
         let mut hits = StudioHits::default();
-        draw_card(ctx.buf, right, ctx.design, Some("Studio Deck"), false);
+        draw_card(ctx.buf, right, ctx.design, Some("Screenshot Deck"), false);
         let inner = Rect {
             x: right.x + 2,
             y: right.y + 1,
@@ -469,125 +434,42 @@ impl CaptureScreen {
         }
         let mut y = inner.y;
 
-        // 1. Live Status Hero
-        match &self.mode {
-            CaptureMode::Idle => {
-                let x = draw_badge(ctx.buf, inner.x, y, ctx.design, "● READY", ColorRole::Ok);
-                let avail = inner.right().saturating_sub(x + 2);
-                put_trunc(
-                    ctx.buf,
-                    x + 2,
-                    y,
-                    "No active recording",
-                    avail,
-                    ctx.design.style(TextStyle::Body),
-                );
-                y += 1;
-                if y < inner.bottom() {
-                    put_trunc(
-                        ctx.buf,
-                        inner.x,
-                        y,
-                        &format!("Target: {}/{}", self.shot_dir.display(), self.day_str),
-                        inner.width,
-                        ctx.design.style(TextStyle::Dim),
-                    );
-                    y += 2;
-                }
-            }
-            CaptureMode::Recording {
-                file,
-                elapsed,
-                size,
-                ..
-            } => {
-                let x = draw_badge(ctx.buf, inner.x, y, ctx.design, "● REC", ColorRole::Danger);
-                let avail = inner.right().saturating_sub(x + 2);
-                put_trunc(
-                    ctx.buf,
-                    x + 2,
-                    y,
-                    &format!("{elapsed} \u{00b7} {size}"),
-                    avail,
-                    Style::default()
-                        .fg(ctx.design.color(ColorRole::Danger))
-                        .add_modifier(Modifier::BOLD),
-                );
-                y += 1;
-                if y < inner.bottom() {
-                    let fname = file
-                        .as_deref()
-                        .and_then(|p| p.file_name())
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "recording.mp4".to_string());
-                    put_trunc(
-                        ctx.buf,
-                        inner.x,
-                        y,
-                        &format!("File: {fname} \u{00b7} Enter stops"),
-                        inner.width,
-                        ctx.design.style(TextStyle::Dim),
-                    );
-                    y += 2;
-                }
-            }
+        // 1. Status & Target Folder
+        let x = draw_badge(ctx.buf, inner.x, y, ctx.design, "● READY", ColorRole::Ok);
+        let avail = inner.right().saturating_sub(x + 2);
+        put_trunc(
+            ctx.buf,
+            x + 2,
+            y,
+            "Stills & Annotation",
+            avail,
+            ctx.design.style(TextStyle::Body),
+        );
+        y += 1;
+        if y < inner.bottom() {
+            put_trunc(
+                ctx.buf,
+                inner.x,
+                y,
+                &format!("Target: {}/{}", self.shot_dir.display(), self.day_str),
+                inner.width,
+                ctx.design.style(TextStyle::Dim),
+            );
+            y += 2;
         }
-
-        // 2. Inline Recording Setup (zero sub-menus)
-        if y + 3 <= inner.bottom() {
+        if y + 2 <= inner.bottom() {
             put_trunc(
                 ctx.buf,
                 inner.x,
                 y,
-                "Recording Setup",
+                "Video / Webcam → Studio (Alt+Ctrl+R) · OCR / QR → Lens (Alt+I)",
                 inner.width,
-                ctx.design.style(TextStyle::Title),
+                ctx.design.style(TextStyle::Dim),
             );
-            y += 1;
-
-            let audio_modes = [
-                (hayato_ui::recording::AudioMode::Off, "Off"),
-                (hayato_ui::recording::AudioMode::Mic, "Mic"),
-                (hayato_ui::recording::AudioMode::System, "System"),
-                (hayato_ui::recording::AudioMode::Both, "Both"),
-            ];
-            let mut line = String::from("[^A] Audio   : ");
-            for (mode, label) in audio_modes {
-                if self.options.audio == mode {
-                    line.push_str(&format!("(●) {label}  "));
-                } else {
-                    line.push_str(&format!("( ) {label}  "));
-                }
-            }
-            put_trunc(
-                ctx.buf,
-                inner.x,
-                y,
-                &line,
-                inner.width,
-                Style::default().fg(ctx.design.color(ColorRole::Accent)),
-            );
-            hits.audio = Some(Rect::new(inner.x, y, inner.width, 1));
-            y += 1;
-
-            let cam_line = if self.options.webcam {
-                "[^W] Webcam  : [ ON \u{00b7} bottom-right PiP ]"
-            } else {
-                "[^W] Webcam  : [ OFF ]"
-            };
-            let cam_style = if self.options.webcam {
-                Style::default()
-                    .fg(ctx.design.color(ColorRole::Ok))
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                ctx.design.style(TextStyle::Body)
-            };
-            put_trunc(ctx.buf, inner.x, y, cam_line, inner.width, cam_style);
-            hits.webcam = Some(Rect::new(inner.x, y, inner.width, 1));
             y += 2;
         }
 
-        // 3. Recent Captures
+        // 2. Recent Captures
         if y + 2 <= inner.bottom() {
             put_trunc(
                 ctx.buf,

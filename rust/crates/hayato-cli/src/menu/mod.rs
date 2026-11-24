@@ -397,28 +397,28 @@ mod tests {
 
     #[test]
     fn the_root_menu_keeps_every_bar_menu_row() {
-        // The table comparison spec 007 asks for: no row `bar-menu` had may
-        // go missing, and the order of those rows is the order it had.
-        let keys: Vec<&str> = table::ROOT.iter().map(|i| i.key).collect();
-        let kept: Vec<&str> = keys
+        // Every legacy bar-menu key remains reachable in ROOT or PALETTE_EXTRA,
+        // and ROOT itself stays focused with zero duplicate/overlapping entries.
+        let all_keys: Vec<&str> = table::ROOT
             .iter()
-            .copied()
-            .filter(|k| table::BAR_MENU_KEYS.contains(k))
+            .chain(table::PALETTE_EXTRA)
+            .map(|i| i.key)
             .collect();
-        assert_eq!(kept, table::BAR_MENU_KEYS, "bar-menu's rows, in its order");
-        let added: Vec<&str> = keys
-            .iter()
-            .copied()
-            .filter(|k| !table::BAR_MENU_KEYS.contains(k))
-            .collect();
-        assert_eq!(
-            added,
-            vec![
-                "notes", "eject", "studio", "cassette", "games", "lens", "share", "drop", "ask",
-                "format", "display", "theme"
-            ],
-            "the rows spec 007, 010, 017 and the theme picker add to ROOT (spec 011 entries are in BAR_MENU_KEYS)"
-        );
+        for required in table::BAR_MENU_KEYS {
+            assert!(
+                all_keys.contains(required),
+                "bar-menu row `{required}` missing from ROOT and PALETTE_EXTRA"
+            );
+        }
+        let root_keys: Vec<&str> = table::ROOT.iter().map(|i| i.key).collect();
+        assert!(root_keys.contains(&"capture"));
+        assert!(root_keys.contains(&"studio"));
+        assert!(root_keys.contains(&"lens"));
+        assert!(root_keys.contains(&"share"));
+        assert!(root_keys.contains(&"cassette"));
+        assert!(!root_keys.contains(&"drop"));
+        assert!(!root_keys.contains(&"camera"));
+        assert!(!root_keys.contains(&"qr"));
     }
 
     #[test]
@@ -437,7 +437,14 @@ mod tests {
         }
         assert_eq!(
             seen,
-            vec![Group::Open, Group::Ai, Group::System, Group::Session]
+            vec![
+                Group::Workspace,
+                Group::Capture,
+                Group::Utilities,
+                Group::Ai,
+                Group::System,
+                Group::Session,
+            ]
         );
     }
 

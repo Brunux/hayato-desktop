@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Share
+GenericName=Nearby & Phone Transfer
+Comment=Send or receive files, links, clipboard text, and Wi-Fi QR codes
+Exec=hayato share
+Icon=emblem-shared
+Terminal=false
+Categories=Network;Utility;
+Keywords=share;drop;qr;wifi;localsend;transfer;phone;send;receive;

@@ -1,45 +1,45 @@
-Hayato · Menu                                                                                                                               58 commands
+Hayato · Menu                                                                                                                               37 commands
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ Commands ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                                                                                                  │
 │                                                                                                                                                      │
-│  Open  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── █ │
-│ ▍   Terminal  foot                                                                                                                           open █ │
-│     Files  browse the filesystem                                                                                                             open █ │
-│     Files (window)  favnyr: folders, drag and drop, trash                                                                                    open █ │
-│     Notes  quick notes, ink notes, sign a PDF                                                                                                open █ │
-│     Search inside files  the text in them, with ripgrep                                                                                      open █ │
-│     Places  home, disks, the configuration                                                                                                   open █ │
-│     Eject drive  safely unmount a USB stick or SD card                                                                                       open █ │
-│     Studio  screen record, webcam video, photo snap                                                                                          open █ │
-│     Camera  look through the webcam, take a photo                                                                                            open █ │
-│     Cassette  music player: local library & Spotify                                                                                          open █ │
-│     Games  retro and Hayato games                                                                                                            open █ │
-│     Download  a link, into ~/Downloads                                                                                                       open █ │
-│     Settings  Wi-Fi, Bluetooth, night light, tablet mode, rotation                                                                           open █ │
-│     Learn  the manual, with search                                                                                                           open █ │
-│     Keybindings  every binding, from the configuration                                                                                       open █ │
-│     Applications  desktop entries, icons, frecency                                                                                           open █ │
-│     Window switcher  focus or close any window                                                                                               open █ │
-│     Run command  PATH completion, Shift+Enter in foot                                                                                        open █ │
-│     Calculator  type it, Enter copies the result                                                                                             open █ │
-│     Emoji  type a name, insert the glyph                                                                                                     open █ │
-│     Clipboard  what was copied, back in one pick                                                                                             open █ │
-│     Lens  capture screen region to text, link, translate, or note                                                                            open █ │
-│     Share  share clipboard, files, links or receive from phone                                                                               open │ │
-│     Drop  share or receive files over Wi-Fi via QR code                                                                                      open │ │
-│     Password  32 random characters, into the clipboard                                                                                       open │ │
-│     SSH  remote login status                                                                                                                 open │ │
-│  AI  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │ │
-│     Agent session  ● opencode, in ~/Work                                                                                                       ai │ │
-│     Ask  one question, the answer here                                                                                                         ai │ │
-│     Agents  Claude Code, Codex and the others                                                                                                  ai │ │
-│     Dictation  speak, and it is typed                                                                                                          ai │ │
-│     Local model  a 1.7B model, offline, on four cores                                                                                          ai │ │
-│  System  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │ │
-│     Wi-Fi  pick a network                                                                                                                  system │ │
-│     DNS  the resolver this connection uses                                                                                                 system │ │
-│     Bluetooth  scan, connect, disconnect                                                                                                   system │ │
-│     Audio output  switch sink, mute, pavucontrol                                                                                           system │ │
+│  Workspace  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── █ │
+│ ▍   Terminal  foot                                                                                                                      workspace █ │
+│     Files  browse folders with preview                                                                                                  workspace █ │
+│     Notes  quick notes, ink notes, sign a PDF                                                                                           workspace █ │
+│     Search inside files  full-text ripgrep over home                                                                                    workspace █ │
+│     Places & Drives  bookmarks, USB/SD mount, eject, format                                                                             workspace █ │
+│     Download  video or audio link → ~/Downloads                                                                                         workspace █ │
+│     Cassette  music player: local library & Spotify                                                                                     workspace █ │
+│     Games  retro ROMs & Hayato games                                                                                                    workspace █ │
+│  Create, Capture & Share  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── █ │
+│     Screenshot  snap screen, area or window, annotate                                                                                     capture █ │
+│     Studio  screen record, webcam video & photo snap                                                                                      capture █ │
+│     Lens  read text (OCR), scan QR/link or translate                                                                                      capture █ │
+│     Share  send/receive files, links, clipboard & Wi-Fi QR                                                                                capture █ │
+│  Utilities  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── █ │
+│     Clipboard  paste history & saved images                                                                                             utilities █ │
+│     Calculator  live math, Enter copies the result                                                                                      utilities █ │
+│     Emoji  type a name, insert the glyph                                                                                                utilities █ │
+│     Colour  pick a pixel hex & inspect palette                                                                                          utilities █ │
+│     Reminders  write it now, be told later                                                                                              utilities █ │
+│     Password  32 random characters → clipboard                                                                                          utilities █ │
+│  AI  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── █ │
+│     Agent session  ● opencode, in ~/Work                                                                                                       ai █ │
+│     Ask  one question, the answer here                                                                                                         ai █ │
+│     Agents  Claude Code, Codex and the others                                                                                                  ai █ │
+│     Dictation  speak, and it is typed                                                                                                          ai █ │
+│     Local model  a 1.7B model, offline, on four cores                                                                                          ai █ │
+│  System  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── █ │
+│     Settings  network, display, input, power, system                                                                                       system █ │
+│     Wi-Fi  pick a network                                                                                                                  system █ │
+│     Bluetooth  scan, connect, disconnect                                                                                                   system █ │
+│     Audio output  switch sink, mute, app mixer                                                                                             system █ │
+│     Themes  browse and preview palettes & wallpapers                                                                                       system █ │
+│     Notifications  history and do-not-disturb                                                                                              system │ │
+│     Packages  search, then install via apt                                                                                                 system │ │
+│     Developer  profile export/restore & diagnostics                                                                                        system │ │
+│     Learn  the manual, with search                                                                                                         system │ │
+│     Keybindings  every binding, from the configuration                                                                                     system │ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
  [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close

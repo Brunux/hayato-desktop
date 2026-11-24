@@ -33,6 +33,7 @@ enum SharePhase {
     ActiveLan,
     DirectQr {
         qr: QrCode,
+        title: String,
         text: String,
     },
     Receive,
@@ -43,6 +44,7 @@ enum SharePhase {
 enum TargetKey {
     LanQr,
     DirectQr,
+    WifiQr,
     Receive,
     LocalSend(LocalSendPeer),
     CopyClipboard,
@@ -232,9 +234,31 @@ impl ShareScreen {
         if let Some(text) = self.direct_qr_text().map(str::to_string)
             && let Some(qr) = QrCode::encode(&text)
         {
-            self.phase = SharePhase::DirectQr { qr, text };
-            self.status_line = "Offline QR ready — scan directly with any camera".to_string();
+            self.phase = SharePhase::DirectQr {
+                qr,
+                title: "Instant Offline QR".to_string(),
+                text,
+            };
+            self.status_line = "Offline QR ready · s saves PNG · c copies".to_string();
             self.sync_chrome();
+        }
+    }
+
+    fn activate_wifi_qr(&mut self) {
+        let Some((payload, title)) = crate::system::qr::payload_wifi() else {
+            self.status_line = "Not connected to a Wi-Fi network".to_string();
+            return;
+        };
+        if let Some(qr) = QrCode::encode(&payload) {
+            self.phase = SharePhase::DirectQr {
+                qr,
+                title,
+                text: payload,
+            };
+            self.status_line = "Scan with phone camera to join Wi-Fi · s saves PNG".to_string();
+            self.sync_chrome();
+        } else {
+            self.status_line = "Could not encode Wi-Fi QR".to_string();
         }
     }
 
@@ -269,6 +293,13 @@ impl ShareScreen {
                 .detail("upload files \u{2192} ~/Downloads or clipboard"),
         );
         keys.push(Some(TargetKey::Receive));
+
+        rows.push(
+            Row::new("Share Current Wi-Fi (QR)")
+                .glyph(Glyph::Qr)
+                .detail("scan with phone camera to join Wi-Fi"),
+        );
+        keys.push(Some(TargetKey::WifiQr));
 
         for peer in &self.peers {
             rows.push(
@@ -344,6 +375,7 @@ impl ShareScreen {
                 KeyHint::new("Esc", "back"),
             ],
             SharePhase::DirectQr { .. } => vec![
+                KeyHint::new("s", "save PNG"),
                 KeyHint::new("c", "copy"),
                 KeyHint::new("Esc", "back"),
             ],
@@ -478,6 +510,7 @@ impl ShareScreen {
                 }
             }
             TargetKey::DirectQr => self.activate_direct_qr(),
+            TargetKey::WifiQr => self.activate_wifi_qr(),
             TargetKey::Receive => {
                 if let Err(e) = self.activate_receive() {
                     self.status_line = e;
@@ -614,12 +647,12 @@ impl Screen for ShareScreen {
         }
 
         match &self.phase {
-            SharePhase::DirectQr { qr, text } => {
+            SharePhase::DirectQr { qr, title, text } => {
                 let inner = draw_card(
                     ctx.buf,
                     ctx.area,
                     ctx.design,
-                    Some("Instant Offline QR"),
+                    Some(title.as_str()),
                     true,
                 );
                 if inner.height >= 6 {
@@ -631,11 +664,16 @@ impl Screen for ShareScreen {
                         footer_y.saturating_sub(inner.y + 1),
                     );
                     draw_qr(ctx.buf, qr_area, ctx.design, qr);
+                    let display_footer = if title.starts_with("Wi-Fi") {
+                        self.status_line.as_str()
+                    } else {
+                        text.as_str()
+                    };
                     let _ = put_trunc(
                         ctx.buf,
                         inner.x,
                         footer_y,
-                        text,
+                        display_footer,
                         inner.width,
                         ctx.design.style(TextStyle::Code),
                     );
@@ -769,6 +807,27 @@ impl Screen for ShareScreen {
                     KeyCode::Esc | KeyCode::Char('q') => {
                         self.phase = SharePhase::Sheet;
                         self.sync_chrome();
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Char('s') => {
+                        if let SharePhase::DirectQr { title, text, .. } = &self.phase {
+                            let prefix = if title.starts_with("Wi-Fi") {
+                                "wifi-qr"
+                            } else {
+                                "qr"
+                            };
+                            match crate::system::qr::save_qr_png(text, prefix) {
+                                Ok(p) => {
+                                    self.status_line = format!(
+                                        "Saved {}",
+                                        p.file_name()
+                                            .unwrap_or_default()
+                                            .to_string_lossy()
+                                    );
+                                }
+                                Err(e) => self.status_line = e,
+                            }
+                        }
                         return Outcome::Consumed;
                     }
                     KeyCode::Char('c') => {

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Studio
+GenericName=Screen Recorder & Webcam
+Comment=Record screen with live webcam PiP, record webcam video, or snap photos
+Exec=hayato-studio
+Icon=camera-video
+Terminal=false
+Categories=AudioVideo;Video;Recorder;
+Keywords=studio;record;screen;webcam;camera;video;photo;pip;

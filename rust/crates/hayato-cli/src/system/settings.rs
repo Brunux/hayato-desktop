@@ -52,7 +52,7 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("night", "Night light", "night-light apply"),
         ("notify", "Notifications", "notify.conf"),
         ("dnd", "Do not disturb", "hayato-notify-history"),
-        ("vnc", "Share this screen", "hayato-vnc"),
+        ("vnc", "Remote Desktop (VNC)", "hayato-vnc"),
         ("ssh", "Remote login (SSH)", "hayato-ssh"),
         ("tz", "Date & time", "hayato-tz"),
         ("locale", "Language & region", "localectl"),
@@ -782,7 +782,7 @@ fn build_rows(section: Section) -> (Vec<hayato_ui::Row>, Vec<String>) {
             rows.push(row("Firewall (UFW)", firewall_detail(), Glyph::Lock));
             keys.push("firewall".to_string());
 
-            rows.push(row("Share this screen", super::vnc::status(), Glyph::Eye));
+            rows.push(row("Remote Desktop (VNC)", super::vnc::status(), Glyph::Eye));
             keys.push("vnc".to_string());
 
             rows.push(row(
@@ -1130,7 +1130,7 @@ impl SettingsScreen {
                 row("Bluetooth radio", "on", Glyph::Bluetooth),
                 row("Bluetooth devices", "1 device connected", Glyph::Link),
                 row("DNS", "the resolver this connection uses", Glyph::Cloud),
-                row("Share this screen", "off", Glyph::Eye),
+                row("Remote Desktop (VNC)", "off", Glyph::Eye),
                 row("Remote login (SSH)", "remote login status", Glyph::Server),
             ],
             vec![
