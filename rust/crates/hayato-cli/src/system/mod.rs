@@ -145,6 +145,7 @@ pub mod touchpad;
 pub mod translate;
 pub mod tz;
 pub mod vnc;
+pub mod welcome;
 pub mod window;
 pub mod workspaces;
 

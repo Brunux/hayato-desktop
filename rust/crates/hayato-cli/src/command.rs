@@ -634,6 +634,16 @@ pub const COMMANDS: &[CommandSpec] = &[
         symlinks: &[],
         installed: &[],
     },
+    CommandSpec {
+        // `hayato menu welcome`: interactive first-boot Mission Briefing.
+        // Intentionally has no installed symlink because `~/.config/bin/hayato-welcome`
+        // is the wrapper script that handles `--print` and the `/etc/machine-id` marker.
+        path: "menu welcome",
+        summary: "first-boot Mission Briefing: boot banner, hotkeys, tools and launchpad",
+        shape: Shape::Pick,
+        symlinks: &[],
+        installed: &[],
+    },
 ];
 
 /// A command the table resolved, with the arguments that belong to it.
