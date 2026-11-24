@@ -736,6 +736,7 @@ fn session_menu(
                             | "menu palette"
                             | "ask"
                             | "menu capture"
+                            | "menu lens"
                             | "menu translate"
                             | "menu dictate"
                     )
