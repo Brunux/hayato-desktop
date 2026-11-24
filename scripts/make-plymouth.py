@@ -5,10 +5,6 @@ Outputs into desktop/uis/sway/files/usr/share/plymouth/themes/hayato/:
   - letter-0.png .. letter-5.png : pixel-art H, a, y, a, t, o in #c0caf5
   - glitch-0.png .. glitch-5.png : pixel-art decode glyphs in #7dcfff
   - cursor.png                   : #ff9e64 Hayato orange pixel underscore cursor
-  - px-surface.png               : 1x1 #1f2335 Cyber-HUD card surface fill
-  - px-border.png                : 1x1 #3b4261 Cyber-HUD 1px card border / divider
-  - px-accent.png                : 1x1 #7dcfff Cyber-HUD 3px left cyan accent rail
-  - px-header.png                : 1x1 #24283b Cyber-HUD header bar fill
 
 Pure Python (no ffmpeg/PIL required) and import-safe: generation only runs under main().
 """
@@ -25,14 +21,6 @@ BG_HEX = "#1a1b26"
 FG_RGB = (0xC0, 0xCA, 0xF5)      # #c0caf5 locked pixel letters
 GLITCH_RGB = (0x7D, 0xCF, 0xFF)  # #7dcfff cyan decode/glitch glyphs
 CURSOR_RGB = (0xFF, 0x9E, 0x64)  # #ff9e64 signature orange underscore cursor
-
-# 1x1 solid RGBA tiles scaled cleanly by Plymouth for the Cyber-HUD telemetry card
-SOLID_TILES: dict[str, tuple[int, int, int]] = {
-    "px-surface.png": (0x1F, 0x23, 0x35),  # #1f2335 recessed card fill
-    "px-border.png": (0x3B, 0x42, 0x61),   # #3b4261 1px card border & divider
-    "px-accent.png": (0x7D, 0xCF, 0xFF),   # #7dcfff 3px left cyan accent rail
-    "px-header.png": (0x24, 0x28, 0x3B),   # #24283b subtle header bar fill
-}
 
 PIXEL_SCALE = 8
 GRID_W = 5
@@ -231,12 +219,6 @@ def render_bitmap_png(
     return encode_rgba_png(width, height, rows)
 
 
-def render_solid_png(rgb: tuple[int, int, int]) -> bytes:
-    """Render a 1x1 opaque RGBA PNG tile for crisp Plymouth .Scale(w, h) geometry."""
-    r, g, b = rgb
-    return encode_rgba_png(1, 1, [bytes((r, g, b, 255))])
-
-
 def generate_theme_assets(out_dir: Path = THEME_DIR) -> list[Path]:
     """Generate all pixel-art PNG sprite assets for the Hayato Plymouth theme."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -259,11 +241,6 @@ def generate_theme_assets(out_dir: Path = THEME_DIR) -> list[Path]:
     cursor_path = out_dir / "cursor.png"
     cursor_path.write_bytes(render_bitmap_png(CURSOR_BITMAP, CURSOR_RGB))
     written.append(cursor_path)
-
-    for filename, rgb in SOLID_TILES.items():
-        tile_path = out_dir / filename
-        tile_path.write_bytes(render_solid_png(rgb))
-        written.append(tile_path)
 
     return written
 

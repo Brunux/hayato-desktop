@@ -1,22 +1,15 @@
-# Hayato Cyber-HUD animated boot splash (Plymouth script plugin)
+# Hayato minimalist pixel-hacker animated boot splash (Plymouth script plugin)
 # Matches Tokyo Night (#1a1b26) so handoff into hayato-greeter is seamless.
 
 Window.SetBackgroundTopColor(0.102, 0.106, 0.149);
 Window.SetBackgroundBottomColor(0.102, 0.106, 0.149);
 
-win_x = Window.GetX();
-win_y = Window.GetY();
 screen_w = Window.GetWidth();
 screen_h = Window.GetHeight();
-center_x = win_x + (screen_w / 2);
-center_y = win_y + (screen_h / 2);
+center_x = Window.GetX() + (screen_w / 2);
+center_y = Window.GetY() + (screen_h / 2);
 
-mode = Plymouth.GetMode();
-is_shutdown = (mode == "shutdown" || mode == "reboot");
-
-# ---------------------------------------------------------------------------
-# 1. Animated pixel-art wordmark: H a y a t o _
-# ---------------------------------------------------------------------------
+# Load crisp pixel-art wordmark sprites: H a y a t o
 letter_count = 6;
 for (i = 0; i < letter_count; i++) {
     letter_img[i] = Image("letter-" + i + ".png");
@@ -24,7 +17,7 @@ for (i = 0; i < letter_count; i++) {
     letter_spr[i].SetZ(10);
 }
 
-# Cyan pixel decode/glitch glyphs: 0 1 # / = +
+# Load cyan pixel decode/glitch glyphs: 0 1 # / = +
 glitch_count = 6;
 for (g = 0; g < glitch_count; g++) {
     glitch_img[g] = Image("glitch-" + g + ".png");
@@ -40,25 +33,30 @@ letter_h = letter_img[0].GetHeight();
 cursor_w = cursor_img.GetWidth();
 cursor_h = cursor_img.GetHeight();
 
-# Layout: shift wordmark above vertical center to leave breathing room for HUD card
+# Layout: crisp monospace pixel grid centered on screen
 letter_gap = 12;
 letter_step = letter_w + letter_gap;
 word_w = letter_step * (letter_count - 1) + letter_w;
 total_w = word_w + letter_gap + cursor_w;
 base_x = center_x - (total_w / 2);
-base_y = center_y - 110 - (letter_h / 2);
-if (base_y < win_y + 24) {
-    base_y = win_y + 24;
-}
+base_y = center_y - (letter_h / 2);
 
 # Underscore cursor aligns cleanly with row 6 (baseline of the 8-row pixel glyph grid)
 cursor_y = base_y + (6 * cursor_h);
+
+# Optional subtle status message below the wordmark
+message_spr = Sprite();
+message_spr.SetZ(30);
+
+mode = Plymouth.GetMode();
+is_shutdown = (mode == "shutdown" || mode == "reboot");
 
 tick = 0;
 if (is_shutdown) {
     tick = 50;
 }
 
+# Initial placement
 for (i = 0; i < letter_count; i++) {
     letter_x[i] = base_x + (i * letter_step);
     letter_spr[i].SetX(letter_x[i]);
@@ -74,576 +72,50 @@ cursor_spr.SetX(base_x);
 cursor_spr.SetY(cursor_y);
 cursor_spr.SetOpacity(1.0);
 
-# ---------------------------------------------------------------------------
-# 2. Cyber-HUD Boot Telemetry Terminal Card
-# ---------------------------------------------------------------------------
-card_w = 680;
-if (card_w > screen_w - 64) {
-    card_w = screen_w - 64;
-}
-if (card_w < 320) {
-    card_w = 320;
-}
-
-header_h = 28;
-log_max = 7;
-line_h = 20;
-body_pad_top = 10;
-body_pad_bottom = 12;
-card_h = header_h + 1 + body_pad_top + (log_max * line_h) + body_pad_bottom;
-
-card_x = center_x - (card_w / 2);
-card_y = base_y + letter_h + 44;
-if (card_y + card_h > win_y + screen_h - 24) {
-    card_y = win_y + screen_h - card_h - 24;
-}
-
-max_chars = 76;
-if (card_w < 680) {
-    max_chars = Math.Int((card_w - 40) / 8) - 2;
-    if (max_chars < 24) {
-        max_chars = 24;
-    }
-}
-
-tile_surface = Image("px-surface.png");
-tile_border = Image("px-border.png");
-tile_accent = Image("px-accent.png");
-tile_header = Image("px-header.png");
-
-# 1px crisp outer border (#3b4261)
-hud_border_spr = Sprite(tile_border.Scale(card_w, card_h));
-hud_border_spr.SetX(card_x);
-hud_border_spr.SetY(card_y);
-hud_border_spr.SetZ(30);
-
-# Recessed dark card fill (#1f2335)
-hud_surface_spr = Sprite(tile_surface.Scale(card_w - 2, card_h - 2));
-hud_surface_spr.SetX(card_x + 1);
-hud_surface_spr.SetY(card_y + 1);
-hud_surface_spr.SetZ(31);
-
-# Header bar fill (#24283b)
-hud_header_spr = Sprite(tile_header.Scale(card_w - 2, header_h));
-hud_header_spr.SetX(card_x + 1);
-hud_header_spr.SetY(card_y + 1);
-hud_header_spr.SetZ(32);
-
-# 1px header divider (#3b4261)
-hud_divider_spr = Sprite(tile_border.Scale(card_w - 2, 1));
-hud_divider_spr.SetX(card_x + 1);
-hud_divider_spr.SetY(card_y + 1 + header_h);
-hud_divider_spr.SetZ(33);
-
-# Signature 3px left cyan accent rail (#7dcfff)
-hud_accent_spr = Sprite(tile_accent.Scale(3, card_h));
-hud_accent_spr.SetX(card_x);
-hud_accent_spr.SetY(card_y);
-hud_accent_spr.SetZ(34);
-
-# Header left title + right raw-VT hint
-hud_title_text = "BOOT // TELEMETRY";
-if (is_shutdown) {
-    hud_title_text = "SHUTDOWN // TELEMETRY";
-}
-hud_title_img = Image.Text(hud_title_text, 0.490, 0.812, 1.0, 1.0, "monospace Bold 9");
-hud_title_spr = Sprite(hud_title_img);
-hud_title_spr.SetX(card_x + 16);
-hud_title_spr.SetY(card_y + 1 + Math.Int((header_h - hud_title_img.GetHeight()) / 2));
-hud_title_spr.SetZ(35);
-
-hud_hint_img = Image.Text("[ Esc: raw vt ]", 0.337, 0.373, 0.537, 1.0, "monospace 9");
-hud_hint_spr = Sprite(hud_hint_img);
-hud_hint_x = card_x + card_w - 14 - hud_hint_img.GetWidth();
-hud_hint_spr.SetX(hud_hint_x);
-hud_hint_spr.SetY(card_y + 1 + Math.Int((header_h - hud_hint_img.GetHeight()) / 2));
-hud_hint_spr.SetZ(35);
-if (card_x + 16 + hud_title_img.GetWidth() + 12 > hud_hint_x) {
-    hud_hint_spr.SetOpacity(0.0);
-}
-
-# Pre-rendered classic right-aligned status badges
-badge_ok = Image.Text("[  OK  ]", 0.620, 0.808, 0.416, 1.0, "monospace Bold 10");
-badge_wait = Image.Text("[ WAIT ]", 0.878, 0.686, 0.408, 1.0, "monospace Bold 10");
-badge_fail = Image.Text("[ FAIL ]", 0.969, 0.463, 0.557, 1.0, "monospace Bold 10");
-badge_info = Image.Text("[ INFO ]", 0.490, 0.812, 1.000, 1.0, "monospace Bold 10");
-badge_stop = Image.Text("[ STOP ]", 0.878, 0.686, 0.408, 1.0, "monospace Bold 10");
-
-# Dynamically measure monospace cell width so dot-leaders align to the badge edge
-sample_10_w = Image.Text("0123456789", 0.753, 0.792, 0.961, 1.0, "monospace 10").GetWidth();
-char_w = sample_10_w / 10;
-if (char_w < 6) {
-    char_w = 8;
-}
-badge_w = badge_ok.GetWidth();
-badge_x = card_x + card_w - 16 - badge_w;
-left_avail_px = badge_x - (card_x + 16) - 10;
-inner_cols = Math.Int(left_avail_px / char_w);
-if (inner_cols < 20) {
-    inner_cols = 20;
-}
-
-# 7-line rolling log sprites (left label+dots + right classic status badge)
-log_base_y = card_y + 1 + header_h + 1 + body_pad_top;
-for (i = 0; i < log_max; i++) {
-    log_spr[i] = Sprite();
-    log_spr[i].SetX(card_x + 16);
-    log_spr[i].SetY(log_base_y + (i * line_h));
-    log_spr[i].SetZ(36);
-    log_spr[i].SetOpacity(0.0);
-
-    log_badge_spr[i] = Sprite();
-    log_badge_spr[i].SetX(badge_x);
-    log_badge_spr[i].SetY(log_base_y + (i * line_h));
-    log_badge_spr[i].SetZ(36);
-    log_badge_spr[i].SetOpacity(0.0);
-}
-
-# Smooth upward opacity fade indexed by age (0 = newest at bottom, 6 = oldest at top)
-log_opacity[0] = 1.00;
-log_opacity[1] = 0.86;
-log_opacity[2] = 0.72;
-log_opacity[3] = 0.58;
-log_opacity[4] = 0.45;
-log_opacity[5] = 0.38;
-log_opacity[6] = 0.32;
-
-log_count = 0;
-
-# Passphrase / LUKS prompt sprite positioned cleanly below the HUD card
-password_spr = Sprite();
-password_spr.SetZ(40);
-password_spr.SetOpacity(0.0);
-
-# ---------------------------------------------------------------------------
-# 3. Pure-Plymouth-script string & severity helpers
-# ---------------------------------------------------------------------------
-lower_map["A"] = "a";
-lower_map["B"] = "b";
-lower_map["C"] = "c";
-lower_map["D"] = "d";
-lower_map["E"] = "e";
-lower_map["F"] = "f";
-lower_map["G"] = "g";
-lower_map["H"] = "h";
-lower_map["I"] = "i";
-lower_map["J"] = "j";
-lower_map["K"] = "k";
-lower_map["L"] = "l";
-lower_map["M"] = "m";
-lower_map["N"] = "n";
-lower_map["O"] = "o";
-lower_map["P"] = "p";
-lower_map["Q"] = "q";
-lower_map["R"] = "r";
-lower_map["S"] = "s";
-lower_map["T"] = "t";
-lower_map["U"] = "u";
-lower_map["V"] = "v";
-lower_map["W"] = "w";
-lower_map["X"] = "x";
-lower_map["Y"] = "y";
-lower_map["Z"] = "z";
-
-fun to_lower_char(ch) {
-    local.mapped = lower_map[ch];
-    if (local.mapped) {
-        return local.mapped;
-    }
-    return ch;
-}
-
-fun contains_ci(haystack, needle) {
-    if (!haystack || !needle) {
-        return 0;
-    }
-    local.hlen = haystack.Length();
-    local.nlen = needle.Length();
-    if (local.nlen == 0) {
-        return 1;
-    }
-    if (local.nlen > local.hlen) {
-        return 0;
-    }
-    local.limit = local.hlen - local.nlen;
-    for (local.i = 0; local.i <= local.limit; local.i++) {
-        local.match = 1;
-        for (local.j = 0; local.j < local.nlen; local.j++) {
-            if (to_lower_char(haystack.CharAt(local.i + local.j)) != needle.CharAt(local.j)) {
-                local.match = 0;
-                local.j = local.nlen;
-            }
-        }
-        if (local.match == 1) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-fun contains_exact(haystack, needle) {
-    if (!haystack || !needle) {
-        return 0;
-    }
-    local.hlen = haystack.Length();
-    local.nlen = needle.Length();
-    if (local.nlen == 0) {
-        return 1;
-    }
-    if (local.nlen > local.hlen) {
-        return 0;
-    }
-    local.limit = local.hlen - local.nlen;
-    for (local.i = 0; local.i <= local.limit; local.i++) {
-        local.match = 1;
-        for (local.j = 0; local.j < local.nlen; local.j++) {
-            if (haystack.CharAt(local.i + local.j) != needle.CharAt(local.j)) {
-                local.match = 0;
-                local.j = local.nlen;
-            }
-        }
-        if (local.match == 1) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-fun sanitize_line(raw, limit) {
-    if (!raw) {
-        return "";
-    }
-    local.len = raw.Length();
-    if (local.len == 0) {
-        return "";
-    }
-
-    # Normalize control whitespace and trim leading spaces
-    local.start = 0;
-    while (local.start < local.len) {
-        local.c = raw.CharAt(local.start);
-        if (local.c == " " || local.c == "\n" || local.c == "\r" || local.c == "\t") {
-            local.start++;
-        } else {
-            local.len_found = local.start;
-            local.start = local.len + 1;
-        }
-    }
-    if (local.start == local.len) {
-        return "";
-    }
-    local.start = local.len_found;
-
-    # Trim trailing whitespace
-    local.end = local.len - 1;
-    while (local.end >= local.start) {
-        local.c = raw.CharAt(local.end);
-        if (local.c == " " || local.c == "\n" || local.c == "\r" || local.c == "\t") {
-            local.end--;
-        } else {
-            local.end_found = local.end;
-            local.end = local.start - 2;
-        }
-    }
-    if (local.end == local.start - 1) {
-        return "";
-    }
-    local.end = local.end_found;
-
-    local.trimmed_len = (local.end - local.start) + 1;
-    local.truncated = 0;
-    local.copy_len = local.trimmed_len;
-    if (local.copy_len > limit) {
-        local.copy_len = limit - 3;
-        if (local.copy_len < 1) {
-            local.copy_len = 1;
-        }
-        local.truncated = 1;
-    }
-
-    local.out = "";
-    for (local.i = 0; local.i < local.copy_len; local.i++) {
-        local.c = raw.CharAt(local.start + local.i);
-        if (local.c == "\n" || local.c == "\r" || local.c == "\t") {
-            local.out = local.out + " ";
-        } else {
-            local.out = local.out + local.c;
-        }
-    }
-    if (local.truncated == 1) {
-        local.out = local.out + "...";
-    }
-    return local.out;
-}
-
-fun starts_with(str, prefix) {
-    if (!str || !prefix) {
-        return 0;
-    }
-    local.slen = str.Length();
-    local.plen = prefix.Length();
-    if (local.plen > local.slen) {
-        return 0;
-    }
-    for (local.i = 0; local.i < local.plen; local.i++) {
-        if (str.CharAt(local.i) != prefix.CharAt(local.i)) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-fun ends_with(str, suffix) {
-    if (!str || !suffix) {
-        return 0;
-    }
-    local.slen = str.Length();
-    local.xlen = suffix.Length();
-    if (local.xlen > local.slen) {
-        return 0;
-    }
-    local.off = local.slen - local.xlen;
-    for (local.i = 0; local.i < local.xlen; local.i++) {
-        if (str.CharAt(local.off + local.i) != suffix.CharAt(local.i)) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-fun substr(str, start, count) {
-    local.out = "";
-    local.slen = str.Length();
-    for (local.i = 0; local.i < count; local.i++) {
-        if (start + local.i < local.slen) {
-            local.out = local.out + str.CharAt(start + local.i);
-        }
-    }
-    return local.out;
-}
-
-fun strip_suffix(str, suffix) {
-    if (ends_with(str, suffix)) {
-        return substr(str, 0, str.Length() - suffix.Length());
-    }
-    return str;
-}
-
-fun make_dots(count) {
-    local.out = "";
-    for (local.i = 0; local.i < count; local.i++) {
-        local.out = local.out + ".";
-    }
-    return local.out;
-}
-
-fun is_noisy_unit(unit) {
-    if (ends_with(unit, ".device") || ends_with(unit, ".slice") || ends_with(unit, ".scope") || ends_with(unit, ".socket") || ends_with(unit, ".path") || ends_with(unit, ".timer")) {
-        return 1;
-    }
-    if (ends_with(unit, ".mount")) {
-        if (starts_with(unit, "sys-") || starts_with(unit, "dev-") || starts_with(unit, "run-") || starts_with(unit, "proc-") || unit == "tmp.mount" || unit == "-.mount") {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-fun extract_tail_segment(str) {
-    local.len = str.Length();
-    local.last_dash = -1;
-    for (local.i = 0; local.i < local.len; local.i++) {
-        if (str.CharAt(local.i) == "-") {
-            local.last_dash = local.i;
-        }
-    }
-    if (local.last_dash >= 0 && local.last_dash < local.len - 1) {
-        return substr(str, local.last_dash + 1, local.len - local.last_dash - 1);
-    }
-    return str;
-}
-
-fun format_unit_label(raw) {
-    if (ends_with(raw, ".service")) {
-        return strip_suffix(raw, ".service");
-    }
-    if (ends_with(raw, ".target")) {
-        return strip_suffix(raw, ".target") + " target";
-    }
-    if (ends_with(raw, ".swap")) {
-        local.stem = strip_suffix(raw, ".swap");
-        return "swap: " + extract_tail_segment(local.stem);
-    }
-    if (ends_with(raw, ".mount")) {
-        local.stem = strip_suffix(raw, ".mount");
-        return "mount: " + local.stem;
-    }
-    return raw;
-}
-
-fun badge_for_kind(kind) {
-    if (kind == "FAIL") {
-        return badge_fail;
-    }
-    if (kind == "WAIT") {
-        return badge_wait;
-    }
-    if (kind == "STOP") {
-        return badge_stop;
-    }
-    if (kind == "INFO") {
-        return badge_info;
-    }
-    return badge_ok;
-}
-
-fun render_row_left(label, kind) {
-    # Pad classic dot-leaders out to the right-aligned status badge
-    local.max_label = inner_cols - 4;
-    if (local.max_label < 10) {
-        local.max_label = 10;
-    }
-    local.text = sanitize_line(label, local.max_label);
-    local.dot_n = inner_cols - local.text.Length() - 1;
-    if (local.dot_n < 3) {
-        local.dot_n = 3;
-    }
-    local.full = local.text + " " + make_dots(local.dot_n);
-
-    # Default Tokyo Night reading text (#c0caf5); tint warnings/failures so issues pop
-    local.r = 0.753;
-    local.g = 0.792;
-    local.b = 0.961;
-    if (kind == "FAIL") {
-        local.r = 0.969;
-        local.g = 0.463;
-        local.b = 0.557;
-    } else if (kind == "WAIT") {
-        local.r = 0.878;
-        local.g = 0.686;
-        local.b = 0.408;
-    }
-
-    return Image.Text(local.full, local.r, local.g, local.b, 1.0, "monospace 10");
-}
-
-fun push_entry(raw_label, kind, replace_active) {
-    local.clean = sanitize_line(raw_label, inner_cols - 4);
-    if (local.clean == "") {
-        return;
-    }
-
-    # Deduplicate consecutive identical rows
-    if (log_count > 0 && log_lines[log_count - 1] == local.clean && log_kinds[log_count - 1] == kind) {
-        return;
-    }
-
-    local.rendered = render_row_left(local.clean, kind);
-    local.badge = badge_for_kind(kind);
-
-    # Live-update ticking countdown lines (e.g. "A start job is running...") in place
-    if (replace_active == 1 && log_count > 0 && log_kinds[log_count - 1] == "WAIT") {
-        log_lines[log_count - 1] = local.clean;
-        log_kinds[log_count - 1] = kind;
-        log_img[log_count - 1] = local.rendered;
-        log_badge_img[log_count - 1] = local.badge;
-    } else if (log_count < log_max) {
-        log_lines[log_count] = local.clean;
-        log_kinds[log_count] = kind;
-        log_img[log_count] = local.rendered;
-        log_badge_img[log_count] = local.badge;
-        log_count++;
-    } else {
-        for (local.i = 0; local.i < log_max - 1; local.i++) {
-            log_lines[local.i] = log_lines[local.i + 1];
-            log_kinds[local.i] = log_kinds[local.i + 1];
-            log_img[local.i] = log_img[local.i + 1];
-            log_badge_img[local.i] = log_badge_img[local.i + 1];
-        }
-        log_lines[log_max - 1] = local.clean;
-        log_kinds[log_max - 1] = kind;
-        log_img[log_max - 1] = local.rendered;
-        log_badge_img[log_max - 1] = local.badge;
-    }
-
-    for (local.i = 0; local.i < log_count; local.i++) {
-        local.age = (log_count - 1) - local.i;
-        log_spr[local.i].SetImage(log_img[local.i]);
-        log_spr[local.i].SetOpacity(log_opacity[local.age]);
-        log_badge_spr[local.i].SetImage(log_badge_img[local.i]);
-        log_badge_spr[local.i].SetOpacity(log_opacity[local.age]);
-    }
-}
-
-fun classify_message(line) {
-    if (contains_ci(line, "fail") || contains_ci(line, "error") || contains_ci(line, "timed out") || contains_ci(line, "timeout") || contains_ci(line, "dependency") || contains_ci(line, "corrupt")) {
-        return "FAIL";
-    }
-    if (contains_ci(line, "start job") || contains_ci(line, "stop job") || contains_ci(line, "waiting") || contains_ci(line, "warn") || contains_ci(line, "fsck") || contains_ci(line, "checking") || contains_ci(line, "resuming")) {
-        return "WAIT";
-    }
-    if (contains_ci(line, "started") || contains_ci(line, "reached") || contains_ci(line, "mounted") || contains_exact(line, "OK")) {
-        return "OK";
-    }
-    return "INFO";
-}
-
-# Seed frame 1 so the telemetry widget is alive before the first systemd event
-if (is_shutdown) {
-    push_entry("Stopping system services", "STOP", 0);
-} else {
-    push_entry("Kernel handoff complete", "OK", 0);
-}
-
-# ---------------------------------------------------------------------------
-# 4. Plymouth callbacks
-# ---------------------------------------------------------------------------
 fun refresh_callback() {
     tick++;
 
     # Phase 1 (ticks 0..47, ~0.95s):
     # Each letter scrambles through cyan pixel hex/hacker glyphs,
     # then snaps into crisp white pixel H-a-y-a-t-o left-to-right.
-    for (local.i = 0; local.i < letter_count; local.i++) {
-        local.lock_t = 12 + (local.i * 6);
-        local.appear_t = local.i * 4;
+    for (i = 0; i < letter_count; i++) {
+        lock_t = 12 + (i * 6);
+        appear_t = i * 4;
 
-        if (tick < local.appear_t) {
-            letter_spr[local.i].SetOpacity(0.0);
-        } else if (tick < local.lock_t) {
-            local.g_idx = (Math.Int(tick / 2) + (local.i * 2)) % glitch_count;
-            letter_spr[local.i].SetImage(glitch_img[local.g_idx]);
-            letter_spr[local.i].SetOpacity(1.0);
+        if (tick < appear_t) {
+            letter_spr[i].SetOpacity(0.0);
+        } else if (tick < lock_t) {
+            g_idx = (Math.Int(tick / 2) + (i * 2)) % glitch_count;
+            letter_spr[i].SetImage(glitch_img[g_idx]);
+            letter_spr[i].SetOpacity(1.0);
         } else {
             # Locked crisp pixel letter, with a brief 2-tick hacker glitch pulse every ~1.6s
-            local.glitch_cycle = (tick - 50) % 82;
-            local.target_i = Math.Int((tick - 50) / 82) % letter_count;
-            if (tick >= 50 && !is_shutdown && local.i == local.target_i && local.glitch_cycle >= 0 && local.glitch_cycle < 3) {
-                local.g_idx = (tick + local.i) % glitch_count;
-                letter_spr[local.i].SetImage(glitch_img[local.g_idx]);
+            glitch_cycle = (tick - 50) % 82;
+            target_i = Math.Int((tick - 50) / 82) % letter_count;
+            if (tick >= 50 && !is_shutdown && i == target_i && glitch_cycle >= 0 && glitch_cycle < 3) {
+                g_idx = (tick + i) % glitch_count;
+                letter_spr[i].SetImage(glitch_img[g_idx]);
             } else {
-                letter_spr[local.i].SetImage(letter_img[local.i]);
+                letter_spr[i].SetImage(letter_img[i]);
             }
-            letter_spr[local.i].SetOpacity(1.0);
+            letter_spr[i].SetOpacity(1.0);
         }
     }
 
     # Underscore cursor steps across active cell during decode, then sharp square-wave blink
     if (tick < 44) {
-        local.slot = Math.Int((tick - 6) / 6);
-        if (local.slot < 0) {
-            local.slot = 0;
-        }
-        if (local.slot < letter_count) {
-            cursor_spr.SetX(letter_x[local.slot]);
+        slot = Math.Int((tick - 6) / 6);
+        if (slot < 0) slot = 0;
+        if (slot < letter_count) {
+            cursor_spr.SetX(letter_x[slot]);
         } else {
             cursor_spr.SetX(base_x + word_w + letter_gap);
         }
         cursor_spr.SetOpacity(1.0);
     } else {
         cursor_spr.SetX(base_x + word_w + letter_gap);
-        local.blink_phase = Math.Int((tick - 44) / 16) % 2;
-        if (local.blink_phase == 0) {
+        blink_phase = Math.Int((tick - 44) / 16) % 2;
+        if (blink_phase == 0) {
             cursor_spr.SetOpacity(1.0);
         } else {
             cursor_spr.SetOpacity(0.15);
@@ -653,88 +125,46 @@ fun refresh_callback() {
 
 Plymouth.SetRefreshFunction(refresh_callback);
 
-fun update_status_callback(status) {
-    if (!status || status == "") {
-        return;
-    }
-    local.trimmed = sanitize_line(status, 128);
-    if (local.trimmed == "" || is_noisy_unit(local.trimmed)) {
-        return;
-    }
-    local.label = format_unit_label(local.trimmed);
-    local.kind = "OK";
-    if (is_shutdown) {
-        local.kind = "STOP";
-    } else if (contains_ci(local.trimmed, "fail") || contains_ci(local.trimmed, "error")) {
-        local.kind = "FAIL";
-    }
-    push_entry(local.label, local.kind, 0);
-}
-
-Plymouth.SetUpdateStatusFunction(update_status_callback);
-
 fun message_callback(text) {
-    if (!text || text == "") {
-        return;
+    if (text && text != "") {
+        img = Image.Text(text, 0.55, 0.59, 0.72, 1.0, "monospace 11");
+        message_spr.SetImage(img);
+        message_spr.SetX(center_x - img.GetWidth() / 2);
+        message_spr.SetY(base_y + letter_h + 24);
+        message_spr.SetOpacity(0.85);
+    } else {
+        message_spr.SetOpacity(0.0);
     }
-    local.kind = classify_message(text);
-    local.is_ticking = 0;
-    if (contains_ci(text, "start job") || contains_ci(text, "stop job") || contains_ci(text, "fsck")) {
-        local.is_ticking = 1;
-    }
-    push_entry(text, local.kind, local.is_ticking);
 }
 
 Plymouth.SetMessageFunction(message_callback);
 
 fun display_password_callback(prompt, bullets) {
-    local.stars = "";
-    for (local.i = 0; local.i < bullets; local.i++) {
-        local.stars = local.stars + "*";
+    stars = "";
+    for (i = 0; i < bullets; i++) {
+        stars = stars + "*";
     }
-    local.label = prompt;
-    if (!local.label || local.label == "") {
-        local.label = "Passphrase:";
+    label = prompt;
+    if (stars != "") {
+        label = prompt + "  " + stars;
     }
-    if (local.stars != "") {
-        local.label = local.label + "  " + local.stars;
-    }
-    local.img = Image.Text(local.label, 0.878, 0.686, 0.408, 1.0, "monospace 11");
-    password_spr.SetImage(local.img);
-    password_spr.SetX(center_x - (local.img.GetWidth() / 2));
-    local.py = card_y + card_h + 18;
-    if (local.py + local.img.GetHeight() > win_y + screen_h - 12) {
-        local.py = base_y + letter_h + 14;
-    }
-    password_spr.SetY(local.py);
-    password_spr.SetOpacity(1.0);
+    message_callback(label);
 }
 
 Plymouth.SetDisplayPasswordFunction(display_password_callback);
 
 fun display_normal_callback() {
-    password_spr.SetOpacity(0.0);
+    message_spr.SetOpacity(0.0);
 }
 
 Plymouth.SetDisplayNormalFunction(display_normal_callback);
 
 fun quit_callback() {
-    for (local.i = 0; local.i < letter_count; local.i++) {
-        letter_spr[local.i].SetOpacity(0.0);
+    for (i = 0; i < letter_count; i++) {
+        letter_spr[i].SetOpacity(0.0);
     }
     cursor_spr.SetOpacity(0.0);
-    hud_border_spr.SetOpacity(0.0);
-    hud_surface_spr.SetOpacity(0.0);
-    hud_header_spr.SetOpacity(0.0);
-    hud_divider_spr.SetOpacity(0.0);
-    hud_accent_spr.SetOpacity(0.0);
-    hud_title_spr.SetOpacity(0.0);
-    hud_hint_spr.SetOpacity(0.0);
-    for (local.i = 0; local.i < log_max; local.i++) {
-        log_spr[local.i].SetOpacity(0.0);
-        log_badge_spr[local.i].SetOpacity(0.0);
-    }
-    password_spr.SetOpacity(0.0);
+    message_spr.SetOpacity(0.0);
 }
 
 Plymouth.SetQuitFunction(quit_callback);
