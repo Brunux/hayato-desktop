@@ -509,6 +509,7 @@ impl MenuScreen {
             // enough to be whole in the smallest window (80 columns).
             Agent::Claude => "Sends the question only: no files, no tools, no saved session.",
             Agent::OpenCode => "Sends the question only, from an empty private directory.",
+            Agent::Local => "Runs offline on your local model — nothing leaves this device.",
         };
         line(ctx.buf, y, sent, ctx.design.style(TextStyle::Dim));
         y += 1;

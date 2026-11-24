@@ -393,6 +393,22 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &["hayato-qr"],
     },
     CommandSpec {
+        // Lens: local Circle-to-Search (OCR + QR + entity actions).
+        path: "menu lens",
+        summary: "capture screen region to OCR, URL, translate, note, or QR",
+        shape: Shape::Pick,
+        symlinks: &["hayato-lens"],
+        installed: &["hayato-lens"],
+    },
+    CommandSpec {
+        // Drop: ephemeral LAN nearby share via in-TUI QR code.
+        path: "menu drop",
+        summary: "share or receive files over Wi-Fi via a scannable QR code",
+        shape: Shape::Pick,
+        symlinks: &["hayato-drop"],
+        installed: &["hayato-drop"],
+    },
+    CommandSpec {
         // Remind: title → note → when flow (spec 011).
         path: "menu remind",
         summary: "write it now, be told later, cancel from the list (spec 011)",

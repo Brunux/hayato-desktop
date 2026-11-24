@@ -621,6 +621,8 @@ fn execute(
         "menu emoji" => system::emoji::menu(terminal, design),
         "menu capture" => system::capture::menu(terminal, design),
         "menu qr" => system::qr::menu_with_args(&resolved.args, terminal, design),
+        "menu lens" => system::lens::menu(&resolved.args, terminal, design),
+        "menu drop" => system::drop::menu(&resolved.args, terminal, design),
         "menu remind" => system::remind::menu(terminal, design),
         "menu calc" => system::calc::menu(terminal, design),
         "menu colour" => system::colour::menu(terminal, design),

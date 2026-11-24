@@ -1,4 +1,4 @@
-Hayato · Menu                                                                                                                               53 commands
+Hayato · Menu                                                                                                                               55 commands
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ Commands ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                                                                                                  │
@@ -23,11 +23,13 @@ Hayato · Menu                                                                  
 │     Calculator  type it, Enter copies the result                                                                                             open █ │
 │     Emoji  type a name, insert the glyph                                                                                                     open █ │
 │     Clipboard  what was copied, back in one pick                                                                                             open █ │
+│     Lens  capture screen region to text, link, translate, or note                                                                            open █ │
+│     Drop  share or receive files over Wi-Fi via QR code                                                                                      open █ │
 │     Password  32 random characters, into the clipboard                                                                                       open █ │
 │     SSH  remote login status                                                                                                                 open █ │
-│  AI  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── █ │
-│     Agent session  ● opencode, in ~/Work                                                                                                       ai █ │
-│     Ask  one question, the answer here                                                                                                         ai █ │
+│  AI  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── │ │
+│     Agent session  ● opencode, in ~/Work                                                                                                       ai │ │
+│     Ask  one question, the answer here                                                                                                         ai │ │
 │     Agents  Claude Code, Codex and the others                                                                                                  ai │ │
 │     Dictation  speak, and it is typed                                                                                                          ai │ │
 │     Local model  a 1.7B model, offline, on four cores                                                                                          ai │ │
@@ -39,7 +41,5 @@ Hayato · Menu                                                                  
 │     Media  play, pause, next, copy track                                                                                                   system │ │
 │     Notifications  history and do-not-disturb                                                                                              system │ │
 │     Share this screen  read-only, over ssh                                                                                                 system │ │
-│     Time zone  and network time                                                                                                            system │ │
-│     Free space  what is using it, and clean up                                                                                             system │ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
  [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close

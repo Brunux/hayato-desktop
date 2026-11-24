@@ -382,6 +382,28 @@ pub const ROOT: &[MenuItem] = &[
         },
     ),
     item(
+        "lens",
+        "Lens",
+        "capture screen region to text, link, translate, or note",
+        Glyph::Eye,
+        Open,
+        Action::Run {
+            program: Program::System("hayato"),
+            args: &[Arg::Lit("menu"), Arg::Lit("lens")],
+        },
+    ),
+    item(
+        "drop",
+        "Drop",
+        "share or receive files over Wi-Fi via QR code",
+        Glyph::Qr,
+        Open,
+        Action::Run {
+            program: Program::System("hayato"),
+            args: &[Arg::Lit("menu"), Arg::Lit("drop")],
+        },
+    ),
+    item(
         "password",
         "Password",
         "32 random characters, into the clipboard",

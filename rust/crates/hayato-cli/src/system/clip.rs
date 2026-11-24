@@ -32,6 +32,93 @@ const NEEDED: &[&str] = &["cliphist", "wl-copy", "wl-paste", "xdg-open", "file"]
 const HIT_STRIP_BASE: usize = 10_000;
 const HIT_KIND_BASE: usize = 20_000;
 
+/// Strip common tracking query parameters (`utm_*`, `fbclid`, `gclid`, etc.)
+/// from a URL while preserving all functional query parameters.
+pub fn clean_url(url: &str) -> String {
+    let trimmed = url.trim();
+    let Some((base, query_and_frag)) = trimmed.split_once('?') else {
+        return trimmed.to_string();
+    };
+    let (query, frag) = match query_and_frag.split_once('#') {
+        Some((q, f)) => (q, Some(f)),
+        None => (query_and_frag, None),
+    };
+    let kept: Vec<&str> = query
+        .split('&')
+        .filter(|pair| {
+            let key = pair.split('=').next().unwrap_or("").to_ascii_lowercase();
+            !key.is_empty()
+                && !key.starts_with("utm_")
+                && !matches!(
+                    key.as_str(),
+                    "fbclid"
+                        | "gclid"
+                        | "dclid"
+                        | "mc_cid"
+                        | "mc_eid"
+                        | "igshid"
+                        | "si"
+                        | "ref_src"
+                )
+        })
+        .collect();
+    let mut out = base.to_string();
+    if !kept.is_empty() {
+        out.push('?');
+        out.push_str(&kept.join("&"));
+    }
+    if let Some(f) = frag {
+        out.push('#');
+        out.push_str(f);
+    }
+    out
+}
+
+/// Remove ANSI CSI escape sequences from terminal text.
+pub fn strip_ansi(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next();
+            for c in chars.by_ref() {
+                if ('@'..='~').contains(&c) {
+                    break;
+                }
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// Collapse multi-line whitespace into a single clean line.
+pub fn single_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Automatically pick the most helpful 0 ms pure-Rust transform for `text`.
+pub fn smart_transform(text: &str) -> (&'static str, String) {
+    let trimmed = text.trim();
+    if (trimmed.starts_with("http://") || trimmed.starts_with("https://"))
+        && !trimmed.contains(char::is_whitespace)
+    {
+        let cleaned = clean_url(trimmed);
+        return ("Cleaned URL tracking params", cleaned);
+    }
+    if (trimmed.starts_with('{') || trimmed.starts_with('['))
+        && let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed)
+        && let Ok(pretty) = serde_json::to_string_pretty(&val)
+    {
+        return ("Formatted JSON", pretty);
+    }
+    if text.contains('\x1b') {
+        return ("Stripped ANSI escape codes", strip_ansi(text));
+    }
+    ("Collapsed to single line", single_line(text))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ClipKind {
     Image,
@@ -541,6 +628,67 @@ impl ClipScreen {
         self.build_rows();
     }
 
+    fn transform_selected(&mut self) -> Outcome {
+        let Some(entry) = self.selected_entry() else {
+            return Outcome::Consumed;
+        };
+        if entry.kind == ClipKind::Image {
+            self.status_note = Some("Transform applies to text and link entries".into());
+            return Outcome::Consumed;
+        }
+        let raw = match self.preview_cache.get(&entry.id) {
+            Some(DecodedPreview::Text { lines, .. }) => lines.join("\n"),
+            Some(DecodedPreview::Link { url, .. }) => url.clone(),
+            _ => entry.preview.clone(),
+        };
+        let (label, transformed) = smart_transform(&raw);
+        let ok = std::process::Command::new("wl-copy")
+            .arg(&transformed)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        self.status_note = Some(if ok {
+            format!("{label} → copied to clipboard")
+        } else {
+            format!("{label} (wl-copy failed)")
+        });
+        Outcome::Consumed
+    }
+
+    fn save_selected_to_note(&mut self) -> Outcome {
+        let Some(entry) = self.selected_entry() else {
+            return Outcome::Consumed;
+        };
+        if entry.kind == ClipKind::Image {
+            self.status_note = Some("Use Ctrl+S to save images to ~/Pictures/clipboard".into());
+            return Outcome::Consumed;
+        }
+        let raw = match self.preview_cache.get(&entry.id) {
+            Some(DecodedPreview::Text { lines, .. }) => lines.join("\n"),
+            Some(DecodedPreview::Link { url, .. }) => url.clone(),
+            _ => entry.preview.clone(),
+        };
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        let dir = std::path::PathBuf::from(home).join("Documents/Notes");
+        let _ = std::fs::create_dir_all(&dir);
+        let inbox = dir.join("Inbox.md");
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M");
+        let block = format!("\n## {ts}\n\n{raw}\n");
+        let res = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&inbox)
+            .and_then(|mut f| std::io::Write::write_all(&mut f, block.as_bytes()));
+        self.status_note = Some(match res {
+            Ok(()) => "Saved clip to ~/Documents/Notes/Inbox.md".into(),
+            Err(e) => format!("Could not save note: {e}"),
+        });
+        Outcome::Consumed
+    }
+
     fn open_selected_link(&mut self) -> Outcome {
         let Some(entry) = self.selected_entry() else {
             return Outcome::Consumed;
@@ -741,6 +889,12 @@ impl Screen for ClipScreen {
                 }
                 KeyCode::Char('o') | KeyCode::Char('O') => {
                     return self.open_selected_link();
+                }
+                KeyCode::Char('t') | KeyCode::Char('T') => {
+                    return self.transform_selected();
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') => {
+                    return self.save_selected_to_note();
                 }
                 _ => {}
             }
@@ -952,5 +1106,21 @@ mod tests {
         let _ = screen.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), &design);
         assert_eq!(screen.phase(), Some("clip.browse"));
         assert_eq!(screen.entries.len(), 3);
+    }
+
+    #[test]
+    fn smart_clipboard_transforms_clean_urls_json_and_ansi() {
+        assert_eq!(
+            clean_url("https://hayato.dev/page?utm_source=x&id=42&fbclid=abc#top"),
+            "https://hayato.dev/page?id=42#top"
+        );
+        assert_eq!(
+            clean_url("https://hayato.dev/page?utm_medium=social"),
+            "https://hayato.dev/page"
+        );
+        assert_eq!(strip_ansi("\x1b[31merror\x1b[0m: failed"), "error: failed");
+        let (lbl, pretty) = smart_transform("{\"a\":1,\"b\":[2]}");
+        assert_eq!(lbl, "Formatted JSON");
+        assert!(pretty.contains('\n'));
     }
 }

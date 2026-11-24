@@ -103,6 +103,15 @@ pub fn print_target_name() {
     println!("{}", name_of(&target_code()));
 }
 
+/// Offline translation fallback via Hayato's local GGUF model (`llama-cli`).
+pub fn query_local_translate(text: &str, target_name: &str) -> Option<(String, String)> {
+    let prompt = format!(
+        "Translate the following text into {target_name}. Output ONLY the translation, with no explanation:\n\n{text}\n\nTranslation:"
+    );
+    let translated = crate::ask::query_local(&prompt)?;
+    Some((translated, "Local AI".to_string()))
+}
+
 /// Query Google translation API.
 pub fn query_google(text: &str, target: &str) -> Option<(String, String)> {
     let output = Command::new("curl")
@@ -177,9 +186,15 @@ pub fn run_translate() -> i32 {
 
     say("Translate", "Translating…", Urgency::Normal, Glyph::Globe);
 
-    if let Some((translated, detected)) = query_google(&capped_text, &target) {
+    let result = query_google(&capped_text, &target)
+        .or_else(|| query_local_translate(&capped_text, target_name));
+    if let Some((translated, detected)) = result {
         let _ = Command::new("wl-copy").arg(&translated).status();
-        let src_name = name_of(&detected);
+        let src_name = if detected == "Local AI" {
+            "Local AI"
+        } else {
+            name_of(&detected)
+        };
         let title = format!("{src_name} → {target_name}");
         say(&title, &translated, Urgency::Normal, Glyph::Globe);
 

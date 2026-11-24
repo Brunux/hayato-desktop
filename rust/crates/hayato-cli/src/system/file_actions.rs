@@ -112,6 +112,15 @@ pub fn questions(
     rows.push(row("Compress", format!("→ {base}.tar.xz"), Glyph::Box));
     keys.push("pack".to_string());
 
+    if kind != FileKind::Directory {
+        rows.push(row(
+            "Share nearby (Hayato Drop)",
+            "send over Wi-Fi via scannable QR code",
+            Glyph::Qr,
+        ));
+        keys.push("drop".to_string());
+    }
+
     if matches!(kind, FileKind::ArchiveZip | FileKind::ArchiveTar) {
         rows.push(row(
             "Extract here",
@@ -244,6 +253,13 @@ pub fn menu_for_path(
         };
 
         match action.as_str() {
+            "drop" => {
+                return super::drop::menu(
+                    &[target.to_string_lossy().to_string()],
+                    terminal,
+                    design,
+                );
+            }
             "copy" => {
                 let _ = Command::new("wl-copy")
                     .arg(target.to_str().unwrap_or(""))

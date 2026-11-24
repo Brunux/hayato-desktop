@@ -1,4 +1,4 @@
-Hayato · Menu                                                       53 commands
+Hayato · Menu                                                       55 commands
 ────────────────────────────────────────────────────────────────────────────────
 ╭ Commands ────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                          │
@@ -7,7 +7,7 @@ Hayato · Menu                                                       53 commands
 │ ▍   Terminal  foot                                                   open █ │
 │     Files  browse the filesystem                                     open █ │
 │     Files (window)  favnyr: folders, drag and drop, trash            open █ │
-│     Notes  quick notes, ink notes, sign a PDF                        open █ │
+│     Notes  quick notes, ink notes, sign a PDF                        open │ │
 │     Search inside files  the text in them, with ripgrep              open │ │
 │     Places  home, disks, the configuration                           open │ │
 │     Eject drive  safely unmount a USB stick or SD card               open │ │

@@ -34,11 +34,12 @@ use std::time::{Duration, Instant};
 
 use hayato_ui::app::exit::{ESCAPE, FAILED, OK, USAGE};
 
-/// The two agents with a one-shot mode wired here.
+/// The agents with a one-shot mode wired here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Agent {
     Claude,
     OpenCode,
+    Local,
 }
 
 impl Agent {
@@ -46,6 +47,7 @@ impl Agent {
         match self {
             Agent::Claude => "claude",
             Agent::OpenCode => "opencode",
+            Agent::Local => "llama-cli",
         }
     }
 
@@ -53,6 +55,7 @@ impl Agent {
         match self {
             Agent::Claude => "Claude Code",
             Agent::OpenCode => "OpenCode",
+            Agent::Local => "Local model",
         }
     }
 
@@ -60,8 +63,87 @@ impl Agent {
         match bin {
             "claude" => Some(Agent::Claude),
             "opencode" => Some(Agent::OpenCode),
+            "llama-cli" | "local" | "hayato-model" => Some(Agent::Local),
             _ => None,
         }
+    }
+}
+
+/// Locate a downloaded GGUF model for local offline inference (`hayato-model`).
+pub fn local_model_path() -> Option<PathBuf> {
+    if let Ok(explicit) = std::env::var("HAYATO_MODEL_PATH") {
+        let p = PathBuf::from(explicit);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    let data_dir = std::env::var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+            PathBuf::from(home).join(".local/share")
+        });
+    let models_dir = data_dir.join("hayato/models");
+    let preferred = models_dir.join("qwen3.5-0.8b-wsp-Q4_K_M.gguf");
+    if preferred.is_file() {
+        return Some(preferred);
+    }
+    let mut ggufs: Vec<PathBuf> = std::fs::read_dir(&models_dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("gguf"))
+        .collect();
+    ggufs.sort();
+    ggufs.into_iter().next()
+}
+
+/// Run a one-shot offline prompt through `llama-cli` using Hayato's measured
+/// big-core A76 flags (`-t 4 -fa on -ctk q8_0 -ctv q8_0`).
+pub fn query_local(prompt: &str) -> Option<String> {
+    let model = local_model_path()?;
+    let output = Command::new("llama-cli")
+        .args([
+            "-m",
+            &model.to_string_lossy(),
+            "-t",
+            "4",
+            "-c",
+            "2048",
+            "-fa",
+            "on",
+            "-ctk",
+            "q8_0",
+            "-ctv",
+            "q8_0",
+            "--no-display-prompt",
+            "-n",
+            "256",
+            "-p",
+            prompt,
+        ])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_local(&String::from_utf8_lossy(&output.stdout)).ok()
+}
+
+/// Parse plain-text output from `llama-cli`, stripping any `<think>...</think>` block.
+pub fn parse_local(stdout: &str) -> Result<String, String> {
+    let trimmed = stdout.trim();
+    let cleaned = if let Some(end) = trimmed.find("</think>") {
+        trimmed[end + "</think>".len()..].trim()
+    } else {
+        trimmed
+    };
+    if cleaned.is_empty() {
+        Err("Local model answered with nothing".to_string())
+    } else {
+        Ok(cleaned.to_string())
     }
 }
 
@@ -110,6 +192,13 @@ pub fn resolve(default: Option<&str>, installed: &dyn Fn(&str) -> bool) -> Optio
             return Some(Choice { agent, note });
         }
     }
+    if installed(Agent::Local.bin()) && local_model_path().is_some() {
+        let note = why.map(|why| format!("{why}; Local model answers offline"));
+        return Some(Choice {
+            agent: Agent::Local,
+            note,
+        });
+    }
     None
 }
 
@@ -139,6 +228,30 @@ pub fn argv(agent: Agent, question: &str) -> Vec<String> {
             .iter()
             .map(|s| s.to_string())
             .collect(),
+        Agent::Local => {
+            let model = local_model_path()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "qwen3.5-0.8b-wsp-Q4_K_M.gguf".to_string());
+            vec![
+                "llama-cli".to_string(),
+                "-m".to_string(),
+                model,
+                "-t".to_string(),
+                "4".to_string(),
+                "-c".to_string(),
+                "2048".to_string(),
+                "-fa".to_string(),
+                "on".to_string(),
+                "-ctk".to_string(),
+                "q8_0".to_string(),
+                "-ctv".to_string(),
+                "q8_0".to_string(),
+                "--no-display-prompt".to_string(),
+                "-n".to_string(),
+                "256".to_string(),
+                "-p".to_string(),
+            ]
+        }
     };
     match agent {
         // `--` ends the options (Claude Code's parser documents it), so a
@@ -155,6 +268,7 @@ pub fn argv(agent: Agent, question: &str) -> Vec<String> {
         } else {
             question.to_string()
         }),
+        Agent::Local => argv.push(question.to_string()),
     }
     argv
 }
@@ -420,6 +534,7 @@ fn ask(
     let parsed = match agent {
         Agent::Claude => parse_claude(&stdout),
         Agent::OpenCode => parse_opencode(&stdout),
+        Agent::Local => parse_local(&stdout),
     };
     match parsed {
         Ok(answer) => Asked::Answer(answer),
@@ -656,6 +771,11 @@ mod tests {
                     !last.starts_with('-'),
                     "nothing a parser could read as an option: {last:?}"
                 ),
+                Agent::Local => assert_eq!(
+                    argv[argv.len() - 2],
+                    "-p",
+                    "local prompt flag precedes the question"
+                ),
             }
             assert_eq!(argv[0], agent.bin());
             assert!(
@@ -667,6 +787,15 @@ mod tests {
         let tools = claude.iter().position(|a| a == "--tools").unwrap();
         assert_eq!(claude[tools + 1], "", "Claude Code runs with no tools");
         assert!(claude.contains(&"--no-session-persistence".to_string()));
+    }
+
+    #[test]
+    fn parse_local_strips_think_tags_and_rejects_empty() {
+        assert_eq!(
+            parse_local("<think>reasoning...</think>\nParis is the capital of France."),
+            Ok("Paris is the capital of France.".to_string())
+        );
+        assert!(parse_local("   ").is_err());
     }
 
     #[test]

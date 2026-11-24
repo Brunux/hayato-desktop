@@ -4,9 +4,9 @@ Hayato · File actions · holiday.png              Enter picks · Escape goes ba
 │ /home/brunux/Pictures/holiday.png                                            │
 │                                                                              │
 │ ▍   Compress  → holiday.png.tar.xz                                          │
+│     Share nearby (Hayato Drop)  send over Wi-Fi via scannable QR code       │
 │     Copy the path  /home/brunux/Pictures/holiday.png                        │
 │     A terminal here  /home/brunux/Pictures                                  │
-│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
