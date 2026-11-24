@@ -59,7 +59,6 @@ pub static THEME_RELOAD_FLAG: AtomicBool = AtomicBool::new(false);
 const BLOCKS: &[&str] = &[" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
 
 const HIT_HOME: usize = 100;
-const HIT_LIB_TOGGLE: usize = 101;
 const HIT_SEARCH_BOX: usize = 102;
 const HIT_DEVICE_PILL: usize = 103;
 const HIT_SETTINGS: usize = 104;
@@ -127,7 +126,6 @@ enum MainStage {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RightDrawer {
-    NowPlaying,
     Queue,
     Lyrics,
     Hidden,
@@ -152,7 +150,6 @@ enum SearchRowItem {
 #[derive(Clone, Copy, Default)]
 struct HitRects {
     home: Rect,
-    lib: Rect,
     search: Rect,
     device: Rect,
     settings: Rect,
@@ -276,7 +273,7 @@ impl CassetteScreen {
             focus: Focus::Main,
             stage: MainStage::Home,
             prev_stage: MainStage::Home,
-            drawer: RightDrawer::NowPlaying,
+            drawer: RightDrawer::Hidden,
             sidebar_open: true,
             source_filter: SourceFilter::All,
             mini: start_mini,
@@ -411,7 +408,7 @@ impl CassetteScreen {
             focus: Focus::Main,
             stage: MainStage::Home,
             prev_stage: MainStage::Home,
-            drawer: RightDrawer::NowPlaying,
+            drawer: RightDrawer::Hidden,
             sidebar_open: true,
             source_filter: SourceFilter::All,
             mini,
@@ -1537,18 +1534,6 @@ impl CassetteScreen {
         hits.home = Rect::new(x, area.y, home_w, 1);
         x += home_w + 1;
 
-        // [2 Lib]
-        let lib_lbl = if self.sidebar_open { " ◧ Lib " } else { " ▢ Lib " };
-        let lib_w = lib_lbl.chars().count() as u16;
-        let lib_st = if self.focus == Focus::Sidebar {
-            design.style(TextStyle::Key)
-        } else {
-            design.style(TextStyle::Dim)
-        };
-        let _ = put(buf, x, area.y, lib_lbl, lib_w, lib_st);
-        hits.lib = Rect::new(x, area.y, lib_w, 1);
-        x += lib_w + 1;
-
         // Right-aligned [Device Pill] + [⚙]
         let gear_w = 5u16;
         let gear_x = area.right().saturating_sub(gear_w);
@@ -1712,7 +1697,7 @@ impl CassetteScreen {
     }
 
     fn draw_home_stage(&mut self, buf: &mut Buffer, area: Rect, design: &Design, hits: &mut HitRects) {
-        let hero_h = if area.height >= 20 { 10 } else { 0 };
+        let hero_h = if area.height >= 20 { 13 } else if area.height >= 14 { 10 } else { 0 };
         if hero_h > 0 {
             let hero_rect = Rect::new(area.x, area.y, area.width, hero_h);
             let beat_idx = ((self.analyzer.beat_intensity * 7.0).round() as usize).min(7);
@@ -1721,40 +1706,75 @@ impl CassetteScreen {
             } else {
                 self.border_ramp[beat_idx]
             };
-            let inner = draw_beat_card(buf, hero_rect, design, "HAYATO // CASSETTE DECK", border);
-            let track = self.current_track();
-            let title = track.map(|t| t.title.as_str()).unwrap_or("CASSETTE");
-            let artist = track.map(|t| t.artist.as_str()).unwrap_or("Spotify & Local Cyberdeck");
+            let deck_title = format!(
+                "HAYATO // CASSETTE DECK · {}",
+                self.config.visualizer.label().to_uppercase()
+            );
+            let inner = draw_beat_card(buf, hero_rect, design, &deck_title, border);
+            let (title, artist_album) = match self.current_track() {
+                Some(t) if !t.album.is_empty() => {
+                    (t.title.clone(), format!("{} · {}", t.artist, t.album))
+                }
+                Some(t) => (t.title.clone(), t.artist.clone()),
+                None => (
+                    "CASSETTE".to_string(),
+                    "Spotify & Local Cyberdeck".to_string(),
+                ),
+            };
             if inner.height >= 6 && inner.width >= 26 {
-                let bt_rect = Rect::new(inner.x, inner.y, inner.width, 4);
-                let big = BigText::builder()
-                    .pixel_size(PixelSize::Quadrant)
-                    .style(
-                        Style::default()
-                            .fg(design.color(ColorRole::Text))
-                            .add_modifier(Modifier::BOLD),
-                    )
-                    .lines(vec![title.into()])
-                    .build();
-                big.render(bt_rect, buf);
-                let _ = put_trunc(
-                    buf,
-                    inner.x,
-                    inner.y + 4,
-                    artist,
-                    inner.width,
-                    design.style(TextStyle::Dim),
-                );
-                // Live visualizer strip across bottom of hero
-                let viz_y = inner.y + 6;
-                let viz_h = inner.bottom().saturating_sub(viz_y);
-                if viz_h >= 1 {
-                    self.draw_active_visualizer(
+                // Integrated Now Playing album art (or ASCII Cassette when idle) on left
+                let art_w = if inner.width >= 58 { 22 } else { 0 };
+                if art_w > 0 {
+                    let art_rect = Rect::new(inner.x, inner.y, art_w, inner.height);
+                    if self.art.has_image() {
+                        self.art.render(art_rect, buf);
+                    } else {
+                        draw_cassette_ascii(buf, art_rect, design);
+                    }
+                }
+                let rx = inner.x + if art_w > 0 { art_w + 2 } else { 0 };
+                let rw = inner.right().saturating_sub(rx);
+                if rw >= 14 {
+                    let bt_rect = Rect::new(rx, inner.y, rw, 4);
+                    let big = BigText::builder()
+                        .pixel_size(PixelSize::Quadrant)
+                        .style(
+                            Style::default()
+                                .fg(design.color(ColorRole::Text))
+                                .add_modifier(Modifier::BOLD),
+                        )
+                        .lines(vec![title.into()])
+                        .build();
+                    big.render(bt_rect, buf);
+                    let _ = put_trunc(
                         buf,
-                        Rect::new(inner.x, viz_y, inner.width, viz_h),
-                        design,
-                        false,
+                        rx,
+                        inner.y + 4,
+                        &artist_album,
+                        rw,
+                        Style::default().fg(design.color(ColorRole::Text)),
                     );
+                    if inner.height >= 7 {
+                        let _ = put_trunc(
+                            buf,
+                            rx,
+                            inner.y + 5,
+                            &self.codec_buf,
+                            rw,
+                            design.style(TextStyle::Dim),
+                        );
+                    }
+                    // Single unified live visualizer (cycles with v)
+                    let viz_y = inner.y + if inner.height >= 8 { 6 } else { 5 };
+                    let viz_h = inner.bottom().saturating_sub(viz_y);
+                    if viz_h >= 1 {
+                        self.draw_active_visualizer(
+                            buf,
+                            Rect::new(rx, viz_y, rw, viz_h),
+                            design,
+                            false,
+                        );
+                    }
                 }
             }
         }
@@ -1898,51 +1918,6 @@ impl CassetteScreen {
         let focused = self.focus == Focus::RightDrawer;
         match self.drawer {
             RightDrawer::Hidden => {}
-            RightDrawer::NowPlaying => {
-                let inner = draw_card(buf, area, design, Some("NOW PLAYING"), focused);
-                if inner.height < 6 {
-                    return;
-                }
-                let art_h = (inner.height / 2).clamp(6, 12);
-                let art_rect = Rect::new(inner.x, inner.y, inner.width, art_h);
-                if self.art.has_image() {
-                    self.art.render(art_rect, buf);
-                } else {
-                    draw_cassette_ascii(buf, art_rect, design);
-                }
-                let ty = art_rect.bottom() + 1;
-                if ty + 2 < inner.bottom() {
-                    let title = self
-                        .current_track()
-                        .map(|t| t.title.as_str())
-                        .unwrap_or("Idle");
-                    let artist = self
-                        .current_track()
-                        .map(|t| t.artist.as_str())
-                        .unwrap_or("—");
-                    let _ = put_trunc(
-                        buf,
-                        inner.x,
-                        ty,
-                        title,
-                        inner.width,
-                        Style::default()
-                            .fg(design.color(ColorRole::Text))
-                            .add_modifier(Modifier::BOLD),
-                    );
-                    let _ = put_trunc(buf, inner.x, ty + 1, artist, inner.width, design.style(TextStyle::Dim));
-                    let _ = put_trunc(buf, inner.x, ty + 2, &self.codec_buf, inner.width, design.style(TextStyle::Dim));
-                }
-                let vy = ty + 4;
-                if vy + 2 <= inner.bottom() {
-                    self.draw_active_visualizer(
-                        buf,
-                        Rect::new(inner.x, vy, inner.width, inner.bottom() - vy),
-                        design,
-                        false,
-                    );
-                }
-            }
             RightDrawer::Queue => {
                 let inner = draw_card(buf, area, design, Some(&self.queue_title_buf), focused);
                 hits.drawer_list = inner;
@@ -2501,9 +2476,6 @@ impl Screen for CassetteScreen {
         if inside(h.home) {
             return Some(HIT_HOME);
         }
-        if inside(h.lib) {
-            return Some(HIT_LIB_TOGGLE);
-        }
         if inside(h.search) {
             return Some(HIT_SEARCH_BOX);
         }
@@ -2563,13 +2535,6 @@ impl Screen for CassetteScreen {
                 self.focus = Focus::Main;
                 self.sync_chrome();
             }
-            HIT_LIB_TOGGLE => {
-                self.sidebar_open = !self.sidebar_open;
-                if self.sidebar_open {
-                    self.focus = Focus::Sidebar;
-                }
-                self.sync_chrome();
-            }
             HIT_SEARCH_BOX => {
                 if self.stage != MainStage::Search {
                     self.prev_stage = self.stage.clone();
@@ -2598,7 +2563,7 @@ impl Screen for CassetteScreen {
             }
             HIT_BTN_LYRICS => {
                 self.drawer = if self.drawer == RightDrawer::Lyrics {
-                    RightDrawer::NowPlaying
+                    RightDrawer::Hidden
                 } else {
                     RightDrawer::Lyrics
                 };
@@ -2606,7 +2571,7 @@ impl Screen for CassetteScreen {
             }
             HIT_BTN_QUEUE => {
                 self.drawer = if self.drawer == RightDrawer::Queue {
-                    RightDrawer::NowPlaying
+                    RightDrawer::Hidden
                 } else {
                     RightDrawer::Queue
                 };
@@ -3040,14 +3005,14 @@ impl Screen for CassetteScreen {
                     5 => self.sidebar_open = !self.sidebar_open,
                     6 => {
                         self.drawer = if self.drawer == RightDrawer::Queue {
-                            RightDrawer::NowPlaying
+                            RightDrawer::Hidden
                         } else {
                             RightDrawer::Queue
                         };
                     }
                     7 => {
                         self.drawer = if self.drawer == RightDrawer::Lyrics {
-                            RightDrawer::NowPlaying
+                            RightDrawer::Hidden
                         } else {
                             RightDrawer::Lyrics
                         };
@@ -3310,12 +3275,15 @@ impl Screen for CassetteScreen {
                 return Outcome::Consumed;
             }
             KeyCode::Char('3') | KeyCode::Char('q') => {
-                self.drawer = if self.drawer == RightDrawer::Queue && self.focus == Focus::RightDrawer {
-                    RightDrawer::NowPlaying
+                if self.drawer == RightDrawer::Queue {
+                    self.drawer = RightDrawer::Hidden;
+                    if self.focus == Focus::RightDrawer {
+                        self.focus = Focus::Main;
+                    }
                 } else {
-                    RightDrawer::Queue
-                };
-                self.focus = Focus::RightDrawer;
+                    self.drawer = RightDrawer::Queue;
+                    self.focus = Focus::RightDrawer;
+                }
                 self.sync_chrome();
                 return Outcome::Consumed;
             }
@@ -3334,20 +3302,20 @@ impl Screen for CassetteScreen {
                 return Outcome::Consumed;
             }
             KeyCode::Char('i') => {
-                self.drawer = if self.drawer == RightDrawer::NowPlaying {
-                    RightDrawer::Hidden
-                } else {
-                    RightDrawer::NowPlaying
-                };
+                self.stage = MainStage::Home;
+                self.focus = Focus::Main;
                 self.sync_chrome();
                 return Outcome::Consumed;
             }
             KeyCode::Char('L') => {
-                self.drawer = if self.drawer == RightDrawer::Lyrics {
-                    RightDrawer::NowPlaying
+                if self.drawer == RightDrawer::Lyrics {
+                    self.drawer = RightDrawer::Hidden;
+                    if self.focus == Focus::RightDrawer {
+                        self.focus = Focus::Main;
+                    }
                 } else {
-                    RightDrawer::Lyrics
-                };
+                    self.drawer = RightDrawer::Lyrics;
+                }
                 self.sync_chrome();
                 return Outcome::Consumed;
             }
