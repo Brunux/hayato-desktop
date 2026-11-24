@@ -41,6 +41,10 @@ class PlymouthThemeTests(unittest.TestCase):
         )
         self.assertEqual((cw, ch, ctype), (mod.CURSOR_W, mod.CURSOR_H, 6))
 
+        for name, rgb in mod.SOLID_TILES.items():
+            sw, sh, stype = _png_size(mod.render_solid_png(rgb))
+            self.assertEqual((sw, sh, stype), (1, 1, 6), f"invalid solid tile {name}")
+
     def test_committed_theme_files_and_manifest_are_complete(self) -> None:
         mod = _load_module()
         theme_dir: Path = mod.THEME_DIR
@@ -58,8 +62,30 @@ class PlymouthThemeTests(unittest.TestCase):
         )
 
         script_text = script.read_text(encoding="utf-8")
-        self.assertIn("Plymouth.SetRefreshFunction", script_text)
-        self.assertIn("Window.SetBackgroundTopColor(0.102, 0.106, 0.149)", script_text)
+        for required in (
+            "Window.SetBackgroundTopColor(0.102, 0.106, 0.149)",
+            "Plymouth.SetRefreshFunction",
+            "Plymouth.SetUpdateStatusFunction",
+            "Plymouth.SetMessageFunction",
+            "Plymouth.SetDisplayPasswordFunction",
+            "Plymouth.SetDisplayNormalFunction",
+            "Plymouth.SetQuitFunction",
+            "BOOT // TELEMETRY",
+            "SHUTDOWN // TELEMETRY",
+            "[ Esc: raw vt ]",
+        ):
+            self.assertIn(required, script_text)
+
+        for forbidden in (".contains(", ".toLowerCase(", ".slice(", ".indexOf("):
+            self.assertNotIn(forbidden, script_text)
+
+        # Basic delimiter balance check (ignoring comment lines)
+        code_only = "\n".join(
+            line for line in script_text.splitlines() if not line.lstrip().startswith("#")
+        )
+        self.assertEqual(code_only.count("{"), code_only.count("}"), "unbalanced braces")
+        self.assertEqual(code_only.count("("), code_only.count(")"), "unbalanced parens")
+        self.assertEqual(code_only.count("["), code_only.count("]"), "unbalanced brackets")
 
         for idx in range(len(mod.WORD)):
             p = theme_dir / f"letter-{idx}.png"
@@ -75,6 +101,12 @@ class PlymouthThemeTests(unittest.TestCase):
 
         cw, ch, ctype = _png_size((theme_dir / "cursor.png").read_bytes())
         self.assertEqual((cw, ch, ctype), (mod.CURSOR_W, mod.CURSOR_H, 6))
+
+        for filename in mod.SOLID_TILES:
+            p = theme_dir / filename
+            self.assertTrue(p.is_file(), f"missing {p}")
+            w, h, ctype = _png_size(p.read_bytes())
+            self.assertEqual((w, h, ctype), (1, 1, 6))
 
         for removed in ("bar.png", "dot-dim.png", "dot-lit.png"):
             self.assertFalse((theme_dir / removed).exists(), f"stale asset {removed}")
