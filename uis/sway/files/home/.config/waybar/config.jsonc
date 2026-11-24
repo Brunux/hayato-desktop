@@ -44,6 +44,7 @@
         "clock"
     ],
     "modules-right": [
+        "privacy",
         "custom/busy",
         "custom/keyboard-layout",
         "custom/vnc",
@@ -137,6 +138,25 @@
     // a Bluetooth connect) say so when the card is clicked, because they are
     // either already over or not safe to cut.  The tooltip carries "click to
     // stop" only when there is something to run.
+    // Native PipeWire privacy indicator: hidden when idle, lights up when an app
+    // actively captures the microphone or shares the screen.
+    "privacy": {
+        "icon-spacing": 6,
+        "icon-size": 14,
+        "transition-duration": 200,
+        "modules": [
+            {
+                "type": "screenshare",
+                "tooltip": true,
+                "tooltip-icon-size": 16
+            },
+            {
+                "type": "audio-in",
+                "tooltip": true,
+                "tooltip-icon-size": 16
+            }
+        ]
+    },
     "custom/busy": {
         "exec": "~/.config/bin/bar-busy",
         "return-type": "json",

@@ -15,10 +15,10 @@ use std::time::Duration;
 
 use hayato_ui::widgets::{put, put_trunc};
 use hayato_ui::{
-    ActionItem, ActionRunner, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Design, Glyph,
-    Header, Input, InputAction, KeyHint, ListAction, ListState, Outcome, QrCode, Row, Screen,
-    TextStyle, draw_badge, draw_card, draw_empty, draw_filter_bar, draw_qr, draw_signal_bars,
-    signal_bars,
+    ActionItem, ActionRunner, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Confirm,
+    ConfirmAction, Design, Glyph, Header, Input, InputAction, KeyHint, ListAction, ListState,
+    Outcome, QrCode, Row, Screen, TextStyle, draw_badge, draw_card, draw_empty, draw_filter_bar,
+    draw_qr, draw_signal_bars, signal_bars,
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -271,6 +271,10 @@ enum NetMode {
         subtitle: String,
         payload: String,
     },
+    ConfirmForget {
+        ssid: String,
+        confirm: Confirm,
+    },
 }
 
 /// The AP behind a visible row. The portal row takes the first slot, so every
@@ -511,7 +515,81 @@ impl NetScreen {
                     KeyHint::new("Esc", "back to networks"),
                 ];
             }
+            NetMode::ConfirmForget { .. } => {
+                self.header = Header::new("Hayato")
+                    .subtitle("Wi-Fi")
+                    .status("Cancel is selected");
+                self.keybar = vec![
+                    KeyHint::new("\u{2190}/\u{2192}", "choose"),
+                    KeyHint::new("Enter", "confirm"),
+                    KeyHint::new("Esc", "cancel"),
+                ];
+            }
         }
+    }
+
+    fn prompt_forget_selected(&mut self) {
+        if self.runner.is_running() || !self.radio_on {
+            return;
+        }
+        let Some(row) = self.list.selected_index() else {
+            return;
+        };
+        let Some(index) = ap_index(self.portal, row) else {
+            return;
+        };
+        let Some(ap) = self.aps.get(index).cloned() else {
+            return;
+        };
+        if !has_saved_connection(&ap.ssid) {
+            self.runner
+                .set_transient(format!("{} has no saved profile", ap.ssid));
+            self.sync_chrome();
+            return;
+        }
+        let confirm = Confirm::new(
+            format!("Forget {}?", ap.ssid),
+            format!(
+                "Delete the saved Wi-Fi profile and passphrase for {}?",
+                ap.ssid
+            ),
+        )
+        .with_detail("You will need to enter its password again to reconnect.")
+        .with_options(&["Cancel", "Forget"])
+        .destructive(true);
+        self.mode = NetMode::ConfirmForget {
+            ssid: ap.ssid,
+            confirm,
+        };
+        self.sync_chrome();
+    }
+
+    fn forget_network(&mut self, ssid: String) {
+        let label = format!("Forgetting {ssid}\u{2026}");
+        self.runner.spawn(label, move || {
+            let status = Command::new("nmcli")
+                .args(["connection", "delete", "id", &ssid])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .output();
+            let result = match status {
+                Ok(out) if out.status.success() => Ok(()),
+                Ok(out) => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
+                Err(e) => Err(e.to_string()),
+            };
+            let (radio_on, aps, ip) = scan_wifi(false);
+            let portal = radio_on && super::portal::needs_signin();
+            NetOp::Connected {
+                ssid: format!("Forgot {ssid}"),
+                result,
+                radio_on,
+                aps,
+                ip,
+                portal,
+            }
+        });
+        self.sync_chrome();
     }
 
     fn open_inline_qr(&mut self) {
@@ -762,7 +840,7 @@ impl Screen for NetScreen {
         match &self.mode {
             NetMode::WifiQr { qr, .. } => Some(qr.recommended_window_size()),
             NetMode::Password { .. } => Some((680, 320)),
-            NetMode::List => Some((860, 560)),
+            NetMode::List | NetMode::ConfirmForget { .. } => Some((860, 560)),
         }
     }
 
@@ -866,6 +944,9 @@ impl Screen for NetScreen {
                     height: ctx.area.height.saturating_sub(3),
                 };
                 draw_qr(ctx.buf, inner, ctx.design, qr);
+            }
+            NetMode::ConfirmForget { confirm, .. } => {
+                confirm.render(ctx.area, ctx.buf, ctx.design);
             }
             NetMode::Password { ssid, input } => {
                 let card_title = format!("Password for {ssid}");
@@ -1001,6 +1082,21 @@ impl Screen for NetScreen {
                 }
                 _ => Outcome::Consumed,
             },
+            NetMode::ConfirmForget { ssid, confirm } => {
+                let target = ssid.clone();
+                match confirm.handle(key) {
+                    ConfirmAction::Chosen(1) => {
+                        self.mode = NetMode::List;
+                        self.forget_network(target);
+                    }
+                    ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                        self.mode = NetMode::List;
+                        self.sync_chrome();
+                    }
+                    ConfirmAction::None => {}
+                }
+                Outcome::Consumed
+            }
             NetMode::Password { ssid, input } => match input.handle(key) {
                 InputAction::Submitted => {
                     let pw = input.text().to_string();
@@ -1050,8 +1146,16 @@ impl Screen for NetScreen {
                         KeyCode::Char('n') | KeyCode::Char('N') => {
                             return self.run_strip_action("nmtui");
                         }
+                        KeyCode::Char('d') | KeyCode::Char('D') => {
+                            self.prompt_forget_selected();
+                            return Outcome::Consumed;
+                        }
                         _ => {}
                     }
+                }
+                if key.code == KeyCode::Delete {
+                    self.prompt_forget_selected();
+                    return Outcome::Consumed;
                 }
                 if !self.radio_on && key.code == KeyCode::Enter {
                     return self.run_strip_action("toggle");
@@ -1071,6 +1175,23 @@ impl Screen for NetScreen {
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
+        if let NetMode::ConfirmForget { ssid, confirm } = &mut self.mode {
+            if let Some(idx) = row {
+                let target = ssid.clone();
+                match confirm.click(idx) {
+                    ConfirmAction::Chosen(1) => {
+                        self.mode = NetMode::List;
+                        self.forget_network(target);
+                    }
+                    ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                        self.mode = NetMode::List;
+                        self.sync_chrome();
+                    }
+                    ConfirmAction::None => {}
+                }
+            }
+            return Outcome::Consumed;
+        }
         if !matches!(self.mode, NetMode::List) {
             return Outcome::Continue;
         }
@@ -1093,6 +1214,9 @@ impl Screen for NetScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        if let NetMode::ConfirmForget { confirm, .. } = &self.mode {
+            return confirm.hit(area, design, x, y);
+        }
         if !matches!(self.mode, NetMode::List) {
             return None;
         }
@@ -1126,6 +1250,7 @@ impl Screen for NetScreen {
             NetMode::List => "list",
             NetMode::Password { .. } => "password",
             NetMode::WifiQr { .. } => "wifi-qr",
+            NetMode::ConfirmForget { .. } => "confirm-forget",
         })
     }
 }

@@ -267,7 +267,19 @@ upower
 libgl1-mesa-dri
 mesa-utils
 xdg-desktop-portal-wlr
+# File-chooser, URI opener, and org.freedesktop.appearance (dark/light) portal
+# for Firefox, GTK4, and sandboxed apps (sway-portals.conf keeps ScreenCast and
+# Screenshot on wlr).
+xdg-desktop-portal-gtk
 xdg-user-dirs
+# Lightweight polkit authentication agent and org.freedesktop.secrets provider
+# so elevation prompts and saved credentials work for apps, Git, and VPNs.
+lxpolkit
+gnome-keyring
+# Networking & system controls exposed in Settings (VPN, Firewall, Power profiles)
+wireguard-tools
+ufw
+power-profiles-daemon
 # The games library and the HTML games (hayato-games, from rust/): WebKitGTK
 # 6.0 draws them. 124 MB installed and six new packages, because GTK4,
 # GStreamer, libsoup and bubblewrap are already here; libmanette (the Gamepad

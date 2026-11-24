@@ -67,6 +67,7 @@ tooltip label {
    theme (Catppuccin Latte) is the colour of the background. Emphasis is
    weight. */
 #custom-busy,
+#privacy,
 #custom-updates,
 #tray,
 #custom-keyboard-layout,
@@ -164,6 +165,14 @@ tooltip label {
 /* A module whose script reports nothing (no upgrades, a single keyboard
    layout) collapses to zero width instead of leaving an empty segment on the
    bar.  The class comes from the JSON the script prints. */
+#privacy-item.screenshare {
+    color: #ff5588;
+}
+
+#privacy-item.audio-in {
+    color: #ffd700;
+}
+
 #custom-updates.empty,
 #custom-busy.empty,
 #custom-keyboard-layout.empty,

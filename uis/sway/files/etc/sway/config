@@ -249,6 +249,9 @@ mode "resize" {
 # hook ask it instead of keeping a second copy of the coordinates.
 exec /home/brunux/.config/bin/night-light login
 
+# Polkit authentication agent so apps requesting elevation prompt cleanly.
+exec sh -c 'command -v lxpolkit >/dev/null 2>&1 && exec lxpolkit'
+
 # Include the system drop-ins (bar, waybar, brightness, volume, gestures,
 # screenshots, the theme, touchpad, systemd user environment, ...).
 include /etc/sway/config.d/*

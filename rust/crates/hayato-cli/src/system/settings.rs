@@ -47,6 +47,8 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("bt-radio", "Bluetooth radio", "bluetoothctl power"),
         ("bt", "Bluetooth devices", "bar-bt"),
         ("dns", "DNS", "hayato-dns"),
+        ("vpn", "VPN", "nmcli connection"),
+        ("firewall", "Firewall (UFW)", "ufw"),
         ("night", "Night light", "night-light apply"),
         ("notify", "Notifications", "notify.conf"),
         ("dnd", "Do not disturb", "hayato-notify-history"),
@@ -105,12 +107,20 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
             "tablet-mode calibrate",
         ),
         ("layout", "Keyboard layout", "hayato-layout"),
+        ("controller", "Game controller", "hayato-pad"),
         ("reduced-motion", "Reduced motion", "reduced-motion.conf"),
+        ("onscreen-keyboard", "On-screen keyboard", "wvkbd"),
         ("translate", "Translate", "translate config"),
         ("audio", "Audio output", "bar-audio"),
         ("mixer", "Volume per application", "pavucontrol"),
         ("media", "Media", "hayato-media"),
         ("power", "Battery", "bar-power"),
+        ("power-profile", "Power profile", "powerprofilesctl"),
+        (
+            "battery-limit",
+            "Battery care",
+            "charge_control_end_threshold",
+        ),
     ]
 }
 
@@ -422,6 +432,96 @@ fn media_detail() -> String {
     .unwrap_or_else(|| "nothing playing".to_string())
 }
 
+fn battery_limit_path() -> Option<std::path::PathBuf> {
+    let entries = std::fs::read_dir("/sys/class/power_supply").ok()?;
+    for entry in entries.flatten() {
+        let p = entry.path().join("charge_control_end_threshold");
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+fn battery_limit_detail() -> String {
+    let Some(path) = battery_limit_path() else {
+        return "not supported by hardware".to_string();
+    };
+    match std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| s.trim().parse::<u8>().ok())
+    {
+        Some(v) if v <= 85 => format!("{v}% (conservation)"),
+        Some(v) => format!("{v}% (full)"),
+        None => "unknown".to_string(),
+    }
+}
+
+fn power_profile_detail() -> String {
+    if !have("powerprofilesctl") {
+        return "not installed".to_string();
+    }
+    out(&["powerprofilesctl", "get"])
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "unavailable".to_string())
+}
+
+fn vpn_connections() -> Vec<(String, bool)> {
+    let Some(raw) = out(&["nmcli", "-t", "-f", "NAME,TYPE,STATE", "connection", "show"]) else {
+        return Vec::new();
+    };
+    raw.lines()
+        .filter_map(|line| {
+            let mut parts = line.rsplitn(3, ':');
+            let state = parts.next()?;
+            let kind = parts.next()?;
+            let name = parts.next()?;
+            if matches!(kind, "wireguard" | "vpn") {
+                Some((name.to_string(), state == "activated"))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn vpn_detail() -> String {
+    let conns = vpn_connections();
+    if conns.is_empty() {
+        return "none configured · Enter opens nmtui".to_string();
+    }
+    if let Some((active, _)) = conns.iter().find(|(_, on)| *on) {
+        format!("connected: {active}")
+    } else if conns.len() == 1 {
+        format!("off ({})", conns[0].0)
+    } else {
+        format!("off ({} configured)", conns.len())
+    }
+}
+
+fn firewall_enabled() -> Option<bool> {
+    if !have("ufw") {
+        return None;
+    }
+    if let Ok(conf) = std::fs::read_to_string("/etc/ufw/ufw.conf") {
+        for line in conf.lines() {
+            if let Some(val) = line.trim().strip_prefix("ENABLED=") {
+                return Some(val.trim().eq_ignore_ascii_case("yes"));
+            }
+        }
+    }
+    out(&["sudo", "-n", "ufw", "status"]).map(|s| s.contains("Status: active"))
+}
+
+fn firewall_detail() -> String {
+    match firewall_enabled() {
+        Some(true) => "active".to_string(),
+        Some(false) => "inactive".to_string(),
+        None => "not installed".to_string(),
+    }
+}
+
 fn battery_detail() -> String {
     let entries = match std::fs::read_dir("/sys/class/power_supply") {
         Ok(e) => e,
@@ -539,6 +639,8 @@ fn section_keys(section: Section) -> &'static [&'static str] {
             "bt-radio",
             "bt",
             "dns",
+            "vpn",
+            "firewall",
             "vnc",
             "ssh",
         ],
@@ -571,7 +673,7 @@ fn section_keys(section: Section) -> &'static [&'static str] {
             "tablet",
             "tablet-calibrate",
         ],
-        Section::PowerIdle => &["power", "idle"],
+        Section::PowerIdle => &["power", "power-profile", "battery-limit", "idle"],
         Section::System => &[
             "tz",
             "locale",
@@ -646,6 +748,12 @@ fn build_rows(section: Section) -> (Vec<hayato_ui::Row>, Vec<String>) {
                 Glyph::Cloud,
             ));
             keys.push("dns".to_string());
+
+            rows.push(row("VPN", vpn_detail(), Glyph::Shield));
+            keys.push("vpn".to_string());
+
+            rows.push(row("Firewall (UFW)", firewall_detail(), Glyph::Lock));
+            keys.push("firewall".to_string());
 
             rows.push(row("Share this screen", super::vnc::status(), Glyph::Eye));
             keys.push("vnc".to_string());
@@ -802,6 +910,10 @@ fn build_rows(section: Section) -> (Vec<hayato_ui::Row>, Vec<String>) {
         Section::PowerIdle => {
             rows.push(row("Battery", battery_detail(), Glyph::Battery));
             keys.push("power".to_string());
+            rows.push(row("Power profile", power_profile_detail(), Glyph::Power));
+            keys.push("power-profile".to_string());
+            rows.push(row("Battery care", battery_limit_detail(), Glyph::Battery));
+            keys.push("battery-limit".to_string());
             rows.push(row("Idle & lock", super::idle::status(), Glyph::Clock));
             keys.push("idle".to_string());
         }
@@ -2400,6 +2512,73 @@ pub fn menu(
                 spawn_subcommand("hayato", &["menu", "power"]);
                 return Ok(0);
             }
+            "power-profile" => {
+                if !have("powerprofilesctl") {
+                    banner =
+                        Some("Install power-profiles-daemon to switch power profiles".to_string());
+                } else {
+                    let cur = power_profile_detail();
+                    let next = match cur.as_str() {
+                        "power-saver" => "balanced",
+                        "balanced" => "performance",
+                        _ => "power-saver",
+                    };
+                    match checked(&["powerprofilesctl", "set", next]) {
+                        Ok(_) => banner = Some(format!("Power profile: {next}")),
+                        Err(e) => banner = Some(format!("Could not set power profile: {e}")),
+                    }
+                }
+            }
+            "battery-limit" => {
+                if let Some(path) = battery_limit_path() {
+                    let cur = std::fs::read_to_string(&path)
+                        .ok()
+                        .and_then(|s| s.trim().parse::<u8>().ok())
+                        .unwrap_or(100);
+                    let next = if cur <= 85 { "100" } else { "80" };
+                    let p = path.to_string_lossy().to_string();
+                    let cmd = format!("printf '%s\\n' {next} > '{p}'");
+                    match sudo(&["sh", "-c", &cmd]) {
+                        Ok(_) => banner = Some(format!("Battery charge limit set to {next}%")),
+                        Err(e) => banner = Some(format!("Could not set charge limit: {e}")),
+                    }
+                } else {
+                    banner = Some(
+                        "Battery charge threshold is not exposed by this hardware".to_string(),
+                    );
+                }
+            }
+            "vpn" => {
+                let conns = vpn_connections();
+                if conns.is_empty() {
+                    crate::system::spawn_detached("exec foot --app-id=popup nmtui");
+                    return Ok(0);
+                } else if let Some((active, _)) = conns.iter().find(|(_, on)| *on) {
+                    match checked(&["nmcli", "connection", "down", active]) {
+                        Ok(_) => banner = Some(format!("VPN disconnected: {active}")),
+                        Err(e) => banner = Some(format!("Could not disconnect VPN: {e}")),
+                    }
+                } else {
+                    let name = &conns[0].0;
+                    match checked(&["nmcli", "connection", "up", name]) {
+                        Ok(_) => banner = Some(format!("VPN connected: {name}")),
+                        Err(e) => banner = Some(format!("Could not connect VPN: {e}")),
+                    }
+                }
+            }
+            "firewall" => match firewall_enabled() {
+                Some(true) => match sudo(&["ufw", "disable"]) {
+                    Ok(_) => banner = Some("Firewall (UFW) disabled".to_string()),
+                    Err(e) => banner = Some(format!("Could not disable firewall: {e}")),
+                },
+                Some(false) => match sudo(&["ufw", "--force", "enable"]) {
+                    Ok(_) => banner = Some("Firewall (UFW) enabled".to_string()),
+                    Err(e) => banner = Some(format!("Could not enable firewall: {e}")),
+                },
+                None => {
+                    banner = Some("Install ufw to manage the firewall".to_string());
+                }
+            },
             _ => {}
         }
     }

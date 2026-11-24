@@ -30,11 +30,12 @@
 set -eu
 
 usage() {
-	echo "usage: osd volume up|down|mute | osd brightness up|down" >&2
+	echo "usage: osd volume up|down|mute | osd mic mute | osd brightness up|down" >&2
 	exit 2
 }
 
 sink=@DEFAULT_SINK@
+source=@DEFAULT_SOURCE@
 
 card() { # ICON TITLE BODY VALUE
 	notify-send -a Hayato -i "$1" -u low -t 1200 \
@@ -96,6 +97,17 @@ volume)
 		card audio-volume-muted 'Volume' 'Muted' 0
 	else
 		card "$(volume_icon "$pct")" 'Volume' "$pct%" "$pct"
+	fi
+	;;
+mic)
+	case ${2:-} in
+	mute) pactl set-source-mute "$source" toggle >/dev/null 2>&1 || true ;;
+	*) usage ;;
+	esac
+	if [ "$(pactl get-source-mute "$source" 2>/dev/null | sed -n 's/^Mute:[[:space:]]*//p')" = yes ]; then
+		card microphone-sensitivity-muted 'Microphone' 'Muted' 0
+	else
+		card audio-input-microphone 'Microphone' 'Live' 100
 	fi
 	;;
 brightness)

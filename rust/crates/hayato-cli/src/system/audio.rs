@@ -113,10 +113,82 @@ pub fn parse_sinks(output: &str, default: &str) -> Vec<Sink> {
     sinks
 }
 
+/// Parse `pactl list sources` output into structured [`Sink`] records,
+/// excluding `.monitor` loopback sources so only real microphones are shown.
+pub fn parse_sources(output: &str, default: &str) -> Vec<Sink> {
+    let mut sources = Vec::new();
+    let mut name = String::new();
+    let mut description = String::new();
+    let mut muted = false;
+    let mut volume = 0u8;
+
+    let flush = |sources: &mut Vec<Sink>,
+                 name: &mut String,
+                 description: &mut String,
+                 muted: &mut bool,
+                 volume: &mut u8| {
+        if !name.is_empty() && !name.ends_with(".monitor") {
+            let desc = if description.is_empty() {
+                name.clone()
+            } else {
+                std::mem::take(description)
+            };
+            let n = std::mem::take(name);
+            let is_default = n == default;
+            sources.push(Sink {
+                name: n,
+                description: desc,
+                is_default,
+                volume: *volume,
+                muted: *muted,
+            });
+        } else {
+            name.clear();
+            description.clear();
+        }
+        *muted = false;
+        *volume = 0;
+    };
+
+    for raw_line in output.lines() {
+        let line = raw_line.trim();
+        if raw_line.starts_with("Source #") {
+            flush(
+                &mut sources,
+                &mut name,
+                &mut description,
+                &mut muted,
+                &mut volume,
+            );
+        } else if let Some(rest) = line.strip_prefix("Name: ") {
+            name = rest.trim().to_string();
+        } else if let Some(rest) = line.strip_prefix("Description: ") {
+            description = rest.trim().to_string();
+        } else if let Some(rest) = line.strip_prefix("Mute: ") {
+            muted = rest.trim() == "yes";
+        } else if line.starts_with("Volume: ")
+            && let Some(pct) = parse_volume_percent(line)
+        {
+            volume = pct;
+        }
+    }
+    flush(
+        &mut sources,
+        &mut name,
+        &mut description,
+        &mut muted,
+        &mut volume,
+    );
+    sources.sort_by(|a, b| b.is_default.cmp(&a.is_default));
+    sources
+}
+
 /// The audio screen.
 pub struct AudioScreen {
     sinks: Vec<Sink>,
+    sources: Vec<Sink>,
     default_sink: String,
+    default_source: String,
     source_volume: u8,
     source_muted: bool,
     status: String,
@@ -139,19 +211,22 @@ impl AudioScreen {
         let mut screen = Self {
             keys: Vec::new(),
             sinks: Vec::new(),
+            sources: Vec::new(),
             default_sink: String::new(),
+            default_source: String::new(),
             source_volume: 0,
             source_muted: false,
             status: "Enter switches default \u{00b7} \u{2190}/\u{2192} adjusts volume \u{00b7} Tab focuses actions"
                 .to_string(),
             strip: ActionStrip::default(),
             list: ListState::new(),
-            header: Header::new("Hayato").subtitle("Audio output"),
+            header: Header::new("Hayato").subtitle("Audio & Microphones"),
             keybar: vec![
-                KeyHint::new("Enter", "switch output"),
+                KeyHint::new("Enter", "switch device"),
                 KeyHint::new("\u{2190}/\u{2192}", "volume \u{00b1}5%"),
                 KeyHint::new("Tab", "actions"),
-                KeyHint::new("Ctrl+M", "mute"),
+                KeyHint::new("Ctrl+M", "mute out"),
+                KeyHint::new("Ctrl+I", "mute mic"),
                 KeyHint::new("Esc", "back"),
             ],
             rows_height: Cell::new(16),
@@ -167,6 +242,12 @@ impl AudioScreen {
             .to_string();
         let raw_sinks = out(&["pactl", "list", "sinks"]).unwrap_or_default();
         self.sinks = parse_sinks(&raw_sinks, &self.default_sink);
+        self.default_source = out(&["pactl", "get-default-source"])
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let raw_sources = out(&["pactl", "list", "sources"]).unwrap_or_default();
+        self.sources = parse_sources(&raw_sources, &self.default_source);
         self.source_volume = out(&["pactl", "get-source-volume", "@DEFAULT_SOURCE@"])
             .and_then(|s| parse_volume_percent(&s))
             .unwrap_or(0);
@@ -174,7 +255,7 @@ impl AudioScreen {
             .is_some_and(|s| s.contains("yes"));
         self.build_rows(preserve);
         self.header = Header::new("Hayato")
-            .subtitle("Audio output")
+            .subtitle("Audio & Microphones")
             .status(self.status.clone());
     }
 
@@ -233,6 +314,32 @@ impl AudioScreen {
             }
         }
 
+        if !self.sources.is_empty() {
+            rows.push(Row::heading("Microphones (Inputs)"));
+            keys.push(String::new());
+            for src in &self.sources {
+                let glyph = if src.is_default {
+                    Glyph::Check
+                } else {
+                    Glyph::Mic
+                };
+                let badge = if src.muted {
+                    format!("muted ({:>3}%)", src.volume)
+                } else if src.is_default {
+                    format!("\u{25cf} {:>3}%", src.volume)
+                } else {
+                    format!("{:>3}%", src.volume)
+                };
+                keys.push(format!("source:{}", src.name));
+                rows.push(
+                    Row::new(src.description.clone())
+                        .glyph(glyph)
+                        .detail(src.name.clone())
+                        .value(badge),
+                );
+            }
+        }
+
         self.keys = keys;
         if preserve {
             self.list.update_rows(rows);
@@ -256,6 +363,28 @@ impl AudioScreen {
     }
 
     fn adjust_volume(&mut self, delta: i8) {
+        if let Some(idx) = self.list.selected_index()
+            && let Some(key) = self.keys.get(idx)
+            && let Some(src_name) = key.strip_prefix("source:")
+        {
+            let current = self
+                .sources
+                .iter()
+                .find(|s| s.name == src_name)
+                .map(|s| s.volume)
+                .unwrap_or(self.source_volume);
+            let next = (current as i16 + delta as i16).clamp(0, 100) as u8;
+            let arg = format!("{next}%");
+            let _ = Command::new("pactl")
+                .args(["set-source-volume", src_name, &arg])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            self.status = format!("Microphone volume: {next}%");
+            self.reload(true);
+            return;
+        }
         let target = self.target_sink();
         let current = self
             .sinks
@@ -414,12 +543,19 @@ impl AudioScreen {
                 area.right().saturating_sub(x),
                 design.style(TextStyle::Body),
             );
+            let mic_name = self
+                .sources
+                .iter()
+                .find(|s| s.is_default)
+                .or(self.sources.first())
+                .map(|s| s.description.as_str())
+                .unwrap_or("Default microphone");
             let gauge_space = 22u16.min(area.width / 2);
             let _ = put_trunc(
                 buf,
                 x,
                 y1,
-                "Default microphone",
+                mic_name,
                 area.right().saturating_sub(x + gauge_space + 2),
                 design.style(TextStyle::Dim),
             );
@@ -614,6 +750,23 @@ impl AudioScreen {
         if key.is_empty() || key == "-" {
             return Outcome::Continue;
         }
+        if let Some(name) = key.strip_prefix("source:") {
+            let _ = Command::new("pactl")
+                .args(["set-default-source", name])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+            let desc = self
+                .sources
+                .iter()
+                .find(|s| s.name == name)
+                .map(|s| s.description.as_str())
+                .unwrap_or(name);
+            self.status = format!("Switched microphone to {desc}");
+            self.reload(true);
+            return Outcome::Consumed;
+        }
         if let Some(name) = key.strip_prefix("sink:") {
             let _ = Command::new("pactl")
                 .args(["set-default-sink", name])
@@ -733,5 +886,35 @@ Sink #52
         assert!(!sinks[1].is_default);
         assert!(!sinks[1].muted);
         assert_eq!(sinks[1].volume, 65);
+    }
+
+    #[test]
+    fn parses_pactl_sources_and_skips_monitor_loopbacks() {
+        let raw = "\
+Source #10
+\tName: alsa_output.platform-sound.monitor
+\tDescription: Monitor of Speaker
+\tMute: no
+\tVolume: front-left: 65536 / 100% / 0.00 dB
+Source #11
+\tName: alsa_input.platform-sound.HiFi__Mic__source
+\tDescription: Internal Microphone
+\tMute: no
+\tVolume: front-left: 52428 /  80% / -5.80 dB
+Source #12
+\tName: bluez_input.AA_BB_CC.0
+\tDescription: Headset Mic
+\tMute: yes
+\tVolume: front-left: 32768 /  50% / -18.06 dB
+";
+        let sources = parse_sources(raw, "bluez_input.AA_BB_CC.0");
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0].description, "Headset Mic");
+        assert!(sources[0].is_default);
+        assert!(sources[0].muted);
+        assert_eq!(sources[0].volume, 50);
+        assert_eq!(sources[1].description, "Internal Microphone");
+        assert!(!sources[1].is_default);
+        assert_eq!(sources[1].volume, 80);
     }
 }
