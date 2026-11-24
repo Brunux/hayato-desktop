@@ -41,6 +41,7 @@ impl ApiError {
 
 pub struct SpotifyProvider {
     token: Option<SpotifyToken>,
+    user_id: Option<String>,
     liked_total: Option<u32>,
 }
 
@@ -48,6 +49,7 @@ impl SpotifyProvider {
     pub fn from_saved() -> Self {
         Self {
             token: spotify::load_token(),
+            user_id: None,
             liked_total: None,
         }
     }
@@ -68,6 +70,7 @@ impl SpotifyProvider {
     pub fn logout(&mut self) {
         spotify::clear_token();
         self.token = None;
+        self.user_id = None;
         self.liked_total = None;
     }
 
@@ -151,6 +154,14 @@ impl MusicProvider for SpotifyProvider {
         }
         let mut out = Vec::new();
 
+        // 0. Resolve user_id once so Liked Songs gets its real `spotify:user:<id>:collection`
+        //    context URI (required for Connect playback where raw `uris` returns 403).
+        if self.user_id.is_none()
+            && let Ok(Some(me)) = self.get_json("https://api.spotify.com/v1/me")
+        {
+            self.user_id = me["id"].as_str().map(String::from);
+        }
+
         // 1. Pinned Liked Songs total (lightweight limit=1 probe)
         if let Ok(Some(liked)) = self.get_json("https://api.spotify.com/v1/me/tracks?limit=1") {
             self.liked_total = liked["total"].as_u64().map(|n| n as u32);
@@ -162,7 +173,10 @@ impl MusicProvider for SpotifyProvider {
             name: "Liked Songs".to_string(),
             owner: self.token.as_ref().map(|t| t.display_name.clone()),
             track_count: self.liked_total,
-            context_uri: None,
+            context_uri: self
+                .user_id
+                .as_ref()
+                .map(|uid| format!("spotify:user:{uid}:collection")),
             tracks_restricted: false,
         });
 
@@ -276,7 +290,35 @@ impl MusicProvider for SpotifyProvider {
             None => "https://api.spotify.com/v1/me/player/play".to_string(),
         };
         let body = serde_json::json!({ "uris": [uri] }).to_string();
-        self.send_action("PUT", &endpoint, Some(&body))
+        match self.send_action("PUT", &endpoint, Some(&body)) {
+            Ok(()) => Ok(()),
+            Err(err) if err.contains("403") => {
+                // Spotify Connect devices (including librespot) reject raw `uris` with
+                // 403 Restriction violated when a context is active. Fall back to
+                // queueing the track and skipping to it immediately.
+                let q_url = match device_id {
+                    Some(id) => format!(
+                        "https://api.spotify.com/v1/me/player/queue?uri={}&device_id={}",
+                        spotify::url_encode_public(uri),
+                        spotify::url_encode_public(id)
+                    ),
+                    None => format!(
+                        "https://api.spotify.com/v1/me/player/queue?uri={}",
+                        spotify::url_encode_public(uri)
+                    ),
+                };
+                self.send_action("POST", &q_url, None)?;
+                let next_url = match device_id {
+                    Some(id) => format!(
+                        "https://api.spotify.com/v1/me/player/next?device_id={}",
+                        spotify::url_encode_public(id)
+                    ),
+                    None => "https://api.spotify.com/v1/me/player/next".to_string(),
+                };
+                self.send_action("POST", &next_url, None)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     fn play_context(
