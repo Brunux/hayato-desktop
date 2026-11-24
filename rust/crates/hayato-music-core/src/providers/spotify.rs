@@ -87,12 +87,12 @@ impl SpotifyProvider {
             .ok_or_else(|| ApiError::Network("Not signed in to Spotify".into()))?;
         spotify::ensure_fresh_public(tok).map_err(ApiError::Network)?;
 
-        match raw_curl("GET", url, &tok.access_token, None) {
+        match raw_curl("GET", url, &tok.access_token, None, true) {
             Err(ApiError::Http { status: 401, .. }) => {
                 // Force refresh and retry once
                 tok.expires_at_unix = 0;
                 spotify::ensure_fresh_public(tok).map_err(ApiError::Network)?;
-                raw_curl("GET", url, &tok.access_token, None)
+                raw_curl("GET", url, &tok.access_token, None, true)
             }
             other => other,
         }
@@ -106,12 +106,12 @@ impl SpotifyProvider {
     ) -> Result<(), String> {
         let tok = self.token_mut()?;
         spotify::ensure_fresh_public(tok)?;
-        match raw_curl(method, url, &tok.access_token, body) {
+        match raw_curl(method, url, &tok.access_token, body, false) {
             Ok(_) => Ok(()),
             Err(ApiError::Http { status: 401, .. }) => {
                 tok.expires_at_unix = 0;
                 spotify::ensure_fresh_public(tok)?;
-                raw_curl(method, url, &tok.access_token, body)
+                raw_curl(method, url, &tok.access_token, body, false)
                     .map(|_| ())
                     .map_err(ApiError::into_string)
             }
@@ -480,6 +480,7 @@ fn raw_curl(
     url: &str,
     access_token: &str,
     body: Option<&str>,
+    expect_json: bool,
 ) -> Result<Option<Value>, ApiError> {
     let auth = format!("Authorization: Bearer {access_token}");
     let mut cmd = Command::new("curl");
@@ -526,7 +527,7 @@ fn raw_curl(
             .unwrap_or_else(|| resp_body.chars().take(120).collect());
         return Err(ApiError::Http { status, message: msg });
     }
-    if resp_body.trim().is_empty() {
+    if !expect_json || resp_body.trim().is_empty() {
         return Ok(None);
     }
     serde_json::from_str::<Value>(resp_body)

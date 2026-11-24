@@ -32,7 +32,7 @@ use hayato_music_core::providers::{
     ProviderHub, ProviderId, SearchResults,
 };
 use hayato_music_core::{
-    CassetteConfig, NowPlayingFile, PlayState, Queue, RepeatMode, SourceKind, Track,
+    CassetteConfig, NowPlayingFile, PlayState, Queue, RepeatMode, SourceKind, Track, TrackId,
     VisualizerMode, cache_dir, format_time, load_config, save_config,
 };
 use hayato_ui::widgets::{put, put_trunc};
@@ -211,6 +211,8 @@ pub struct CassetteScreen {
     remote_pos_ms: u64,
     remote_dur_ms: u64,
     remote_synced_at: Instant,
+    optimistic_until: Option<Instant>,
+    last_fx_track_id: Option<TrackId>,
     remote_phase: f32,
 
     // Search state (instant local + 250ms debounced Spotify)
@@ -309,6 +311,8 @@ impl CassetteScreen {
             remote_pos_ms: 0,
             remote_dur_ms: 0,
             remote_synced_at: Instant::now(),
+            optimistic_until: None,
+            last_fx_track_id: None,
             remote_phase: 0.0,
             search_input: Input::new(),
             search_list: ListState::new().with_empty("Type to search Spotify & Local library"),
@@ -451,6 +455,8 @@ impl CassetteScreen {
             remote_pos_ms: 0,
             remote_dur_ms: 0,
             remote_synced_at: Instant::now(),
+            optimistic_until: None,
+            last_fx_track_id: None,
             remote_phase: 0.0,
             search_input: Input::new(),
             search_list: ListState::new(),
@@ -580,7 +586,7 @@ impl CassetteScreen {
             self.codec_buf = codec.short_label();
             self.engine.play_file(path.clone(), track.duration_secs);
         }
-        self.trigger_track_fx();
+        self.trigger_track_fx_for(&track.id);
         self.publish_external_state();
     }
 
@@ -592,12 +598,13 @@ impl CassetteScreen {
         self.remote_pos_ms = 0;
         self.remote_dur_ms = track.duration_secs.saturating_mul(1000);
         self.remote_synced_at = Instant::now();
+        self.optimistic_until = Some(Instant::now() + Duration::from_secs(3));
         self.last_pos_sec = 0;
         self.last_dur_sec = track.duration_secs;
         self.time_buf = format!("00:00 / {}", format_time(track.duration_secs));
         self.codec_buf = "SPOTIFY · CONNECT".to_string();
         self.art.set_path(track.art_path.as_deref());
-        self.trigger_track_fx();
+        self.trigger_track_fx_for(&track.id);
 
         let dev_id = self.active_device_id();
         if let Some((is_local, dev_name)) = self.describe_target_device() {
@@ -697,7 +704,11 @@ impl CassetteScreen {
         self.sync_chrome();
     }
 
-    fn trigger_track_fx(&mut self) {
+    fn trigger_track_fx_for(&mut self, id: &TrackId) {
+        if self.last_fx_track_id.as_ref() == Some(id) {
+            return;
+        }
+        self.last_fx_track_id = Some(id.clone());
         self.fx = Some(fx::coalesce(EffectTimer::from_ms(
             220,
             Interpolation::CubicOut,
@@ -707,6 +718,7 @@ impl CassetteScreen {
 
     fn toggle_play_pause(&mut self) {
         if self.active_provider == ProviderId::Spotify {
+            self.optimistic_until = Some(Instant::now() + Duration::from_secs(3));
             if self.remote_state == PlayState::Playing {
                 self.remote_state = PlayState::Paused;
                 self.hub.send(ProviderCmd::RemotePause(ProviderId::Spotify));
@@ -1427,7 +1439,19 @@ impl CassetteScreen {
                     let snap = *snap;
                     let local_playing = self.engine.telemetry.play_state() == PlayState::Playing;
                     if !local_playing || self.active_provider == ProviderId::Spotify {
-                        let prev_id = self.remote_track.as_ref().map(|t| t.id.clone());
+                        // Ignore stale cloud snapshots during our 3s optimistic window after
+                        // a user-initiated play/pause/track switch so the UI and FX never bounce.
+                        if let Some(until) = self.optimistic_until {
+                            let now = Instant::now();
+                            if now < until {
+                                let same_track = snap.track.as_ref().map(|t| &t.id)
+                                    == self.remote_track.as_ref().map(|t| &t.id);
+                                if !same_track || snap.state != self.remote_state {
+                                    continue;
+                                }
+                            }
+                            self.optimistic_until = None;
+                        }
                         if let Some(dev) = snap.device {
                             if let Some(slot) = self.devices.iter_mut().find(|d| d.id == dev.id) {
                                 *slot = dev;
@@ -1447,11 +1471,8 @@ impl CassetteScreen {
                         self.codec_buf = "SPOTIFY · CONNECT".to_string();
 
                         if let Some(t) = snap.track {
-                            let changed = prev_id.as_ref() != Some(&t.id);
                             self.art.set_path(t.art_path.as_deref());
-                            if changed {
-                                self.trigger_track_fx();
-                            }
+                            self.trigger_track_fx_for(&t.id);
                             self.remote_track = Some(t);
                         }
                         self.last_pos_sec = self.remote_pos_ms / 1000;
@@ -1696,45 +1717,44 @@ impl CassetteScreen {
         }
     }
 
-    fn draw_home_stage(&mut self, buf: &mut Buffer, area: Rect, design: &Design, hits: &mut HitRects) {
-        let hero_h = if area.height >= 20 { 13 } else if area.height >= 14 { 10 } else { 0 };
-        if hero_h > 0 {
-            let hero_rect = Rect::new(area.x, area.y, area.width, hero_h);
-            let beat_idx = ((self.analyzer.beat_intensity * 7.0).round() as usize).min(7);
-            let border = if design.reduced_motion() {
-                design.color(ColorRole::Border)
-            } else {
-                self.border_ramp[beat_idx]
-            };
-            let deck_title = format!(
-                "HAYATO // CASSETTE DECK · {}",
-                self.config.visualizer.label().to_uppercase()
-            );
-            let inner = draw_beat_card(buf, hero_rect, design, &deck_title, border);
-            let (title, artist_album) = match self.current_track() {
-                Some(t) if !t.album.is_empty() => {
-                    (t.title.clone(), format!("{} · {}", t.artist, t.album))
+    fn draw_cassette_deck(&mut self, buf: &mut Buffer, hero_rect: Rect, design: &Design) {
+        let beat_idx = ((self.analyzer.beat_intensity * 7.0).round() as usize).min(7);
+        let border = if design.reduced_motion() {
+            design.color(ColorRole::Border)
+        } else {
+            self.border_ramp[beat_idx]
+        };
+        let deck_title = format!(
+            "HAYATO // CASSETTE DECK · {}",
+            self.config.visualizer.label().to_uppercase()
+        );
+        let inner = draw_beat_card(buf, hero_rect, design, &deck_title, border);
+        let (title, artist_album) = match self.current_track() {
+            Some(t) if !t.album.is_empty() => {
+                (t.title.clone(), format!("{} · {}", t.artist, t.album))
+            }
+            Some(t) => (t.title.clone(), t.artist.clone()),
+            None => (
+                "CASSETTE".to_string(),
+                "Spotify & Local Cyberdeck".to_string(),
+            ),
+        };
+        if inner.height >= 5 && inner.width >= 26 {
+            // Integrated Now Playing album art (or ASCII Cassette when idle) on left
+            let art_w = if inner.width >= 58 { 22 } else { 0 };
+            if art_w > 0 {
+                let art_rect = Rect::new(inner.x, inner.y, art_w, inner.height);
+                if self.art.has_image() {
+                    self.art.render(art_rect, buf);
+                } else {
+                    draw_cassette_ascii(buf, art_rect, design);
                 }
-                Some(t) => (t.title.clone(), t.artist.clone()),
-                None => (
-                    "CASSETTE".to_string(),
-                    "Spotify & Local Cyberdeck".to_string(),
-                ),
-            };
-            if inner.height >= 6 && inner.width >= 26 {
-                // Integrated Now Playing album art (or ASCII Cassette when idle) on left
-                let art_w = if inner.width >= 58 { 22 } else { 0 };
-                if art_w > 0 {
-                    let art_rect = Rect::new(inner.x, inner.y, art_w, inner.height);
-                    if self.art.has_image() {
-                        self.art.render(art_rect, buf);
-                    } else {
-                        draw_cassette_ascii(buf, art_rect, design);
-                    }
-                }
-                let rx = inner.x + if art_w > 0 { art_w + 2 } else { 0 };
-                let rw = inner.right().saturating_sub(rx);
-                if rw >= 14 {
+            }
+            let rx = inner.x + if art_w > 0 { art_w + 2 } else { 0 };
+            let rw = inner.right().saturating_sub(rx);
+            if rw >= 14 {
+                let bt_h = if inner.height >= 7 { 4 } else { 1 };
+                if bt_h == 4 {
                     let bt_rect = Rect::new(rx, inner.y, rw, 4);
                     let big = BigText::builder()
                         .pixel_size(PixelSize::Quadrant)
@@ -1746,48 +1766,55 @@ impl CassetteScreen {
                         .lines(vec![title.into()])
                         .build();
                     big.render(bt_rect, buf);
+                } else {
                     let _ = put_trunc(
                         buf,
                         rx,
-                        inner.y + 4,
-                        &artist_album,
+                        inner.y,
+                        &title,
                         rw,
-                        Style::default().fg(design.color(ColorRole::Text)),
+                        Style::default()
+                            .fg(design.color(ColorRole::Text))
+                            .add_modifier(Modifier::BOLD),
                     );
-                    if inner.height >= 7 {
-                        let _ = put_trunc(
-                            buf,
-                            rx,
-                            inner.y + 5,
-                            &self.codec_buf,
-                            rw,
-                            design.style(TextStyle::Dim),
-                        );
-                    }
-                    // Single unified live visualizer (cycles with v)
-                    let viz_y = inner.y + if inner.height >= 8 { 6 } else { 5 };
-                    let viz_h = inner.bottom().saturating_sub(viz_y);
-                    if viz_h >= 1 {
-                        self.draw_active_visualizer(
-                            buf,
-                            Rect::new(rx, viz_y, rw, viz_h),
-                            design,
-                            false,
-                        );
-                    }
+                }
+                let _ = put_trunc(
+                    buf,
+                    rx,
+                    inner.y + bt_h,
+                    &artist_album,
+                    rw,
+                    Style::default().fg(design.color(ColorRole::Text)),
+                );
+                if inner.height >= bt_h + 3 {
+                    let _ = put_trunc(
+                        buf,
+                        rx,
+                        inner.y + bt_h + 1,
+                        &self.codec_buf,
+                        rw,
+                        design.style(TextStyle::Dim),
+                    );
+                }
+                // Single unified live visualizer (cycles with v)
+                let viz_y = inner.y + bt_h + if inner.height >= bt_h + 3 { 2 } else { 1 };
+                let viz_h = inner.bottom().saturating_sub(viz_y);
+                if viz_h >= 1 {
+                    self.draw_active_visualizer(
+                        buf,
+                        Rect::new(rx, viz_y, rw, viz_h),
+                        design,
+                        false,
+                    );
                 }
             }
         }
+    }
 
-        let quick_rect = Rect::new(
-            area.x,
-            area.y + hero_h,
-            area.width,
-            area.height.saturating_sub(hero_h),
-        );
+    fn draw_home_stage(&mut self, buf: &mut Buffer, area: Rect, design: &Design, hits: &mut HitRects) {
         let q_inner = draw_card(
             buf,
-            quick_rect,
+            area,
             design,
             Some("QUICK LAUNCH // SPOTIFY & LOCAL"),
             self.focus == Focus::Main,
@@ -2795,15 +2822,41 @@ impl Screen for CassetteScreen {
         }
 
         let main_rect = Rect::new(main_x, mid_rect.y, main_w, mid_rect.height);
+        // Keep HAYATO // CASSETTE DECK pinned across Home, Playlist/Collection, and Search
+        // so album art, track title, and live visualizer never disappear when browsing playlists.
+        let show_deck = matches!(
+            self.stage,
+            MainStage::Home | MainStage::Collection | MainStage::Search
+        );
+        let deck_h = if !show_deck {
+            0
+        } else if main_rect.height >= 22 {
+            11
+        } else if main_rect.height >= 16 {
+            9
+        } else {
+            0
+        };
+        if deck_h > 0 {
+            let deck_rect = Rect::new(main_rect.x, main_rect.y, main_rect.width, deck_h);
+            self.draw_cassette_deck(ctx.buf, deck_rect, ctx.design);
+        }
+        let stage_rect = Rect::new(
+            main_rect.x,
+            main_rect.y + deck_h,
+            main_rect.width,
+            main_rect.height.saturating_sub(deck_h),
+        );
+
         match self.stage {
-            MainStage::Home => self.draw_home_stage(ctx.buf, main_rect, ctx.design, &mut hits),
+            MainStage::Home => self.draw_home_stage(ctx.buf, stage_rect, ctx.design, &mut hits),
             MainStage::Collection => {
-                self.draw_collection_stage(ctx.buf, main_rect, ctx.design, &mut hits)
+                self.draw_collection_stage(ctx.buf, stage_rect, ctx.design, &mut hits)
             }
             MainStage::Search => {
                 let inner = draw_card(
                     ctx.buf,
-                    main_rect,
+                    stage_rect,
                     ctx.design,
                     Some(&self.search_title_buf),
                     self.focus == Focus::SearchBar || self.focus == Focus::Main,
@@ -3533,6 +3586,9 @@ impl Screen for CassetteScreen {
                                     .active_collection
                                     .as_ref()
                                     .and_then(|c| c.context_uri.clone());
+                                let all = self.active_collection_tracks.clone();
+                                self.queue.set_and_play(all, i);
+                                self.rebuild_queue_rows();
                                 self.play_spotify_track(&t, ctx.as_deref());
                             } else {
                                 let all = self.active_collection_tracks.clone();

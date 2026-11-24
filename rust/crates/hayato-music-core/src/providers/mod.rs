@@ -293,6 +293,10 @@ fn worker_loop(
         crate::connect::LocalConnect::spawn(80, tap, local_spotify_pcm_active, connect_tx);
     #[cfg(feature = "spotify")]
     let mut pending_devices_refresh: Option<Instant> = None;
+    #[cfg(feature = "spotify")]
+    let mut local_device_id: Option<String> = None;
+    #[cfg(feature = "spotify")]
+    let mut using_local_device = true;
 
     let mut focused = true;
     let mut last_poll = Instant::now() - Duration::from_secs(10);
@@ -428,19 +432,26 @@ fn worker_loop(
             }
             Ok(ProviderCmd::RemotePause(ProviderId::Spotify)) => {
                 #[cfg(feature = "spotify")]
-                if let Err(e) = spotify_prov.pause() {
+                if local_device_id.is_some() && using_local_device {
+                    local_connect.pause();
+                } else if let Err(e) = spotify_prov.pause() {
                     let _ = ev_tx.send(ProviderEvent::Error(e));
                 }
             }
             Ok(ProviderCmd::RemoteResume(ProviderId::Spotify)) => {
                 #[cfg(feature = "spotify")]
-                if let Err(e) = spotify_prov.resume() {
+                if local_device_id.is_some() && using_local_device {
+                    local_connect.play();
+                } else if let Err(e) = spotify_prov.resume() {
                     let _ = ev_tx.send(ProviderEvent::Error(e));
                 }
             }
             Ok(ProviderCmd::RemoteNext(ProviderId::Spotify)) => {
                 #[cfg(feature = "spotify")]
-                if let Err(e) = spotify_prov.next() {
+                if local_device_id.is_some() && using_local_device {
+                    local_connect.next();
+                    last_poll = Instant::now() - Duration::from_secs(10);
+                } else if let Err(e) = spotify_prov.next() {
                     let _ = ev_tx.send(ProviderEvent::Error(e));
                 } else {
                     last_poll = Instant::now() - Duration::from_secs(10);
@@ -448,7 +459,10 @@ fn worker_loop(
             }
             Ok(ProviderCmd::RemotePrev(ProviderId::Spotify)) => {
                 #[cfg(feature = "spotify")]
-                if let Err(e) = spotify_prov.prev() {
+                if local_device_id.is_some() && using_local_device {
+                    local_connect.prev();
+                    last_poll = Instant::now() - Duration::from_secs(10);
+                } else if let Err(e) = spotify_prov.prev() {
                     let _ = ev_tx.send(ProviderEvent::Error(e));
                 } else {
                     last_poll = Instant::now() - Duration::from_secs(10);
@@ -456,25 +470,33 @@ fn worker_loop(
             }
             Ok(ProviderCmd::RemoteSeekMs(ProviderId::Spotify, ms)) => {
                 #[cfg(feature = "spotify")]
-                if let Err(e) = spotify_prov.seek_ms(ms) {
+                if local_device_id.is_some() && using_local_device {
+                    local_connect.seek_ms(ms.min(u64::from(u32::MAX)) as u32);
+                } else if let Err(e) = spotify_prov.seek_ms(ms) {
                     let _ = ev_tx.send(ProviderEvent::Error(e));
                 }
             }
             Ok(ProviderCmd::RemoteVolume(ProviderId::Spotify, pct)) => {
                 #[cfg(feature = "spotify")]
-                if let Err(e) = spotify_prov.set_volume(pct) {
+                if local_device_id.is_some() && using_local_device {
+                    local_connect.set_volume_pct(pct);
+                } else if let Err(e) = spotify_prov.set_volume(pct) {
                     let _ = ev_tx.send(ProviderEvent::Error(e));
                 }
             }
             Ok(ProviderCmd::RemoteShuffle(ProviderId::Spotify, on)) => {
                 #[cfg(feature = "spotify")]
-                if let Err(e) = spotify_prov.set_shuffle(on) {
+                if local_device_id.is_some() && using_local_device {
+                    local_connect.set_shuffle(on);
+                } else if let Err(e) = spotify_prov.set_shuffle(on) {
                     let _ = ev_tx.send(ProviderEvent::Error(e));
                 }
             }
             Ok(ProviderCmd::RemoteRepeat(ProviderId::Spotify, mode)) => {
                 #[cfg(feature = "spotify")]
-                if let Err(e) = spotify_prov.set_repeat(mode) {
+                if local_device_id.is_some() && using_local_device {
+                    local_connect.set_repeat(mode);
+                } else if let Err(e) = spotify_prov.set_repeat(mode) {
                     let _ = ev_tx.send(ProviderEvent::Error(e));
                 }
             }
@@ -483,18 +505,21 @@ fn worker_loop(
                 device_id,
             }) => {
                 #[cfg(feature = "spotify")]
-                match spotify_prov.transfer_device(&device_id) {
-                    Ok(()) => {
-                        let _ = ev_tx.send(ProviderEvent::Status(
-                            "Transferred Spotify Connect playback".into(),
-                        ));
-                        if let Ok(devs) = spotify_prov.list_devices() {
-                            let _ = ev_tx.send(ProviderEvent::DevicesUpdated(devs));
+                {
+                    using_local_device = local_device_id.as_deref() == Some(device_id.as_str());
+                    match spotify_prov.transfer_device(&device_id) {
+                        Ok(()) => {
+                            let _ = ev_tx.send(ProviderEvent::Status(
+                                "Transferred Spotify Connect playback".into(),
+                            ));
+                            if let Ok(devs) = spotify_prov.list_devices() {
+                                let _ = ev_tx.send(ProviderEvent::DevicesUpdated(devs));
+                            }
+                            last_poll = Instant::now() - Duration::from_secs(10);
                         }
-                        last_poll = Instant::now() - Duration::from_secs(10);
-                    }
-                    Err(e) => {
-                        let _ = ev_tx.send(ProviderEvent::Error(e));
+                        Err(e) => {
+                            let _ = ev_tx.send(ProviderEvent::Error(e));
+                        }
                     }
                 }
             }
@@ -556,6 +581,8 @@ fn worker_loop(
         while let Ok(cev) = connect_rx.try_recv() {
             match cev {
                 crate::connect::ConnectEvent::Ready { device_id } => {
+                    local_device_id = Some(device_id.clone());
+                    using_local_device = true;
                     let _ = ev_tx.send(ProviderEvent::LocalConnectChanged {
                         ready: true,
                         device_id: Some(device_id),
@@ -563,6 +590,8 @@ fn worker_loop(
                     pending_devices_refresh = Some(Instant::now() + Duration::from_millis(1200));
                 }
                 crate::connect::ConnectEvent::Unpaired => {
+                    local_device_id = None;
+                    using_local_device = false;
                     let _ = ev_tx.send(ProviderEvent::LocalConnectChanged {
                         ready: false,
                         device_id: None,

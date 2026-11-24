@@ -43,7 +43,7 @@ use tokio::sync::mpsc as tokio_mpsc;
 
 use crate::dsp::PcmTapWriter;
 use crate::spotify::{generate_pkce, url_encode_public};
-use crate::{cache_dir, config_dir, fnv1a_64};
+use crate::{RepeatMode, cache_dir, config_dir, fnv1a_64};
 
 /// Display name advertised to Spotify Connect for this Chromebook.
 pub const LOCAL_CONNECT_NAME: &str = "Hayato Cassette";
@@ -62,6 +62,14 @@ pub enum ConnectEvent {
 enum ConnectCmd {
     PairOAuth,
     ClearAndDisconnect,
+    Play,
+    Pause,
+    Next,
+    Prev,
+    SeekMs(u32),
+    SetVolumePct(u8),
+    SetShuffle(bool),
+    SetRepeat(RepeatMode),
     Shutdown,
 }
 
@@ -102,6 +110,38 @@ impl LocalConnect {
 
     pub fn clear_and_disconnect(&self) {
         let _ = self.tx.send(ConnectCmd::ClearAndDisconnect);
+    }
+
+    pub fn play(&self) {
+        let _ = self.tx.send(ConnectCmd::Play);
+    }
+
+    pub fn pause(&self) {
+        let _ = self.tx.send(ConnectCmd::Pause);
+    }
+
+    pub fn next(&self) {
+        let _ = self.tx.send(ConnectCmd::Next);
+    }
+
+    pub fn prev(&self) {
+        let _ = self.tx.send(ConnectCmd::Prev);
+    }
+
+    pub fn seek_ms(&self, pos_ms: u32) {
+        let _ = self.tx.send(ConnectCmd::SeekMs(pos_ms));
+    }
+
+    pub fn set_volume_pct(&self, pct: u8) {
+        let _ = self.tx.send(ConnectCmd::SetVolumePct(pct));
+    }
+
+    pub fn set_shuffle(&self, on: bool) {
+        let _ = self.tx.send(ConnectCmd::SetShuffle(on));
+    }
+
+    pub fn set_repeat(&self, mode: RepeatMode) {
+        let _ = self.tx.send(ConnectCmd::SetRepeat(mode));
     }
 }
 
@@ -194,6 +234,7 @@ async fn start_spirc(
 ) -> Result<ActiveSpirc, String> {
     let session_cfg = SessionConfig {
         device_id: device_id.to_string(),
+        autoplay: Some(true),
         ..SessionConfig::default()
     };
 
@@ -391,6 +432,60 @@ async fn handle_cmd(
             }
             let _ = fs::remove_file(credentials_dir().join("credentials.json"));
             let _ = ev_tx.send(ConnectEvent::Unpaired);
+        }
+        Some(ConnectCmd::Play) => {
+            if let Some(sp) = active.as_ref() {
+                let _ = sp.spirc.play();
+            }
+        }
+        Some(ConnectCmd::Pause) => {
+            if let Some(sp) = active.as_ref() {
+                let _ = sp.spirc.pause();
+            }
+        }
+        Some(ConnectCmd::Next) => {
+            if let Some(sp) = active.as_ref() {
+                let _ = sp.spirc.next();
+            }
+        }
+        Some(ConnectCmd::Prev) => {
+            if let Some(sp) = active.as_ref() {
+                let _ = sp.spirc.prev();
+            }
+        }
+        Some(ConnectCmd::SeekMs(ms)) => {
+            if let Some(sp) = active.as_ref() {
+                let _ = sp.spirc.set_position_ms(ms);
+            }
+        }
+        Some(ConnectCmd::SetVolumePct(pct)) => {
+            if let Some(sp) = active.as_ref() {
+                let vol = ((u32::from(pct.min(100)) * u32::from(u16::MAX)) / 100) as u16;
+                let _ = sp.spirc.set_volume(vol);
+            }
+        }
+        Some(ConnectCmd::SetShuffle(on)) => {
+            if let Some(sp) = active.as_ref() {
+                let _ = sp.spirc.shuffle(on);
+            }
+        }
+        Some(ConnectCmd::SetRepeat(mode)) => {
+            if let Some(sp) = active.as_ref() {
+                match mode {
+                    RepeatMode::Off => {
+                        let _ = sp.spirc.repeat(false);
+                        let _ = sp.spirc.repeat_track(false);
+                    }
+                    RepeatMode::All => {
+                        let _ = sp.spirc.repeat_track(false);
+                        let _ = sp.spirc.repeat(true);
+                    }
+                    RepeatMode::One => {
+                        let _ = sp.spirc.repeat(false);
+                        let _ = sp.spirc.repeat_track(true);
+                    }
+                }
+            }
         }
         Some(ConnectCmd::PairOAuth) => {
             let _ = ev_tx.send(ConnectEvent::Status(
