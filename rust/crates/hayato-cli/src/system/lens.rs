@@ -473,10 +473,28 @@ impl Screen for LensScreen {
     }
 }
 
-/// Headless pre-capture entry point used when launched from a Sway keybinding:
-/// runs `slurp` + `grim` + `zbarimg`/`tesseract` *before* any floating `foot`
-/// window opens so the screen stays 100% unobstructed during region selection.
-pub fn capture_and_launch() -> i32 {
+/// Spawn a detached background capture and return immediately so a caller
+/// window (like `bar-menu`) closes cleanly before `slurp` starts.
+pub fn detach_capture() -> i32 {
+    let exe = std::env::current_exe()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "hayato".to_string());
+    let _ = Command::new(&exe)
+        .args(["menu", "lens", "--after-menu"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+    hayato_ui::app::exit::OK
+}
+
+/// Headless pre-capture entry point used when launched from a Sway keybinding
+/// or detached from the root menu: runs `slurp` + `grim` + `zbarimg`/`tesseract`
+/// *before* any floating `foot` window opens so the screen stays 100% unobstructed.
+pub fn capture_and_launch(wait_for_caller: bool) -> i32 {
+    if wait_for_caller {
+        std::thread::sleep(std::time::Duration::from_millis(180));
+    }
     match capture_region() {
         Ok(None) => hayato_ui::app::exit::ESCAPE,
         Ok(Some((text, source))) => {

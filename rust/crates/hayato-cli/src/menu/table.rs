@@ -389,7 +389,7 @@ pub const ROOT: &[MenuItem] = &[
         Open,
         Action::Run {
             program: Program::System("hayato"),
-            args: &[Arg::Lit("menu"), Arg::Lit("lens")],
+            args: &[Arg::Lit("menu"), Arg::Lit("lens"), Arg::Lit("--detach")],
         },
     ),
     item(

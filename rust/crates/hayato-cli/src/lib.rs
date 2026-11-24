@@ -470,9 +470,9 @@ fn query(resolved: &Resolved) -> Option<i32> {
         }
         // Run region capture (slurp + grim + OCR/QR) *before* spawning the
         // floating foot window so the popup never blocks the screen during selection.
-        ("menu lens", []) if !std::io::IsTerminal::is_terminal(&io::stdout()) => {
-            Some(system::lens::capture_and_launch())
-        }
+        ("menu lens", []) => Some(system::lens::capture_and_launch(false)),
+        ("menu lens", ["--detach"]) => Some(system::lens::detach_capture()),
+        ("menu lens", ["--after-menu"]) => Some(system::lens::capture_and_launch(true)),
         ("menu notes", ["--rows"] | ["rows"]) => {
             let mut out = io::stdout();
             for (key, label, detail) in system::notes::rows() {
