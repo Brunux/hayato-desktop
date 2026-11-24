@@ -154,7 +154,10 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `~/.config/hayato/pad.json`, and the mapper reloads the file when its mtime changes, so a remap
    needs no restart and works with no pad connected. The defaults are the console layout and cover
    a DualShock 4 (Cross confirm, Circle cancel), which pairs over Bluetooth (PS + Share) like any
-   other pad; a DualShock 3 is the USB exception (BlueZ's sixaxis plugin writes the host address),
+   other pad (`bluetooth.rs` enables `pairable on` via an RAII guard, clears stale unbonded
+   `Paired: yes`/`Trusted: yes` entries, and keeps `--agent NoInputNoOutput` active across
+   `pair`/`connect` so BlueZ 5.8x writes a `[LinkKey]` without weakening `ClassicBondedOnly`); a
+   DualShock 3 is the USB exception (BlueZ's sixaxis plugin writes the host address),
    never a scan. The mapper never touches RetroArch or the HTML host: they read the pad themselves
    (udev and the browser Gamepad API), so a press cannot move two things. RetroArch's own mapping
    ships as a udev autoconfig profile in the home tree

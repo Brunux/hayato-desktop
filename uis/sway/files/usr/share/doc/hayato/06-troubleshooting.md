@@ -111,6 +111,13 @@ The controller (`hci0`) is attached to `serial0-0` and needs its RTL8822CS
 firmware; if `bluetoothctl show` says *Powered: no*, check
 `journalctl -u bluetooth` and that the `bluez` package is installed.
 
+Gamepads (such as DualShock 4, **PS + Share** to enter pairing mode) require a
+cryptographic bond under BlueZ 5.8x (`ClassicBondedOnly=true`). `hayato-bluetooth`
+temporarily enables `pairable on` (`bondable` in `btmgmt info`), clears stale
+unbonded entries, pairs with `--agent NoInputNoOutput`, trusts, and connects
+before restoring `pairable off`. If a controller was previously half-paired,
+picking it again in **Bluetooth** clears the stale entry automatically.
+
 ## The camera shows nothing, or an app cannot find it
 
 **Check the device first, the program second.**
