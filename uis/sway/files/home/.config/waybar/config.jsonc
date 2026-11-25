@@ -325,18 +325,20 @@
     "battery": {
         "states": {
             "warning": 30,
-            "critical": 15
+            "low": 10,
+            "critical": 5
         },
         // The icon and nothing else: the charge is a tooltip, like every other
-        // reading on the line, so the right end stays glyphs only. The bolt
-        // (charging), the plug (plugged) and the full battery are the only
-        // pictures that change; otherwise the five steps of `format-icons`.
+        // reading on the line, so the right end stays glyphs only. The empty
+        // icon (`\uf244`) is reserved strictly for <= 10% (`low` / `critical`),
+        // and <= 5% (`critical`) tints it with the theme's warning colour.
         "format": "<span font_desc='JetBrains Mono 13'>{icon}</span>",
+        "format-low": "<span font_desc='JetBrains Mono 13'>\uf244</span>",
+        "format-critical": "<span font_desc='JetBrains Mono 13'>\uf244</span>",
         "format-charging": "<span font_desc='JetBrains Mono 13'>\uf0e7</span>",
         "format-plugged": "<span font_desc='JetBrains Mono 13'>\uf1e6</span>",
         "format-full": "<span font_desc='JetBrains Mono 13'>\uf240</span>",
         "format-icons": [
-            "\uf244",
             "\uf243",
             "\uf242",
             "\uf241",

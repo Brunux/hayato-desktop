@@ -151,9 +151,11 @@ tooltip label {
     color: {{ accent }};
 }
 
-/* The battery has no rule of its own: an icon at every charge, in the reading
-   colour. The charge is a tooltip, like every other reading on the line, and
-   only charging changes the picture (a bolt). */
+/* The battery icon stays in the reading colour above 5% and switches to the
+   readable warning colour when discharging at <= 5%. */
+#battery.critical:not(.charging) {
+    color: {{ warn_text }};
+}
 
 /* No hover fill: pointing at an indicator must not light it up. The tooltip
    is the feedback, and the click does what the tooltip says. */

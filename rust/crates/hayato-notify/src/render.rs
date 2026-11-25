@@ -646,11 +646,7 @@ impl Renderer {
             hayato_ui::Glyph::Volume.cell()
         };
 
-        let icon_color = if is_muted {
-            self.theme.danger
-        } else {
-            self.theme.accent
-        };
+        let icon_color = self.theme.accent;
 
         // 1. Background
         let mut bg_builder = PathBuilder::new();
@@ -702,12 +698,7 @@ impl Renderer {
                 ..Default::default()
             };
             let mut paint = Paint::default();
-            let bcol = if is_muted {
-                self.theme.danger
-            } else {
-                self.theme.border_subtle
-            };
-            paint.set_color(with_alpha(bcol, alpha));
+            paint.set_color(with_alpha(self.theme.border_subtle, alpha));
             paint.anti_alias = true;
             pixmap.stroke_path(&border_path, &paint, &stroke, transform, None);
         }
@@ -750,11 +741,7 @@ impl Renderer {
         };
 
         let val_w = self.font.measure_width(&val_str, 10.5 * scale, true);
-        let val_color = if is_muted {
-            self.theme.danger_text
-        } else {
-            self.theme.accent
-        };
+        let val_color = self.theme.accent;
 
         // Terminal chevron `> ` + uppercase HUD label
         let chevron = "> ";

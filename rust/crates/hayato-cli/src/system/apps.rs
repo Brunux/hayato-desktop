@@ -25,6 +25,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 
 use crate::menu::frecency::Frecency;
+use crate::menu::table::{Action, Arg, PALETTE_EXTRA, Program, ROOT};
 use crate::paths::Paths;
 use crate::system::{missing, print};
 
@@ -41,12 +42,13 @@ fn desktop_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// A parsed `.desktop` entry.
+/// A parsed `.desktop` entry or built-in Hayato tool.
 #[derive(Clone, Debug)]
 pub struct DesktopEntry {
     pub name: String,
     pub exec: String,
     pub icon: Option<String>,
+    pub glyph_override: Option<Glyph>,
     pub terminal: bool,
     pub no_display: bool,
     pub comment: Option<String>,
@@ -86,7 +88,7 @@ impl AppsScreen {
             entries: entries.clone(),
             filtered: entries,
             list,
-            header: Header::new("Hayato").subtitle("Applications"),
+            header: Header::new("Hayato").subtitle("Search"),
             keybar: vec![
                 KeyHint::new("Enter", "launch"),
                 KeyHint::new("Shift+Enter", "launch in foot"),
@@ -108,12 +110,14 @@ impl AppsScreen {
 
     fn load_entries() -> Vec<DesktopEntry> {
         let mut entries = Vec::new();
+        let mut seen = std::collections::HashSet::new();
         for dir in desktop_dirs() {
             if let Ok(read_dir) = fs::read_dir(dir) {
                 for entry in read_dir.flatten() {
                     if entry.path().extension().and_then(|s| s.to_str()) == Some("desktop") {
                         if let Ok(parsed) = Self::parse_desktop(&entry.path()) {
                             if !parsed.no_display {
+                                seen.insert(parsed.name.to_lowercase());
                                 entries.push(parsed);
                             }
                         }
@@ -121,8 +125,65 @@ impl AppsScreen {
                 }
             }
         }
+        // Include every Hayato tool (ROOT + PALETTE_EXTRA) so Super/Search can
+        // find and launch any app, system tool, or utility in one place.
+        let home = std::env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/"));
+        for item in ROOT.iter().chain(PALETTE_EXTRA.iter()) {
+            if item.key == "apps" {
+                continue;
+            }
+            if !seen.insert(item.label.to_lowercase()) {
+                continue;
+            }
+            let Some(exec) = Self::action_to_exec(item.action, &home) else {
+                continue;
+            };
+            entries.push(DesktopEntry {
+                name: item.label.to_string(),
+                exec,
+                icon: None,
+                glyph_override: Some(item.glyph),
+                terminal: false,
+                no_display: false,
+                comment: Some(item.detail.to_string()),
+                categories: vec![item.group.label().to_string()],
+            });
+        }
         entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         entries
+    }
+
+    fn action_to_exec(action: Action, home: &Path) -> Option<String> {
+        match action {
+            Action::Run { program, args } => {
+                let mut parts = Vec::with_capacity(args.len() + 1);
+                let prog = match program {
+                    Program::Session(name) => {
+                        let p = home.join(".config/bin").join(name);
+                        if p.exists() {
+                            p.display().to_string()
+                        } else {
+                            name.to_string()
+                        }
+                    }
+                    Program::System(name) => name.to_string(),
+                    Program::Hayato => "hayato".to_string(),
+                };
+                parts.push(shell_quote(&prog));
+                for arg in args {
+                    match arg {
+                        Arg::Lit(s) => parts.push(shell_quote(s)),
+                        Arg::Home => parts.push(shell_quote(&home.display().to_string())),
+                    }
+                }
+                Some(parts.join(" "))
+            }
+            Action::Power | Action::Session(_) => Some("hayato menu power".to_string()),
+            Action::Password => Some("hayato menu password".to_string()),
+            Action::Ask => Some("hayato menu ask".to_string()),
+        }
     }
 
     fn parse_desktop(path: &Path) -> Result<DesktopEntry, String> {
@@ -184,6 +245,7 @@ impl AppsScreen {
             name,
             exec,
             icon,
+            glyph_override: None,
             terminal,
             no_display,
             comment,
@@ -232,6 +294,9 @@ impl AppsScreen {
     }
 
     fn entry_glyph(entry: &DesktopEntry) -> Glyph {
+        if let Some(g) = entry.glyph_override {
+            return g;
+        }
         if entry.terminal {
             return Glyph::Terminal;
         }
@@ -486,8 +551,19 @@ pub fn menu(
         ));
     }
     let mut screen = AppsScreen::new();
-    let code = crate::run_screen(terminal, design, "Applications", &mut screen)?;
+    let code = crate::run_screen(terminal, design, "Search", &mut screen)?;
     Ok(code)
+}
+
+fn shell_quote(s: &str) -> String {
+    if !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'/' | b':'))
+    {
+        s.to_string()
+    } else {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
 }
 
 #[cfg(test)]
