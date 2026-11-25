@@ -167,12 +167,10 @@ impl RemindScreen {
                     let mut desc = String::new();
                     let mut cal = String::new();
                     for line in props.lines() {
-                        if line.starts_with("Description=") {
-                            desc = line["Description=".len()..].to_string();
-                        } else if line.starts_with("TimersCalendar=") {
-                            cal = line["TimersCalendar={ OnCalendar=".len()..]
-                                .trim_end_matches('}')
-                                .to_string();
+                        if let Some(d) = line.strip_prefix("Description=") {
+                            desc = d.to_string();
+                        } else if let Some(parsed) = Self::parse_calendar_prop(line) {
+                            cal = parsed;
                         }
                     }
                     let title = desc
@@ -253,11 +251,30 @@ impl RemindScreen {
         words
     }
 
+    fn parse_calendar_prop(line: &str) -> Option<String> {
+        let rest = line.strip_prefix("TimersCalendar=")?;
+        let inner = rest.trim();
+        if inner.is_empty() {
+            return None;
+        }
+        let cal = inner
+            .strip_prefix("{ OnCalendar=")
+            .unwrap_or(inner)
+            .trim_end_matches('}')
+            .trim();
+        if cal.is_empty() {
+            None
+        } else {
+            Some(cal.to_string())
+        }
+    }
+
     fn trim(s: &str, max: usize) -> String {
-        if s.len() <= max {
+        if s.chars().count() <= max {
             s.to_string()
         } else {
-            format!("{}…", &s[..max])
+            let prefix: String = s.chars().take(max).collect();
+            format!("{prefix}…")
         }
     }
 
@@ -824,6 +841,25 @@ pub fn menu(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_calendar_prop_handles_monotonic_and_calendar_timers() {
+        assert_eq!(RemindScreen::parse_calendar_prop("TimersCalendar="), None);
+        assert_eq!(
+            RemindScreen::parse_calendar_prop("TimersCalendar=   "),
+            None
+        );
+        assert_eq!(
+            RemindScreen::parse_calendar_prop("TimersCalendar={ OnCalendar=*-*-* 09:00 }"),
+            Some("*-*-* 09:00".to_string())
+        );
+    }
+
+    #[test]
+    fn trim_is_utf8_safe_on_multibyte_titles() {
+        assert_eq!(RemindScreen::trim("Café ☕ mañana", 6), "Café ☕…");
+        assert_eq!(RemindScreen::trim("short", 10), "short");
+    }
 
     #[test]
     fn remind_needed_tools() {

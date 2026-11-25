@@ -1103,7 +1103,12 @@ fn batteries() -> Vec<Value> {
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|e| read_trim(&e.path().join("type").display().to_string()) == "Battery")
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            !name.starts_with("hid-")
+                && read_trim(&e.path().join("type").display().to_string()) == "Battery"
+                && read_trim(&e.path().join("scope").display().to_string()) != "Device"
+        })
         .map(|e| {
             let at = |f: &str| read_trim(&e.path().join(f).display().to_string());
             json!({

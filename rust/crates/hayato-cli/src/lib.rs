@@ -464,6 +464,17 @@ fn query(resolved: &Resolved) -> Option<i32> {
             }
             Some(EXIT_OK)
         }
+        ("menu places", ["--bar"] | ["bar"]) => {
+            println!("{}", system::places::bar_json());
+            Some(EXIT_OK)
+        }
+        // Run region capture (slurp + grim + OCR/QR) *before* spawning the
+        // floating foot window so the popup never blocks the screen during selection.
+        ("menu lens", []) => Some(system::lens::capture_and_launch(false)),
+        ("menu lens", ["--detach"]) => Some(system::lens::detach_capture()),
+        ("menu lens", ["--after-menu"]) => Some(system::lens::capture_and_launch(true)),
+        ("share", _) => system::share::try_capture_stdin(&resolved.args),
+        ("menu studio", _) => system::studio::try_query(&resolved.args),
         ("menu notes", ["--rows"] | ["rows"]) => {
             let mut out = io::stdout();
             for (key, label, detail) in system::notes::rows() {
@@ -616,7 +627,11 @@ fn execute(
         "menu clip" => system::clip::menu(terminal, design),
         "menu emoji" => system::emoji::menu(terminal, design),
         "menu capture" => system::capture::menu(terminal, design),
+        "menu studio" => system::studio::menu(&resolved.args, terminal, design),
         "menu qr" => system::qr::menu_with_args(&resolved.args, terminal, design),
+        "menu lens" => system::lens::menu(&resolved.args, terminal, design),
+        "menu drop" => system::drop::menu(&resolved.args, terminal, design),
+        "share" => system::share::menu(&resolved.args, terminal, design),
         "menu remind" => system::remind::menu(terminal, design),
         "menu calc" => system::calc::menu(terminal, design),
         "menu colour" => system::colour::menu(terminal, design),
@@ -633,7 +648,7 @@ fn execute(
         "menu net" => system::net::menu(terminal, design),
         "menu notes" => system::notes::menu(terminal, design),
         "menu agents" => system::agents::menu(terminal, design),
-        "menu places" => system::places::menu(terminal, design),
+        "menu places" => system::places::menu_with_args(&resolved.args, terminal, design),
         "menu clean" => system::clean::menu(terminal, design),
         "menu kill" => system::kill::menu(terminal, design),
         "menu download" => system::download::menu(terminal, design),
@@ -643,6 +658,7 @@ fn execute(
         "menu dictate" => system::dictate::menu_with_args(&resolved.args),
         "menu theme" => system::theme_picker::menu(terminal, design),
         "menu greeter" => greeter::settings::menu(terminal, design),
+        "menu welcome" => system::welcome::menu(terminal, design),
         "task attach" => task_cmd::attach(resolved, terminal, design),
         "installer" => {
             let dry_run = resolved.args.iter().any(|a| a == "--dry-run");
@@ -724,6 +740,8 @@ fn session_menu(
                             | "menu palette"
                             | "ask"
                             | "menu capture"
+                            | "menu studio"
+                            | "menu lens"
                             | "menu translate"
                             | "menu dictate"
                     )

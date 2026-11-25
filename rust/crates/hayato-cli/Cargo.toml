@@ -14,7 +14,7 @@ path = "src/main.rs"
 hayato-games-core = { path = "../hayato-games-core" }
 hayato-mcp = { path = "../hayato-mcp" }
 hayato-theme = { path = "../hayato-theme" }
-hayato-ui = { path = "../hayato-ui" }
+hayato-ui = { path = "../hayato-ui", features = ["pictures"] }
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
 # The shelf's selection flash: the same runtime hayato-ui already uses for the
 # opening animation, so this adds no crate to the build.

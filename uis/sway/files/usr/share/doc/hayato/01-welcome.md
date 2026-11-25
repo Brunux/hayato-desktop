@@ -31,9 +31,9 @@ supplies everything above the kernel.
 | the bar (top) | waybar, drawn as the session's statusline: menu, workspaces, clock, updates, tray, keyboard layout, Bluetooth, network, volume, brightness, battery. Left/right click and scroll do different things on each |
 | compositor | **swayfx**, a fork of sway that draws rounded corners, shadows and a blurred backdrop under the translucent terminal, launcher and bar |
 | the terminal | **foot**: tokyo-night palette, no GPU renderer, about half the memory of an Alacritty window |
-| the launcher | **hayato**: applications (`hayato menu apps`), windows (`hayato menu window`), commands (`hayato menu run`), and the 35 ported session menus rendered in native Ratatui TUI inside floating foot windows |
-| notifications | **mako**, bottom of the top-right corner, under the bar |
-| the session | `greetd` launches `hayato-greeter` at boot and opens sway on login; swayidle runs the idle screen at 150 s and the lock at 300 s |
+| the launcher | **hayato**: applications (`hayato menu apps`), windows (`hayato menu window`), commands (`hayato menu run`), and the session's native Ratatui TUI menus and studios inside floating `foot` windows |
+| notifications | **hayato-notify**, native layer-shell desktop notification cards anchored under the top-right corner of the bar |
+| the session | `greetd` launches `hayato-greeter` at boot and opens sway on login; `hayato-welcome` shows the interactive Mission Briefing once per install; swayidle runs the idle screen at 150 s and the lock at 300 s |
 
 **The workspace pills say what is in them.** Each pill is the number of the
 workspace plus one glyph per *kind* of window open there - a terminal, a
@@ -50,8 +50,8 @@ restart, and an app with no line of its own shows a plain window outline.
 **The bar is the session's statusline.** It floats a few pixels below the top
 and lines up with the windows on both sides, with rounded corners and no edge
 drawn around it, so it reads as a panel over the desktop rather than a strip
-welded to the edge, and it borrows the grammar of the windows under it. It opens with the mark - `z_`, a
-prompt - the `z` in the reading colour and the cursor in the accent, and the
+welded to the edge, and it borrows the grammar of the windows under it. It opens with the mark - `H_`, a
+prompt - the `H` in the reading colour and the cursor in the accent, and the
 mark is also the menu button. The current workspace is a filled rounded chip,
 the way the mockup draws it. The only filled things on the line are that chip,
 work in progress (the spinner and the task it names, which is also the button
@@ -105,7 +105,22 @@ a font is ever missing. `check-desktop.sh` (`hayato --glyphs` /
 `hayato --glyph-font`) verifies every codepoint against the installed fonts.
 
 A window fades in over a third of a second and nothing else animates;
-`HAYATO_REDUCED_MOTION=1` starts it at its final frame.
+`HAYATO_REDUCED_MOTION=1` (or `~/.config/hayato/reduced-motion`) starts it at its final frame.
+
+## Built-in studios & tools
+
+Beyond the core launcher and file browser, Hayato ships focused local-first studios directly inside `hayato`:
+
+| Studio / Tool | Shortcut or Command | What it does |
+|---|---|---|
+| **Mission Briefing** | `hayato menu welcome` | Interactive 4-tab first-boot welcome screen (Boot telemetry, Hotkeys, Tools, Launchpad); shown once per install via `hayato-welcome` |
+| **Hayato Lens** | **Alt+I** (`hayato menu lens`) | Local Circle-to-Search: drag a region to extract OCR text or QR codes, open or clean URLs, translate, or save to Notes |
+| **Hayato Drop** | `hayato menu drop` | Ephemeral LAN nearby share: send or receive files over local Wi-Fi via an in-TUI scannable QR code |
+| **Local AI** | **Alt+Space** → Ask / **Alt+Ctrl+T** | Offline `Qwen3.5-0.8B` Ask & Translate running locally on the machine with no cloud account required |
+| **Smart Clipboard** | **Alt+Ctrl+V** (`hayato menu clip`) | Clipboard history by kind with `Ctrl+T` one-key URL tracking-parameter cleanup and JSON formatting |
+| **Eject Drive** | **Alt+Space** → Places (`hayato menu places`) | Safe USB stick and SD card unmount + power-off straight from Places |
+| **Mic Privacy** | **Alt+Shift+M** | Instant microphone mute toggle with clear status feedback |
+| **Games & Ink Notes** | `hayato menu games` / `hayato menu notes` | Retro ROM and Hayato HTML game shelf, Markdown notes vault, and `xournalpp` stylus ink notes |
 
 ## The mark
 
@@ -146,7 +161,7 @@ and make the machine a place worth being in.
 | `/etc/sway/` | the system half of the session: `config` plus `config.d/*.conf` drop-ins |
 | `~/.config/sway/` | your half: it includes the system one and adds your own settings |
 | `~/.config/bin/` | the commands the bar and the keys call (symlinks to `/usr/bin/hayato` for ported surfaces, plus shell helpers) |
-| `~/.config/{waybar,foot,mako}/` | the look of each piece |
+| `~/.config/{waybar,foot,hayato}/` | the look and settings of each piece (including `notify.conf`, `theme`, `idle.conf`, `reduced-motion`) |
 | `/usr/share/doc/hayato/` | these pages |
 | `/etc/hayato/` | device metadata (`deviceinfo`, `kernel-cmdline*.conf`, `installation`) read directly by the installer and boot helpers |
 | `/usr/libexec/hayato/` | installed runtime helpers (`install-boot.sh`, `backup-system.sh`, `restore-system.sh`, `install-kpart.sh`, fallback `install-emmc.sh`, and modular `check/*.sh`) |

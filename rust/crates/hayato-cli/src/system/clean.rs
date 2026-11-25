@@ -114,7 +114,7 @@ pub fn parse_journal_usage(raw: &str) -> u64 {
         if word == "up" && i + 1 < parts.len() {
             let val_str = parts[i + 1];
             if let Some(ch) = val_str.chars().last() {
-                let num_str = &val_str[..val_str.len() - 1];
+                let num_str = &val_str[..val_str.len() - ch.len_utf8()];
                 if let Ok(num) = num_str.parse::<f64>() {
                     let mult = match ch {
                         'K' | 'k' => 1024.0,
@@ -587,10 +587,8 @@ impl CleanScreen {
             "inspect" => {
                 let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
                 let cache_dir = Path::new(&home).join(".cache");
-                crate::system::spawn_detached(&format!(
-                    "exec hayato menu files '{}'",
-                    cache_dir.display()
-                ));
+                let cache_str = cache_dir.to_string_lossy().into_owned();
+                crate::system::spawn_detached_argv("hayato", &["menu", "files", &cache_str]);
                 Outcome::Done(hayato_ui::app::exit::OK)
             }
             _ => Outcome::Consumed,

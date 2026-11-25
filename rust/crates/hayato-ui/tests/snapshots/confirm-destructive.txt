@@ -1,0 +1,71 @@
+===== 80x24 =====
+
+
+
+
+
+
+
+         ╭ Erase /dev/sda? ──────────────────────────────────────────╮
+         │                                                           │
+         │  ALL DATA on /dev/sda (SanDisk Ultra, 32G) WILL BE LOST.  │
+         │                                                           │
+         │             Formatted as exfat (label HAYATO)             │
+         │                                                           │
+         │ ───────────────────────────────────────────────────────── │
+         │                Cancel    [ Erase & Format ]               │
+         │           ←/→ choose · Enter confirm · Esc back           │
+         ╰───────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+===== 152x45 =====
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                             ╭ Erase /dev/sda? ──────────────────────────────────────────╮
+                                             │                                                           │
+                                             │  ALL DATA on /dev/sda (SanDisk Ultra, 32G) WILL BE LOST.  │
+                                             │                                                           │
+                                             │             Formatted as exfat (label HAYATO)             │
+                                             │                                                           │
+                                             │ ───────────────────────────────────────────────────────── │
+                                             │                Cancel    [ Erase & Format ]               │
+                                             │           ←/→ choose · Enter confirm · Esc back           │
+                                             ╰───────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

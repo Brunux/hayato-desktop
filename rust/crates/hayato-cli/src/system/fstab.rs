@@ -40,7 +40,7 @@ const STAGING: &str = "/etc/.fstab.hayato-swap";
 
 /// The line the block carries, with the options that make it safe at boot.
 pub fn line() -> String {
-    format!("LABEL={LABEL} none swap sw,nofail,x-systemd.device-timeout=15s,pri={PRIORITY} 0 0")
+    format!("LABEL={LABEL} none swap sw,nofail,x-systemd.device-timeout=3s,pri={PRIORITY} 0 0")
 }
 
 /// Whether `fstab` asks for the auxiliary swap, however the line got there -
@@ -165,7 +165,7 @@ UUID=abcd /boot ext2 nodev,nosuid,noexec 0 2
 # the card from the old recipe
 LABEL=hayato_swap none swap sw 0 0
 # Hayato auxiliary swap
-LABEL=hayato_swap none swap sw,nofail,x-systemd.device-timeout=15s,pri=10 0 0
+LABEL=hayato_swap none swap sw,nofail,x-systemd.device-timeout=3s,pri=10 0 0
 # end Hayato auxiliary swap
 ";
 
@@ -173,7 +173,7 @@ LABEL=hayato_swap none swap sw,nofail,x-systemd.device-timeout=15s,pri=10 0 0
     fn the_line_is_the_one_the_shell_wrote() {
         assert_eq!(
             line(),
-            "LABEL=hayato_swap none swap sw,nofail,x-systemd.device-timeout=15s,pri=10 0 0"
+            "LABEL=hayato_swap none swap sw,nofail,x-systemd.device-timeout=3s,pri=10 0 0"
         );
     }
 

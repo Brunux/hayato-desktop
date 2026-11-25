@@ -385,12 +385,44 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &["hayato-capture"],
     },
     CommandSpec {
+        // Studio: screen recording, webcam video, photo snap, and live HUD.
+        path: "menu studio",
+        summary: "screen record, webcam video, photo snap, and live HUD",
+        shape: Shape::Task,
+        symlinks: &["hayato-studio"],
+        installed: &["hayato-studio"],
+    },
+    CommandSpec {
         // QR: Wi-Fi payload or any text (spec 011).
         path: "menu qr",
         summary: "the Wi-Fi QR or any text, rendered in-window (spec 011)",
         shape: Shape::Pick,
         symlinks: &["hayato-qr"],
         installed: &["hayato-qr"],
+    },
+    CommandSpec {
+        // Lens: local Circle-to-Search (OCR + QR + entity actions).
+        path: "menu lens",
+        summary: "capture screen region to OCR, URL, translate, note, or QR",
+        shape: Shape::Pick,
+        symlinks: &["hayato-lens"],
+        installed: &["hayato-lens"],
+    },
+    CommandSpec {
+        // Drop: ephemeral LAN nearby share via in-TUI QR code.
+        path: "menu drop",
+        summary: "share or receive files over Wi-Fi via a scannable QR code",
+        shape: Shape::Pick,
+        symlinks: &["hayato-drop"],
+        installed: &["hayato-drop"],
+    },
+    CommandSpec {
+        // Share: OS-wide Share Sheet (Phone QR, LocalSend v2, offline QR, clipboard, notes).
+        path: "share",
+        summary: "system share sheet: Phone QR, LocalSend, offline QR, clipboard, notes",
+        shape: Shape::Pick,
+        symlinks: &["hayato-share"],
+        installed: &["hayato-share"],
     },
     CommandSpec {
         // Remind: title → note → when flow (spec 011).
@@ -615,6 +647,16 @@ pub const COMMANDS: &[CommandSpec] = &[
         path: "menu greeter",
         summary: "configure greeter defaults: theme, user pills, clock, sessions (spec 021)",
         shape: Shape::Task,
+        symlinks: &[],
+        installed: &[],
+    },
+    CommandSpec {
+        // `hayato menu welcome`: interactive first-boot Mission Briefing.
+        // Intentionally has no installed symlink because `~/.config/bin/hayato-welcome`
+        // is the wrapper script that handles `--print` and the `/etc/machine-id` marker.
+        path: "menu welcome",
+        summary: "first-boot Mission Briefing: boot banner, hotkeys, tools and launchpad",
+        shape: Shape::Pick,
         symlinks: &[],
         installed: &[],
     },

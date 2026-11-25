@@ -3,7 +3,7 @@ Hayato · Palette                                                     20 matches
 ╭ Everything ──────────────────────────────────────────────────────────────────╮
 │  theme                                                                      │
 │                                                                              │
-│ ▍   Themes  browse and preview color palettes and wallpapers       system █ │
+│ ▍   Themes  browse and preview palettes & wallpapers               system █ │
 │     Theme: Nord  the palette and its wallpaper                     system █ │
 │     Theme: Lumon  the palette and its wallpaper                    system █ │
 │     Theme: Omacon  the palette and its wallpaper                   system █ │

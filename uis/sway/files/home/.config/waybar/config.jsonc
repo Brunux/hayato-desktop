@@ -44,9 +44,13 @@
         "clock"
     ],
     "modules-right": [
+        "privacy",
+        "custom/rec",
+        "custom/cassette",
         "custom/busy",
         "custom/keyboard-layout",
         "custom/vnc",
+        "custom/drives",
         "custom/bluetooth",
         "network",
         "pulseaudio",
@@ -65,14 +69,14 @@
     "custom/brand": {
         "format": "<span font_desc='JetBrains Mono 14' weight='bold'>H</span>",
         "tooltip": true,
-        "tooltip-format": "Hayato · Menu (Alt+Space)\nClick: menu · Right-click: terminal",
+        "tooltip-format": "<span alpha='50%'>╭─</span> <b>HAYATO // DECK</b>\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+Space</span>  Menu\n<span alpha='45%'>│</span> <span alpha='65%'>Search</span>     Apps\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+I</span>      Lens\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] menu · [RMB] terminal</span>",
         "on-click": "~/.config/bin/bar-menu",
         "on-click-right": "foot"
     },
     "custom/brand-dot": {
         "format": "<span font_desc='JetBrains Mono 14' weight='bold'>_</span>",
         "tooltip": true,
-        "tooltip-format": "Hayato · Menu (Alt+Space)\nClick: menu · Right-click: terminal",
+        "tooltip-format": "<span alpha='50%'>╭─</span> <b>HAYATO // DECK</b>\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+Space</span>  Menu\n<span alpha='45%'>│</span> <span alpha='65%'>Search</span>     Apps\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+I</span>      Lens\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] menu · [RMB] terminal</span>",
         "on-click": "~/.config/bin/bar-menu",
         "on-click-right": "foot"
     },
@@ -101,7 +105,7 @@
     "clock": {
         "format": "<span font_desc='JetBrains Mono 13'>\uf073</span>  {:%a, %d %b  %H:%M}",
         "format-alt": "<span font_desc='JetBrains Mono 13'>\uf073</span>  {:%H:%M:%S}",
-        "tooltip-format": "<big><b>{:%A, %d %B %Y}</b></big>\n\n<tt><small>{calendar}</small></tt>\n\n<span alpha='60%'><small>Click: seconds · Right-click: year · Scroll: months</small></span>",
+        "tooltip-format": "<span alpha='50%'>╭─</span> <b>CLK // {:%A, %d %B %Y}</b>\n<tt><small>{calendar}</small></tt>\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] sec · [RMB] yr · [SCR] mo</span>",
         "calendar": {
             "mode": "month",
             "mode-mon-col": 3,
@@ -111,7 +115,7 @@
                 "months": "<b>{}</b>",
                 "weekdays": "<span alpha='60%'>{}</span>",
                 "weeks": "<span alpha='45%'>W{}</span>",
-                "today": "<span color='#ff9e64'><b><u>{}</u></b></span>"
+                "today": "<span underline='single'><b>{}</b></span>"
             }
         },
         "actions": {
@@ -136,6 +140,45 @@
     // a Bluetooth connect) say so when the card is clicked, because they are
     // either already over or not safe to cut.  The tooltip carries "click to
     // stop" only when there is something to run.
+    // Native PipeWire privacy indicator: hidden when idle, lights up when an app
+    // actively captures the microphone or shares the screen.
+    "privacy": {
+        "icon-spacing": 6,
+        "icon-size": 14,
+        "transition-duration": 200,
+        "modules": [
+            {
+                "type": "screenshare",
+                "tooltip": true,
+                "tooltip-icon-size": 16
+            },
+            {
+                "type": "audio-in",
+                "tooltip": true,
+                "tooltip-icon-size": 16
+            }
+        ]
+    },
+    "custom/rec": {
+        "exec": "hayato menu studio --bar",
+        "return-type": "json",
+        "interval": 1,
+        "signal": 8,
+        "tooltip": true,
+        "on-click": "hayato menu studio --hud",
+        "on-click-right": "hayato menu studio --stop"
+    },
+    "custom/cassette": {
+        "exec": "hayato-cassette --bar",
+        "return-type": "json",
+        "interval": 2,
+        "signal": 8,
+        "tooltip": true,
+        "on-click": "hayato-cassette --toggle",
+        "on-click-right": "playerctl -p hayato_cassette play-pause",
+        "on-scroll-up": "playerctl -p hayato_cassette next",
+        "on-scroll-down": "playerctl -p hayato_cassette previous"
+    },
     "custom/busy": {
         "exec": "~/.config/bin/bar-busy",
         "return-type": "json",
@@ -173,6 +216,15 @@
         "tooltip": true,
         "on-click": "~/.config/bin/hayato-vnc",
         "on-click-right": "~/.config/bin/hayato-vnc stop"
+    },
+    "custom/drives": {
+        "exec": "~/.config/bin/hayato-places --bar",
+        "return-type": "json",
+        "interval": 5,
+        "signal": 8,
+        "tooltip": true,
+        "on-click": "~/.config/bin/hayato-places --eject",
+        "on-click-right": "~/.config/bin/hayato-places"
     },
     "custom/keyboard-layout": {
         "exec": "~/.config/bin/bar-key",
@@ -213,10 +265,10 @@
         "format-ethernet": "<span font_desc='JetBrains Mono 13'>\uf233</span>",
         "format-linked": "<span font_desc='JetBrains Mono 13'>\uf1e6</span>",
         "format-disconnected": "<span font_desc='JetBrains Mono 13'>\udb81\uddaa</span>",
-        "tooltip-format-wifi": "Wi-Fi · {essid} ({signalStrength}%)\n{ifname}: {ipaddr} · gw {gwaddr}\nClick: Wi-Fi · Right-click: nmtui",
-        "tooltip-format-ethernet": "Ethernet · {ifname}\nIP: {ipaddr} · gw {gwaddr}\nClick: network · Right-click: nmtui",
-        "tooltip-format-linked": "Network · {ifname} (no IP)\nClick: network · Right-click: nmtui",
-        "tooltip-format-disconnected": "Network · Disconnected\nClick: Wi-Fi · Right-click: nmtui",
+        "tooltip-format-wifi": "<span alpha='50%'>╭─</span> <b>NET // WI-FI</b>\n<span alpha='45%'>│</span> <span alpha='60%'>SSID</span>  {essid}\n<span alpha='45%'>│</span> <span alpha='60%'>SIG </span>  {signalStrength}%\n<span alpha='45%'>│</span> <span alpha='60%'>IF  </span>  {ifname}\n<span alpha='45%'>│</span> <span alpha='60%'>IP  </span>  {ipaddr}\n<span alpha='45%'>│</span> <span alpha='60%'>GW  </span>  {gwaddr}\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>",
+        "tooltip-format-ethernet": "<span alpha='50%'>╭─</span> <b>NET // ETHERNET</b>\n<span alpha='45%'>│</span> <span alpha='60%'>IF  </span>  {ifname}\n<span alpha='45%'>│</span> <span alpha='60%'>IP  </span>  {ipaddr}\n<span alpha='45%'>│</span> <span alpha='60%'>GW  </span>  {gwaddr}\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] network · [RMB] nmtui</span>",
+        "tooltip-format-linked": "<span alpha='50%'>╭─</span> <b>NET // LINKED</b>\n<span alpha='45%'>│</span> <span alpha='60%'>IF  </span>  {ifname}\n<span alpha='45%'>│</span> <span alpha='60%'>IP  </span>  no lease\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] network · [RMB] nmtui</span>",
+        "tooltip-format-disconnected": "<span alpha='50%'>╭─</span> <b>NET // OFFLINE</b>\n<span alpha='45%'>│</span> <span alpha='60%'>LINK</span>  disconnected\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>",
         "on-click": "~/.config/bin/bar-net",
         "on-click-right": "foot --app-id=popup nmtui"
     },
@@ -233,17 +285,16 @@
                 "\udb81\udd7e"
             ]
         },
-        "tooltip-format": "Volume · {volume}%\n{desc}\nClick: audio · Right-click: mute · Scroll: level",
-        "tooltip-format-muted": "Volume · Muted ({volume}%)\n{desc}\nClick: audio · Right-click: unmute · Scroll: level",
+        "tooltip-format": "<span alpha='50%'>╭─</span> <b>AUDIO // {volume}%</b>\n<span alpha='45%'>│</span> <span alpha='60%'>OUT</span>  {desc}\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] audio · [RMB] mute · [SCR] ±5%</span>",
+        "tooltip-format-muted": "<span alpha='50%'>╭─</span> <b>AUDIO // MUTED</b>\n<span alpha='45%'>│</span> <span alpha='60%'>OUT</span>  {desc}\n<span alpha='45%'>│</span> <span alpha='60%'>LVL</span>  {volume}% (muted)\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] audio · [RMB] unmute · [SCR] ±5%</span>",
         "scroll-step": 5,
         "max-volume": 100,
         "on-click": "~/.config/bin/bar-audio",
         "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
     },
     "backlight": {
-        "device": "backlight-lcd0",
         "format": "<span font_desc='JetBrains Mono 13'>\uf185</span>",
-        "tooltip-format": "Brightness · {percent}%\nClick: display · Scroll: brightness",
+        "tooltip-format": "╭─ DISP // {percent}%\n│ LUM  panel backlight\n╰─ [LMB] display · [SCR] ±5%",
         "interval": 5,
         "on-click": "~/.config/bin/hayato-display",
         "on-scroll-up": "brightnessctl set 5%+",
@@ -267,35 +318,36 @@
     // mpv asks for its own inhibitor.
     "idle_inhibitor": {
         "format": "<span font_desc='JetBrains Mono 13'>\uf0f4</span>",
-        "tooltip-format-activated": "Keep Awake · On\nClick: allow sleep",
-        "tooltip-format-deactivated": "Keep Awake · Off\nClick: keep screen awake",
+        "tooltip-format-activated": "<span alpha='50%'>╭─</span> <b>IDLE // INHIBITED</b>\n<span alpha='45%'>│</span> ● AWAKE · screen sleep inhibited\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] allow sleep</span>",
+        "tooltip-format-deactivated": "<span alpha='50%'>╭─</span> <b>IDLE // AUTO</b>\n<span alpha='45%'>│</span> ○ AUTO · normal idle &amp; lock\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] keep screen awake</span>",
         "start-activated": false
     },
     "battery": {
-        "bat": "sbs-8-000b",
         "states": {
             "warning": 30,
-            "critical": 15
+            "low": 10,
+            "critical": 5
         },
         // The icon and nothing else: the charge is a tooltip, like every other
-        // reading on the line, so the right end stays glyphs only. The bolt
-        // (charging), the plug (plugged) and the full battery are the only
-        // pictures that change; otherwise the five steps of `format-icons`.
+        // reading on the line, so the right end stays glyphs only. The empty
+        // icon (`\uf244`) is reserved strictly for <= 10% (`low` / `critical`),
+        // and <= 5% (`critical`) tints it with the theme's warning colour.
         "format": "<span font_desc='JetBrains Mono 13'>{icon}</span>",
+        "format-low": "<span font_desc='JetBrains Mono 13'>\uf244</span>",
+        "format-critical": "<span font_desc='JetBrains Mono 13'>\uf244</span>",
         "format-charging": "<span font_desc='JetBrains Mono 13'>\uf0e7</span>",
         "format-plugged": "<span font_desc='JetBrains Mono 13'>\uf1e6</span>",
         "format-full": "<span font_desc='JetBrains Mono 13'>\uf240</span>",
         "format-icons": [
-            "\uf244",
             "\uf243",
             "\uf242",
             "\uf241",
             "\uf240"
         ],
-        "tooltip-format": "Battery · {capacity}% ({timeTo})\nDraw: {power:.1f} W\nClick: power menu",
-        "tooltip-format-charging": "Battery · Charging {capacity}% ({timeTo})\nInput: {power:.1f} W\nClick: power menu",
-        "tooltip-format-plugged": "Battery · Plugged in ({capacity}%)\nClick: power menu",
-        "tooltip-format-full": "Battery · Full (100%)\nClick: power menu",
+        "tooltip-format": "<span alpha='50%'>╭─</span> <b>PWR // DISCHARGING</b>\n<span alpha='45%'>│</span> <span alpha='60%'>CHG</span>  {capacity}%\n<span alpha='45%'>│</span> <span alpha='60%'>REM</span>  {timeTo}\n<span alpha='45%'>│</span> <span alpha='60%'>PWR</span>  {power:.1f} W\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] power menu</span>",
+        "tooltip-format-charging": "<span alpha='50%'>╭─</span> <b>PWR // CHARGING</b>\n<span alpha='45%'>│</span> <span alpha='60%'>CHG</span>  {capacity}%\n<span alpha='45%'>│</span> <span alpha='60%'>REM</span>  {timeTo}\n<span alpha='45%'>│</span> <span alpha='60%'>PWR</span>  +{power:.1f} W\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] power menu</span>",
+        "tooltip-format-plugged": "<span alpha='50%'>╭─</span> <b>PWR // AC LINE</b>\n<span alpha='45%'>│</span> <span alpha='60%'>CHG</span>  {capacity}%\n<span alpha='45%'>│</span> <span alpha='60%'>SRC</span>  external power\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] power menu</span>",
+        "tooltip-format-full": "<span alpha='50%'>╭─</span> <b>PWR // FULL</b>\n<span alpha='45%'>│</span> <span alpha='60%'>CHG</span>  100%\n<span alpha='45%'>│</span> <span alpha='60%'>SRC</span>  charged\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] power menu</span>",
         "interval": 30,
         "on-click": "~/.config/bin/bar-power",
         "on-click-right": "~/.config/bin/hayato-power"

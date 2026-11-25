@@ -377,6 +377,9 @@ pub struct Row {
     /// A section label, not a row: it is drawn, never selected, and it leaves
     /// the list as soon as the person types a filter.
     pub heading: bool,
+    /// Optional semantic foreground color override (e.g. `ColorRole::Accent`
+    /// for an actively playing track or playlist).
+    pub tone: Option<ColorRole>,
 }
 
 impl Row {
@@ -388,7 +391,13 @@ impl Row {
             value: None,
             boost: 0,
             heading: false,
+            tone: None,
         }
+    }
+
+    pub fn tone(mut self, role: ColorRole) -> Self {
+        self.tone = Some(role);
+        self
     }
 
     /// A section label above a group of rows.
@@ -1184,13 +1193,16 @@ impl ListState {
                 );
             }
             if self.glyph_width > 0 {
-                let glyph_style = design
+                let mut glyph_style = design
                     .style(if selected {
                         TextStyle::Selected
                     } else {
                         TextStyle::Body
                     })
                     .bg(row_bg);
+                if let Some(role) = row.tone {
+                    glyph_style = glyph_style.fg(design.color(role));
+                }
                 let mut room = self.glyph_width;
                 if let Some(glyph) = &row.glyph {
                     let width = UnicodeWidthStr::width(glyph.as_str()) as u16;
@@ -1212,11 +1224,16 @@ impl ListState {
                 .map(|v| UnicodeWidthStr::width(v) as u16 + 2)
                 .unwrap_or(0);
             let label_room = area.right().saturating_sub(x + value_width + 1);
-            let style = if selected {
+            let mut style = if selected {
                 design.style(TextStyle::Selected).bg(row_bg)
             } else {
                 design.style(TextStyle::Body).bg(row_bg)
             };
+            if let Some(role) = row.tone {
+                style = style
+                    .fg(design.color(role))
+                    .add_modifier(ratatui::style::Modifier::BOLD);
+            }
             let detail_style = if selected {
                 design.style(TextStyle::SelectedDim).bg(row_bg)
             } else {
@@ -1824,15 +1841,84 @@ pub enum ConfirmAction {
     Chosen(usize),
 }
 
-/// A destructive question whose first answer is Cancel and whose first row is
-/// selected: a stray Enter does nothing.
+/// Zero-allocation line wrapper over `&str` that splits on explicit newlines
+/// and wraps at whitespace boundaries to `max_width` display columns.
+struct WrappedLines<'a> {
+    rest: &'a str,
+    max_width: usize,
+}
+
+impl<'a> WrappedLines<'a> {
+    fn new(text: &'a str, max_width: u16) -> Self {
+        Self {
+            rest: text,
+            max_width: max_width.max(1) as usize,
+        }
+    }
+}
+
+impl<'a> Iterator for WrappedLines<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.rest.is_empty() {
+            return None;
+        }
+        // Take up to the next explicit newline first.
+        let (segment, after_nl) = match self.rest.find('\n') {
+            Some(pos) => (&self.rest[..pos], Some(&self.rest[pos + 1..])),
+            None => (self.rest, None),
+        };
+        let trimmed = segment.trim_end();
+        if UnicodeWidthStr::width(trimmed) <= self.max_width {
+            self.rest = after_nl.unwrap_or("");
+            return Some(trimmed);
+        }
+        // Walk characters to find the last whitespace within `max_width`,
+        // falling back to a hard break at `max_width` for long unspaced tokens.
+        let mut width = 0usize;
+        let mut last_space: Option<usize> = None;
+        let mut hard_break = segment.len();
+        for (idx, ch) in segment.char_indices() {
+            let cw = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+            if width + cw > self.max_width {
+                hard_break = idx;
+                break;
+            }
+            if ch.is_whitespace() {
+                last_space = Some(idx);
+            }
+            width += cw;
+        }
+        let split_at = last_space.filter(|&p| p > 0).unwrap_or_else(|| {
+            if hard_break == 0 {
+                segment
+                    .char_indices()
+                    .nth(1)
+                    .map_or(segment.len(), |(i, _)| i)
+            } else {
+                hard_break
+            }
+        });
+        let line = segment[..split_at].trim_end();
+        let remainder = self.rest[split_at..].trim_start_matches(' ');
+        self.rest = remainder;
+        Some(line)
+    }
+}
+
+/// A confirmation dialog whose first answer is Cancel and whose first option is
+/// selected by default: a stray Enter never triggers a destructive action.
 pub struct Confirm {
     pub title: String,
     pub message: String,
     pub detail: Option<String>,
     options: Vec<String>,
     selected: usize,
+    destructive: bool,
 }
+
+const CONFIRM_HINT: &str = "\u{2190}/\u{2192} choose \u{00b7} Enter confirm \u{00b7} Esc back";
 
 impl Confirm {
     pub fn new(title: impl Into<String>, message: impl Into<String>) -> Self {
@@ -1842,13 +1928,33 @@ impl Confirm {
             detail: None,
             options: vec!["Cancel".to_string(), "Continue".to_string()],
             selected: 0,
+            destructive: false,
         }
+    }
+
+    pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
+        let d = detail.into();
+        self.detail = if d.is_empty() { None } else { Some(d) };
+        self
     }
 
     pub fn with_options(mut self, options: &[&str]) -> Self {
         self.options = options.iter().map(|o| o.to_string()).collect();
         self.selected = 0;
         self
+    }
+
+    pub fn destructive(mut self, destructive: bool) -> Self {
+        self.destructive = destructive;
+        self
+    }
+
+    pub fn is_destructive(&self) -> bool {
+        self.destructive
+    }
+
+    pub fn selected(&self) -> usize {
+        self.selected
     }
 
     pub fn selected_label(&self) -> &str {
@@ -1862,6 +1968,7 @@ impl Confirm {
         if key.kind != ratatui::crossterm::event::KeyEventKind::Press {
             return ConfirmAction::None;
         }
+        let last = self.options.len().saturating_sub(1);
         match key.code {
             KeyCode::Esc => ConfirmAction::Cancelled,
             KeyCode::Left | KeyCode::Char('h') | KeyCode::Up | KeyCode::Char('k') => {
@@ -1869,7 +1976,23 @@ impl Confirm {
                 ConfirmAction::None
             }
             KeyCode::Right | KeyCode::Char('l') | KeyCode::Down | KeyCode::Char('j') => {
-                self.selected = (self.selected + 1).min(self.options.len().saturating_sub(1));
+                self.selected = (self.selected + 1).min(last);
+                ConfirmAction::None
+            }
+            KeyCode::Tab => {
+                if !self.options.is_empty() {
+                    self.selected = (self.selected + 1) % self.options.len();
+                }
+                ConfirmAction::None
+            }
+            KeyCode::BackTab => {
+                if !self.options.is_empty() {
+                    self.selected = if self.selected == 0 {
+                        last
+                    } else {
+                        self.selected - 1
+                    };
+                }
                 ConfirmAction::None
             }
             KeyCode::Enter => ConfirmAction::Chosen(self.selected),
@@ -1891,47 +2014,216 @@ impl Confirm {
         }
     }
 
-    pub fn render(&self, area: Rect, buf: &mut Buffer, design: &Design) {
-        let card = centered(area, 70, 11);
-        let inner = draw_card(buf, card, design, Some(&self.title), true);
-        centred_line(
-            buf,
-            inner,
-            inner.y,
-            &self.message,
-            design.style(TextStyle::Body),
-        );
-        if let Some(detail) = &self.detail {
-            centred_line(
-                buf,
-                inner,
-                inner.y + 1,
-                detail,
-                design.style(TextStyle::Dim),
-            );
+    /// Activate the option clicked by a pointer event.
+    pub fn click(&mut self, index: usize) -> ConfirmAction {
+        if index < self.options.len() {
+            self.selected = index;
+            ConfirmAction::Chosen(index)
+        } else {
+            ConfirmAction::None
         }
-        let row = inner.bottom().saturating_sub(2);
-        // The options sit where the key bar's hints would: the selected answer
-        // in the accent, the rest dim, Cancel always the first.
-        let width: u16 = self
+    }
+
+    fn options_total_width(&self) -> u16 {
+        let buttons: u16 = self
             .options
             .iter()
             .map(|o| UnicodeWidthStr::width(o.as_str()) as u16 + 4)
             .sum();
-        let mut x = inner.x + inner.width.saturating_sub(width) / 2;
+        let gaps = self.options.len().saturating_sub(1) as u16 * 2;
+        buttons.saturating_add(gaps)
+    }
+
+    fn card_rect(&self, area: Rect) -> Rect {
+        if area.width == 0 || area.height == 0 {
+            return area;
+        }
+        let max_w = area.width.saturating_sub(4).min(64).max(area.width.min(28));
+        let min_w = 46u16.min(max_w);
+        let title_w = UnicodeWidthStr::width(self.title.as_str()) as u16 + 6;
+        let opts_w = self.options_total_width() + 6;
+        let hint_w = UnicodeWidthStr::width(CONFIRM_HINT) as u16 + 6;
+        let msg_w = (UnicodeWidthStr::width(self.message.as_str()) as u16 + 6).min(max_w);
+        let detail_w = self
+            .detail
+            .as_deref()
+            .map_or(0, |d| (UnicodeWidthStr::width(d) as u16 + 6).min(max_w));
+        let width = title_w
+            .max(opts_w)
+            .max(hint_w)
+            .max(msg_w)
+            .max(detail_w)
+            .clamp(min_w, max_w);
+
+        let text_w = width.saturating_sub(6).max(1);
+        let msg_lines = if self.message.is_empty() {
+            0u16
+        } else {
+            WrappedLines::new(&self.message, text_w).take(6).count() as u16
+        };
+        let detail_lines = self.detail.as_deref().map_or(0u16, |d| {
+            WrappedLines::new(d, text_w).take(4).count() as u16
+        });
+        let mid_gap = u16::from(msg_lines > 0 && detail_lines > 0);
+        let body_lines = (msg_lines + mid_gap + detail_lines).max(1);
+        // 2 borders + 1 top pad + body + 1 gap + 1 divider + 1 buttons + 1 hint
+        let ideal_h = 2 + 1 + body_lines + 1 + 1 + 1 + 1;
+        let height = ideal_h.min(area.height).max(area.height.min(7));
+        let x = area.x + area.width.saturating_sub(width) / 2;
+        let y = area.y + area.height.saturating_sub(height) / 2;
+        Rect::new(x, y, width, height)
+    }
+
+    fn button_row(&self, inner: Rect) -> u16 {
+        if inner.height >= 4 {
+            inner.bottom().saturating_sub(2)
+        } else {
+            inner.bottom().saturating_sub(1)
+        }
+    }
+
+    /// Return the option index under `(x, y)`, if the pointer is over a button.
+    pub fn hit(&self, area: Rect, design: &Design, x: u16, y: u16) -> Option<usize> {
+        let card = self.card_rect(area);
+        let inner = design.block(Border::Rounded).inner(card);
+        if inner.width == 0 || inner.height == 0 {
+            return None;
+        }
+        let row = self.button_row(inner);
+        if y != row {
+            return None;
+        }
+        let total = self.options_total_width();
+        let mut cursor_x = inner.x + inner.width.saturating_sub(total) / 2;
+        for (index, option) in self.options.iter().enumerate() {
+            let btn_w = UnicodeWidthStr::width(option.as_str()) as u16 + 4;
+            if x >= cursor_x && x < cursor_x.saturating_add(btn_w) {
+                return Some(index);
+            }
+            cursor_x = cursor_x.saturating_add(btn_w + 2);
+        }
+        None
+    }
+
+    pub fn render(&self, area: Rect, buf: &mut Buffer, design: &Design) {
+        let card = self.card_rect(area);
+        let (border_role, title_style) = if self.destructive {
+            (ColorRole::Danger, design.style(TextStyle::Danger))
+        } else {
+            (ColorRole::Accent, design.style(TextStyle::Title))
+        };
+        let inner = draw_card_with(
+            buf,
+            card,
+            design,
+            Some(&self.title),
+            border_role,
+            title_style,
+        );
+        if inner.width == 0 || inner.height == 0 {
+            return;
+        }
+
+        let button_row = self.button_row(inner);
+        let show_hint = inner.height >= 4;
+        let divider_row = if inner.height >= 5 {
+            Some(button_row.saturating_sub(1))
+        } else {
+            None
+        };
+        let content_limit = divider_row.unwrap_or(button_row);
+        let text_w = inner.width.saturating_sub(2).max(1);
+        let mut y = if inner.height >= 6 {
+            inner.y + 1
+        } else {
+            inner.y
+        };
+
+        if !self.message.is_empty() {
+            for line in WrappedLines::new(&self.message, text_w).take(6) {
+                if y >= content_limit {
+                    break;
+                }
+                centred_line(buf, inner, y, line, design.style(TextStyle::Body));
+                y += 1;
+            }
+        }
+
+        if let Some(detail) = &self.detail {
+            if !self.message.is_empty() && y + 1 < content_limit {
+                y += 1;
+            }
+            for line in WrappedLines::new(detail, text_w).take(4) {
+                if y >= content_limit {
+                    break;
+                }
+                centred_line(buf, inner, y, line, design.style(TextStyle::Dim));
+                y += 1;
+            }
+        }
+
+        if let Some(div_y) = divider_row {
+            let rule_style = Style::default()
+                .fg(design.color(ColorRole::SurfaceAlt))
+                .bg(design.color(ColorRole::Bg));
+            for col in inner.left()..inner.right() {
+                if let Some(cell) = buf.cell_mut((col, div_y)) {
+                    cell.set_symbol("\u{2500}");
+                    cell.set_style(rule_style);
+                }
+            }
+        }
+
+        let total = self.options_total_width();
+        let mut x = inner.x + inner.width.saturating_sub(total) / 2;
         for (index, option) in self.options.iter().enumerate() {
             let selected = index == self.selected;
+            let is_danger_btn = self.destructive && index > 0;
             let style = if selected {
-                design.style(TextStyle::Key)
+                if is_danger_btn {
+                    Style::default()
+                        .fg(design.color(ColorRole::Bg))
+                        .bg(design.color(ColorRole::Danger))
+                        .add_modifier(ratatui::style::Modifier::BOLD)
+                } else {
+                    design.style(TextStyle::Key)
+                }
+            } else if is_danger_btn {
+                Style::default()
+                    .fg(design.color(ColorRole::Danger))
+                    .bg(design.color(ColorRole::Bg))
             } else {
                 design.style(TextStyle::Dim)
             };
-            x = put(buf, x, row, " ", 1, style);
-            x = put(buf, x, row, option, u16::MAX, style);
-            x = put(buf, x, row, " ", 1, style);
-            x = put(buf, x, row, "  ", 2, design.style(TextStyle::Dim));
+            let (left_pad, right_pad) = if selected { ("[ ", " ]") } else { ("  ", "  ") };
+            let avail = inner.right().saturating_sub(x);
+            x = put(buf, x, button_row, left_pad, avail, style);
+            let avail = inner.right().saturating_sub(x);
+            x = put(buf, x, button_row, option, avail, style);
+            let avail = inner.right().saturating_sub(x);
+            x = put(buf, x, button_row, right_pad, avail, style);
+            if index + 1 < self.options.len() {
+                let avail = inner.right().saturating_sub(x);
+                x = put(
+                    buf,
+                    x,
+                    button_row,
+                    "  ",
+                    avail,
+                    design.style(TextStyle::Dim),
+                );
+            }
         }
-        let _ = x;
+
+        if show_hint {
+            centred_line(
+                buf,
+                inner,
+                inner.bottom().saturating_sub(1),
+                CONFIRM_HINT,
+                design.style(TextStyle::Dim),
+            );
+        }
     }
 }
 
@@ -3295,13 +3587,79 @@ mod tests {
 
     #[test]
     fn a_destructive_answer_is_not_the_default() {
-        let mut confirm = Confirm::new("Shut down?", "");
+        let mut confirm = Confirm::new("Shut down?", "").destructive(true);
+        assert!(confirm.is_destructive());
         // Enter without moving chooses the first row, which is Cancel.
         assert_eq!(
             confirm.handle(key(KeyCode::Enter)),
             ConfirmAction::Chosen(0)
         );
         assert_eq!(confirm.selected_label(), "Cancel");
+    }
+
+    #[test]
+    fn confirm_tab_cycles_and_hit_click_targets_each_button() {
+        let design = Design::solarized();
+        let mut confirm = Confirm::new(
+            "Erase /dev/sda?",
+            "ALL DATA on /dev/sda (SanDisk Ultra 32G) WILL BE LOST.",
+        )
+        .with_detail("Formatted as exfat (label HAYATO)")
+        .with_options(&["Cancel", "Erase & Format"])
+        .destructive(true);
+
+        // Tab toggles forward and wraps back to Cancel; BackTab wraps reverse.
+        assert_eq!(confirm.selected(), 0);
+        assert_eq!(confirm.handle(key(KeyCode::Tab)), ConfirmAction::None);
+        assert_eq!(confirm.selected(), 1);
+        assert_eq!(confirm.handle(key(KeyCode::Tab)), ConfirmAction::None);
+        assert_eq!(confirm.selected(), 0);
+        assert_eq!(confirm.handle(key(KeyCode::BackTab)), ConfirmAction::None);
+        assert_eq!(confirm.selected(), 1);
+
+        // Render and verify hit-testing locates both buttons and avoids the rest.
+        let area = Rect::new(0, 0, 80, 24);
+        let mut buf = Buffer::empty(area);
+        confirm.render(area, &mut buf, &design);
+
+        let mut hit_cancel = None;
+        let mut hit_erase = None;
+        for y in 0..area.height {
+            for x in 0..area.width {
+                match confirm.hit(area, &design, x, y) {
+                    Some(0) if hit_cancel.is_none() => hit_cancel = Some((x, y)),
+                    Some(1) if hit_erase.is_none() => hit_erase = Some((x, y)),
+                    _ => {}
+                }
+            }
+        }
+        assert!(hit_cancel.is_some(), "Cancel button should be clickable");
+        assert!(hit_erase.is_some(), "Erase button should be clickable");
+        assert_eq!(confirm.hit(area, &design, 0, 0), None);
+        assert_eq!(confirm.click(0), ConfirmAction::Chosen(0));
+        assert_eq!(confirm.click(1), ConfirmAction::Chosen(1));
+        assert_eq!(confirm.click(99), ConfirmAction::None);
+
+        // Destructive card uses the Danger colour on its border.
+        let card = confirm.card_rect(area);
+        let corner = buf.cell((card.x, card.y)).unwrap();
+        assert_eq!(corner.fg, design.color(ColorRole::Danger));
+    }
+
+    #[test]
+    fn confirm_wraps_long_messages_without_truncating() {
+        let lines: Vec<&str> = WrappedLines::new(
+            "ALL DATA on /dev/sda (SanDisk Ultra, 32G) WILL BE LOST permanently.",
+            30,
+        )
+        .collect();
+        assert!(lines.len() >= 2, "expected wrapping, got {lines:?}");
+        for line in &lines {
+            assert!(
+                UnicodeWidthStr::width(*line) <= 30,
+                "wrapped line exceeded width: {line:?}"
+            );
+        }
     }
 
     #[test]

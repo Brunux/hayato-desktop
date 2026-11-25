@@ -33,8 +33,11 @@ fn a_raw_colour_is_only_named_in_the_design_module() {
         .expect("the crate sits in rust/crates")
         .to_path_buf();
     let mut checked = 0;
-    for name in ["hayato-ui", "hayato-cli"] {
+    for name in ["hayato-ui", "hayato-cli", "hayato-cassette"] {
         let dir = crates.join(name).join("src");
+        if !dir.exists() {
+            continue;
+        }
         for file in sources(&dir) {
             if file.file_name().is_some_and(|name| name == "design.rs") {
                 continue;

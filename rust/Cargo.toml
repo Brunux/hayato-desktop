@@ -1,10 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/hayato-cassette",
     "crates/hayato-cli",
     "crates/hayato-games",
     "crates/hayato-games-core",
     "crates/hayato-mcp",
+    "crates/hayato-music-core",
     "crates/hayato-notify",
     "crates/hayato-theme",
     "crates/hayato-ui",

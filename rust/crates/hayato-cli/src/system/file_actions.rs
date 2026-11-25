@@ -112,6 +112,17 @@ pub fn questions(
     rows.push(row("Compress", format!("→ {base}.tar.xz"), Glyph::Box));
     keys.push("pack".to_string());
 
+    rows.push(row(
+        "Share\u{2026} (Phone QR / LocalSend)",
+        if kind == FileKind::Directory {
+            "zip & share folder over Wi-Fi or local targets"
+        } else {
+            "send to phone via QR / LocalSend or copy"
+        },
+        Glyph::Qr,
+    ));
+    keys.push("share".to_string());
+
     if matches!(kind, FileKind::ArchiveZip | FileKind::ArchiveTar) {
         rows.push(row(
             "Extract here",
@@ -244,6 +255,13 @@ pub fn menu_for_path(
         };
 
         match action.as_str() {
+            "share" | "drop" => {
+                return super::share::open(
+                    super::share::SharePayload::from_path(target.to_path_buf()),
+                    terminal,
+                    design,
+                );
+            }
             "copy" => {
                 let _ = Command::new("wl-copy")
                     .arg(target.to_str().unwrap_or(""))
@@ -297,14 +315,7 @@ pub fn menu_for_path(
                 return crate::run_screen(terminal, design, &title, &mut view);
             }
             "unpack" => {
-                let stem = base
-                    .strip_suffix(".tar.gz")
-                    .or_else(|| base.strip_suffix(".tar.xz"))
-                    .or_else(|| base.strip_suffix(".tar.bz2"))
-                    .or_else(|| base.strip_suffix(".tar.zst"))
-                    .or_else(|| base.strip_suffix(".zip"))
-                    .or_else(|| base.strip_suffix(".tar"))
-                    .unwrap_or(&base);
+                let stem = archive_stem(&base);
                 let dest = parent.join(stem);
                 let _ = std::fs::create_dir_all(&dest);
                 let cmd = if kind == FileKind::ArchiveZip {
@@ -346,7 +357,11 @@ pub fn menu_for_path(
                 if let Ok(o) = res {
                     let text = String::from_utf8_lossy(&o.stdout);
                     if let Some(pos) = text.find("/dev/loop") {
-                        let loop_dev = text[pos..].split_whitespace().next().unwrap_or("");
+                        let loop_dev = text[pos..]
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or("")
+                            .trim_end_matches('.');
                         let mount_res = Command::new("udisksctl")
                             .args(["mount", "-b", loop_dev])
                             .output();
@@ -358,6 +373,12 @@ pub fn menu_for_path(
                                 return Ok(0);
                             }
                         }
+                        let _ = Command::new("udisksctl")
+                            .args(["loop-delete", "-b", loop_dev])
+                            .stdin(std::process::Stdio::null())
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .status();
                     }
                 }
                 status_note = Some(format!("Could not mount disk image {base}"));
@@ -468,42 +489,86 @@ pub fn menu_for_path(
                 }
             }
             "convert" => {
-                let out_file = parent.join(format!("{}-converted.mp4", base));
-                let cmd = vec![
-                    "ffmpeg".to_string(),
-                    "-hide_banner".to_string(),
-                    "-y".to_string(),
-                    "-i".to_string(),
-                    target.to_string_lossy().to_string(),
-                    "-c:v".to_string(),
-                    "libx264".to_string(),
-                    "-crf".to_string(),
-                    "23".to_string(),
-                    "-preset".to_string(),
-                    "veryfast".to_string(),
-                    "-c:a".to_string(),
-                    "aac".to_string(),
-                    "-b:a".to_string(),
-                    "160k".to_string(),
-                    out_file.to_string_lossy().to_string(),
-                ];
+                let (_out_file, cmd, step_label) = convert_spec(kind, target, &parent, &base);
                 let title = format!("Convert {base}");
                 let tag = format!("convert-{}", std::process::id());
-                let task = Task::start_steps(
-                    &tag,
-                    title.clone(),
-                    vec![format!("Transcode to {base}-converted.mp4")],
-                    true,
-                    vec![cmd],
-                )
-                .map_err(|e| {
-                    crate::Failure::new("Convert", format!("Could not start ffmpeg: {e}"))
-                })?;
+                let task =
+                    Task::start_steps(&tag, title.clone(), vec![step_label], true, vec![cmd])
+                        .map_err(|e| {
+                            crate::Failure::new("Convert", format!("Could not start ffmpeg: {e}"))
+                        })?;
                 let mut view = TaskView::new(task);
                 return crate::run_screen(terminal, design, &title, &mut view);
             }
             _ => return Ok(0),
         }
+    }
+}
+
+fn archive_stem(base: &str) -> &str {
+    for suffix in [
+        ".tar.gz", ".tar.xz", ".tar.bz2", ".tar.zst", ".tgz", ".txz", ".tbz2", ".tbz", ".tzst",
+        ".zip", ".tar",
+    ] {
+        if let Some(stem) = base.strip_suffix(suffix)
+            && !stem.is_empty()
+        {
+            return stem;
+        }
+    }
+    base
+}
+
+fn convert_spec(
+    kind: FileKind,
+    target: &Path,
+    parent: &Path,
+    base: &str,
+) -> (std::path::PathBuf, Vec<String>, String) {
+    let stem = target
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(base);
+    if kind == FileKind::Audio {
+        let out_file = parent.join(format!("{stem}-converted.mp3"));
+        let cmd = vec![
+            "ffmpeg".to_string(),
+            "-hide_banner".to_string(),
+            "-y".to_string(),
+            "-i".to_string(),
+            target.to_string_lossy().to_string(),
+            "-vn".to_string(),
+            "-c:a".to_string(),
+            "libmp3lame".to_string(),
+            "-q:a".to_string(),
+            "2".to_string(),
+            out_file.to_string_lossy().to_string(),
+        ];
+        let step = format!("Transcode to {stem}-converted.mp3");
+        (out_file, cmd, step)
+    } else {
+        let out_file = parent.join(format!("{stem}-converted.mp4"));
+        let cmd = vec![
+            "ffmpeg".to_string(),
+            "-hide_banner".to_string(),
+            "-y".to_string(),
+            "-i".to_string(),
+            target.to_string_lossy().to_string(),
+            "-c:v".to_string(),
+            "libx264".to_string(),
+            "-crf".to_string(),
+            "23".to_string(),
+            "-preset".to_string(),
+            "veryfast".to_string(),
+            "-c:a".to_string(),
+            "aac".to_string(),
+            "-b:a".to_string(),
+            "160k".to_string(),
+            out_file.to_string_lossy().to_string(),
+        ];
+        let step = format!("Transcode to {stem}-converted.mp4");
+        (out_file, cmd, step)
     }
 }
 
@@ -535,5 +600,43 @@ mod tests {
         assert_eq!(detect_kind(Path::new("take.xopp")), FileKind::Ink);
         assert_eq!(detect_kind(Path::new("notes.md")), FileKind::Text);
         assert_eq!(detect_kind(Path::new("README")), FileKind::Other);
+    }
+
+    #[test]
+    fn archive_stem_strips_short_and_long_tar_suffixes() {
+        assert_eq!(archive_stem("backup.tar.gz"), "backup");
+        assert_eq!(archive_stem("backup.tgz"), "backup");
+        assert_eq!(archive_stem("backup.txz"), "backup");
+        assert_eq!(archive_stem("backup.tbz2"), "backup");
+        assert_eq!(archive_stem("backup.tzst"), "backup");
+        assert_eq!(archive_stem("photos.zip"), "photos");
+    }
+
+    #[test]
+    fn convert_spec_transcodes_audio_to_mp3_and_video_to_mp4() {
+        let (audio_out, audio_cmd, _) = convert_spec(
+            FileKind::Audio,
+            Path::new("/tmp/track.flac"),
+            Path::new("/tmp"),
+            "track.flac",
+        );
+        assert_eq!(
+            audio_out,
+            std::path::PathBuf::from("/tmp/track-converted.mp3")
+        );
+        assert!(audio_cmd.contains(&"libmp3lame".to_string()));
+        assert!(!audio_cmd.contains(&"libx264".to_string()));
+
+        let (video_out, video_cmd, _) = convert_spec(
+            FileKind::Video,
+            Path::new("/tmp/clip.mkv"),
+            Path::new("/tmp"),
+            "clip.mkv",
+        );
+        assert_eq!(
+            video_out,
+            std::path::PathBuf::from("/tmp/clip-converted.mp4")
+        );
+        assert!(video_cmd.contains(&"libx264".to_string()));
     }
 }

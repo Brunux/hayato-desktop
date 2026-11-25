@@ -274,12 +274,11 @@ impl FormatScreen {
         let fs = FILESYSTEMS[self.fs_idx];
         let confirm = Confirm::new(
             format!("Erase {dev}?"),
-            format!(
-                "{dev} ({}, {}) — ALL DATA WILL BE LOST · formatted as {fs} (label {LABEL})",
-                d.model, d.size
-            ),
+            format!("ALL DATA on {dev} ({}, {}) WILL BE LOST.", d.model, d.size),
         )
-        .with_options(&["Cancel", "Erase & Format"]);
+        .with_detail(format!("Formatted as {fs} (label {LABEL})"))
+        .with_options(&["Cancel", "Erase & Format"])
+        .destructive(true);
         self.mode = FormatMode::Confirm { dev, fs, confirm };
     }
 
@@ -504,8 +503,8 @@ impl Screen for FormatScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        if matches!(self.mode, FormatMode::Confirm { .. }) {
-            return None;
+        if let FormatMode::Confirm { confirm, .. } = &self.mode {
+            return confirm.hit(area, design, x, y);
         }
         let (left, _) = Self::split_panes(area);
         let (_, rows) = Self::left_layout(left);
@@ -513,6 +512,24 @@ impl Screen for FormatScreen {
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
+        if let FormatMode::Confirm { dev, fs, confirm } = &mut self.mode {
+            if let Some(idx) = row {
+                match confirm.click(idx) {
+                    ConfirmAction::Chosen(1) => {
+                        let dev = dev.clone();
+                        let fs = (*fs).to_string();
+                        self.mode = FormatMode::Select;
+                        self.confirmed = Some((dev, fs));
+                        return Outcome::Done(hayato_ui::app::exit::OK);
+                    }
+                    ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                        self.mode = FormatMode::Select;
+                    }
+                    ConfirmAction::None => {}
+                }
+            }
+            return Outcome::Consumed;
+        }
         if let Some(r) = row {
             self.list.set_cursor(r);
             self.open_confirm();

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Lens
+GenericName=Screen OCR, QR & Translate
+Comment=Drag any screen region to extract text, scan QR/barcodes, or translate
+Exec=hayato menu lens --detach
+Icon=edit-find
+Terminal=false
+Categories=Utility;Graphics;
+Keywords=lens;ocr;qr;barcode;scan;translate;text;circle;

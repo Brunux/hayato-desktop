@@ -43,7 +43,7 @@ use std::process::{Command, Stdio};
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use unicode_width::UnicodeWidthStr;
 
 use crate::design::{ColorRole, Design, TextStyle};
@@ -101,6 +101,15 @@ impl Urgency {
             Self::Low => TextStyle::Dim,
             Self::Normal => TextStyle::Title,
             Self::Critical => TextStyle::Danger,
+        }
+    }
+
+    /// Bracketed Cyber-HUD tag drawn on the card's top border (static, zero-alloc).
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Low => "[ LOW ]",
+            Self::Normal => "[ INFO ]",
+            Self::Critical => "[ CRIT ]",
         }
     }
 }
@@ -303,32 +312,62 @@ impl Card {
     }
 
     /// Draw the card inside `area` (which it fills): the frame in the urgency's
-    /// role, the title on the top border, the glyph and the body in the cells
-    /// inside it. A body line that does not fit is cut with an ellipsis; the
-    /// window never grows to hold it.
+    /// role, the bracketed Cyber-HUD tag and title on the top border, the glyph,
+    /// terminal prompt chevron `> `, and body in the cells inside it. A body
+    /// line that does not fit is cut with an ellipsis; the window never grows
+    /// to hold it, and zero heap allocations occur per frame.
     pub fn render(&self, area: Rect, buf: &mut Buffer, design: &Design) {
         let role = self.urgency.role();
-        let inner = draw_card_with(
-            buf,
-            area,
-            design,
-            Some(self.title.as_str()),
-            role,
-            design.style(self.urgency.title_style()),
-        );
+        let title_style = design.style(self.urgency.title_style());
+        let inner = draw_card_with(buf, area, design, None, role, title_style);
+
+        // Write ` [ TAG ] Title ` directly over the top border with zero allocations.
+        if area.height > 0 && area.width >= 6 {
+            let tag_style = Style::default()
+                .fg(design.color(role))
+                .bg(design.color(ColorRole::Bg))
+                .add_modifier(Modifier::BOLD);
+            let max_right = area.right().saturating_sub(2);
+            let mut x = put(buf, area.x + 1, area.y, " ", 1, tag_style);
+            let tag = self.urgency.tag();
+            if x.saturating_add(tag.len() as u16).saturating_add(2) < max_right {
+                x = put(buf, x, area.y, tag, max_right - x, tag_style);
+                x = put(buf, x, area.y, " ", max_right - x, title_style);
+            }
+            if x < max_right {
+                x = put_trunc(
+                    buf,
+                    x,
+                    area.y,
+                    self.title.as_str(),
+                    max_right - x,
+                    title_style,
+                );
+                put(buf, x, area.y, " ", 1, title_style);
+            }
+        }
+
         if inner.width == 0 || inner.height == 0 {
             return;
         }
+
+        let accent_style = Style::default()
+            .fg(design.color(role))
+            .bg(design.color(ColorRole::Bg));
 
         let mut text_x = inner.x;
         if let Some(glyph) = window_glyph(&self.icon) {
             let cell = glyph.cell();
             let width = UnicodeWidthStr::width(cell) as u16;
-            let style = Style::default()
-                .fg(design.color(role))
-                .bg(design.color(ColorRole::Bg));
-            put(buf, inner.x, inner.y, cell, width, style);
+            put(buf, inner.x, inner.y, cell, width, accent_style);
             text_x = inner.x.saturating_add(width).saturating_add(1);
+        }
+
+        // Terminal prompt chevron `> ` on the first content line.
+        if !self.body.is_empty() && inner.right().saturating_sub(text_x) >= 4 {
+            let chevron_style = accent_style.add_modifier(Modifier::BOLD);
+            put(buf, text_x, inner.y, ">", 1, chevron_style);
+            text_x = text_x.saturating_add(2);
         }
         let text_width = inner.right().saturating_sub(text_x);
 

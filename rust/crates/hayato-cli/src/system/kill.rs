@@ -377,9 +377,11 @@ impl KillScreen {
             if alive {
                 let confirm = Confirm::new(
                     format!("Still running: {} (pid {})", p.comm, p.pid),
-                    "Force-kill with SIGKILL? Unsaved data in that process will be lost.",
+                    "Force-kill this process with SIGKILL?",
                 )
-                .with_options(&["Leave running", "Force kill (SIGKILL)"]);
+                .with_detail("Unsaved data in that process will be lost.")
+                .with_options(&["Leave running", "Force kill (SIGKILL)"])
+                .destructive(true);
                 self.mode = KillMode::ConfirmKill {
                     pid: p.pid,
                     comm: p.comm,
@@ -501,8 +503,28 @@ impl Screen for KillScreen {
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
-        if !matches!(self.mode, KillMode::List) {
-            return Outcome::Continue;
+        if let KillMode::ConfirmKill { pid, comm, confirm } = &mut self.mode {
+            if let Some(idx) = row {
+                let pid_val = *pid;
+                let comm_val = comm.clone();
+                match confirm.click(idx) {
+                    ConfirmAction::Chosen(1) => {
+                        let _ = Command::new("kill")
+                            .args(["-KILL", &pid_val.to_string()])
+                            .status();
+                        self.mode = KillMode::List;
+                        self.status_note = Some(format!("Force-killed {comm_val} (pid {pid_val})"));
+                        self.reload(true);
+                    }
+                    ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                        self.mode = KillMode::List;
+                        self.status_note = Some(format!("Left {comm_val} (pid {pid_val}) running"));
+                        self.reload(true);
+                    }
+                    ConfirmAction::None => {}
+                }
+            }
+            return Outcome::Consumed;
         }
         if let Some(row) = row {
             if row == 10_000 {
@@ -520,8 +542,8 @@ impl Screen for KillScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        if !matches!(self.mode, KillMode::List) {
-            return None;
+        if let KillMode::ConfirmKill { confirm, .. } = &self.mode {
+            return confirm.hit(area, design, x, y);
         }
         let (left, _) = Self::split_panes(area);
         let (strip, _, rows) = Self::layout(left);

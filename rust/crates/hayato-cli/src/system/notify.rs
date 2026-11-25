@@ -463,6 +463,23 @@ impl Screen for NotifyScreen {
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
+        if let NotifyMode::ConfirmDismiss(confirm) = &mut self.mode {
+            if let Some(idx) = row {
+                match confirm.click(idx) {
+                    ConfirmAction::Chosen(1) => {
+                        self.mode = NotifyMode::Browse;
+                        let _ = clear_history();
+                        self.status_note = Some("Cleared notification history".to_string());
+                        self.reload();
+                    }
+                    ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                        self.mode = NotifyMode::Browse;
+                    }
+                    ConfirmAction::None => {}
+                }
+            }
+            return Outcome::Consumed;
+        }
         if let Some(row) = row {
             if row >= 10_000 {
                 let strip_idx = row - 10_000;
@@ -481,8 +498,8 @@ impl Screen for NotifyScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        if matches!(self.mode, NotifyMode::ConfirmDismiss(_)) {
-            return None;
+        if let NotifyMode::ConfirmDismiss(confirm) = &self.mode {
+            return confirm.hit(area, design, x, y);
         }
         let (left, _) = Self::split_panes(area);
         let (strip, _, rows) = Self::layout(left);
@@ -559,7 +576,8 @@ impl NotifyScreen {
                             self.notifications.len()
                         ),
                     )
-                    .with_options(&["Cancel", "Dismiss all"]);
+                    .with_options(&["Cancel", "Dismiss all"])
+                    .destructive(true);
                     self.mode = NotifyMode::ConfirmDismiss(confirm);
                 }
             }

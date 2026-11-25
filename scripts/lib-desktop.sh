@@ -11,6 +11,7 @@ BUILD_ROOT="${BUILD_ROOT:-/var/tmp/hayato-build}"
 WORK_DIR="${WORK_DIR:-$BUILD_ROOT/work}"
 SRC_DIR="${SRC_DIR:-$BUILD_ROOT/src}"
 HAYATO_STAGE="${HAYATO_STAGE:-$WORK_DIR/hayato-stage}"
+mkdir -p "$WORK_DIR" "$SRC_DIR" "$HAYATO_STAGE"
 
 log()  { printf '\033[1;34m[hayato]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }

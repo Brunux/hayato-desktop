@@ -109,19 +109,10 @@ foliate
 # plus PDF export still work. The Notes menu is the wrapper; nothing here is
 # resident.
 xournalpp
-# The camera application: guvcview 2.2 draws the preview, exposes the device's
-# own controls (exposure, gain, white balance - which is the difference between
-# a black rectangle and a face in a dim room) and keeps a photo or a clip.
-# 514 kB plus libguvcview (496 kB), libportaudio2 (216 kB, so a clip can carry
-# the microphone), libwebcam0 (84 kB, the UVC control names) and libgsl (3.3 MB,
-# its image filters) - and no new toolkit: it is GTK3, which waybar already
-# pulls in, so it inherits the solarized gtk-3.0/gtk.css instead of looking like a
-# foreign program. The camera itself needs no package: a USB
-# UVC camera is driven by uvcvideo, a module of this kernel, and udev creates
-# /dev/video0 when the device (the internal one sits on the hub at 1-1.4) is on
-# the bus. ~/.config/bin/hayato-camera is the wrapper that finds that node by
-# driver and starts the window; nothing here is resident.
-guvcview
+# Camera, webcam video, and screen recording are unified in Hayato Studio
+# (`hayato-studio` / `hayato-camera`), which uses mpv (viewfinder/PiP),
+# ffmpeg (photo snap & webcam video), and wf-recorder (screen recording)
+# over dynamic uvcvideo discovery — no GTK guvcview package needed.
 # Mounting removable media as an unprivileged session, which until now was not
 # possible at all: udisks2 3.2 MB plus libblockdev (eight modules) and
 # libcryptsetup/libnvme, providing /usr/bin/udisksctl and the
@@ -267,7 +258,19 @@ upower
 libgl1-mesa-dri
 mesa-utils
 xdg-desktop-portal-wlr
+# File-chooser, URI opener, and org.freedesktop.appearance (dark/light) portal
+# for Firefox, GTK4, and sandboxed apps (sway-portals.conf keeps ScreenCast and
+# Screenshot on wlr).
+xdg-desktop-portal-gtk
 xdg-user-dirs
+# Lightweight polkit authentication agent and org.freedesktop.secrets provider
+# so elevation prompts and saved credentials work for apps, Git, and VPNs.
+lxpolkit
+gnome-keyring
+# Networking & system controls exposed in Settings (VPN, Firewall, Power profiles)
+wireguard-tools
+ufw
+power-profiles-daemon
 # The games library and the HTML games (hayato-games, from rust/): WebKitGTK
 # 6.0 draws them. 124 MB installed and six new packages, because GTK4,
 # GStreamer, libsoup and bubblewrap are already here; libmanette (the Gamepad

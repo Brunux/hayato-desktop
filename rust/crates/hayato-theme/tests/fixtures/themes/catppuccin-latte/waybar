@@ -48,16 +48,39 @@ window#waybar {
     margin-right: 4px;
 }
 
-tooltip {
-    background: #e6e9ef;
+/* Terminal micro-HUD tooltips matching hayato-notify's 3px left accent rail,
+   3px corners, and monospace telemetry grammar across all 16 themes. */
+tooltip,
+tooltip.background {
+    background: rgba(230, 233, 239, 0.97);
     color: #4c4f69;
-    border: 1px solid rgba(30, 102, 245, 0.85);
-    border-radius: 6px;
-    padding: 8px 11px;
+    border: 1px solid rgba(30, 102, 245, 0.92);
+    border-left: 3px solid #1e66f5;
+    border-radius: 3px;
+    padding: 9px 13px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+}
+
+tooltip decoration {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+tooltip > box {
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
 }
 
 tooltip label {
     color: #4c4f69;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 0;
+    margin: 0;
 }
 
 /* A segment: no card, no outline, the same padding for a built-in module and
@@ -67,11 +90,15 @@ tooltip label {
    theme (Catppuccin Latte) is the colour of the background. Emphasis is
    weight. */
 #custom-busy,
+#custom-rec,
+#custom-cassette,
+#privacy,
 #custom-updates,
 #tray,
 #custom-keyboard-layout,
 #custom-bluetooth,
 #custom-vnc,
+#custom-drives,
 #network,
 #pulseaudio,
 #backlight,
@@ -125,9 +152,11 @@ tooltip label {
     color: #1e66f5;
 }
 
-/* The battery has no rule of its own: an icon at every charge, in the reading
-   colour. The charge is a tooltip, like every other reading on the line, and
-   only charging changes the picture (a bolt). */
+/* The battery icon stays in the reading colour above 5% and switches to the
+   readable warning colour when discharging at <= 5%. */
+#battery.critical:not(.charging) {
+    color: #996220;
+}
 
 /* No hover fill: pointing at an indicator must not light it up. The tooltip
    is the feedback, and the click does what the tooltip says. */
@@ -163,14 +192,54 @@ tooltip label {
 /* A module whose script reports nothing (no upgrades, a single keyboard
    layout) collapses to zero width instead of leaving an empty segment on the
    bar.  The class comes from the JSON the script prints. */
+#privacy-item.screenshare {
+    color: #d20f39;
+}
+
+#privacy-item.audio-in {
+    color: #bc6b00;
+}
+
 #custom-updates.empty,
 #custom-busy.empty,
+#custom-rec.empty,
+#custom-cassette.empty,
 #custom-keyboard-layout.empty,
-#custom-vnc.empty {
+#custom-vnc.empty,
+#custom-drives.empty {
     padding: 0;
     margin: 0;
     border: none;
     background: transparent;
+}
+
+#custom-cassette.playing {
+    color: #1e66f5;
+    font-weight: 600;
+}
+
+#custom-cassette.paused {
+    color: #9093a4;
+}
+
+/* Studio recording icon: 0px when idle (.empty), pulsing danger glyph when live. */
+@keyframes hayato-rec-pulse {
+    0% { color: #d20f39; }
+    50% { color: rgba(210, 15, 57, 0.35); }
+    100% { color: #d20f39; }
+}
+
+#custom-rec.recording {
+    padding: 0 7px;
+    color: #d20f39;
+    font-weight: 700;
+    animation: hayato-rec-pulse 1.6s ease-in-out infinite;
+}
+
+#custom-rec.recording-static {
+    padding: 0 7px;
+    color: #d20f39;
+    font-weight: 700;
 }
 
 /* Remote control is the explicit second start (`--disable-input` absent), and

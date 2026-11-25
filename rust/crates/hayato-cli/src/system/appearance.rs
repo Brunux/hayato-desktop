@@ -654,9 +654,13 @@ impl BarModules {
     fn modules(self) -> &'static [&'static str] {
         match self {
             Self::Full => &[
+                "privacy",
+                "custom/rec",
+                "custom/cassette",
                 "custom/busy",
                 "custom/keyboard-layout",
                 "custom/vnc",
+                "custom/drives",
                 "custom/bluetooth",
                 "network",
                 "pulseaudio",
@@ -667,15 +671,25 @@ impl BarModules {
                 "tray",
             ],
             Self::Compact => &[
+                "privacy",
+                "custom/rec",
+                "custom/cassette",
                 "custom/busy",
                 "custom/bluetooth",
                 "custom/vnc",
+                "custom/drives",
                 "network",
                 "pulseaudio",
                 "battery",
                 "tray",
             ],
-            Self::Minimal => &["custom/busy", "network", "pulseaudio", "battery"],
+            Self::Minimal => &[
+                "custom/rec",
+                "custom/busy",
+                "network",
+                "pulseaudio",
+                "battery",
+            ],
         }
     }
 }

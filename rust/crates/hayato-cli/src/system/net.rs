@@ -15,10 +15,10 @@ use std::time::Duration;
 
 use hayato_ui::widgets::{put, put_trunc};
 use hayato_ui::{
-    ActionItem, ActionRunner, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Design, Glyph,
-    Header, Input, InputAction, KeyHint, ListAction, ListState, Outcome, QrCode, Row, Screen,
-    TextStyle, draw_badge, draw_card, draw_empty, draw_filter_bar, draw_qr, draw_signal_bars,
-    signal_bars,
+    ActionItem, ActionRunner, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Confirm,
+    ConfirmAction, Design, Glyph, Header, Input, InputAction, KeyHint, ListAction, ListState,
+    Outcome, QrCode, Row, Screen, TextStyle, draw_badge, draw_card, draw_empty, draw_filter_bar,
+    draw_qr, draw_signal_bars, signal_bars,
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -120,12 +120,50 @@ pub fn parse_nmcli_wifi(raw: &str) -> Vec<WifiAp> {
     list
 }
 
+fn signal_bars_4(signal: u8) -> &'static str {
+    match signal {
+        0 => "<span alpha='30%'>▂▄▆█</span>",
+        1..=24 => "▂<span alpha='30%'>▄▆█</span>",
+        25..=49 => "▂▄<span alpha='30%'>▆█</span>",
+        50..=74 => "▂▄▆<span alpha='30%'>█</span>",
+        _ => "▂▄▆█",
+    }
+}
+
+fn format_status_json(radio_enabled: bool, active: Option<&WifiAp>) -> String {
+    if !radio_enabled {
+        return r#"{"text":"off","tooltip":"<span alpha='50%'>╭─</span> <b>NET // RADIO OFF</b>\n<span alpha='45%'>│</span> <span alpha='60%'>WIFI</span>  disabled\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"disabled","percentage":0}"#
+            .to_string();
+    }
+
+    if let Some(active) = active {
+        let ssid_pango = escape_pango(&active.ssid);
+        let sec = if active.security.is_empty() {
+            "open".to_string()
+        } else {
+            escape_pango(&active.security)
+        };
+        let bars = signal_bars_4(active.signal);
+        format!(
+            r#"{{"text":"{}","tooltip":"<span alpha='50%'>╭─</span> <b>NET // WI-FI</b>\n<span alpha='45%'>│</span> <span alpha='60%'>SSID</span>  {}\n<span alpha='45%'>│</span> <span alpha='60%'>SIG </span>  {}  {}%\n<span alpha='45%'>│</span> <span alpha='60%'>SEC </span>  {}\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"connected","percentage":{}}}"#,
+            escape_json(&active.ssid),
+            escape_json(&ssid_pango),
+            bars,
+            active.signal,
+            escape_json(&sec),
+            active.signal
+        )
+    } else {
+        r#"{"text":"disconnected","tooltip":"<span alpha='50%'>╭─</span> <b>NET // OFFLINE</b>\n<span alpha='45%'>│</span> <span alpha='60%'>WIFI</span>  disconnected\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"disconnected","percentage":0}"#
+            .to_string()
+    }
+}
+
 /// Headless query for waybar `custom/net` module: emits JSON.
 pub fn status_json() -> String {
     let radio = out(&["nmcli", "radio", "wifi"]).unwrap_or_default();
     if radio != "enabled" {
-        return r#"{"text":"off","tooltip":"Wi-Fi radio is off","class":"disabled","percentage":0}"#
-            .to_string();
+        return format_status_json(false, None);
     }
 
     let scan_raw = out(&[
@@ -142,22 +180,18 @@ pub fn status_json() -> String {
     .unwrap_or_default();
 
     let aps = parse_nmcli_wifi(&scan_raw);
-    if let Some(active) = aps.iter().find(|ap| ap.in_use) {
-        format!(
-            r#"{{"text":"{}","tooltip":"Connected to {} ({}%)","class":"connected","percentage":{}}}"#,
-            escape_json(&active.ssid),
-            escape_json(&active.ssid),
-            active.signal,
-            active.signal
-        )
-    } else {
-        r#"{"text":"disconnected","tooltip":"Wi-Fi disconnected","class":"disconnected","percentage":0}"#
-            .to_string()
-    }
+    let active = aps.iter().find(|ap| ap.in_use);
+    format_status_json(true, active)
 }
 
 fn escape_json(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn escape_pango(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn has_saved_connection(ssid: &str) -> bool {
@@ -270,6 +304,10 @@ enum NetMode {
         title: String,
         subtitle: String,
         payload: String,
+    },
+    ConfirmForget {
+        ssid: String,
+        confirm: Confirm,
     },
 }
 
@@ -511,7 +549,81 @@ impl NetScreen {
                     KeyHint::new("Esc", "back to networks"),
                 ];
             }
+            NetMode::ConfirmForget { .. } => {
+                self.header = Header::new("Hayato")
+                    .subtitle("Wi-Fi")
+                    .status("Cancel is selected");
+                self.keybar = vec![
+                    KeyHint::new("\u{2190}/\u{2192}", "choose"),
+                    KeyHint::new("Enter", "confirm"),
+                    KeyHint::new("Esc", "cancel"),
+                ];
+            }
         }
+    }
+
+    fn prompt_forget_selected(&mut self) {
+        if self.runner.is_running() || !self.radio_on {
+            return;
+        }
+        let Some(row) = self.list.selected_index() else {
+            return;
+        };
+        let Some(index) = ap_index(self.portal, row) else {
+            return;
+        };
+        let Some(ap) = self.aps.get(index).cloned() else {
+            return;
+        };
+        if !has_saved_connection(&ap.ssid) {
+            self.runner
+                .set_transient(format!("{} has no saved profile", ap.ssid));
+            self.sync_chrome();
+            return;
+        }
+        let confirm = Confirm::new(
+            format!("Forget {}?", ap.ssid),
+            format!(
+                "Delete the saved Wi-Fi profile and passphrase for {}?",
+                ap.ssid
+            ),
+        )
+        .with_detail("You will need to enter its password again to reconnect.")
+        .with_options(&["Cancel", "Forget"])
+        .destructive(true);
+        self.mode = NetMode::ConfirmForget {
+            ssid: ap.ssid,
+            confirm,
+        };
+        self.sync_chrome();
+    }
+
+    fn forget_network(&mut self, ssid: String) {
+        let label = format!("Forgetting {ssid}\u{2026}");
+        self.runner.spawn(label, move || {
+            let status = Command::new("nmcli")
+                .args(["connection", "delete", "id", &ssid])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .output();
+            let result = match status {
+                Ok(out) if out.status.success() => Ok(()),
+                Ok(out) => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
+                Err(e) => Err(e.to_string()),
+            };
+            let (radio_on, aps, ip) = scan_wifi(false);
+            let portal = radio_on && super::portal::needs_signin();
+            NetOp::Connected {
+                ssid: format!("Forgot {ssid}"),
+                result,
+                radio_on,
+                aps,
+                ip,
+                portal,
+            }
+        });
+        self.sync_chrome();
     }
 
     fn open_inline_qr(&mut self) {
@@ -762,7 +874,7 @@ impl Screen for NetScreen {
         match &self.mode {
             NetMode::WifiQr { qr, .. } => Some(qr.recommended_window_size()),
             NetMode::Password { .. } => Some((680, 320)),
-            NetMode::List => Some((860, 560)),
+            NetMode::List | NetMode::ConfirmForget { .. } => Some((860, 560)),
         }
     }
 
@@ -866,6 +978,9 @@ impl Screen for NetScreen {
                     height: ctx.area.height.saturating_sub(3),
                 };
                 draw_qr(ctx.buf, inner, ctx.design, qr);
+            }
+            NetMode::ConfirmForget { confirm, .. } => {
+                confirm.render(ctx.area, ctx.buf, ctx.design);
             }
             NetMode::Password { ssid, input } => {
                 let card_title = format!("Password for {ssid}");
@@ -1001,6 +1116,21 @@ impl Screen for NetScreen {
                 }
                 _ => Outcome::Consumed,
             },
+            NetMode::ConfirmForget { ssid, confirm } => {
+                let target = ssid.clone();
+                match confirm.handle(key) {
+                    ConfirmAction::Chosen(1) => {
+                        self.mode = NetMode::List;
+                        self.forget_network(target);
+                    }
+                    ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                        self.mode = NetMode::List;
+                        self.sync_chrome();
+                    }
+                    ConfirmAction::None => {}
+                }
+                Outcome::Consumed
+            }
             NetMode::Password { ssid, input } => match input.handle(key) {
                 InputAction::Submitted => {
                     let pw = input.text().to_string();
@@ -1050,8 +1180,16 @@ impl Screen for NetScreen {
                         KeyCode::Char('n') | KeyCode::Char('N') => {
                             return self.run_strip_action("nmtui");
                         }
+                        KeyCode::Char('d') | KeyCode::Char('D') => {
+                            self.prompt_forget_selected();
+                            return Outcome::Consumed;
+                        }
                         _ => {}
                     }
+                }
+                if key.code == KeyCode::Delete {
+                    self.prompt_forget_selected();
+                    return Outcome::Consumed;
                 }
                 if !self.radio_on && key.code == KeyCode::Enter {
                     return self.run_strip_action("toggle");
@@ -1071,6 +1209,23 @@ impl Screen for NetScreen {
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
+        if let NetMode::ConfirmForget { ssid, confirm } = &mut self.mode {
+            if let Some(idx) = row {
+                let target = ssid.clone();
+                match confirm.click(idx) {
+                    ConfirmAction::Chosen(1) => {
+                        self.mode = NetMode::List;
+                        self.forget_network(target);
+                    }
+                    ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                        self.mode = NetMode::List;
+                        self.sync_chrome();
+                    }
+                    ConfirmAction::None => {}
+                }
+            }
+            return Outcome::Consumed;
+        }
         if !matches!(self.mode, NetMode::List) {
             return Outcome::Continue;
         }
@@ -1093,6 +1248,9 @@ impl Screen for NetScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        if let NetMode::ConfirmForget { confirm, .. } = &self.mode {
+            return confirm.hit(area, design, x, y);
+        }
         if !matches!(self.mode, NetMode::List) {
             return None;
         }
@@ -1126,6 +1284,7 @@ impl Screen for NetScreen {
             NetMode::List => "list",
             NetMode::Password { .. } => "password",
             NetMode::WifiQr { .. } => "wifi-qr",
+            NetMode::ConfirmForget { .. } => "confirm-forget",
         })
     }
 }
@@ -1191,8 +1350,24 @@ mod tests {
 
     #[test]
     fn status_json_disabled_format() {
-        let json =
-            r#"{"text":"off","tooltip":"Wi-Fi radio is off","class":"disabled","percentage":0}"#;
-        assert!(json.contains("\"class\":\"disabled\""));
+        let disabled = format_status_json(false, None);
+        assert!(disabled.contains("\"class\":\"disabled\""));
+        assert!(disabled.contains("NET // RADIO OFF"));
+
+        let disconnected = format_status_json(true, None);
+        assert!(disconnected.contains("\"class\":\"disconnected\""));
+        assert!(disconnected.contains("NET // OFFLINE"));
+
+        let ap = WifiAp {
+            in_use: true,
+            ssid: "Lab & Ops".into(),
+            security: "WPA2".into(),
+            signal: 82,
+        };
+        let connected = format_status_json(true, Some(&ap));
+        assert!(connected.contains("\"class\":\"connected\""));
+        assert!(connected.contains("Lab &amp; Ops"));
+        assert!(connected.contains("▂▄▆█  82%"));
+        assert!(connected.contains("WPA2"));
     }
 }

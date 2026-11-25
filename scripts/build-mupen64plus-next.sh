@@ -53,7 +53,7 @@ fi
 
 log "Building mupen64plus-next $CORE_REV (AArch64 dynarec, GLideN64 on GLES3)"
 make -C "$CORE_SRC" platform=unix FORCE_GLES3=1 ARCH=aarch64 \
-	CPUFLAGS="-mcpu=cortex-a76.cortex-a55" GIT_VERSION="$CORE_REV" -j"${JOBS:-$(nproc)}"
+	CPUFLAGS="-march=armv8-a -mtune=cortex-a76.cortex-a55" GIT_VERSION="$CORE_REV" -j"${JOBS:-$(nproc)}"
 
 PKG="$WORK_DIR/mupen64plus-next-pkg"
 rm -rf "$PKG"

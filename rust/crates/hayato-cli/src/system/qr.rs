@@ -434,7 +434,8 @@ impl QrScreen {
                     }
                 };
                 let _ = fs::create_dir_all(qr_target_dir());
-                crate::system::spawn_detached(&format!("exec xdg-open '{}'", target.display()));
+                let target_str = target.to_string_lossy().into_owned();
+                crate::system::spawn_detached_argv("xdg-open", &[&target_str]);
                 self.status = format!("Opened {}", target.display());
                 self.sync_chrome();
                 Outcome::Consumed

@@ -495,6 +495,15 @@ impl Screen for FilesScreen {
                 self.load();
                 return Outcome::Consumed;
             }
+            KeyCode::Char('s') if control => {
+                if let Some(path) = self.selected().and_then(Item::path).map(Path::to_path_buf) {
+                    let _ = crate::system::share::spawn_detached(
+                        &crate::system::share::SharePayload::from_path(path),
+                    );
+                    return Outcome::Done(hayato_ui::app::exit::OK);
+                }
+                return Outcome::Consumed;
+            }
             KeyCode::Backspace if self.list.filter().is_empty() => {
                 if self.setup.mode == Mode::Browse
                     && let Some(parent) = self.setup.dir.parent().map(Path::to_path_buf)

@@ -204,11 +204,9 @@ impl CaptureScreen {
             day_str,
             list: ListState::new().with_empty("no matching capture actions"),
             keys: Vec::new(),
-            header: Header::new("Hayato").subtitle("Capture"),
+            header: Header::new("Hayato").subtitle("Screenshot"),
             keybar: vec![
-                KeyHint::new("Enter", "run"),
-                KeyHint::new("^A", "audio"),
-                KeyHint::new("^W", "webcam"),
+                KeyHint::new("Enter", "capture"),
                 KeyHint::new("^O", "folder"),
                 KeyHint::new("Esc", "close"),
             ],
@@ -275,15 +273,15 @@ impl CaptureScreen {
     fn update_header(&mut self) {
         let status = match &self.mode {
             CaptureMode::Idle => format!(
-                "Ready \u{00b7} {} \u{00b7} {}",
-                self.options.summary(),
-                self.shot_dir.display()
+                "Ready \u{00b7} {}/{}",
+                self.shot_dir.display(),
+                self.day_str
             ),
             CaptureMode::Recording { elapsed, size, .. } => {
                 format!("● REC {elapsed} \u{00b7} {size} \u{00b7} Enter stops")
             }
         };
-        self.header = Header::new("Hayato").subtitle("Capture").status(status);
+        self.header = Header::new("Hayato").subtitle("Screenshot").status(status);
     }
 
     fn cycle_audio(&mut self) {
@@ -357,43 +355,10 @@ impl CaptureScreen {
                     .detail("arrows, text, crop"),
             );
             keys.push(Some("annotate"));
-
-            rows.push(Row::heading("Record"));
-            keys.push(None);
-            rows.push(
-                Row::new("Record · Whole screen")
-                    .glyph(Glyph::Video)
-                    .detail(format!("wf-recorder · {}", self.options.summary())),
-            );
-            keys.push(Some("rec:none"));
-            rows.push(
-                Row::new("Record · Area")
-                    .glyph(Glyph::Video)
-                    .detail(format!("pick region · {}", self.options.summary())),
-            );
-            keys.push(Some("rec:area"));
         }
 
-        rows.push(Row::heading("Extract & Share"));
+        rows.push(Row::heading("Library"));
         keys.push(None);
-        rows.push(
-            Row::new("OCR text → clipboard")
-                .glyph(Glyph::File)
-                .detail("tesseract region scan"),
-        );
-        keys.push(Some("ocr"));
-        rows.push(
-            Row::new("Scan QR from area")
-                .glyph(Glyph::Qr)
-                .detail("zbarimg → clipboard"),
-        );
-        keys.push(Some("qr"));
-        rows.push(
-            Row::new("Make a QR code")
-                .glyph(Glyph::Qr)
-                .detail("Wi-Fi password or custom text"),
-        );
-        keys.push(Some("make-qr"));
         rows.push(
             Row::new("Open Screenshots folder")
                 .glyph(Glyph::Folder)
@@ -457,7 +422,7 @@ impl CaptureScreen {
 
     fn draw_studio_deck(&self, ctx: &mut BodyCtx, right: Rect) -> StudioHits {
         let mut hits = StudioHits::default();
-        draw_card(ctx.buf, right, ctx.design, Some("Studio Deck"), false);
+        draw_card(ctx.buf, right, ctx.design, Some("Screenshot Deck"), false);
         let inner = Rect {
             x: right.x + 2,
             y: right.y + 1,
@@ -469,124 +434,42 @@ impl CaptureScreen {
         }
         let mut y = inner.y;
 
-        // 1. Live Status Hero
-        match &self.mode {
-            CaptureMode::Idle => {
-                let x = draw_badge(ctx.buf, inner.x, y, ctx.design, "● READY", ColorRole::Ok);
-                let avail = inner.right().saturating_sub(x + 2);
-                put_trunc(
-                    ctx.buf,
-                    x + 2,
-                    y,
-                    "No active recording",
-                    avail,
-                    ctx.design.style(TextStyle::Body),
-                );
-                y += 1;
-                if y < inner.bottom() {
-                    put_trunc(
-                        ctx.buf,
-                        inner.x,
-                        y,
-                        &format!("Target: {}/{}", self.shot_dir.display(), self.day_str),
-                        inner.width,
-                        ctx.design.style(TextStyle::Dim),
-                    );
-                    y += 2;
-                }
-            }
-            CaptureMode::Recording {
-                file,
-                elapsed,
-                size,
-                ..
-            } => {
-                let x = draw_badge(ctx.buf, inner.x, y, ctx.design, "● REC", ColorRole::Danger);
-                let avail = inner.right().saturating_sub(x + 2);
-                put_trunc(
-                    ctx.buf,
-                    x + 2,
-                    y,
-                    &format!("{elapsed} \u{00b7} {size}"),
-                    avail,
-                    Style::default()
-                        .fg(ctx.design.color(ColorRole::Danger))
-                        .add_modifier(Modifier::BOLD),
-                );
-                y += 1;
-                if y < inner.bottom() {
-                    let fname = file
-                        .as_deref()
-                        .and_then(|p| p.file_name())
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "recording.mp4".to_string());
-                    put_trunc(
-                        ctx.buf,
-                        inner.x,
-                        y,
-                        &format!("File: {fname} \u{00b7} Enter stops"),
-                        inner.width,
-                        ctx.design.style(TextStyle::Dim),
-                    );
-                    y += 2;
-                }
-            }
+        // 1. Status & Target Folder
+        let x = draw_badge(ctx.buf, inner.x, y, ctx.design, "● READY", ColorRole::Ok);
+        let avail = inner.right().saturating_sub(x + 2);
+        put_trunc(
+            ctx.buf,
+            x + 2,
+            y,
+            "Stills & Annotation",
+            avail,
+            ctx.design.style(TextStyle::Body),
+        );
+        y += 1;
+        if y < inner.bottom() {
+            put_trunc(
+                ctx.buf,
+                inner.x,
+                y,
+                &format!("Target: {}/{}", self.shot_dir.display(), self.day_str),
+                inner.width,
+                ctx.design.style(TextStyle::Dim),
+            );
+            y += 2;
         }
-
-        // 2. Inline Recording Setup (zero sub-menus)
-        if y + 3 <= inner.bottom() {
+        if y + 2 <= inner.bottom() {
             put_trunc(
                 ctx.buf,
                 inner.x,
                 y,
-                "Recording Setup",
+                "Video / Webcam → Studio (Alt+Ctrl+R) · OCR / QR → Lens (Alt+I)",
                 inner.width,
-                ctx.design.style(TextStyle::Title),
+                ctx.design.style(TextStyle::Dim),
             );
-            y += 1;
-
-            let audio_modes = [
-                (hayato_ui::recording::AudioMode::Off, "Off"),
-                (hayato_ui::recording::AudioMode::Mic, "Mic"),
-                (hayato_ui::recording::AudioMode::System, "System"),
-            ];
-            let mut line = String::from("[^A] Audio   : ");
-            for (mode, label) in audio_modes {
-                if self.options.audio == mode {
-                    line.push_str(&format!("(●) {label}  "));
-                } else {
-                    line.push_str(&format!("( ) {label}  "));
-                }
-            }
-            put_trunc(
-                ctx.buf,
-                inner.x,
-                y,
-                &line,
-                inner.width,
-                Style::default().fg(ctx.design.color(ColorRole::Accent)),
-            );
-            hits.audio = Some(Rect::new(inner.x, y, inner.width, 1));
-            y += 1;
-
-            let cam_line = if self.options.webcam {
-                "[^W] Webcam  : [ ON \u{00b7} bottom-right PiP ]"
-            } else {
-                "[^W] Webcam  : [ OFF ]"
-            };
-            let cam_style = if self.options.webcam {
-                Style::default()
-                    .fg(ctx.design.color(ColorRole::Ok))
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                ctx.design.style(TextStyle::Body)
-            };
-            put_trunc(ctx.buf, inner.x, y, cam_line, inner.width, cam_style);
-            hits.webcam = Some(Rect::new(inner.x, y, inner.width, 1));
             y += 2;
         }
 
-        // 3. Recent Captures
+        // 2. Recent Captures
         if y + 2 <= inner.bottom() {
             put_trunc(
                 ctx.buf,
@@ -753,6 +636,15 @@ impl Screen for CaptureScreen {
                 if let Some(index) = self.list.selected_index() {
                     return self.activate(index);
                 }
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') if ctrl => {
+                if let Some(item) = self.recent.first() {
+                    let _ = crate::system::share::spawn_detached(
+                        &crate::system::share::SharePayload::from_path(item.path.clone()),
+                    );
+                    return Outcome::Done(hayato_ui::app::exit::OK);
+                }
+                return Outcome::Consumed;
             }
             KeyCode::Char(_) | KeyCode::Backspace
                 if !ctrl && !alt && self.list.type_filter(key) =>
@@ -1232,6 +1124,11 @@ fn audio_source(mode: hayato_ui::recording::AudioMode) -> Result<Option<String>,
                 "No system-audio monitor source is available (pactl found none)".to_string()
             })
         }
+        AudioMode::Both => {
+            // Capture uses a single source; Studio's PipeWire mixer handles Both.
+            // Fall back to default microphone here if invoked via legacy capture.
+            audio_source(AudioMode::Mic)
+        }
     }
 }
 
@@ -1307,12 +1204,69 @@ fn place_webcam(geometry: Option<&str>) {
     let _ = Command::new("swaymsg").arg(command).status();
 }
 
+/// Discover the V4L2 webcam capture node under `sys_dir` (normally
+/// `/sys/class/video4linux`), never assuming `/dev/video0`.
+///
+/// On MediaTek SoCs (MT8192/MT8183), hardware codec nodes (`mtk-vcodec-enc` /
+/// `mtk-vcodec-dec`) can probe before USB UVC and take `/dev/video0`, pushing
+/// the webcam to `/dev/video1` (with `/dev/video2` as its UVC metadata node).
+fn find_webcam_device_in(sys_dir: &Path) -> Option<String> {
+    let entries = std::fs::read_dir(sys_dir).ok()?;
+    let mut nodes: Vec<(u32, String, PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let num: u32 = name.strip_prefix("video")?.parse().ok()?;
+            Some((num, name, entry.path()))
+        })
+        .collect();
+    nodes.sort_by_key(|(num, _, _)| *num);
+
+    let mut fallback: Option<String> = None;
+    for (_, name, path) in nodes {
+        // UVC cameras expose index 0 for video capture and index 1 for metadata.
+        let index = std::fs::read_to_string(path.join("index"))
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|_| "0".to_string());
+        if index != "0" {
+            continue;
+        }
+        let driver = std::fs::canonicalize(path.join("device/driver"))
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_default();
+        if driver == "uvcvideo" {
+            return Some(format!("/dev/{name}"));
+        }
+        let dev_name = std::fs::read_to_string(path.join("name"))
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let drv_low = driver.to_ascii_lowercase();
+        let is_codec = [
+            "vcodec", "codec", "m2m", "encoder", "decoder", "isp", "meta",
+        ]
+        .iter()
+        .any(|needle| dev_name.contains(needle) || drv_low.contains(needle));
+        if !is_codec && fallback.is_none() {
+            fallback = Some(format!("/dev/{name}"));
+        }
+    }
+    fallback
+}
+
+fn find_webcam_device() -> Result<String, String> {
+    find_webcam_device_in(Path::new("/sys/class/video4linux"))
+        .ok_or_else(|| "no webcam device found under /sys/class/video4linux".to_string())
+}
+
 /// Start the webcam preview window. It is a normal mpv window, placed as a
 /// floating bottom-right overlay; wf-recorder records it as part of the screen.
 fn start_webcam(geometry: Option<&str>) -> Result<u32, String> {
     if !crate::system::have("mpv") {
         return Err("mpv is not installed, so the webcam overlay cannot start".to_string());
     }
+    let dev = find_webcam_device()?;
+    let url = format!("av://v4l2:{dev}");
     let state = hayato_ui::recording::state_dir();
     let _ = std::fs::create_dir_all(&state);
     let log = state.join("camera.log");
@@ -1324,7 +1278,7 @@ fn start_webcam(geometry: Option<&str>) -> Result<u32, String> {
     command
         .args([
             "--no-config",
-            "--really-quiet",
+            "--msg-level=all=error",
             "--vo=wlshm",
             "--no-osc",
             "--no-input-default-bindings",
@@ -1333,7 +1287,7 @@ fn start_webcam(geometry: Option<&str>) -> Result<u32, String> {
             "--wayland-app-id=hayato-webcam",
             "--title=Hayato Webcam",
             "--geometry=320x240",
-            "av://v4l2:/dev/video0",
+            &url,
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::from(log_out))
@@ -1676,6 +1630,32 @@ mod tests {
         let (left_c, right_c) = CaptureScreen::split_panes(compact);
         assert_eq!(left_c, compact);
         assert!(right_c.is_none());
+    }
+
+    #[test]
+    fn find_webcam_skips_vcodec_and_uvc_metadata_nodes() {
+        let base = std::env::temp_dir().join(format!("hayato-v4l2-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let drivers = base.join("drivers");
+        for drv in ["mtk-vcodec-enc", "mtk-vcodec-dec", "uvcvideo"] {
+            std::fs::create_dir_all(drivers.join(drv)).unwrap();
+        }
+        let sys = base.join("video4linux");
+        for (node, name, idx, drv) in [
+            ("video0", "mtk-vcodec-enc", "0", "mtk-vcodec-enc"),
+            ("video1", "USB2.0 HD UVC WebCam", "0", "uvcvideo"),
+            ("video2", "USB2.0 HD UVC WebCam", "1", "uvcvideo"),
+            ("video3", "mtk-vcodec-dec", "0", "mtk-vcodec-dec"),
+        ] {
+            let dir = sys.join(node);
+            std::fs::create_dir_all(dir.join("device")).unwrap();
+            std::fs::write(dir.join("name"), format!("{name}\n")).unwrap();
+            std::fs::write(dir.join("index"), format!("{idx}\n")).unwrap();
+            std::os::unix::fs::symlink(drivers.join(drv), dir.join("device/driver")).unwrap();
+        }
+
+        assert_eq!(find_webcam_device_in(&sys).as_deref(), Some("/dev/video1"));
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

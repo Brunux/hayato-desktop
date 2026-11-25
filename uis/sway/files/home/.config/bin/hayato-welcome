@@ -8,11 +8,8 @@
 # restart is not a new install either, so the marker is written after the window
 # closes, not when it opens.
 #
-# `--print` is the text the window shows.  It is a mode of this script so the
-# key list lives next to the window that owns it, and the pager is plain `read`,
-# so Enter closes it.  The text is plain ASCII on purpose: foot falls back to
-# Symbols Nerd Font Mono for glyphs JetBrains Mono lacks, and a Font Awesome
-# codepoint there is a tofu box, not an icon.
+# `--print` outputs the plain-ASCII Mission Briefing summary (used as the
+# fallback pager when `hayato` is absent and checked by `check-desktop.sh`).
 
 set -eu
 
@@ -21,23 +18,36 @@ marker=$marker_dir/welcome
 
 print_text() {
 	cat <<'EOF'
-Welcome to Hayato
+ _   _                  _
+| | | | __ _ _   _ __ _| |_ ___
+| |_| |/ _` | | | / _` | __/ _ \
+|  _  | (_| | |_| | (_| | || (_) |  _
+|_| |_|\__,_|\__, |\__,_|\__\___/  (_)
+             |___/   :: light. fast. fun. ::
 
-Debian forky on the Google Hayato (ASUS Chromebook Detachable CM3,
-MediaTek MT8192).  These nine keys are the rest of the desktop:
+Welcome to Hayato -- Keyboard-first · Zero bloat · Local AI · Yours
 
-  Alt+Space       the menu: applications, settings, the manual, power
-  Search / Alt+D  the launcher: type part of a name, Enter opens it
-  Alt+Search      find a file by name; Alt+Ctrl+Shift+F: the file manager
-  Alt+Ctrl+F      browse the files, one directory per step
-  Alt+Ctrl+T      translate the selected text (into English, or Settings)
-  Alt+Return      a terminal
-  Alt+Q           close the focused window
-  Alt+Escape      lock, suspend, log out, reboot, shut down
-  Alt+Ctrl+K      every key binding, generated from the configuration
+Essential keys:
+  Alt+Space         root menu: apps, studios, settings, power
+  Search / Alt+D    app launcher: type part of a name, Enter opens it
+  Alt+Ctrl+F        browse files, one directory per step
+  Alt+Ctrl+T        translate selected text (online or Local AI)
+  Alt+Return        open a foot terminal
+  Alt+Q             close the focused window
+  Alt+Escape        power menu: lock, suspend, log out, reboot, shut down
+  Alt+Ctrl+K        every key binding, generated live from Sway
 
-The manual is under Learn in the menu, or `hayato-learn` in a terminal;
-the same pages live in /usr/share/doc/hayato/.
+Studios & tools:
+  Hayato Lens       Alt+I -- local Circle-to-Search (OCR, QR, URLs)
+  Hayato Drop       LAN nearby file share via scannable QR code
+  Local AI          offline Qwen3.5-0.8B Ask & Translate with zero cloud
+  Smart Clipboard   Alt+Ctrl+V -- history by kind, Ctrl+T URL clean / JSON
+  Eject Drive       safe USB / SD unmount & power-off from Places
+  Mic Privacy       Alt+Shift+M -- instant microphone mute toggle
+
+The manual is under Learn in the menu (`hayato menu learn`), or in
+/usr/share/doc/hayato/.  Reopen the interactive briefing anytime with
+`hayato menu welcome`.
 
 Enter closes this window - it appears once per install.
 EOF
@@ -63,10 +73,9 @@ fi
 command -v foot >/dev/null 2>&1 || exit 0
 
 mkdir -p "$marker_dir"
-# The inner shell is the pager: `--print` writes the page and `read` waits for
-# Enter (or Ctrl+D), so the window closes when the person says so.  `|| true`
-# makes Ctrl+D a close, not a failure.
+# Launch the interactive Ratatui Mission Briefing (`hayato menu welcome`),
+# falling back to the plain-ASCII pager if `hayato` is not yet installed.
 if foot --app-id=hayato-welcome --title='Welcome to Hayato' \
-	-e sh -c '"$0" --print; read -r _ || true' "$0"; then
+	-e sh -c 'if command -v hayato >/dev/null 2>&1; then exec hayato menu welcome; else "$0" --print; read -r _ || true; fi' "$0"; then
 	printf '%s\n' "$machine_id" >"$marker"
 fi

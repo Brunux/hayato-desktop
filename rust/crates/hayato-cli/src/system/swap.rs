@@ -360,8 +360,26 @@ fn apply(dev: &str, end: &str, alloc: &str, fstab_text: &str) -> Result<String, 
     ))
 }
 
+/// Ensure `/etc/initramfs-tools/conf.d/resume` is set to `RESUME=none` so
+/// `update-initramfs` never bakes a removable SD/USB auxiliary swap UUID into
+/// initramfs (which would stall boot for 30s whenever the card is unplugged).
+fn ensure_resume_none() {
+    if std::fs::read_to_string("/etc/initramfs-tools/conf.d/resume")
+        .map(|s| s.lines().any(|l| l.trim() == "RESUME=none"))
+        .unwrap_or(false)
+    {
+        return;
+    }
+    let _ = crate::system::sudo(&[
+        "sh",
+        "-c",
+        "mkdir -p /etc/initramfs-tools/conf.d && printf 'RESUME=none\\n' >/etc/initramfs-tools/conf.d/resume",
+    ]);
+}
+
 /// Turn the auxiliary swap off, given its current `status` and the current fstab.
 fn turn_off(status: &Status, fstab_text: &str) -> Result<String, Failed> {
+    ensure_resume_none();
     let part = match status.part {
         Some(ref p) => p.clone(),
         None => {
@@ -609,8 +627,9 @@ impl SwapScreen {
             let part = self.status.part.as_deref().unwrap_or("auxiliary swap");
             let confirm = Confirm::new(
                 "Turn off auxiliary swap?",
-                format!("{part} · swapoff and remove boot entry · files are not erased"),
+                format!("Disable swap on {part} and remove its boot entry?"),
             )
+            .with_detail("Files on the card are not erased.")
             .with_options(&["Cancel", "Turn it off"]);
             self.mode = SwapMode::ConfirmOff(confirm);
         }
@@ -682,8 +701,8 @@ impl Screen for SwapScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
-        if matches!(self.mode, SwapMode::ConfirmOff(_)) {
-            return None;
+        if let SwapMode::ConfirmOff(confirm) = &self.mode {
+            return confirm.hit(area, design, x, y);
         }
         let (left, _) = Self::split_panes(area);
         let rows = Rect::new(
@@ -696,6 +715,21 @@ impl Screen for SwapScreen {
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
+        if let SwapMode::ConfirmOff(confirm) = &mut self.mode {
+            if let Some(idx) = row {
+                match confirm.click(idx) {
+                    ConfirmAction::Chosen(1) => {
+                        self.turn_off_confirmed = true;
+                        return Outcome::Done(hayato_ui::app::exit::OK);
+                    }
+                    ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                        self.mode = SwapMode::Overview;
+                    }
+                    ConfirmAction::None => {}
+                }
+            }
+            return Outcome::Consumed;
+        }
         if let Some(r) = row {
             self.list.set_cursor(r);
             return self.activate();
@@ -749,6 +783,7 @@ pub fn menu(
 
         let stripped = fstab::strip(&fstab_text);
         fstab::replace(&stripped).map_err(|f| crate::Failure::new("Auxiliary swap", f))?;
+        ensure_resume_none();
 
         let mut steps_meta: Vec<String> = Vec::new();
         let mut commands = Vec::new();
@@ -852,6 +887,7 @@ fn adopt(
     part: &str,
     fstab_text: &str,
 ) -> Result<i32, crate::Failure> {
+    ensure_resume_none();
     fstab::replace(&fstab::with_swap(fstab_text))
         .map_err(|f| crate::Failure::new("Auxiliary swap", f))?;
 
@@ -990,6 +1026,7 @@ fn create(
     let part = fstab::partition(&dev);
 
     let new_fstab = fstab::with_swap(fstab_text);
+    ensure_resume_none();
     fstab::replace(&new_fstab).map_err(|f| crate::Failure::new("Auxiliary swap", f))?;
 
     let mut commands = Vec::new();

@@ -132,10 +132,12 @@ cancelled)
 	exit 0
 	;;
 stop)
-	# mako can drop a notification by id; older versions only know "-a", which
-	# would take unrelated notifications with it, hence the explicit id first.
-	if [ -n "$id" ]; then
-		makoctl dismiss -n "$id" >/dev/null 2>&1 || true
+	# Dismiss the notification by id via org.freedesktop.Notifications.CloseNotification
+	# (works with hayato-notify and any spec-compliant D-Bus daemon).
+	if [ -n "$id" ] && command -v busctl >/dev/null 2>&1; then
+		busctl --user call org.freedesktop.Notifications \
+			/org/freedesktop/Notifications \
+			org.freedesktop.Notifications CloseNotification u "$id" >/dev/null 2>&1 || true
 	fi
 	forget
 	pkill -RTMIN+8 waybar 2>/dev/null || true

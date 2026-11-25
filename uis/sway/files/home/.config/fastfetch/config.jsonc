@@ -13,9 +13,9 @@
     "type": "file",
     "source": "~/.config/hayato/wordmark.txt",
     "color": {
-      "1": "#2aa198",
-      "2": "#e8743b",
-      "3": "#eee8d5"
+      "1": "#7aa2f7",
+      "2": "#e0af68",
+      "3": "#c0caf5"
     },
     "padding": {
       "top": 1,
@@ -25,10 +25,10 @@
   "display": {
     "separator": " · ",
     "color": {
-      "keys": "#2aa198",
-      "title": "#2aa198",
-      "output": "#eee8d5",
-      "separator": "#586e75"
+      "keys": "#7aa2f7",
+      "title": "#7aa2f7",
+      "output": "#c0caf5",
+      "separator": "#565f89"
     }
   },
   "modules": [

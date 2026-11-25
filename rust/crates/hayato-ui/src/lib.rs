@@ -32,6 +32,8 @@ pub mod app;
 pub mod card;
 pub mod design;
 pub mod glyphs;
+#[cfg(feature = "pictures")]
+pub mod pictures;
 pub mod recording;
 pub mod task;
 pub mod widgets;

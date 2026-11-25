@@ -47,29 +47,77 @@ fn do_scan(secs: u32) {
         .status();
 }
 
+/// Returns true when `bluetoothctl info` reports a cryptographic bond (`Bonded: yes`).
+fn is_bonded(info: &str) -> bool {
+    info.lines().any(|line| line.trim() == "Bonded: yes")
+}
+
+/// Returns true when a cached, unbonded BlueZ entry should be removed before
+/// pairing. A failed attempt can leave a device as `Paired: yes, Bonded: no` or
+/// `Trusted: yes, Paired: no, Bonded: no`; keeping it tricks `discover()` into
+/// skipping a fresh scan and causes BlueZ to keep rejecting HID connections.
+fn needs_stale_cleanup(info: &str) -> bool {
+    if is_bonded(info) {
+        return false;
+    }
+    info.lines()
+        .map(str::trim)
+        .any(|line| line == "Paired: yes" || line == "Trusted: yes")
+}
+
+fn set_pairable(on: bool) {
+    let arg = if on { "on" } else { "off" };
+    let _ = Command::new("bluetoothctl")
+        .args(["pairable", arg])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+/// RAII guard that enables adapter `pairable` (`bondable` in the kernel) for
+/// the duration of a pairing handshake and restores `pairable off` on exit.
+struct PairableGuard;
+
+impl PairableGuard {
+    fn acquire() -> Self {
+        set_pairable(true);
+        Self
+    }
+}
+
+impl Drop for PairableGuard {
+    fn drop(&mut self) {
+        set_pairable(false);
+    }
+}
+
+fn remove_device(mac: &str) {
+    let _ = Command::new("bluetoothctl")
+        .args(["remove", mac])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
 /// Pair, trust and connect, in that order.
 ///
 /// A bare `connect` comes first in the naive flow, and it can bring up the ACL
 /// link without a bond: BlueZ then refuses the HID profile
 /// (`hidp_add_connection() Rejected connection from !bonded device`) and a
-/// DualShock 4 sits there "Paired: yes, Bonded: no" with no input device. The
-/// explicit agent matters for the same reason a non-interactive `bluetoothctl`
-/// has none: a "just works" controller can pair without a key being stored.
+/// DualShock 4 sits there unbonded with no input device. BlueZ 5.8x also
+/// defaults to `AlwaysPairable = false`, leaving kernel `bondable` off until
+/// `pairable on` is set; without both `pairable on` and an active
+/// `NoInputNoOutput` agent, pairing finishes without writing a `[LinkKey]`.
 ///
-/// An unbonded entry is not a pairing, and `pair` refuses it ("remove it
-/// first"), so the empty entry is dropped and paired again. The bond is read
-/// back from `info`: success is "Bonded: yes", not the word "successful".
-///
-/// A discovery runs before the request. Without one, BlueZ pairs against the
-/// cached entry and can answer "Pairing successful" while storing no key at
-/// all, because the pad only accepts the request in its own pairing mode and a
-/// cached entry looks reachable enough to try. The scan is also what the
-/// person's "hold PS + Share" produces: a pad that is not advertising is not
-/// in pairing mode, and saying so is better than a pairing that did not
-/// happen.
+/// Any stale unbonded entry (`Paired: yes` or `Trusted: yes` without
+/// `Bonded: yes`) is removed first so `discover` actually scans for a live
+/// pairing-mode advertisement. The bond is read back from `info`: success is
+/// `Bonded: yes`, not the word "successful".
 fn pair_and_connect(mac: &str, name: &str) -> (bool, String) {
     let info = out(&["bluetoothctl", "info", mac]).unwrap_or_default();
-    if info.lines().any(|line| line.trim() == "Bonded: yes") {
+    if is_bonded(&info) {
         trust(mac);
         return if connect(mac) {
             (true, format!("Connected to {name}"))
@@ -78,13 +126,8 @@ fn pair_and_connect(mac: &str, name: &str) -> (bool, String) {
         };
     }
 
-    if info.contains("Paired: yes") {
-        let _ = Command::new("bluetoothctl")
-            .args(["remove", mac])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+    if needs_stale_cleanup(&info) {
+        remove_device(mac);
     }
 
     if !discover(mac) {
@@ -94,6 +137,8 @@ fn pair_and_connect(mac: &str, name: &str) -> (bool, String) {
         );
     }
 
+    let _pairable = PairableGuard::acquire();
+
     let pair = Command::new("bluetoothctl")
         .args(["--agent", "NoInputNoOutput", "pair", mac])
         .stdin(Stdio::null())
@@ -102,7 +147,13 @@ fn pair_and_connect(mac: &str, name: &str) -> (bool, String) {
         .output();
     let text = pair
         .as_ref()
-        .map(|output| String::from_utf8_lossy(&output.stdout))
+        .map(|output| {
+            format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            )
+        })
         .unwrap_or_default();
     if !text.contains("Pairing successful") {
         return (
@@ -112,11 +163,16 @@ fn pair_and_connect(mac: &str, name: &str) -> (bool, String) {
     }
 
     trust(mac);
-    let _ = connect(mac);
+    let _ = connect_with_agent(mac);
     let info = out(&["bluetoothctl", "info", mac]).unwrap_or_default();
-    if info.lines().any(|line| line.trim() == "Bonded: yes") {
+    if is_bonded(&info) {
+        if !info.lines().any(|line| line.trim() == "Connected: yes") {
+            std::thread::sleep(Duration::from_millis(300));
+            let _ = connect_with_agent(mac);
+        }
         (true, format!("Paired and connected to {name}"))
     } else {
+        remove_device(mac);
         (
             false,
             format!("{name} paired but not bonded: put it in pairing mode and try again"),
@@ -165,6 +221,17 @@ fn trust(mac: &str) {
 fn connect(mac: &str) -> bool {
     Command::new("bluetoothctl")
         .args(["connect", mac])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).contains("Connection successful"))
+        .unwrap_or(false)
+}
+
+fn connect_with_agent(mac: &str) -> bool {
+    Command::new("bluetoothctl")
+        .args(["--agent", "NoInputNoOutput", "connect", mac])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -837,6 +904,14 @@ pub fn status() -> String {
     format_status(true, &names)
 }
 
+fn pango_json_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('\\', "\\\\")
+        .replace('"', "'")
+}
+
 fn format_status(powered: bool, connected_names: &[String]) -> String {
     // The state is the picture, not a colour. Both glyphs are Material Design
     // Icons (`fonts-materialdesignicons-legacy`, already in
@@ -848,23 +923,24 @@ fn format_status(powered: bool, connected_names: &[String]) -> String {
     const OFF: &str = "\u{f00b2}";
     if !powered {
         return format!(
-            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"off\",\"tooltip\":\"Bluetooth · Off\\nClick: devices · Right-click: bluetoothctl\"}}",
+            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"off\",\"tooltip\":\"<span alpha='50%'>╭─</span> <b>BT // OFF</b>\\n<span alpha='45%'>│</span> ○ radio disabled\\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] devices · [RMB] bluetoothctl</span>\"}}",
             OFF
         );
     }
     if connected_names.is_empty() {
         format!(
-            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"on\",\"tooltip\":\"Bluetooth · On (none connected)\\nClick: devices · Right-click: bluetoothctl\"}}",
+            "{{\"text\":\"<span font_desc='JetBrains Mono 13'>{}</span>\",\"class\":\"on\",\"tooltip\":\"<span alpha='50%'>╭─</span> <b>BT // READY</b>\\n<span alpha='45%'>│</span> ○ powered · no devices connected\\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] devices · [RMB] bluetoothctl</span>\"}}",
             ON
         )
     } else {
-        let escaped: Vec<String> = connected_names
+        let lines: Vec<String> = connected_names
             .iter()
-            .map(|name| name.replace('\\', "\\\\").replace('"', "'"))
+            .map(|name| format!("<span alpha='45%'>│</span> ● {}", pango_json_escape(name)))
             .collect();
         let tooltip = format!(
-            "Bluetooth · Connected\\n{}\\nClick: devices · Right-click: bluetoothctl",
-            escaped.join("\\n")
+            "<span alpha='50%'>╭─</span> <b>BT // {} CONNECTED</b>\\n{}\\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] devices · [RMB] bluetoothctl</span>",
+            connected_names.len(),
+            lines.join("\\n")
         );
         // No count on the bar: what is connected lives in the tooltip.
         format!(
@@ -908,14 +984,35 @@ mod tests {
     }
 
     #[test]
+    fn bond_and_stale_cleanup_detection() {
+        let bonded = "\tPaired: yes\n\tBonded: yes\n\tTrusted: yes\n";
+        assert!(is_bonded(bonded));
+        assert!(!needs_stale_cleanup(bonded));
+
+        let stale_trusted = "\tPaired: no\n\tBonded: no\n\tTrusted: yes\n";
+        assert!(!is_bonded(stale_trusted));
+        assert!(needs_stale_cleanup(stale_trusted));
+
+        let stale_paired = "\tPaired: yes\n\tBonded: no\n\tTrusted: no\n";
+        assert!(!is_bonded(stale_paired));
+        assert!(needs_stale_cleanup(stale_paired));
+
+        let fresh_scan = "\tPaired: no\n\tBonded: no\n\tTrusted: no\n";
+        assert!(!is_bonded(fresh_scan));
+        assert!(!needs_stale_cleanup(fresh_scan));
+    }
+
+    #[test]
     fn status_json_for_waybar() {
         let off = format_status(false, &[]);
         assert!(off.contains("\"class\":\"off\""));
         assert!(off.contains("\u{f00b2}"));
-        let on = format_status(true, &["Buds".to_string()]);
+        assert!(off.contains("BT // OFF"));
+        let on = format_status(true, &["Buds & Co".to_string()]);
         assert!(on.contains("\"class\":\"on\""));
         assert!(on.contains("\u{f00af}"));
         assert!(!on.contains("</span> 1\""));
-        assert!(on.contains("Bluetooth · Connected\\nBuds"));
+        assert!(on.contains("BT // 1 CONNECTED"));
+        assert!(on.contains("● Buds &amp; Co"));
     }
 }

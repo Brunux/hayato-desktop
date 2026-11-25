@@ -217,13 +217,13 @@ fn bar_json(mode: Mode) -> String {
         Mode::View => (
             "\u{f06e}", // Font Awesome eye
             format!(
-                "sharing this screen read-only on localhost:{PORT}\\nclick for the menu, right click to stop"
+                "<span alpha='50%'>╭─</span> <b>VNC // READ-ONLY</b>\\n<span alpha='45%'>│</span> <span alpha='60%'>MODE</span>  view only (input locked)\\n<span alpha='45%'>│</span> <span alpha='60%'>BIND</span>  127.0.0.1:{PORT} (loopback)\\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] menu · [RMB] stop</span>"
             ),
         ),
         Mode::Control => (
             "\u{f11c}", // Font Awesome keyboard
             format!(
-                "remote control is on: a viewer can type and click on localhost:{PORT}\\nclick for the menu, right click to stop"
+                "<span alpha='50%'>╭─</span> <b>VNC // CONTROL ENABLED</b>\\n<span alpha='45%'>│</span> <span alpha='60%'>MODE</span>  remote control (input active)\\n<span alpha='45%'>│</span> <span alpha='60%'>BIND</span>  127.0.0.1:{PORT} (loopback)\\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] menu · [RMB] stop</span>"
             ),
         ),
     };
@@ -234,7 +234,7 @@ fn bar_json(mode: Mode) -> String {
 }
 
 fn empty_bar_json() -> String {
-    "{\"text\":\"\",\"class\":\"empty\",\"tooltip\":\"share this screen\"}".to_string()
+    "{\"text\":\"\",\"class\":\"empty\",\"tooltip\":\"<span alpha='50%'>╭─</span> <b>VNC // IDLE</b>\\n<span alpha='45%'>│</span> ○ screen share off\"}".to_string()
 }
 
 /// Start the wayvnc server in `mode`.
@@ -375,7 +375,7 @@ impl VncScreen {
             }
             None => (
                 vec![
-                    Row::new("Share this screen (read-only)")
+                    Row::new("Remote Desktop (read-only)")
                         .glyph(Glyph::Eye)
                         .detail(format!("localhost:{PORT} · pixels out, no input")),
                     Row::new("Allow remote control")
@@ -607,7 +607,7 @@ pub fn menu(
 ) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
         return Err(crate::Failure::new(
-            "Share this screen",
+            "Remote Desktop (VNC)",
             format!("{said} (wayvnc, iproute2)"),
         ));
     }
@@ -779,10 +779,12 @@ mod tests {
     fn the_bar_icon_changes_with_the_mode() {
         let view = bar_json(Mode::View);
         assert!(view.contains("\"class\":\"on\""));
-        assert!(view.contains("read-only"));
+        assert!(view.contains("READ-ONLY"));
+        assert!(view.contains("127.0.0.1:5900"));
         let control = bar_json(Mode::Control);
         assert!(control.contains("\"class\":\"control\""));
-        assert!(control.contains("remote control"));
+        assert!(control.contains("CONTROL ENABLED"));
+        assert!(control.contains("127.0.0.1:5900"));
         assert!(control.contains("\u{f11c}"));
         assert!(empty_bar_json().contains("\"class\":\"empty\""));
     }

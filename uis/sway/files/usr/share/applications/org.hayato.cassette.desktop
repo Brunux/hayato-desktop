@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Cassette
+GenericName=Music Player
+Comment=Local music library and Spotify player with live FFT visualizers
+Exec=hayato-cassette --toggle
+Icon=audio-x-generic
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=cassette;music;spotify;player;audio;flac;mp3;

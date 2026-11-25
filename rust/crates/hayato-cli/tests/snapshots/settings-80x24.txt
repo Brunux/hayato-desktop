@@ -10,7 +10,7 @@ Hayato · Settings          Network · Wi-Fi, Bluetooth, DNS, SSH, screen sharin
 │     Bluetooth radio  on                                                     │
 │     Bluetooth devices  1 device connected                                   │
 │     DNS  the resolver this connection uses                                  │
-│     Share this screen  off                                                  │
+│     Remote Desktop (VNC)  off                                               │
 │     Remote login (SSH)  remote login status                                 │
 │                                                                              │
 │                                                                              │

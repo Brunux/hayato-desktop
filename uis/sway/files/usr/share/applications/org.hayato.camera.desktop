@@ -6,5 +6,6 @@ Comment=Look through the webcam, and keep a photo or a clip from it
 Exec=/home/brunux/.config/bin/hayato-camera
 Icon=camera-web
 Terminal=false
+NoDisplay=true
 Categories=AudioVideo;Video;
 Keywords=camera;webcam;photo;picture;record;clip;video;mirror;

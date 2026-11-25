@@ -1,0 +1,28 @@
+[package]
+name = "hayato-cassette"
+version = "0.0.0"
+edition = "2024"
+description = "Hayato Cassette: terminal-native local & Spotify cyberdeck music player"
+
+[[bin]]
+name = "hayato-cassette"
+path = "src/main.rs"
+
+[features]
+default = ["spotify"]
+spotify = ["hayato-music-core/spotify"]
+
+[dependencies]
+hayato-music-core = { path = "../hayato-music-core" }
+hayato-theme = { path = "../hayato-theme" }
+hayato-ui = { path = "../hayato-ui", features = ["pictures"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
+libc = "0.2"
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
+ratatui-image = { version = "11.1.0", default-features = false, features = ["crossterm"] }
+serde_json = "1.0"
+tachyonfx = { version = "0.25.2", default-features = false, features = ["std"] }
+tui-big-text = "0.8"
+
+[dev-dependencies]
+tempfile = "3.10"

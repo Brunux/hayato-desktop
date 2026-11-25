@@ -20,6 +20,9 @@ symlinks to `/usr/bin/hayato`.
 | **Alt+Ctrl+D** | `hayato menu dev` (`hayato-dev`) | **developer**: export your profile (keys, configs, package list) into an encrypted archive on a disk, restore one, or save a diagnostics bundle |
 | **Download** (root menu, launcher) | `hayato menu download` (`hayato-download`) | a link - or the one in the clipboard - kept in `~/Downloads`, as a video or as audio |
 | **Alt+Ctrl+C** | `hayato menu capture` (`hayato-capture`) | **capture**: a screenshot (screen, area or window), annotate it, read the text or a QR code out of a region, and start or stop a recording |
+| **Alt+Ctrl+R** | `hayato menu studio` (`hayato-studio`) | **Studio**: unified Screen Record, Webcam Video, and Photo Snap deck (`hayato-camera` opens Photo Snap). While recording, a minimal pulsing REC icon appears on Waybar — left-click opens the Live HUD for hot PipeWire audio mixing (Off / Mic / System / Both) and smooth Sway IPC webcam PiP corner gliding; right-click stops |
+| **Alt+M** | `hayato-cassette --toggle` (`hayato-music`) | **Cassette**: terminal-native local (FLAC/MP3/OGG/Opus) & Spotify cyberdeck music player in a Sway scratchpad with Sixel album art, 32-band FFT spectrum, synced `.lrc` lyrics, MPRIS2, and Waybar `custom/cassette` pill (`09-music.md`) |
+| **Share** (root menu / `Ctrl+S` in apps) | `hayato share` (`hayato-share`) | **Share Sheet**: send files, folders (auto-ZIP), Lens captures, clipboard, notes, or stdin to phones via themed LAN QR web card (with 2-way upload & clipboard push), zero-daemon LocalSend v2 discovery, instant offline QR, or local targets |
 | **Alt+Ctrl+O** | `hayato menu settings` (`hayato-settings`) | **Settings**: seven sections - Network, Display & Sound, Appearance, Input, Power & Idle, System, Accessibility - each holding the switches and panels for that subject |
 | **Alt+Ctrl+P** or **Alt+Escape** | `hayato menu power` (`hayato-power`) | **power**: lock, suspend, hibernate, log out, reboot, shut down - the last three ask once more |
 | **Alt+Ctrl+N** | `hayato menu notify` (`hayato-notify-history`) | the notification history, with do-not-disturb and "copy this notification" |
@@ -27,7 +30,11 @@ symlinks to `/usr/bin/hayato`.
 | **Alt+Ctrl+V** | `hayato menu clip` (`hayato-clip`) | **clipboard history**: what was copied, Enter puts it back, Alt+1 deletes that entry |
 | **Alt+Ctrl+E** | `hayato menu emoji` (`hayato-emoji`) | **emoji**: type a name, Enter inserts the glyph at the cursor, Alt+1 only copies it |
 | **Alt+Ctrl+T** | `hayato menu translate` (`translate`) | **translate** the selected text (or the clipboard) into the language Settings sets, English until it is set; the answer is copied, and a long one opens in a read window |
-| **Alt+Shift+C** | `hayato menu theme` (`hayato-theme-picker`) | interactive dual-pane theme picker with live preview and wallpaper switching |
+| **Alt+Ctrl+Shift+T** | `hayato menu theme` (`hayato-theme-picker`) | interactive dual-pane theme picker with live preview and wallpaper switching |
+| **Alt+Ctrl+R** | `hayato-studio` (`hayato menu studio`) | screen recording (PipeWire mixer + live webcam PiP), webcam video, and camera photos |
+| **Alt+I** | `hayato menu lens` | local "Circle to Search": drag a region for OCR text, QR/barcode scan, URL, or translate |
+| **Alt+Ctrl+U** | `hayato share` | send/receive files, links, clipboard text, and Wi-Fi QR codes with a phone or nearby device |
+| **Alt+M** | `hayato-cassette` | music player for local audio and Spotify Connect (This Device audio + 5 live visualizers) |
 | **Learn** (root menu) | `hayato menu learn` (`hayato-learn`) | these pages, rendered with glow, plus a search across all of them |
 
 The root menu is also a launcher entry: **Hayato Menu** (`Alt+D`, type
@@ -93,8 +100,12 @@ The rest of the menus live in the root menu and the launcher: **Places**
 (home, documents, downloads, pictures, every mounted disk, and a **Mount** row
 for each unmounted one - an SD card in the internal slot, or a stick when
 Settings' *Auto-mount USB drives* is off - where Enter mounts it and opens it in
-Files and **Alt+1** unmounts a disk; a USB stick is already in that list by the
-time you open it, because plugging one in mounts it; its last two rows are the disk
+Files and **Ctrl+E** (or **Alt+1** / **Delete**) safely unmounts and powers off a disk; a USB stick is already in that list by the
+time you open it, because plugging one in mounts it and raises an **eject icon** on Waybar
+(`custom/drives`, showing a drive count when multiple drives are mounted — click to choose a drive to
+safely eject, right-click to open Places). You can also open the **Eject drive** studio directly from
+the main menu (`Alt+Space` → *Eject drive*) or `hayato menu places --eject`; if a process holds the
+mount busy, it names the blocking process via `fuser`. Its last two rows are the disk
 actions, **Auxiliary swap** (a card as more memory, activated on every boot) and
 **Format a disk**, and both list only disks with nothing mounted on them, no
 ChromeOS kernel partition, and that are neither built into the machine nor the
@@ -114,7 +125,7 @@ the kernel's generator, straight into the clipboard: hex, so there is no shift k
 `/` or `=` to re-quote when it is pasted into a file or a URL, and the value never
 appears in a notification - mako keeps a history, and a password in it is a
 password on disk), **SSH** (hosts from `~/.ssh/config`),
-**Share this screen** (Settings and the root menu: `wayvnc` serves the session
+**Remote Desktop (VNC)** (Settings → Network and Command Palette: `wayvnc` serves the session
 read-only on the loopback address, so another machine can look at it through the
 ssh login — the menu carries the tunnel command, and `05-system.md` has the how
 and the why),
@@ -336,9 +347,9 @@ the image, which is why it has a stylesheet and not a theme of its own, and it
 needs `gvfs` for the trash; SMB and phone mounts are not installed, so its
 Network places are off. `04-software.md` § *Files in a window* has the rest.
 
-## Capture: the screen as a picture, as text, or as a video
+## Screenshot, Studio, Lens & Share
 
-**Alt+Ctrl+C** (`hayato-capture`, and "Capture" in the root menu and the launcher)
+**Alt+Ctrl+C** (`hayato-capture`, **Screenshot** in `Alt+Space`) snaps still images (whole screen, area, window) and annotates with `swappy`. For screen recording or webcam video/photos use **Studio** (**Alt+Ctrl+R**), for OCR / QR scanning use **Lens** (**Alt+I**), and for sending/receiving files, clipboard text, or Wi-Fi QR codes use **Share** (**Alt+Ctrl+U**).
 is the list behind the screenshot keys. Everything on it is one command that
 ends before the list closes again:
 
@@ -365,7 +376,7 @@ no hardware encoder (`veryfast`, crf 28, 30 fps - the point where a full-screen
 recording still leaves the compositor its frame budget). **Recording audio**
 uses the default PipeWire source for **microphone** or the default sink's
 `.monitor` source for **system audio (line out)**; `wf-recorder` writes it into
-the same `.mp4`. **Webcam overlay** starts `mpv` on `/dev/video0` as a floating
+the same `.mp4`. **Webcam overlay** auto-detects the `uvcvideo` V4L2 capture node under `/sys/class/video4linux` (skipping `mtk-vcodec-*` hardware codec nodes and UVC metadata nodes) and starts `mpv` as a floating
 bottom-right window, so the camera is part of the recorded screen; for an area
 recording the overlay is placed inside the selected area. The options are saved
 in `~/.config/hayato/record.conf` and shown in the record row. The file is

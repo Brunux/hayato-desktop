@@ -217,7 +217,7 @@ impl AboutScreen {
 
         // Disk
         let disk = std::process::Command::new("df")
-            .args(["-h", "/"])
+            .args(["-Ph", "/"])
             .output()
             .ok()
             .and_then(|o| String::from_utf8(o.stdout).ok())
@@ -233,7 +233,7 @@ impl AboutScreen {
             })
             .unwrap_or_else(|| "unknown".to_string());
 
-        // Battery (SBS gauge)
+        // Battery (system gauge, skipping HID/gamepad peripheral batteries)
         let mut battery = "none".to_string();
         if let Ok(read_dir) = fs::read_dir("/sys/class/power_supply") {
             for entry in read_dir.flatten() {
@@ -241,8 +241,9 @@ impl AboutScreen {
                 if let Ok(capacity) = fs::read_to_string(path.join("capacity")) {
                     if let Ok(type_) = fs::read_to_string(path.join("type")) {
                         if type_.trim() == "Battery" {
-                            let name = path.file_name().unwrap().to_string_lossy();
-                            if !name.starts_with("hid-") {
+                            let name = entry.file_name().to_string_lossy().into_owned();
+                            let scope = fs::read_to_string(path.join("scope")).unwrap_or_default();
+                            if !name.starts_with("hid-") && scope.trim() != "Device" {
                                 let status = fs::read_to_string(path.join("status"))
                                     .unwrap_or_default()
                                     .trim()

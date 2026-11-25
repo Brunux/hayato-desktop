@@ -106,12 +106,16 @@ i=$(( $(date +%s) % 10 + 1 ))
 glyph=$(printf '%s\n' ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏ | sed -n "${i}p")
 
 # A label is ours (Wi-Fi, Bluetooth, Dictation, Packages…), but it goes into
-# JSON and into Pango markup twice, so the two characters that would break the
-# first are escaped once here.  The tooltip carries the click, which is the only
+# JSON and into Pango markup twice, so escape both Pango and JSON special
+# characters once here.  The tooltip carries the click, which is the only
 # place the bar can say what the card is for: waybar has no per-module "title".
-esc=$(printf '%s' "$label" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
-tip="Busy · $esc"
-[ -r "$state/$tag.stop" ] && tip="Busy · $esc\nClick: stop"
+pango_esc=$(printf '%s' "$label" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
+esc=$(printf '%s' "$pango_esc" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+if [ -r "$state/$tag.stop" ]; then
+	tip="<span alpha='50%'>╭─</span> <b>TASK // RUNNING</b>\\n<span alpha='45%'>│</span> <span alpha='60%'>JOB</span>  $glyph $esc\\n<span alpha='45%'>│</span> <span alpha='60%'>CTL</span>  cancellable\\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] stop task</span>"
+else
+	tip="<span alpha='50%'>╭─</span> <b>TASK // RUNNING</b>\\n<span alpha='45%'>│</span> <span alpha='60%'>JOB</span>  $glyph $esc\\n<span alpha='45%'>│</span> <span alpha='60%'>CTL</span>  protected (cannot interrupt)\\n<span alpha='50%'>╰─</span> <span alpha='65%'>running in background</span>"
+fi
 
 printf '{"text":"<span font_desc=%s>%s</span>  %s","class":"busy","tooltip":"%s"}\n' \
 	"'JetBrains Mono 13'" "$glyph" "$esc" "$tip"

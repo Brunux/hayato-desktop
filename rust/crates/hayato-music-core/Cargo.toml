@@ -1,0 +1,37 @@
+[package]
+name = "hayato-music-core"
+version = "0.0.0"
+edition = "2024"
+description = "Audio engine, DSP spectrum/beat analyzer, library indexer, MPRIS2, and Spotify backend for Hayato Cassette"
+
+[features]
+default = ["spotify"]
+spotify = [
+    "dep:librespot-core",
+    "dep:librespot-connect",
+    "dep:librespot-playback",
+    "dep:librespot-discovery",
+    "dep:tokio",
+    "dep:futures-util",
+]
+
+[dependencies]
+cpal = "0.15"
+dirs = "5.0"
+futures-util = { version = "0.3", optional = true }
+libc = "0.2"
+librespot-connect = { version = "0.8", optional = true }
+librespot-core = { version = "0.8", optional = true }
+librespot-discovery = { version = "0.8", optional = true }
+librespot-playback = { version = "0.8", default-features = false, features = ["rodio-backend"], optional = true }
+lofty = "0.22"
+realfft = "3.4"
+rtrb = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+symphonia = { version = "0.5", default-features = false, features = ["mp3", "flac", "ogg", "vorbis", "pcm", "wav", "isomp4", "aac", "alac"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"], optional = true }
+zbus = { version = "5", features = ["blocking-api"] }
+
+[dev-dependencies]
+tempfile = "3.10"

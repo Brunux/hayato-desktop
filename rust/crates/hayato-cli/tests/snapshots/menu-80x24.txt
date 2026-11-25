@@ -1,24 +1,24 @@
-Hayato · Menu                                                       52 commands
+Hayato · Menu                                                       38 commands
 ────────────────────────────────────────────────────────────────────────────────
 ╭ Commands ────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                          │
 │                                                                              │
-│  Open  ─────────────────────────────────────────────────────────────────── █ │
-│ ▍   Terminal  foot                                                   open █ │
-│     Files  browse the filesystem                                     open █ │
-│     Files (window)  favnyr: folders, drag and drop, trash            open █ │
-│     Notes  quick notes, ink notes, sign a PDF                        open █ │
-│     Search inside files  the text in them, with ripgrep              open │ │
-│     Places  home, disks, the configuration                           open │ │
-│     Camera  look through the webcam, take a photo                    open │ │
-│     Games  retro and Hayato games                                    open │ │
-│     Download  a link, into ~/Downloads                               open │ │
-│     Settings  Wi-Fi, Bluetooth, night light, tablet mode, rotation   open │ │
-│     Learn  the manual, with search                                   open │ │
-│     Keybindings  every binding, from the configuration               open │ │
-│     Applications  desktop entries, icons, frecency                   open │ │
-│     Window switcher  focus or close any window                       open │ │
-│     Run command  PATH completion, Shift+Enter in foot                open │ │
-│     Calculator  type it, Enter copies the result                     open │ │
+│  Workspace  ────────────────────────────────────────────────────────────── █ │
+│ ▍   Terminal  foot                                              workspace █ │
+│     Files  browse folders with preview                          workspace █ │
+│     Files (window)  favnyr: folders, drag and drop, trash       workspace █ │
+│     Notes  quick notes, ink notes, sign a PDF                   workspace █ │
+│     Search inside files  full-text ripgrep over home            workspace █ │
+│     Places & Drives  bookmarks, USB/SD mount, eject, format     workspace │ │
+│     Download  video or audio link → ~/Downloads                 workspace │ │
+│     Cassette  music player: local library & Spotify             workspace │ │
+│     Games  retro ROMs & Hayato games                            workspace │ │
+│  Create, Capture & Share  ──────────────────────────────────────────────── │ │
+│     Screenshot  snap screen, area or window, annotate             capture │ │
+│     Studio  screen record, webcam video & photo snap              capture │ │
+│     Lens  read text (OCR), scan QR/link or translate              capture │ │
+│     Share  send/receive files, links, clipboard & Wi-Fi QR        capture │ │
+│  Utilities  ────────────────────────────────────────────────────────────── │ │
+│     Clipboard  paste history & saved images                     utilities │ │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close

@@ -17,11 +17,27 @@ n=${n:-0}
 icon="<span font_desc='JetBrains Mono 13'></span>"
 
 if [ "$n" -eq 0 ]; then
-	printf '{"text":"","class":"empty","tooltip":"System up to date"}\n'
+	printf '{"text":"","class":"empty","tooltip":"<span alpha='\''50%'\''>╭─</span> <b>PKG // SYNCED</b>\\n<span alpha='\''45%'\''>│</span> ○ system up to date"}\n'
 	exit 0
 fi
 
 unit=packages
 [ "$n" -eq 1 ] && unit=package
-printf '{"text":"%s","class":"pending","tooltip":"Updates · %s %s ready\\nClick: open updater"}\n' \
-	"$icon" "$n" "$unit"
+
+filled=$(( (n + 4) / 5 ))
+[ "$filled" -lt 1 ] && filled=1
+[ "$filled" -gt 8 ] && filled=8
+bar_on=
+bar_off=
+k=0
+while [ "$k" -lt 8 ]; do
+	if [ "$k" -lt "$filled" ]; then
+		bar_on="${bar_on}█"
+	else
+		bar_off="${bar_off}░"
+	fi
+	k=$((k + 1))
+done
+
+printf '{"text":"%s","class":"pending","tooltip":"<span alpha='\''50%'\''>╭─</span> <b>PKG // UPDATES</b>\\n<span alpha='\''45%'\''>│</span> <span alpha='\''60%'\''>QUE</span>  %s<span alpha='\''35%'\''>%s</span>  %s %s\\n<span alpha='\''50%'\''>╰─</span> <span alpha='\''65%'\''>[LMB] open updater</span>"}\n' \
+	"$icon" "$bar_on" "$bar_off" "$n" "$unit"
