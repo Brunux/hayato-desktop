@@ -30,7 +30,7 @@ pub struct Surface {
 
 /// The session's surfaces. A new one is one line here and one template file -
 /// and a golden test, because the test renders whatever is in this table.
-pub const SURFACES: [Surface; 14] = [
+pub const SURFACES: [Surface; 15] = [
     Surface {
         name: "foot",
         template: include_str!("../templates/foot.ini.tpl"),
@@ -100,6 +100,11 @@ pub const SURFACES: [Surface; 14] = [
         name: "games",
         template: include_str!("../templates/games.css.tpl"),
         target: ".config/hayato/games.css",
+    },
+    Surface {
+        name: "filer",
+        template: include_str!("../templates/filer.css.tpl"),
+        target: ".config/hayato/filer.css",
     },
 ];
 

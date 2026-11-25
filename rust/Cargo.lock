@@ -1823,6 +1823,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "hayato-filer"
+version = "0.0.0"
+dependencies = [
+ "gtk4",
+ "hayato-theme",
+ "image",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "hayato-games"
 version = "0.0.0"
 dependencies = [

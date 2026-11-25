@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/hayato-cassette",
     "crates/hayato-cli",
+    "crates/hayato-filer",
     "crates/hayato-games",
     "crates/hayato-games-core",
     "crates/hayato-mcp",
