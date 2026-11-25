@@ -199,11 +199,11 @@ pub const ROOT: &[MenuItem] = &[
     item(
         "files-window",
         "Files (window)",
-        "favnyr: folders, drag and drop, trash",
+        "folders, drag and drop, trash, devices",
         Glyph::Window,
         Workspace,
         Action::Run {
-            program: Program::System("favnyr"),
+            program: Program::System("hayato-filer"),
             args: &[Arg::Home],
         },
     ),

@@ -33,7 +33,8 @@ BIN="$DESKTOP_DIR/rust/target/release/hayato"
 NOTIFY_BIN="$DESKTOP_DIR/rust/target/release/hayato-notify"
 GAMES_BIN="$DESKTOP_DIR/rust/target/release/hayato-games"
 CASSETTE_BIN="$DESKTOP_DIR/rust/target/release/hayato-cassette"
-if [ "${SKIP_CARGO_BUILD:-no}" != "yes" ] || [ ! -x "$BIN" ] || [ ! -x "$NOTIFY_BIN" ] || [ ! -x "$GAMES_BIN" ] || [ ! -x "$CASSETTE_BIN" ]; then
+FILER_BIN="$DESKTOP_DIR/rust/target/release/hayato-filer"
+if [ "${SKIP_CARGO_BUILD:-no}" != "yes" ] || [ ! -x "$BIN" ] || [ ! -x "$NOTIFY_BIN" ] || [ ! -x "$GAMES_BIN" ] || [ ! -x "$CASSETTE_BIN" ] || [ ! -x "$FILER_BIN" ]; then
 	cargo build --release --locked --manifest-path "$DESKTOP_DIR/rust/Cargo.toml"
 fi
 
@@ -41,6 +42,7 @@ fi
 [ -x "$NOTIFY_BIN" ] || die "cargo finished but $NOTIFY_BIN is missing"
 [ -x "$GAMES_BIN" ] || die "cargo finished but $GAMES_BIN is missing"
 [ -x "$CASSETTE_BIN" ] || die "cargo finished but $CASSETTE_BIN is missing"
+[ -x "$FILER_BIN" ] || die "cargo finished but $FILER_BIN is missing"
 # A binary that cannot report its version is not the one the image should
 # carry: the check is one process and it catches a broken include_str!.
 VERSION="$(tr -d ' \t\r\n' <"$DESKTOP_DIR/VERSION")"
@@ -53,12 +55,16 @@ GAMES_REPORTED="$("$GAMES_BIN" --version)"
 CASSETTE_REPORTED="$("$CASSETTE_BIN" --version)"
 [ "$CASSETTE_REPORTED" = "$VERSION" ] ||
 	die "hayato-cassette reports '$CASSETTE_REPORTED' but VERSION is '$VERSION'"
+FILER_REPORTED="$("$FILER_BIN" --version)"
+[ "$FILER_REPORTED" = "$VERSION" ] ||
+	die "hayato-filer reports '$FILER_REPORTED' but VERSION is '$VERSION'"
 
 mkdir -p "$HAYATO_STAGE"
 install -m 0755 "$BIN" "$HAYATO_STAGE/hayato"
 install -m 0755 "$NOTIFY_BIN" "$HAYATO_STAGE/hayato-notify"
 install -m 0755 "$GAMES_BIN" "$HAYATO_STAGE/hayato-games"
 install -m 0755 "$CASSETTE_BIN" "$HAYATO_STAGE/hayato-cassette"
+install -m 0755 "$FILER_BIN" "$HAYATO_STAGE/hayato-filer"
 # The library page and the sample game are data, not a binary: they travel
 # beside the executable so install-hayato.sh can copy one directory.
 install -d "$HAYATO_STAGE/share/hayato/games"
@@ -67,6 +73,7 @@ log "hayato $REPORTED -> $HAYATO_STAGE/hayato"
 log "hayato-notify -> $HAYATO_STAGE/hayato-notify"
 log "hayato-games $GAMES_REPORTED -> $HAYATO_STAGE/hayato-games"
 log "hayato-cassette $CASSETTE_REPORTED -> $HAYATO_STAGE/hayato-cassette"
+log "hayato-filer $FILER_REPORTED -> $HAYATO_STAGE/hayato-filer"
 log "games data -> $HAYATO_STAGE/share/hayato/games"
 
 # Package hayato, hayato-notify, hayato-games, the desktop system overlay, and
@@ -84,6 +91,7 @@ install -m 0755 "$BIN" "$PKG/usr/bin/hayato"
 install -m 0755 "$NOTIFY_BIN" "$PKG/usr/bin/hayato-notify"
 install -m 0755 "$GAMES_BIN" "$PKG/usr/bin/hayato-games"
 install -m 0755 "$CASSETTE_BIN" "$PKG/usr/bin/hayato-cassette"
+install -m 0755 "$FILER_BIN" "$PKG/usr/bin/hayato-filer"
 ln -sfn hayato-cassette "$PKG/usr/bin/hayato-music"
 cp -a "$DESKTOP_DIR/rust/crates/hayato-games/data/." "$PKG/usr/share/hayato/games/"
 
@@ -124,14 +132,7 @@ if [ -d "$UI_FILES/home" ]; then
 	fi
 fi
 chmod -R go-w "$PKG"
-if [ -f "$DESKTOP_DIR/tools/favnyr/SHA256SUMS" ] && [ -f "$PKG/usr/bin/favnyr" ]; then
-	( cd "$DESKTOP_DIR" && sha256sum -c "$DESKTOP_DIR/tools/favnyr/SHA256SUMS" >/dev/null ) ||
-		die "favnyr checksum mismatch against tools/favnyr/SHA256SUMS"
-fi
-
-EXTRA_BINS=()
-[ -f "$PKG/usr/bin/favnyr" ] && EXTRA_BINS+=("$PKG/usr/bin/favnyr")
-DEPS="$(deb_depends "$BIN" "$NOTIFY_BIN" "$GAMES_BIN" "${EXTRA_BINS[@]}")"
+DEPS="$(deb_depends "$BIN" "$NOTIFY_BIN" "$GAMES_BIN" "$CASSETTE_BIN" "$FILER_BIN")"
 INSTALLED_SIZE="$(du -sk --exclude=DEBIAN "$PKG" | cut -f1)"
 mkdir -p "$PKG/DEBIAN"
 cat >"$PKG/DEBIAN/control" <<EOF

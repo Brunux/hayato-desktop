@@ -508,7 +508,7 @@ mod tests {
         );
         assert_eq!(
             argv(get("files-window"), &v, "/usr/bin/hayato").unwrap(),
-            vec!["favnyr", "/home/b"]
+            vec!["hayato-filer", "/home/b"]
         );
         assert_eq!(
             argv(get("agent"), &v, "/usr/bin/hayato").unwrap(),
@@ -534,7 +534,7 @@ mod tests {
         let runs_of = |key: &str| runs(rows.iter().find(|e| e.key == key).unwrap().action);
         assert_eq!(runs_of("dev"), "hayato menu dev");
         assert_eq!(runs_of("agent"), "hayato-agents --default");
-        assert_eq!(runs_of("files-window"), "favnyr ~");
+        assert_eq!(runs_of("files-window"), "hayato-filer ~");
         assert_eq!(runs_of("ssh"), "hayato menu ssh");
         assert_eq!(runs_of("theme-next"), "hayato theme next");
         assert_eq!(runs_of("theme-nord"), "hayato theme set nord");

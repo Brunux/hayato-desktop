@@ -6,7 +6,7 @@ Hayato · Menu                                                       38 commands
 │  Workspace  ────────────────────────────────────────────────────────────── █ │
 │ ▍   Terminal  foot                                              workspace █ │
 │     Files  browse folders with preview                          workspace █ │
-│     Files (window)  favnyr: folders, drag and drop, trash       workspace █ │
+│     Files (window)  folders, drag and drop, trash, devices      workspace █ │
 │     Notes  quick notes, ink notes, sign a PDF                   workspace █ │
 │     Search inside files  full-text ripgrep over home            workspace █ │
 │     Places & Drives  bookmarks, USB/SD mount, eject, format     workspace │ │
