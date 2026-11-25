@@ -506,12 +506,16 @@ impl FilerWindow {
             });
         }
 
-        // Right-click context menu on canvas
+        // Right-click context menu on canvas (Capture phase so FlowBox/ListBox
+        // internal controllers never swallow button 3)
         {
             let w = Rc::clone(self);
             let click = GestureClick::new();
             click.set_button(3);
-            click.connect_pressed(move |_, _, x, y| {
+            click.set_propagation_phase(gtk4::PropagationPhase::Capture);
+            click.connect_pressed(move |gesture, _, x, y| {
+                gesture.set_state(gtk4::EventSequenceState::Claimed);
+                w.select_item_at_canvas_pos(x, y);
                 w.show_canvas_context_menu(x, y);
             });
             self.canvas_scroll.add_controller(click);
@@ -1960,6 +1964,7 @@ impl FilerWindow {
     fn show_sort_popover(self: &Rc<Self>, anchor: &Button) {
         let pop = Popover::new();
         pop.set_parent(anchor);
+        unparent_on_close(&pop);
         let col = GtkBox::new(Orientation::Vertical, 2);
 
         let (cur_field, hidden) = {
@@ -2021,11 +2026,48 @@ impl FilerWindow {
         pop.popup();
     }
 
+    fn select_item_at_canvas_pos(&self, x: f64, y: f64) {
+        let mode = self.state.borrow().view_mode;
+        match mode {
+            ViewMode::Grid => {
+                if let Some((fx, fy)) =
+                    self.canvas_scroll
+                        .translate_coordinates(&self.flow_box, x, y)
+                {
+                    if let Some(child) = self.flow_box.child_at_pos(fx as i32, fy as i32) {
+                        if !child.is_selected() {
+                            self.flow_box.unselect_all();
+                            self.flow_box.select_child(&child);
+                        }
+                    } else {
+                        self.flow_box.unselect_all();
+                    }
+                }
+            }
+            ViewMode::List => {
+                if let Some((_, ly)) =
+                    self.canvas_scroll
+                        .translate_coordinates(&self.list_box, x, y)
+                {
+                    if let Some(row) = self.list_box.row_at_y(ly as i32) {
+                        if !row.is_selected() {
+                            self.list_box.unselect_all();
+                            self.list_box.select_row(Some(&row));
+                        }
+                    } else {
+                        self.list_box.unselect_all();
+                    }
+                }
+            }
+        }
+    }
+
     fn show_canvas_context_menu(self: &Rc<Self>, x: f64, y: f64) {
         let pop = Popover::new();
         pop.set_parent(&self.canvas_scroll);
         pop.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
         pop.set_has_arrow(false);
+        unparent_on_close(&pop);
 
         let col = GtkBox::new(Orientation::Vertical, 2);
         let sel = self.selected_entries();
@@ -2307,6 +2349,7 @@ impl FilerWindow {
     fn prompt_new_folder(self: &Rc<Self>) {
         let pop = Popover::new();
         pop.set_parent(&self.crumbs_box);
+        unparent_on_close(&pop);
         let row = GtkBox::new(Orientation::Horizontal, 6);
         let entry = Entry::new();
         entry.set_placeholder_text(Some("New folder name…"));
@@ -2345,6 +2388,7 @@ impl FilerWindow {
     fn prompt_rename(self: &Rc<Self>, item: &FileEntry) {
         let pop = Popover::new();
         pop.set_parent(&self.crumbs_box);
+        unparent_on_close(&pop);
         let row = GtkBox::new(Orientation::Horizontal, 6);
         let entry = Entry::new();
         entry.set_text(&item.name);
@@ -2396,6 +2440,7 @@ impl FilerWindow {
     fn confirm_permanent_delete(self: &Rc<Self>, paths: Vec<PathBuf>) {
         let pop = Popover::new();
         pop.set_parent(&self.crumbs_box);
+        unparent_on_close(&pop);
         let col = GtkBox::new(Orientation::Vertical, 8);
         let lbl = Label::new(Some(&format!(
             "Permanently delete {} item(s)? This cannot be undone.",
@@ -2461,6 +2506,17 @@ impl FilerWindow {
             }
         });
     }
+}
+
+fn unparent_on_close(pop: &Popover) {
+    pop.connect_closed(|p| {
+        let p = p.clone();
+        glib::idle_add_local_once(move || {
+            if p.parent().is_some() {
+                p.unparent();
+            }
+        });
+    });
 }
 
 fn make_menu_item(
