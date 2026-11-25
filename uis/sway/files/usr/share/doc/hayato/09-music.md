@@ -16,10 +16,10 @@ Opus, WAV, M4A/AAC) side by side.
 
 - Press **`Alt+M`** (or choose **Cassette** in `Alt+Space`) to summon Hayato Cassette.
 - Press **`Alt+M`** or **`Esc`** on the library view to hide it to Sway's scratchpad while music keeps playing.
-- Press **`Q`** to stop playback and quit cleanly (zero background processes).
+- Press **`q`** to stop playback and quit cleanly (zero background processes).
 - Press **`w`** to toggle between the full Cyberdeck (`1120×680`) and the compact **Mini HUD** (`560×300`). Your chosen size persists across Waybar clicks, `Alt+M` toggles, and restarts.
 
-## Controls (Zero-Conflict Keymap)
+## Controls (Simple Lowercase Keymap)
 
 | Key | Action |
 |---|---|
@@ -27,19 +27,18 @@ Opus, WAV, M4A/AAC) side by side.
 | `n` / `p` | Next / Previous track |
 | `[` / `]` | Seek ±5s (`{` / `}` for ±30s) — works from any pane |
 | `+` / `-` / `m` | Volume ±5% / Mute |
-| `z` / `r` | Shuffle / Repeat (`Off → All → One`) |
-| `R` / `F5` | Refresh Spotify playlists/devices & rescan local `~/Music` |
-| `/` or `Ctrl+K` | Focus always-visible Top Search Box (auto-switches to Search) |
-| `D` | Open Spotify Connect Device Picker |
-| `1` / `2` / `3` / `4` | Library View / Focus Library Sidebar / Queue Drawer / Settings |
-| `b` / `q` / `L` | Toggle Left Sidebar / Queue Drawer / Synced `.lrc` Lyrics |
-| `v` / `V` | Cycle Visualizer (`Spectrum → Mirror EQ → Oscilloscope → VU Deck → Cyber Plasma → Off`) / Full-Center Visualizer |
-| `Tab` / `h` / `l` | Switch focus between visible panes |
-| `Enter` / `P` | Open playlist (or play track) / Play entire playlist immediately |
-| `a` / `A` | Enqueue track / Play Next |
-| `J` / `K`, `d`, `Ctrl+X`, `S` | Queue: reorder, remove, clear (confirms first), save `.m3u8` |
-| `Ctrl+S` | Share current track or Spotify link via **Hayato Share** |
-| `:` / `Ctrl+P` / `?` | Command Palette / Keymap Help |
+| `s` / `r` | Shuffle / Repeat (`Off → All → One`) |
+| `F5` / `Ctrl+r` | Refresh playlists/devices & rescan local `~/Music` |
+| `/` or `Ctrl+k` | Focus Search card |
+| `d` | Open Audio Output / Device Picker |
+| `l` | Toggle Synced Lyrics (local `.lrc` + LRCLIB online cache) |
+| `o` or `,` | Toggle Options / Settings |
+| `v` / `f` | Cycle Visualizer mode / Fullscreen Visualizer |
+| `b` / `u` | Toggle Library Sidebar / Up Next Queue |
+| `Tab` / `←` / `→` | Switch focus between visible panes |
+| `Enter` / `a` | Play track (or open playlist) / Add track to queue |
+| `Ctrl+s` | Share current track or Spotify link via **Hayato Share** |
+| `:` / `?` / `q` | Command Palette / Keymap Help / Quit |
 
 ## Waybar & Media Keys
 

@@ -146,6 +146,21 @@ enum CassettePhase {
     EditClientId(Input),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StatusTone {
+    Info,
+    Ok,
+    Warn,
+    Danger,
+}
+
+#[derive(Clone, Debug)]
+struct StatusNotice {
+    text: String,
+    tone: StatusTone,
+    expires_at: Option<Instant>,
+}
+
 #[derive(Clone)]
 enum SearchRowItem {
     Track(Track),
@@ -259,7 +274,7 @@ pub struct CassetteScreen {
     queue_title_buf: String,
     collection_title_buf: String,
     search_title_buf: String,
-    status_line: String,
+    notice: Option<StatusNotice>,
     header: Header,
     keybar: Vec<KeyHint>,
 
@@ -358,12 +373,12 @@ impl CassetteScreen {
             last_dur_sec: 0,
             time_buf: "00:00 / 00:00".to_string(),
             codec_buf: "IDLE".to_string(),
-            device_pill_buf: "○ Sign in".to_string(),
-            vol_buf: "VOL 80%".to_string(),
+            device_pill_buf: "Local Audio".to_string(),
+            vol_buf: format!("{} 80%", Glyph::Volume.cell()),
             queue_title_buf: "UP NEXT // 0 TRACKS".to_string(),
             collection_title_buf: "LIBRARY".to_string(),
             search_title_buf: "SEARCH".to_string(),
-            status_line: "Ready · / search · D device · v viz · ? help".to_string(),
+            notice: None,
             header: Header::new("Hayato").subtitle("Cassette"),
             keybar: Vec::new(),
             design_override: None,
@@ -374,7 +389,7 @@ impl CassetteScreen {
             headless_test: false,
         };
 
-        screen.vol_buf = format!("VOL {}%", screen.config.volume_pct);
+        screen.vol_buf = format!("{} {}%", Glyph::Volume.cell(), screen.config.volume_pct);
         screen.rebuild_sidebar_and_home();
         screen.rebuild_settings_rows();
         screen.sync_chrome();
@@ -504,12 +519,12 @@ impl CassetteScreen {
             last_dur_sec: 245,
             time_buf: "02:14 / 04:05".to_string(),
             codec_buf: "FLAC · 48kHz · 24-bit".to_string(),
-            device_pill_buf: "● This Device ▾".to_string(),
-            vol_buf: "VOL 80%".to_string(),
+            device_pill_buf: "This Device".to_string(),
+            vol_buf: format!("{} 80%", Glyph::Volume.cell()),
             queue_title_buf: "UP NEXT // 2 TRACKS (07:47)".to_string(),
             collection_title_buf: "LIKED SONGS · 842 TRACKS".to_string(),
             search_title_buf: "SEARCH".to_string(),
-            status_line: "Ready".to_string(),
+            notice: None,
             header: Header::new("Hayato").subtitle("Cassette"),
             keybar: Vec::new(),
             design_override: None,
@@ -525,6 +540,14 @@ impl CassetteScreen {
         screen.rebuild_settings_rows();
         screen.sync_chrome();
         screen
+    }
+
+    fn set_notice(&mut self, tone: StatusTone, text: impl Into<String>, ttl_secs: Option<u64>) {
+        self.notice = Some(StatusNotice {
+            text: text.into(),
+            tone,
+            expires_at: ttl_secs.map(|s| Instant::now() + Duration::from_secs(s)),
+        });
     }
 
     fn set_mini_mode(&mut self, mini: bool) {
@@ -659,13 +682,14 @@ impl CassetteScreen {
                 track,
                 device_id: self.active_device_id(),
             });
-            self.status_line = format!("Queueing: {title}…");
+            self.set_notice(StatusTone::Info, format!("Queueing: {title}…"), Some(4));
         } else {
-            self.status_line = if play_next {
+            let msg = if play_next {
                 format!("Play next: {title}")
             } else {
                 format!("Queued: {title}")
             };
+            self.set_notice(StatusTone::Ok, msg, Some(3));
         }
     }
 
@@ -704,13 +728,25 @@ impl CassetteScreen {
 
         let dev_id = self.active_device_id();
         if let Some((is_local, dev_name)) = self.describe_target_device() {
-            self.status_line = if is_local {
-                format!("Playing {} on This Device", track.title)
+            if is_local {
+                self.set_notice(
+                    StatusTone::Ok,
+                    format!("Playing {} on This Device", track.title),
+                    Some(3),
+                );
             } else if !self.local_connect_ready {
-                format!("Playing on {dev_name} · press D then E to enable This Device audio")
+                self.set_notice(
+                    StatusTone::Warn,
+                    format!("Playing on {dev_name} · press D then E for This Device audio"),
+                    Some(5),
+                );
             } else {
-                format!("Playing {} on {dev_name}", track.title)
-            };
+                self.set_notice(
+                    StatusTone::Ok,
+                    format!("Playing {} on {dev_name}", track.title),
+                    Some(3),
+                );
+            }
         }
         if let (Some(ctx), SourceKind::Spotify { uri, .. }) = (context_uri, &track.source) {
             self.hub.send(ProviderCmd::PlayContext {
@@ -746,15 +782,31 @@ impl CassetteScreen {
                         offset_uri: None,
                         device_id: self.active_device_id(),
                     });
-                    self.status_line = match self.describe_target_device() {
-                        Some((true, _)) => format!("Playing {} on This Device", col.name),
-                        Some((false, dev_name)) if !self.local_connect_ready => format!(
-                            "Playing {} on {dev_name} · press D then E for This Device audio",
-                            col.name
+                    match self.describe_target_device() {
+                        Some((true, _)) => self.set_notice(
+                            StatusTone::Ok,
+                            format!("Playing {} on This Device", col.name),
+                            Some(3),
                         ),
-                        Some((false, dev_name)) => format!("Playing {} on {dev_name}", col.name),
-                        None => format!("Playing {} on Spotify Connect", col.name),
-                    };
+                        Some((false, dev_name)) if !self.local_connect_ready => self.set_notice(
+                            StatusTone::Warn,
+                            format!(
+                                "Playing {} on {dev_name} · press D then E for This Device audio",
+                                col.name
+                            ),
+                            Some(5),
+                        ),
+                        Some((false, dev_name)) => self.set_notice(
+                            StatusTone::Ok,
+                            format!("Playing {} on {dev_name}", col.name),
+                            Some(3),
+                        ),
+                        None => self.set_notice(
+                            StatusTone::Info,
+                            format!("Playing {}", col.name),
+                            Some(3),
+                        ),
+                    }
                 } else if self
                     .active_collection
                     .as_ref()
@@ -910,7 +962,7 @@ impl CassetteScreen {
     fn adjust_volume(&mut self, delta: i16) {
         let next = (i16::from(self.config.volume_pct) + delta).clamp(0, 100) as u8;
         self.config.volume_pct = next;
-        self.vol_buf = format!("VOL {next}%");
+        self.vol_buf = format!("{} {next}%", Glyph::Volume.cell());
         let _ = save_config(&self.config);
         if self.active_provider == ProviderId::Spotify {
             self.hub
@@ -931,9 +983,9 @@ impl CassetteScreen {
             ));
         }
         self.vol_buf = if muted {
-            "VOL MUTE".to_string()
+            format!("{} MUTE", Glyph::Volume.cell())
         } else {
-            format!("VOL {}%", self.config.volume_pct)
+            format!("{} {}%", Glyph::Volume.cell(), self.config.volume_pct)
         };
     }
 
@@ -959,7 +1011,7 @@ impl CassetteScreen {
 
     fn share_current(&mut self) {
         let Some(track) = self.current_track().cloned() else {
-            self.status_line = "Nothing playing to share".to_string();
+            self.set_notice(StatusTone::Warn, "Nothing playing to share", Some(3));
             return;
         };
         let (is_file, target) = track.share_target();
@@ -974,7 +1026,11 @@ impl CassetteScreen {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         let _ = cmd.spawn();
-        self.status_line = format!("Opened Hayato Share for {}", track.title);
+        self.set_notice(
+            StatusTone::Ok,
+            format!("Opened Hayato Share for {}", track.title),
+            Some(3),
+        );
     }
 
     fn publish_external_state(&self) {
@@ -1257,21 +1313,21 @@ impl CassetteScreen {
 
     fn rebuild_device_pill(&mut self) {
         if !self.spotify_authed {
-            self.device_pill_buf = "○ Sign in".to_string();
+            self.device_pill_buf = "Local Audio".to_string();
         } else if let Some((is_local, name)) = self.describe_target_device() {
             if is_local {
-                self.device_pill_buf = "● This Device ▾".to_string();
+                self.device_pill_buf = "This Device".to_string();
             } else {
-                let short: String = name.chars().take(16).collect();
-                self.device_pill_buf = format!("◉ {short} ▾");
+                self.device_pill_buf = name;
             }
         } else {
-            self.device_pill_buf = "○ Enable Audio ▾".to_string();
+            self.device_pill_buf = "Enable Audio".to_string();
         }
     }
 
     fn open_device_picker(&mut self) {
         if !self.spotify_authed {
+            self.prev_stage = self.stage.clone();
             self.stage = MainStage::Settings;
             self.focus = Focus::Main;
             self.sync_chrome();
@@ -1287,32 +1343,36 @@ impl CassetteScreen {
         let mut rows: Vec<Row> = Vec::new();
         if !self.local_connect_ready {
             rows.push(
-                Row::new("★ Enable This Device Audio (Play on this Chromebook)")
+                Row::new("Enable This Device Audio (Play on this Chromebook)")
                     .detail("1-click Spotify pairing · defaults playback to this Chromebook")
-                    .value("enable")
-                    .glyph(Glyph::Volume),
+                    .value("ENABLE")
+                    .glyph(Glyph::Star)
+                    .tone(ColorRole::Warn),
             );
         }
         rows.extend(self.devices.iter().map(|d| {
             let is_local = self.is_local_device(d);
             let is_target = target_id.as_deref() == Some(d.id.as_str());
-            let dot = if is_target { "● " } else { "○ " };
             let label = if is_local {
-                format!("{dot}{} (This Device)", d.name)
+                format!("{} (This Device)", d.name)
             } else {
-                format!("{dot}{}", d.name)
+                d.name.clone()
             };
             let badge = if is_target {
-                "default"
+                "DEFAULT"
             } else if d.is_active {
-                "active"
+                "ACTIVE"
             } else {
-                "transfer"
+                "TRANSFER"
             };
-            Row::new(label)
+            let mut row = Row::new(label)
                 .detail(format!("{} · Vol {}%", d.kind, d.volume_pct))
                 .value(badge)
-                .glyph(Glyph::Volume)
+                .glyph(Glyph::Volume);
+            if is_target {
+                row = row.tone(ColorRole::Ok);
+            }
+            row
         }));
         list.set_rows(rows);
         self.phase = CassettePhase::DevicePicker(list);
@@ -1383,10 +1443,10 @@ impl CassetteScreen {
             CassettePhase::DevicePicker(_) => {
                 let mut hints = vec![KeyHint::new("Enter", "use device")];
                 if !self.local_connect_ready {
-                    hints.push(KeyHint::new("E", "enable this device"));
+                    hints.push(KeyHint::new("e", "enable this device"));
                 }
-                hints.push(KeyHint::new("R", "refresh"));
-                hints.push(KeyHint::new("Esc", "back"));
+                hints.push(KeyHint::new("r", "refresh"));
+                hints.push(KeyHint::new("Esc", "close"));
                 hints
             }
             CassettePhase::Help => vec![KeyHint::new("Esc", "close")],
@@ -1403,40 +1463,40 @@ impl CassetteScreen {
             ],
             CassettePhase::Normal => match self.focus {
                 Focus::SearchBar => vec![
-                    KeyHint::new("Enter", "play/open"),
-                    KeyHint::new("Ctrl+A", "enqueue"),
+                    KeyHint::new("Enter", "play"),
+                    KeyHint::new("Ctrl+a", "queue"),
                     KeyHint::new("Tab", "scope"),
-                    KeyHint::new("Esc", "clear/back"),
+                    KeyHint::new("Esc", "clear"),
                 ],
                 Focus::Sidebar => vec![
                     KeyHint::new("Enter", "open"),
-                    KeyHint::new("P", "play list"),
-                    KeyHint::new("f", "filter"),
                     KeyHint::new("Tab", "pane"),
+                    KeyHint::new("/", "search"),
+                    KeyHint::new("d", "device"),
                     KeyHint::new("Esc", "hide"),
                 ],
                 Focus::RightDrawer => vec![
                     KeyHint::new("Enter", "jump"),
-                    KeyHint::new("J/K", "reorder"),
-                    KeyHint::new("Ctrl+X", "clear"),
-                    KeyHint::new("S", "save"),
-                    KeyHint::new("Esc", "back"),
+                    KeyHint::new("Del", "remove"),
+                    KeyHint::new("Ctrl+x", "clear"),
+                    KeyHint::new("Esc", "close"),
                 ],
                 Focus::Main => match self.stage {
                     MainStage::Collection => vec![
                         KeyHint::new("Enter", "play"),
-                        KeyHint::new("P", "play all"),
-                        KeyHint::new("a/A", "queue"),
+                        KeyHint::new("a", "queue"),
                         KeyHint::new("/", "search"),
-                        KeyHint::new("D", "device"),
-                        KeyHint::new("Esc", "back"),
+                        KeyHint::new("d", "device"),
+                        KeyHint::new("l", "lyrics"),
+                        KeyHint::new("o", "options"),
+                        KeyHint::new("Esc", "hide"),
                     ],
                     _ => vec![
                         KeyHint::new("Space", "play/pause"),
                         KeyHint::new("/", "search"),
-                        KeyHint::new("D", "device"),
-                        KeyHint::new("V", "viz"),
-                        KeyHint::new("Tab", "pane"),
+                        KeyHint::new("d", "device"),
+                        KeyHint::new("v", "viz"),
+                        KeyHint::new("o", "options"),
                         KeyHint::new("?", "help"),
                         KeyHint::new("Esc", "hide"),
                     ],
@@ -1568,7 +1628,7 @@ impl CassetteScreen {
                         self.queue.shuffle = snap.shuffle;
                         self.queue.repeat = snap.repeat;
                         self.config.volume_pct = snap.volume_pct;
-                        self.vol_buf = format!("VOL {}%", snap.volume_pct);
+                        self.vol_buf = format!("{} {}%", Glyph::Volume.cell(), snap.volume_pct);
                         self.codec_buf = "CONNECT · 320k".to_string();
 
                         if let Some(t) = snap.track {
@@ -1611,8 +1671,11 @@ impl CassetteScreen {
                         self.lyrics_loading = false;
                     }
                 }
-                ProviderEvent::Status(msg) | ProviderEvent::Error(msg) => {
-                    self.status_line = msg;
+                ProviderEvent::Status(msg) => {
+                    self.set_notice(StatusTone::Ok, msg, Some(3));
+                }
+                ProviderEvent::Error(msg) => {
+                    self.set_notice(StatusTone::Danger, msg, Some(6));
                 }
             }
         }
@@ -1685,7 +1748,11 @@ impl CassetteScreen {
                     self.hub.send(ProviderCmd::SpotifyLogin {
                         client_id: self.config.spotify_client_id.clone(),
                     });
-                    self.status_line = "Opening Firefox for Spotify PKCE login…".into();
+                    self.set_notice(
+                        StatusTone::Info,
+                        "Opening Firefox for Spotify PKCE login…",
+                        Some(5),
+                    );
                 }
             }
             1 => {
@@ -1697,10 +1764,18 @@ impl CassetteScreen {
                             device_id: id,
                         });
                     }
-                    self.status_line = "This Device audio is active (Hayato Cassette)".into();
+                    self.set_notice(
+                        StatusTone::Ok,
+                        "This Device audio is active (Hayato Cassette)",
+                        Some(3),
+                    );
                 } else {
                     self.hub.send(ProviderCmd::EnableLocalConnect);
-                    self.status_line = "Opening Firefox to enable This Device audio…".into();
+                    self.set_notice(
+                        StatusTone::Info,
+                        "Opening Firefox to enable This Device audio…",
+                        Some(5),
+                    );
                 }
             }
             2 => {
@@ -1711,13 +1786,17 @@ impl CassetteScreen {
             3 => {
                 self.config.visualizer = self.config.visualizer.cycle();
                 let _ = save_config(&self.config);
-                self.status_line = format!("Visualizer: {}", self.config.visualizer.label());
+                self.set_notice(
+                    StatusTone::Ok,
+                    format!("Visualizer: {}", self.config.visualizer.label()),
+                    Some(3),
+                );
             }
             4 => {
                 self.hub.send(ProviderCmd::RefreshAll {
                     music_dirs: self.config.music_dirs.clone(),
                 });
-                self.status_line = "Refreshing Spotify & local library…".into();
+                self.set_notice(StatusTone::Info, "Refreshing library…", Some(4));
             }
             _ => {}
         }
@@ -1728,7 +1807,11 @@ impl CassetteScreen {
     fn activate_device_picker_row(&mut self, idx: usize) {
         if !self.local_connect_ready && idx == 0 {
             self.hub.send(ProviderCmd::EnableLocalConnect);
-            self.status_line = "Opening Firefox to enable This Device audio…".into();
+            self.set_notice(
+                StatusTone::Info,
+                "Opening Firefox to enable This Device audio…",
+                Some(5),
+            );
             self.phase = CassettePhase::Normal;
             self.sync_chrome();
             return;
@@ -1745,11 +1828,12 @@ impl CassetteScreen {
                 provider: dev.provider,
                 device_id: dev.id,
             });
-            self.status_line = if is_local {
-                "Switched Spotify playback to This Device".into()
+            let msg = if is_local {
+                "Switched audio output to This Device".to_string()
             } else {
-                format!("Switched Spotify playback to {}", dev.name)
+                format!("Switched audio output to {}", dev.name)
             };
+            self.set_notice(StatusTone::Ok, msg, Some(3));
             self.phase = CassettePhase::Normal;
             self.sync_chrome();
         }
@@ -1790,7 +1874,7 @@ impl CassetteScreen {
                 self.hub.send(ProviderCmd::RefreshAll {
                     music_dirs: self.config.music_dirs.clone(),
                 });
-                self.status_line = "Refreshing Spotify & local library…".into();
+                self.set_notice(StatusTone::Info, "Refreshing library…", Some(4));
             }
             10 => {
                 if !self.queue.is_empty() {
@@ -1799,8 +1883,12 @@ impl CassetteScreen {
                         "Cassette Mix",
                         self.queue.items(),
                     ) {
-                        Ok(p) => self.status_line = format!("Saved {}", p.display()),
-                        Err(e) => self.status_line = e,
+                        Ok(p) => self.set_notice(
+                            StatusTone::Ok,
+                            format!("Saved {}", p.display()),
+                            Some(3),
+                        ),
+                        Err(e) => self.set_notice(StatusTone::Danger, e, Some(5)),
                     }
                 }
             }
@@ -1851,7 +1939,7 @@ impl CassetteScreen {
 
     fn draw_top_chrome(&self, buf: &mut Buffer, area: Rect, design: &Design, hits: &mut HitRects) {
         let mut x = area.x;
-        // Source Filter Tabs: [ All ] [ Spotify ] [ Local ]
+        // Left: Source Filter Tabs (All · Spotify · Local)
         let tabs: [(SourceFilter, &str); 3] = [
             (SourceFilter::All, " All "),
             (SourceFilter::Spotify, " Spotify "),
@@ -1874,95 +1962,206 @@ impl CassetteScreen {
             x += w + 1;
         }
 
-        // Right-aligned [Device Pill] + [⚙]
-        let gear_w = 5u16;
-        let gear_x = area.right().saturating_sub(gear_w);
-        let gear_st = if self.stage == MainStage::Settings {
-            design.style(TextStyle::Key)
+        // Far-Right: clean labeled " ⚙ Options " toggle pill (no brackets, no legacy "4")
+        let opt_lbl = format!(" {} Options ", Glyph::Gear.cell());
+        let opt_w = opt_lbl.chars().count() as u16;
+        let opt_x = area.right().saturating_sub(opt_w);
+        if self.stage == MainStage::Settings {
+            let _ = put(
+                buf,
+                opt_x,
+                area.y,
+                &opt_lbl,
+                opt_w,
+                design.style(TextStyle::Key),
+            );
         } else {
-            design.style(TextStyle::Dim)
-        };
-        let _ = put(buf, gear_x, area.y, " ⚙ 4 ", gear_w, gear_st);
-        hits.settings = Rect::new(gear_x, area.y, gear_w, 1);
-
-        let dev_w = (self.device_pill_buf.chars().count() as u16 + 2).min(24);
-        let dev_x = gear_x.saturating_sub(dev_w + 1);
-        if dev_x > x + 12 {
-            let dev_st = Style::default().fg(design.color(if self.spotify_authed {
-                ColorRole::Ok
-            } else {
-                ColorRole::Warn
-            }));
-            let _ = put_trunc(buf, dev_x, area.y, &self.device_pill_buf, dev_w, dev_st);
-            hits.device = Rect::new(dev_x, area.y, dev_w, 1);
-        }
-
-        // Search Box: aligned cleanly over the Main Stage (just past sidebar when open),
-        // rendered as a tactile Surface pill with leading ⌕ icon and right [/] hint.
-        let search_left = if self.sidebar_open && area.width >= 96 {
-            (area.x + 28).max(x + 1)
-        } else {
-            x + 1
-        };
-        let search_right = if hits.device.width > 0 {
-            dev_x.saturating_sub(2)
-        } else {
-            gear_x.saturating_sub(2)
-        };
-        let search_w = search_right.saturating_sub(search_left).min(52);
-        if search_w >= 16 {
-            let srect = Rect::new(search_left, area.y, search_w, 1);
-            hits.search = srect;
-            let focused = self.focus == Focus::SearchBar;
             let bg = design.color(ColorRole::Surface);
-            let fill_st = Style::default().bg(bg);
-            for col in srect.x..srect.right() {
-                if let Some(cell) = buf.cell_mut((col, srect.y)) {
-                    cell.set_symbol(" ").set_style(fill_st);
+            let fill = Style::default().bg(bg);
+            for col in opt_x..opt_x + opt_w {
+                if let Some(cell) = buf.cell_mut((col, area.y)) {
+                    cell.set_symbol(" ").set_style(fill);
                 }
             }
             let icon_st = Style::default()
-                .fg(design.color(if focused {
-                    ColorRole::Accent
-                } else {
-                    ColorRole::AccentAlt
-                }))
-                .bg(bg)
-                .add_modifier(Modifier::BOLD);
-            let _ = put(buf, srect.x, srect.y, " ⌕ ", 3, icon_st);
-
-            let badge = if focused { " Esc " } else { " / " };
-            let badge_w = badge.len() as u16;
-            let input_x = srect.x + 3;
-            let input_w = srect.width.saturating_sub(3 + badge_w);
-            if input_w >= 6 {
-                self.search_input.render_field(
-                    Rect::new(input_x, srect.y, input_w, 1),
-                    buf,
-                    design,
-                    "Search tracks & playlists…",
-                    focused,
-                    true,
-                    ColorRole::Surface,
-                    TextStyle::Body,
-                );
-            }
-            let badge_st = Style::default()
-                .fg(design.color(if focused {
-                    ColorRole::Accent
-                } else {
-                    ColorRole::Muted
-                }))
+                .fg(design.color(ColorRole::AccentAlt))
                 .bg(bg);
+            let text_st = Style::default().fg(design.color(ColorRole::Text)).bg(bg);
+            let _ = put(buf, opt_x + 1, area.y, Glyph::Gear.cell(), 2, icon_st);
             let _ = put(
                 buf,
-                srect.right().saturating_sub(badge_w),
-                srect.y,
-                badge,
-                badge_w,
-                badge_st,
+                opt_x + 3,
+                area.y,
+                "Options",
+                opt_w.saturating_sub(4),
+                text_st,
             );
         }
+        hits.settings = Rect::new(opt_x, area.y, opt_w, 1);
+
+        // Center-Right: auto-expiring semantic Status Notice (serene & empty when idle)
+        if let Some(notice) = &self.notice {
+            let avail_start = x + 2;
+            let avail_end = opt_x.saturating_sub(2);
+            let avail_w = avail_end.saturating_sub(avail_start);
+            if avail_w >= 12 {
+                let (glyph, role, bold) = match notice.tone {
+                    StatusTone::Ok => ("✓ ", ColorRole::Ok, false),
+                    StatusTone::Info => ("◌ ", ColorRole::AccentAlt, false),
+                    StatusTone::Warn => ("⚠ ", ColorRole::Warn, false),
+                    StatusTone::Danger => ("✕ ", ColorRole::Danger, true),
+                };
+                let full = format!("{glyph}{}", notice.text);
+                let draw_w = (full.chars().count() as u16).min(avail_w);
+                let nx = avail_end.saturating_sub(draw_w);
+                let mut st = Style::default().fg(design.color(role));
+                if bold {
+                    st = st.add_modifier(Modifier::BOLD);
+                }
+                let _ = put_trunc(buf, nx, area.y, &full, draw_w, st);
+            }
+        }
+    }
+
+    fn draw_device_pill(
+        &self,
+        buf: &mut Buffer,
+        right_edge: u16,
+        y: u16,
+        max_w: u16,
+        design: &Design,
+        hits: &mut HitRects,
+    ) {
+        if max_w < 10 {
+            return;
+        }
+        let (dot, dot_role) = if !self.spotify_authed {
+            ("●", ColorRole::Muted)
+        } else if let Some((is_local, _)) = self.describe_target_device() {
+            if is_local {
+                ("●", ColorRole::Ok)
+            } else {
+                ("◉", ColorRole::AccentAlt)
+            }
+        } else {
+            ("○", ColorRole::Warn)
+        };
+        let label = &self.device_pill_buf;
+        let desired_w = (label.chars().count() as u16 + 6).min(max_w).min(28);
+        let pill_x = right_edge.saturating_sub(desired_w);
+        let bg = design.color(ColorRole::Surface);
+        let fill = Style::default().bg(bg);
+        for col in pill_x..pill_x + desired_w {
+            if let Some(cell) = buf.cell_mut((col, y)) {
+                cell.set_symbol(" ").set_style(fill);
+            }
+        }
+        let _ = put(
+            buf,
+            pill_x + 1,
+            y,
+            dot,
+            1,
+            Style::default().fg(design.color(dot_role)).bg(bg),
+        );
+        let text_w = desired_w.saturating_sub(5);
+        let _ = put_trunc(
+            buf,
+            pill_x + 3,
+            y,
+            label,
+            text_w,
+            Style::default()
+                .fg(design.color(ColorRole::Text))
+                .bg(bg)
+                .add_modifier(Modifier::BOLD),
+        );
+        let _ = put(
+            buf,
+            pill_x + desired_w.saturating_sub(2),
+            y,
+            "▾",
+            1,
+            Style::default().fg(design.color(ColorRole::Muted)).bg(bg),
+        );
+        hits.device = Rect::new(pill_x, y, desired_w, 1);
+    }
+
+    fn draw_search_card(&self, buf: &mut Buffer, area: Rect, design: &Design, hits: &mut HitRects) {
+        let focused = self.focus == Focus::SearchBar;
+        let query = self.search_input.text().trim();
+        let title_owned = if focused || !query.is_empty() {
+            Some(format!(
+                "SEARCH · {}",
+                self.source_filter.label().to_uppercase()
+            ))
+        } else {
+            None
+        };
+        let inner = draw_card(buf, area, design, title_owned.as_deref(), focused);
+        hits.search = area;
+
+        if focused && area.width >= 56 {
+            let hint = " Tab: scope · Esc: clear ";
+            let hw = hint.chars().count() as u16;
+            let hx = area.right().saturating_sub(hw + 2);
+            let _ = put(buf, hx, area.y, hint, hw, design.style(TextStyle::Dim));
+        }
+        if inner.height == 0 || inner.width < 12 {
+            return;
+        }
+        let icon_st = Style::default()
+            .fg(design.color(if focused {
+                ColorRole::Accent
+            } else {
+                ColorRole::AccentAlt
+            }))
+            .add_modifier(Modifier::BOLD);
+        let _ = put(buf, inner.x + 1, inner.y, Glyph::Search.cell(), 2, icon_st);
+
+        let right_hint = if focused {
+            if self.pending_search_at.is_some() {
+                "Searching…".to_string()
+            } else if !query.is_empty() {
+                format!("{} matches", self.search_items.len())
+            } else {
+                "Esc".to_string()
+            }
+        } else if !query.is_empty() {
+            "/ edit · Esc clear".to_string()
+        } else {
+            "/".to_string()
+        };
+        let right_w = (right_hint.chars().count() as u16 + 2).min(inner.width / 3);
+        let input_x = inner.x + 4;
+        let input_w = inner.width.saturating_sub(4 + right_w);
+        if input_w >= 6 {
+            self.search_input.render_field(
+                Rect::new(input_x, inner.y, input_w, 1),
+                buf,
+                design,
+                "Search tracks, artists & playlists…",
+                focused,
+                true,
+                ColorRole::Bg,
+                TextStyle::Body,
+            );
+        }
+        let right_st = if focused && self.pending_search_at.is_some() {
+            Style::default().fg(design.color(ColorRole::AccentAlt))
+        } else if focused && !query.is_empty() && self.search_items.is_empty() {
+            Style::default().fg(design.color(ColorRole::Danger))
+        } else {
+            design.style(TextStyle::Dim)
+        };
+        let _ = put_trunc(
+            buf,
+            inner.right().saturating_sub(right_w),
+            inner.y,
+            &right_hint,
+            right_w.saturating_sub(1),
+            right_st,
+        );
     }
 
     fn draw_cassette_deck(
@@ -1979,11 +2178,33 @@ impl CassetteScreen {
         } else {
             self.border_ramp[beat_idx]
         };
-        let deck_title = format!(
-            "HAYATO // CASSETTE DECK · {}",
-            self.config.visualizer.label().to_uppercase()
-        );
+        let deck_title = if hero_rect.width >= 76 {
+            format!(
+                "HAYATO // CASSETTE DECK · {}",
+                self.config.visualizer.label().to_uppercase()
+            )
+        } else {
+            format!(
+                "CASSETTE DECK · {}",
+                self.config.visualizer.label().to_uppercase()
+            )
+        };
         let inner = draw_beat_card(buf, hero_rect, design, &deck_title, border);
+
+        // Output Device Pill integrated cleanly into the deck's top-right border
+        let title_end = hero_rect.x + deck_title.chars().count() as u16 + 5;
+        let pill_right = hero_rect.right().saturating_sub(2);
+        if pill_right > title_end + 10 {
+            self.draw_device_pill(
+                buf,
+                pill_right,
+                hero_rect.y,
+                pill_right.saturating_sub(title_end),
+                design,
+                hits,
+            );
+        }
+
         let (title, artist_album) = match self.current_track() {
             Some(t) if !t.album.is_empty() => {
                 (t.title.clone(), format!("{} · {}", t.artist, t.album))
@@ -1998,27 +2219,28 @@ impl CassetteScreen {
             return;
         }
 
-        let play_icon = if self.current_play_state() == PlayState::Playing {
-            "[ ⏸ ]"
+        let play_glyph = if self.current_play_state() == PlayState::Playing {
+            Glyph::Pause.cell()
         } else {
-            "[ ▶ ]"
+            Glyph::Play.cell()
         };
         let accent = Style::default()
             .fg(design.color(ColorRole::Accent))
             .add_modifier(Modifier::BOLD);
         let dim = design.style(TextStyle::Dim);
-        let shuf_st = if self.queue.shuffle {
-            Style::default().fg(design.color(ColorRole::Accent))
+        let icon_st = Style::default().fg(design.color(ColorRole::Text));
+        let shuf_st = if self.queue.shuffle { accent } else { dim };
+        let rep_st = if self.queue.repeat != RepeatMode::Off {
+            accent
         } else {
             dim
         };
-        let rep_st = if self.queue.repeat != RepeatMode::Off {
-            Style::default().fg(design.color(ColorRole::Accent))
-        } else {
-            dim
+        let rep_glyph = match self.queue.repeat {
+            RepeatMode::One => format!("{}¹", Glyph::Sync.cell()),
+            _ => Glyph::Sync.cell().to_string(),
         };
 
-        // Left column (24 cols): Album Art + Transport Controls directly underneath the song image
+        // Left column (24 cols): Album Art + Plain-Icon Transport Controls directly underneath
         let art_w = if inner.width >= 60 { 24 } else { 0 };
         let ctrl_y = inner.bottom().saturating_sub(1);
         if art_w > 0 {
@@ -2031,27 +2253,21 @@ impl CassetteScreen {
                     draw_cassette_ascii(buf, art_rect, design);
                 }
             }
-            let cx = inner.x;
-            let _ = put(buf, cx, ctrl_y, "⇄", 1, shuf_st);
-            hits.btn_shuffle = Rect::new(cx, ctrl_y, 2, 1);
-            let _ = put(buf, cx + 2, ctrl_y, "[⏮]", 3, dim);
-            hits.btn_prev = Rect::new(cx + 2, ctrl_y, 3, 1);
-            let _ = put(buf, cx + 6, ctrl_y, play_icon, 5, accent);
-            hits.btn_play = Rect::new(cx + 6, ctrl_y, 5, 1);
-            let _ = put(buf, cx + 12, ctrl_y, "[⏭]", 3, dim);
+            // 5 clean plain icons centered across 24 cols (stride 4, 3-col hit targets)
+            let cx = inner.x + 2;
+            let _ = put(buf, cx + 1, ctrl_y, "⇄", 2, shuf_st);
+            hits.btn_shuffle = Rect::new(cx, ctrl_y, 3, 1);
+            let _ = put(buf, cx + 5, ctrl_y, Glyph::Prev.cell(), 2, icon_st);
+            hits.btn_prev = Rect::new(cx + 4, ctrl_y, 3, 1);
+            let _ = put(buf, cx + 9, ctrl_y, play_glyph, 2, accent);
+            hits.btn_play = Rect::new(cx + 8, ctrl_y, 3, 1);
+            let _ = put(buf, cx + 13, ctrl_y, Glyph::Next.cell(), 2, icon_st);
             hits.btn_next = Rect::new(cx + 12, ctrl_y, 3, 1);
-            let _ = put(
-                buf,
-                cx + 16,
-                ctrl_y,
-                self.queue.repeat.short_label(),
-                5,
-                rep_st,
-            );
-            hits.btn_repeat = Rect::new(cx + 16, ctrl_y, 5, 1);
+            let _ = put(buf, cx + 17, ctrl_y, &rep_glyph, 3, rep_st);
+            hits.btn_repeat = Rect::new(cx + 16, ctrl_y, 4, 1);
         }
 
-        // Right column: Title + Artist/Album + Live Visualizer + Scrubber + Volume & View Toggles
+        // Right column: Vertically Centered Hero Title + Artist/Album + Live Visualizer + Scrubber + Plain Controls
         let rx = inner.x + if art_w > 0 { art_w + 2 } else { 0 };
         let rw = inner.right().saturating_sub(rx);
         if rw < 14 {
@@ -2059,10 +2275,28 @@ impl CassetteScreen {
         }
 
         let scrub_y = ctrl_y.saturating_sub(1);
-        let avail_top = scrub_y.saturating_sub(inner.y);
-        let bt_h = if avail_top >= 8 && rw >= 44 { 4 } else { 1 };
+        let top_region_h = scrub_y.saturating_sub(inner.y);
+        let show_viz =
+            self.config.visualizer != VisualizerMode::Off && self.current_track().is_some();
+        let bt_h: u16 = if top_region_h >= 7 && rw >= 44 { 4 } else { 1 };
+        let hero_h: u16 = bt_h + 1;
+        let viz_h: u16 = if show_viz && top_region_h > hero_h {
+            let avail_viz = top_region_h.saturating_sub(hero_h);
+            if bt_h == 4 {
+                avail_viz.min(2)
+            } else {
+                avail_viz.min(3).min(top_region_h / 2)
+            }
+        } else {
+            0
+        };
+        let text_band_h = top_region_h.saturating_sub(viz_h);
+        let title_y = inner.y + text_band_h.saturating_sub(hero_h) / 2;
+        let artist_y = title_y + bt_h;
+        let viz_y = scrub_y.saturating_sub(viz_h);
+
         if bt_h == 4 {
-            let bt_rect = Rect::new(rx, inner.y, rw, 4);
+            let bt_rect = Rect::new(rx, title_y, rw, 4);
             let big = BigText::builder()
                 .pixel_size(PixelSize::Quadrant)
                 .style(
@@ -2077,7 +2311,7 @@ impl CassetteScreen {
             let _ = put_trunc(
                 buf,
                 rx,
-                inner.y,
+                title_y,
                 &title,
                 rw,
                 Style::default()
@@ -2085,18 +2319,16 @@ impl CassetteScreen {
                     .add_modifier(Modifier::BOLD),
             );
         }
-        if inner.y + bt_h < scrub_y {
+        if artist_y < scrub_y {
             let _ = put_trunc(
                 buf,
                 rx,
-                inner.y + bt_h,
+                artist_y,
                 &artist_album,
                 rw,
                 Style::default().fg(design.color(ColorRole::Text)),
             );
         }
-        let viz_y = inner.y + bt_h + 1;
-        let viz_h = scrub_y.saturating_sub(viz_y);
         if viz_h >= 1 {
             self.draw_active_visualizer(buf, Rect::new(rx, viz_y, rw, viz_h), design, false);
         }
@@ -2117,28 +2349,33 @@ impl CassetteScreen {
         }
 
         let mut ux = rx;
-        if art_w == 0 && rw >= 30 {
-            let _ = put(buf, ux, ctrl_y, "[⏮]", 3, dim);
-            hits.btn_prev = Rect::new(ux, ctrl_y, 3, 1);
-            let _ = put(buf, ux + 4, ctrl_y, play_icon, 5, accent);
-            hits.btn_play = Rect::new(ux + 4, ctrl_y, 5, 1);
-            let _ = put(buf, ux + 10, ctrl_y, "[⏭]", 3, dim);
-            hits.btn_next = Rect::new(ux + 10, ctrl_y, 3, 1);
-            ux += 15;
+        if art_w == 0 && rw >= 26 {
+            let _ = put(buf, ux, ctrl_y, Glyph::Prev.cell(), 2, icon_st);
+            hits.btn_prev = Rect::new(ux, ctrl_y, 2, 1);
+            let _ = put(buf, ux + 3, ctrl_y, play_glyph, 2, accent);
+            hits.btn_play = Rect::new(ux + 3, ctrl_y, 2, 1);
+            let _ = put(buf, ux + 6, ctrl_y, Glyph::Next.cell(), 2, icon_st);
+            hits.btn_next = Rect::new(ux + 6, ctrl_y, 2, 1);
+            ux += 10;
         }
-        // Clickable Volume Controls: [-] VOL 80% [+]
-        let vol_st = Style::default().fg(design.color(ColorRole::AccentAlt));
-        let vol_w = self.vol_buf.len() as u16;
-        if ux + 8 + vol_w <= inner.right() {
-            let _ = put(buf, ux, ctrl_y, "[-]", 3, dim);
-            hits.btn_vol_down = Rect::new(ux, ctrl_y, 3, 1);
-            ux += 4;
+
+        // Plain-Icon Volume Controls: −  🔊 80%  +
+        let vol_st = if self.engine.telemetry.muted() {
+            Style::default().fg(design.color(ColorRole::Muted))
+        } else {
+            Style::default().fg(design.color(ColorRole::AccentAlt))
+        };
+        let vol_w = (self.vol_buf.chars().count() as u16).max(5);
+        if ux + 6 + vol_w <= inner.right() {
+            let _ = put(buf, ux, ctrl_y, "−", 1, dim);
+            hits.btn_vol_down = Rect::new(ux, ctrl_y, 2, 1);
+            ux += 2;
             let _ = put_trunc(buf, ux, ctrl_y, &self.vol_buf, vol_w, vol_st);
             hits.btn_vol_mute = Rect::new(ux, ctrl_y, vol_w, 1);
             ux += vol_w + 1;
-            let _ = put(buf, ux, ctrl_y, "[+]", 3, dim);
-            hits.btn_vol_up = Rect::new(ux, ctrl_y, 3, 1);
-            ux += 5;
+            let _ = put(buf, ux, ctrl_y, "+", 1, dim);
+            hits.btn_vol_up = Rect::new(ux, ctrl_y, 2, 1);
+            ux += 4;
         } else {
             let w = vol_w.min(inner.right().saturating_sub(ux));
             let _ = put_trunc(buf, ux, ctrl_y, &self.vol_buf, w, vol_st);
@@ -2146,13 +2383,14 @@ impl CassetteScreen {
             ux += w + 2;
         }
 
-        if ux + 11 <= inner.right() {
+        // Plain-Icon View Toggles: Sliders (Visualizer), Document (Lyrics), Window (Mini HUD)
+        if ux + 10 <= inner.right() {
             let _ = put(
                 buf,
                 ux,
                 ctrl_y,
-                "[V]",
-                3,
+                Glyph::Sliders.cell(),
+                2,
                 if self.stage == MainStage::Visualizer {
                     accent
                 } else {
@@ -2164,8 +2402,8 @@ impl CassetteScreen {
                 buf,
                 ux + 4,
                 ctrl_y,
-                "[L]",
-                3,
+                Glyph::Document.cell(),
+                2,
                 if self.drawer == RightDrawer::Lyrics {
                     accent
                 } else {
@@ -2173,19 +2411,16 @@ impl CassetteScreen {
                 },
             );
             hits.btn_lyrics = Rect::new(ux + 4, ctrl_y, 3, 1);
-            let _ = put(buf, ux + 8, ctrl_y, "[w]", 3, dim);
+            let _ = put(buf, ux + 8, ctrl_y, Glyph::Window.cell(), 2, dim);
             hits.btn_mini = Rect::new(ux + 8, ctrl_y, 3, 1);
-            ux += 13;
+            ux += 12;
         }
-        if ux + 8 < inner.right() {
-            let _ = put_trunc(
-                buf,
-                ux,
-                ctrl_y,
-                &self.status_line,
-                inner.right().saturating_sub(ux),
-                dim,
-            );
+
+        // Far-right fixed-width codec readout (zero collision with transient status notices)
+        let codec_w = self.codec_buf.chars().count() as u16;
+        if inner.right().saturating_sub(ux) >= codec_w + 2 {
+            let cx = inner.right().saturating_sub(codec_w);
+            let _ = put_trunc(buf, cx, ctrl_y, &self.codec_buf, codec_w, dim);
         }
     }
 
@@ -2206,15 +2441,27 @@ impl CassetteScreen {
         if inner.height < 3 {
             return;
         }
-        let _ = put_trunc(
+        let play_lbl = format!("{} Play all", Glyph::Play.cell());
+        let play_w = play_lbl.chars().count() as u16;
+        let _ = put(
             buf,
             inner.x,
             inner.y,
-            "[▶ Play all (P)]   [Click/Enter] Play track   [a] Enqueue   [Esc] Hide",
-            inner.width,
-            Style::default().fg(design.color(ColorRole::Accent)),
+            &play_lbl,
+            play_w,
+            Style::default()
+                .fg(design.color(ColorRole::Accent))
+                .add_modifier(Modifier::BOLD),
         );
-        hits.play_all = Rect::new(inner.x, inner.y, 16.min(inner.width), 1);
+        hits.play_all = Rect::new(inner.x, inner.y, (play_w + 4).min(inner.width), 1);
+        let _ = put_trunc(
+            buf,
+            inner.x + play_w + 1,
+            inner.y,
+            "· Enter Play · a Queue",
+            inner.width.saturating_sub(play_w + 1),
+            design.style(TextStyle::Dim),
+        );
 
         if let Some((_, reason)) = &self.active_collection_restricted {
             let _ = put_trunc(
@@ -2665,6 +2912,17 @@ impl CassetteScreen {
             Some("CASSETTE // MINI"),
             true,
         );
+        // Clickable Device Pill on Mini HUD top-right border
+        if ctx.area.width >= 38 {
+            self.draw_device_pill(
+                ctx.buf,
+                ctx.area.right().saturating_sub(2),
+                ctx.area.y,
+                ctx.area.width.saturating_sub(22),
+                ctx.design,
+                hits,
+            );
+        }
         if inner.height < 4 || inner.width < 20 {
             return;
         }
@@ -2732,14 +2990,31 @@ impl CassetteScreen {
             self.last_dur_sec,
             &self.time_buf,
         );
-        let _ = put_trunc(
-            ctx.buf,
-            inner.x,
-            inner.bottom().saturating_sub(1),
-            "[p] Prev  [Space] Play  [n] Next  [D] Device  [w] Full  [Esc] Hide",
-            inner.width,
-            ctx.design.style(TextStyle::Dim),
-        );
+        if let Some(notice) = &self.notice {
+            let role = match notice.tone {
+                StatusTone::Ok => ColorRole::Ok,
+                StatusTone::Info => ColorRole::AccentAlt,
+                StatusTone::Warn => ColorRole::Warn,
+                StatusTone::Danger => ColorRole::Danger,
+            };
+            let _ = put_trunc(
+                ctx.buf,
+                inner.x,
+                inner.bottom().saturating_sub(1),
+                &notice.text,
+                inner.width,
+                Style::default().fg(ctx.design.color(role)),
+            );
+        } else {
+            let _ = put_trunc(
+                ctx.buf,
+                inner.x,
+                inner.bottom().saturating_sub(1),
+                "p prev · Space play · n next · d device · w full · Esc hide",
+                inner.width,
+                ctx.design.style(TextStyle::Dim),
+            );
+        }
     }
 
     fn cycle_pane(&mut self, reverse: bool) {
@@ -2796,6 +3071,9 @@ impl Screen for CassetteScreen {
         if self.fx.is_some() || self.pending_search_at.is_some() {
             return Some(Duration::from_millis(33));
         }
+        if self.notice.as_ref().and_then(|n| n.expires_at).is_some() {
+            return Some(Duration::from_millis(250));
+        }
         if self.current_play_state() == PlayState::Playing {
             let sleep = !self.focused
                 && self
@@ -2813,6 +3091,15 @@ impl Screen for CassetteScreen {
             self.border_ramp = d.ramp(ColorRole::Border, ColorRole::Accent);
             self.spectrum_ramp = d.ramp(ColorRole::AccentAlt, ColorRole::Accent);
             self.design_override = Some(d);
+        }
+
+        if self
+            .notice
+            .as_ref()
+            .and_then(|n| n.expires_at)
+            .is_some_and(|t| Instant::now() >= t)
+        {
+            self.notice = None;
         }
 
         self.drain_provider_events();
@@ -2838,7 +3125,7 @@ impl Screen for CassetteScreen {
         }
 
         if let Some(err) = self.engine.telemetry.take_error() {
-            self.status_line = err;
+            self.set_notice(StatusTone::Danger, err, Some(6));
         }
         let fin = self.engine.telemetry.finished_gen();
         if fin != self.last_finished_gen {
@@ -3122,7 +3409,11 @@ impl Screen for CassetteScreen {
                         self.open_collection(first);
                     }
                 }
-                self.status_line = format!("Filter: {}", self.source_filter.label());
+                self.set_notice(
+                    StatusTone::Ok,
+                    format!("Filter: {}", self.source_filter.label()),
+                    Some(2),
+                );
                 self.sync_chrome();
             }
             HIT_SEARCH_BOX => {
@@ -3135,7 +3426,16 @@ impl Screen for CassetteScreen {
             }
             HIT_DEVICE_PILL => self.open_device_picker(),
             HIT_SETTINGS => {
-                self.stage = MainStage::Settings;
+                if self.stage == MainStage::Settings {
+                    self.stage = if self.prev_stage == MainStage::Settings {
+                        MainStage::Collection
+                    } else {
+                        self.prev_stage.clone()
+                    };
+                } else {
+                    self.prev_stage = self.stage.clone();
+                    self.stage = MainStage::Settings;
+                }
                 self.focus = Focus::Main;
                 self.sync_chrome();
             }
@@ -3146,15 +3446,22 @@ impl Screen for CassetteScreen {
             }
             HIT_BTN_SHUFFLE => {
                 self.toggle_shuffle();
-                self.status_line =
-                    format!("Shuffle {}", if self.queue.shuffle { "ON" } else { "OFF" });
+                self.set_notice(
+                    StatusTone::Ok,
+                    format!("Shuffle {}", if self.queue.shuffle { "ON" } else { "OFF" }),
+                    Some(2),
+                );
             }
             HIT_BTN_PREV => self.prev_track(),
             HIT_BTN_PLAY => self.toggle_play_pause(),
             HIT_BTN_NEXT => self.next_track(false),
             HIT_BTN_REPEAT => {
                 self.cycle_repeat();
-                self.status_line = format!("Repeat: {}", self.queue.repeat.short_label());
+                self.set_notice(
+                    StatusTone::Ok,
+                    format!("Repeat: {}", self.queue.repeat.short_label()),
+                    Some(2),
+                );
             }
             HIT_BTN_VOL_DOWN => self.adjust_volume(-5),
             HIT_BTN_VOL_MUTE => self.toggle_mute(),
@@ -3245,16 +3552,59 @@ impl Screen for CassetteScreen {
             return;
         }
         if let CassettePhase::DevicePicker(list) = &mut self.phase {
+            let modal_w = 68u16.min(ctx.area.width.saturating_sub(2));
+            let modal_h = (list.len() as u16 + 7).clamp(11, ctx.area.height.saturating_sub(2));
+            let modal_rect = hayato_ui::widgets::centered(ctx.area, modal_w, modal_h);
             let inner = draw_card(
                 ctx.buf,
-                ctx.area,
+                modal_rect,
                 ctx.design,
-                Some("SPOTIFY CONNECT // DEVICES"),
+                Some("AUDIO OUTPUT // SPOTIFY CONNECT"),
                 true,
             );
-            hits.modal_list = inner;
-            self.rows_height.set(inner.height);
-            list.render(inner, ctx.buf, ctx.design, true);
+            if inner.height >= 6 {
+                let target_txt = format!("Active output: {}", self.device_pill_buf);
+                let _ = put_trunc(
+                    ctx.buf,
+                    inner.x,
+                    inner.y,
+                    &target_txt,
+                    inner.width,
+                    Style::default()
+                        .fg(ctx.design.color(ColorRole::Ok))
+                        .add_modifier(Modifier::BOLD),
+                );
+                let rule = "─".repeat(inner.width as usize);
+                let _ = put_trunc(
+                    ctx.buf,
+                    inner.x,
+                    inner.y + 1,
+                    &rule,
+                    inner.width,
+                    ctx.design.style(TextStyle::Dim),
+                );
+                let list_rect = Rect::new(
+                    inner.x,
+                    inner.y + 2,
+                    inner.width,
+                    inner.height.saturating_sub(4),
+                );
+                hits.modal_list = list_rect;
+                self.rows_height.set(list_rect.height);
+                list.render(list_rect, ctx.buf, ctx.design, true);
+                let _ = put_trunc(
+                    ctx.buf,
+                    inner.x,
+                    inner.bottom().saturating_sub(1),
+                    "Enter Switch · e Enable This Device · r Refresh · Esc Close",
+                    inner.width,
+                    ctx.design.style(TextStyle::Dim),
+                );
+            } else {
+                hits.modal_list = inner;
+                self.rows_height.set(inner.height);
+                list.render(inner, ctx.buf, ctx.design, true);
+            }
             self.hits.set(hits);
             return;
         }
@@ -3267,14 +3617,14 @@ impl Screen for CassetteScreen {
                 true,
             );
             const LINES: &[&str] = &[
-                "GLOBAL:  Space play/pause · n/p next/prev · [/] seek ±5s · +/- vol · m mute",
-                "         z shuffle · r repeat · R refresh · v viz · V full deck · w mini",
-                "         D devices · / search · b sidebar · q queue · L lyrics · 4 settings",
-                "         Tab / h / l switch panes · Ctrl+S share · : palette · Esc back/hide · Q quit",
+                "PLAYBACK:  Space play/pause · n/p next/prev · [/] seek ±5s · +/- vol · m mute",
+                "           s shuffle · r repeat · v cycle viz · f fullscreen viz · w mini",
+                "VIEWS:     / search · d devices · l lyrics · o options · b sidebar · u queue",
+                "SYSTEM:    Tab/←/→ switch panes · F5 refresh · : palette · Esc hide · q quit",
                 "",
-                "LIBRARY: Click/Enter open playlist · P play whole playlist · f filter (All/Spotify/Local)",
-                "TRACKS:  Click/Enter play from track · P play all · a enqueue · A play next · Bksp back",
-                "QUEUE:   Click/Enter jump · J/K reorder · d remove · Ctrl+X clear · S save .m3u8",
+                "LIBRARY:   Click/Enter open playlist · Tab move to tracks",
+                "TRACKS:    Click/Enter play · a add to queue · ← back to library",
+                "QUEUE:     Click/Enter jump · Del remove · Ctrl+x clear",
             ];
             for (i, line) in LINES.iter().enumerate() {
                 if inner.y + i as u16 >= inner.bottom() {
@@ -3424,11 +3774,21 @@ impl Screen for CassetteScreen {
             let deck_rect = Rect::new(main_rect.x, main_rect.y, main_rect.width, deck_h);
             self.draw_cassette_deck(ctx.buf, deck_rect, ctx.design, &mut hits);
         }
+        let search_h: u16 = if show_deck && main_rect.height >= deck_h + 7 {
+            3
+        } else {
+            0
+        };
+        if search_h > 0 {
+            let search_rect =
+                Rect::new(main_rect.x, main_rect.y + deck_h, main_rect.width, search_h);
+            self.draw_search_card(ctx.buf, search_rect, ctx.design, &mut hits);
+        }
         let stage_rect = Rect::new(
             main_rect.x,
-            main_rect.y + deck_h,
+            main_rect.y + deck_h + search_h,
             main_rect.width,
-            main_rect.height.saturating_sub(deck_h),
+            main_rect.height.saturating_sub(deck_h + search_h),
         );
 
         match self.stage {
@@ -3577,7 +3937,7 @@ impl Screen for CassetteScreen {
                     self.phase = CassettePhase::Normal;
                     self.rebuild_sidebar_and_home();
                     self.rebuild_settings_rows();
-                    self.status_line = "Saved Spotify Client ID".into();
+                    self.set_notice(StatusTone::Ok, "Saved Spotify Client ID", Some(3));
                     self.sync_chrome();
                 }
                 _ => {
@@ -3594,13 +3954,21 @@ impl Screen for CassetteScreen {
                 }
                 KeyCode::Char('e' | 'E') => {
                     self.hub.send(ProviderCmd::EnableLocalConnect);
-                    self.status_line = "Opening browser to enable This Device audio…".into();
+                    self.set_notice(
+                        StatusTone::Info,
+                        "Opening browser to enable This Device audio…",
+                        Some(5),
+                    );
                     self.phase = CassettePhase::Normal;
                     self.sync_chrome();
                 }
                 KeyCode::Char('R') => {
                     self.hub.send(ProviderCmd::RefreshDevices);
-                    self.status_line = "Refreshing Spotify Connect devices…".into();
+                    self.set_notice(
+                        StatusTone::Info,
+                        "Refreshing Spotify Connect devices…",
+                        Some(4),
+                    );
                 }
                 _ => {
                     if let ListAction::Activated(idx) =
@@ -3701,6 +4069,13 @@ impl Screen for CassetteScreen {
                     self.sync_chrome();
                     return Outcome::Consumed;
                 }
+                KeyCode::Char('r') => {
+                    self.hub.send(ProviderCmd::RefreshAll {
+                        music_dirs: self.config.music_dirs.clone(),
+                    });
+                    self.set_notice(StatusTone::Info, "Refreshing library…", Some(4));
+                    return Outcome::Consumed;
+                }
                 KeyCode::Char('p') => {
                     self.open_palette();
                     return Outcome::Consumed;
@@ -3722,9 +4097,9 @@ impl Screen for CassetteScreen {
             }
         }
 
-        // 4. Global single-key zero-conflict bindings
+        // 4. Global single-key zero-conflict lowercase bindings
         match key.code {
-            KeyCode::Char('Q') => {
+            KeyCode::Char('q' | 'Q') => {
                 self.engine.stop();
                 NowPlayingFile::clear();
                 return Outcome::Done(hayato_ui::app::exit::OK);
@@ -3788,28 +4163,43 @@ impl Screen for CassetteScreen {
                 self.toggle_mute();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('z') => {
+            KeyCode::Char('s' | 'z') => {
                 self.toggle_shuffle();
+                self.set_notice(
+                    StatusTone::Ok,
+                    format!("Shuffle {}", if self.queue.shuffle { "ON" } else { "OFF" }),
+                    Some(2),
+                );
                 return Outcome::Consumed;
             }
             KeyCode::Char('r') => {
                 self.cycle_repeat();
+                self.set_notice(
+                    StatusTone::Ok,
+                    format!("Repeat: {}", self.queue.repeat.short_label()),
+                    Some(2),
+                );
                 return Outcome::Consumed;
             }
             KeyCode::Char('R') | KeyCode::F(5) => {
                 self.hub.send(ProviderCmd::RefreshAll {
                     music_dirs: self.config.music_dirs.clone(),
                 });
-                self.status_line = "Refreshing library…".into();
+                self.set_notice(StatusTone::Info, "Refreshing library…", Some(4));
                 return Outcome::Consumed;
             }
             KeyCode::Char('v') => {
                 self.config.visualizer = self.config.visualizer.cycle();
                 let _ = save_config(&self.config);
                 self.rebuild_settings_rows();
+                self.set_notice(
+                    StatusTone::Ok,
+                    format!("Visualizer: {}", self.config.visualizer.label()),
+                    Some(2),
+                );
                 return Outcome::Consumed;
             }
-            KeyCode::Char('V') => {
+            KeyCode::Char('f' | 'V') => {
                 self.stage = if self.stage == MainStage::Visualizer {
                     MainStage::Collection
                 } else {
@@ -3832,7 +4222,7 @@ impl Screen for CassetteScreen {
                 self.sync_chrome();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('D') => {
+            KeyCode::Char('d' | 'D') => {
                 self.open_device_picker();
                 return Outcome::Consumed;
             }
@@ -3857,7 +4247,7 @@ impl Screen for CassetteScreen {
                 self.sync_chrome();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('3') | KeyCode::Char('q') => {
+            KeyCode::Char('3' | 'u') => {
                 if self.drawer == RightDrawer::Queue {
                     self.drawer = RightDrawer::Hidden;
                     if self.focus == Focus::RightDrawer {
@@ -3870,8 +4260,17 @@ impl Screen for CassetteScreen {
                 self.sync_chrome();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('4') | KeyCode::Char(',') => {
-                self.stage = MainStage::Settings;
+            KeyCode::Char('4' | ',' | 'o') => {
+                if self.stage == MainStage::Settings {
+                    self.stage = if self.prev_stage == MainStage::Settings {
+                        MainStage::Collection
+                    } else {
+                        self.prev_stage.clone()
+                    };
+                } else {
+                    self.prev_stage = self.stage.clone();
+                    self.stage = MainStage::Settings;
+                }
                 self.focus = Focus::Main;
                 self.sync_chrome();
                 return Outcome::Consumed;
@@ -3890,7 +4289,7 @@ impl Screen for CassetteScreen {
                 self.sync_chrome();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('L') => {
+            KeyCode::Char('l' | 'L') => {
                 if self.drawer == RightDrawer::Lyrics {
                     self.drawer = RightDrawer::Hidden;
                     if self.focus == Focus::RightDrawer {
@@ -3977,7 +4376,7 @@ impl Screen for CassetteScreen {
                     }
                     return Outcome::Consumed;
                 }
-                KeyCode::Char('d') | KeyCode::Delete => {
+                KeyCode::Delete | KeyCode::Backspace => {
                     if let Some(i) = self.queue_list.selected_index() {
                         self.queue.remove(i);
                         self.rebuild_queue_rows();
@@ -3991,12 +4390,16 @@ impl Screen for CassetteScreen {
                         self.queue.items(),
                     ) {
                         Ok(p) => {
-                            self.status_line = format!("Saved {}", p.display());
+                            self.set_notice(
+                                StatusTone::Ok,
+                                format!("Saved {}", p.display()),
+                                Some(3),
+                            );
                             self.hub.send(ProviderCmd::RefreshAll {
                                 music_dirs: self.config.music_dirs.clone(),
                             });
                         }
-                        Err(e) => self.status_line = e,
+                        Err(e) => self.set_notice(StatusTone::Danger, e, Some(5)),
                     }
                     return Outcome::Consumed;
                 }
@@ -4253,7 +4656,7 @@ mod tests {
         // Defaults to This Device even when Echo is active
         assert_eq!(screen.active_device_id().as_deref(), Some("local-1"));
         screen.rebuild_device_pill();
-        assert_eq!(screen.device_pill_buf, "● This Device ▾");
+        assert_eq!(screen.device_pill_buf, "This Device");
 
         // Explicit user pick overrides default
         screen.preferred_device_id = Some("echo-1".into());

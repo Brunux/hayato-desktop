@@ -75,15 +75,22 @@ fn renders_full_120x36_and_mini_60x16_cleanly() {
                 "missing Spotify filter tab:\n{text}"
             );
             assert!(text.contains("Local"), "missing Local filter tab:\n{text}");
-            assert!(
-                text.contains("[-] VOL 80% [+]"),
-                "missing volume -/+ controls:\n{text}"
-            );
+            assert!(text.contains("Options"), "missing Options pill:\n{text}");
+            assert!(text.contains("80%"), "missing volume readout:\n{text}");
+            assert!(text.contains("−"), "missing volume minus icon:\n{text}");
+            assert!(text.contains("+"), "missing volume plus icon:\n{text}");
             assert!(
                 !text.contains("[≡]"),
                 "burger queue icon should be removed:\n{text}"
             );
-            assert!(text.contains("⌕"), "missing search icon:\n{text}");
+            assert!(
+                !text.contains("[⏮]"),
+                "bracketed transport icons should be plain:\n{text}"
+            );
+            assert!(
+                text.contains("Search tracks, artists & playlists"),
+                "missing framed search card:\n{text}"
+            );
             assert!(
                 !text.contains("[⌂ Home]"),
                 "Home tab should be removed:\n{text}"
