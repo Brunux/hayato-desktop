@@ -46,10 +46,15 @@ pub struct FilerWindow {
     filter_entry: Entry,
     grid_btn: Button,
     list_btn: Button,
+    sidebar_toggle_btn: Button,
     tab_bar: GtkBox,
     tabs_box: GtkBox,
+    paned: Paned,
     sidebar_box: GtkBox,
+    places_hdr: Label,
     places_box: GtkBox,
+    sidebar_sep: Separator,
+    devices_hdr: Label,
     devices_box: GtkBox,
     banner_box: GtkBox,
     banner_label: Label,
@@ -79,6 +84,11 @@ impl FilerWindow {
         // ── Top Header Bar ────────────────────────────────────────────────
         let header = GtkBox::new(Orientation::Horizontal, 8);
         header.add_css_class("filer-header");
+
+        let sidebar_toggle_btn = Button::with_label("\u{f0db}");
+        sidebar_toggle_btn.add_css_class("filer-tool-btn");
+        sidebar_toggle_btn.add_css_class("filer-glyph");
+        sidebar_toggle_btn.set_tooltip_text(Some("Toggle Compact Sidebar (Icons / Full Names)"));
 
         let nav_group = GtkBox::new(Orientation::Horizontal, 2);
         nav_group.add_css_class("filer-seg-group");
@@ -138,6 +148,7 @@ impl FilerWindow {
         new_tab_btn.add_css_class("filer-glyph");
         new_tab_btn.set_tooltip_text(Some("New Tab (Ctrl+T)"));
 
+        header.append(&sidebar_toggle_btn);
         header.append(&nav_group);
         header.append(&crumbs_box);
         header.append(&path_entry);
@@ -181,8 +192,13 @@ impl FilerWindow {
         devices_hdr.set_halign(Align::Start);
         let devices_box = GtkBox::new(Orientation::Vertical, 2);
 
+        let sidebar_sep = Separator::new(Orientation::Horizontal);
+        sidebar_sep.add_css_class("filer-sidebar-sep");
+        sidebar_sep.set_visible(false);
+
         sidebar_box.append(&places_hdr);
         sidebar_box.append(&places_box);
+        sidebar_box.append(&sidebar_sep);
         sidebar_box.append(&devices_hdr);
         sidebar_box.append(&devices_box);
 
@@ -302,10 +318,15 @@ impl FilerWindow {
             filter_entry,
             grid_btn,
             list_btn,
+            sidebar_toggle_btn,
             tab_bar,
             tabs_box,
+            paned,
             sidebar_box,
+            places_hdr,
             places_box,
+            sidebar_sep,
+            devices_hdr,
             devices_box,
             banner_box,
             banner_label,
@@ -338,6 +359,13 @@ impl FilerWindow {
         tab_add_btn: &Button,
         cancel_btn: &Button,
     ) {
+        // Compact / full sidebar toggle (icons-only vs full names)
+        {
+            let w = Rc::clone(self);
+            self.sidebar_toggle_btn
+                .connect_clicked(move |_| w.toggle_sidebar_compact());
+        }
+
         // Back / Forward
         {
             let w = Rc::clone(self);
@@ -1147,6 +1175,33 @@ impl FilerWindow {
         }
     }
 
+    fn toggle_sidebar_compact(self: &Rc<Self>) {
+        let compact = {
+            let mut st = self.state.borrow_mut();
+            st.sidebar_compact = !st.sidebar_compact;
+            st.sidebar_compact
+        };
+        if compact {
+            self.sidebar_box.add_css_class("compact");
+            self.sidebar_box.set_size_request(50, -1);
+            self.paned.set_position(52);
+            self.places_hdr.set_visible(false);
+            self.devices_hdr.set_visible(false);
+            self.sidebar_sep.set_visible(true);
+            self.sidebar_toggle_btn.add_css_class("active");
+        } else {
+            self.sidebar_box.remove_css_class("compact");
+            self.sidebar_box.set_size_request(192, -1);
+            self.paned.set_position(196);
+            self.places_hdr.set_visible(true);
+            self.devices_hdr.set_visible(true);
+            self.sidebar_sep.set_visible(false);
+            self.sidebar_toggle_btn.remove_css_class("active");
+        }
+        self.render_places();
+        self.render_devices();
+    }
+
     fn make_place_button(
         self: &Rc<Self>,
         glyph: &str,
@@ -1156,21 +1211,28 @@ impl FilerWindow {
         active: bool,
         badge: Option<&str>,
     ) -> Button {
-        let inner = GtkBox::new(Orientation::Horizontal, 8);
+        let compact = self.state.borrow().sidebar_compact;
+        let inner = GtkBox::new(Orientation::Horizontal, if compact { 0 } else { 8 });
+        if compact {
+            inner.set_halign(Align::Center);
+        }
         let g = Label::new(Some(glyph));
         g.add_css_class("filer-place-icon");
         g.set_size_request(18, -1);
         g.set_halign(Align::Center);
-        let lbl = Label::new(Some(name));
-        lbl.set_hexpand(true);
-        lbl.set_halign(Align::Start);
-        lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         inner.append(&g);
-        inner.append(&lbl);
-        if let Some(b) = badge {
-            let pill = Label::new(Some(b));
-            pill.add_css_class("filer-badge");
-            inner.append(&pill);
+
+        if !compact {
+            let lbl = Label::new(Some(name));
+            lbl.set_hexpand(true);
+            lbl.set_halign(Align::Start);
+            lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+            inner.append(&lbl);
+            if let Some(b) = badge {
+                let pill = Label::new(Some(b));
+                pill.add_css_class("filer-badge");
+                inner.append(&pill);
+            }
         }
 
         let btn = Button::new();
@@ -1178,6 +1240,13 @@ impl FilerWindow {
         btn.add_css_class("filer-place-row");
         if active {
             btn.add_css_class("active");
+        }
+        if compact {
+            let tip = match badge {
+                Some(b) => format!("{name} ({b})"),
+                None => name.to_string(),
+            };
+            btn.set_tooltip_text(Some(&tip));
         }
         let w = Rc::clone(self);
         let target = path.clone();
@@ -1307,13 +1376,16 @@ impl FilerWindow {
         while let Some(child) = self.devices_box.first_child() {
             self.devices_box.remove(&child);
         }
+        let compact = self.state.borrow().sidebar_compact;
         let devs = self.devices.borrow().clone();
         if devs.is_empty() {
-            let empty = Label::new(Some("No removable drives"));
-            empty.add_css_class("filer-item-meta");
-            empty.set_halign(Align::Start);
-            empty.set_margin_start(8);
-            self.devices_box.append(&empty);
+            if !compact {
+                let empty = Label::new(Some("No removable drives"));
+                empty.add_css_class("filer-item-meta");
+                empty.set_halign(Align::Start);
+                empty.set_margin_start(8);
+                self.devices_box.append(&empty);
+            }
             return;
         }
         let cur_cwd = self.state.borrow().cwd().to_path_buf();
@@ -1326,21 +1398,40 @@ impl FilerWindow {
                 wrap.add_css_class("active");
             }
 
-            let row = GtkBox::new(Orientation::Horizontal, 4);
+            let row = GtkBox::new(
+                if compact {
+                    Orientation::Vertical
+                } else {
+                    Orientation::Horizontal
+                },
+                if compact { 2 } else { 4 },
+            );
             let main_btn = Button::new();
             main_btn.set_hexpand(true);
             main_btn.add_css_class("filer-device-btn");
-            let lbl_box = GtkBox::new(Orientation::Horizontal, 8);
+            let lbl_box = GtkBox::new(Orientation::Horizontal, if compact { 0 } else { 8 });
+            if compact {
+                lbl_box.set_halign(Align::Center);
+            }
             let icon = Label::new(Some("\u{f0a0}"));
             icon.add_css_class("filer-place-icon");
             icon.set_size_request(18, -1);
             icon.set_halign(Align::Center);
-            let name = Label::new(Some(&dev.label));
-            name.set_halign(Align::Start);
-            name.set_hexpand(true);
-            name.set_ellipsize(gtk4::pango::EllipsizeMode::End);
             lbl_box.append(&icon);
-            lbl_box.append(&name);
+            if !compact {
+                let name = Label::new(Some(&dev.label));
+                name.set_halign(Align::Start);
+                name.set_hexpand(true);
+                name.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+                lbl_box.append(&name);
+            } else {
+                let tip = if dev.is_mounted() {
+                    format!("{} (Mounted — click to open)", dev.label)
+                } else {
+                    format!("{} (Click to mount)", dev.label)
+                };
+                main_btn.set_tooltip_text(Some(&tip));
+            }
             main_btn.set_child(Some(&lbl_box));
 
             let w_click = Rc::clone(self);
@@ -1385,12 +1476,14 @@ impl FilerWindow {
             wrap.append(&row);
 
             if let Some(mp) = &dev.mountpoint {
-                let bar = ProgressBar::new();
-                bar.add_css_class("filer-usage-bar");
-                bar.set_fraction(dev.usage_fraction());
-                bar.set_margin_start(6);
-                bar.set_margin_end(6);
-                wrap.append(&bar);
+                if !compact {
+                    let bar = ProgressBar::new();
+                    bar.add_css_class("filer-usage-bar");
+                    bar.set_fraction(dev.usage_fraction());
+                    bar.set_margin_start(6);
+                    bar.set_margin_end(6);
+                    wrap.append(&bar);
+                }
                 self.attach_folder_drop_target(&wrap, mp.clone(), false);
             }
             self.devices_box.append(&wrap);

@@ -101,6 +101,7 @@ pub struct AppState {
     pub sort_order: SortOrder,
     pub folders_first: bool,
     pub show_hidden: bool,
+    pub sidebar_compact: bool,
     pub bookmarks: Vec<PathBuf>,
 }
 
@@ -115,6 +116,7 @@ impl AppState {
             sort_order: SortOrder::Asc,
             folders_first: true,
             show_hidden: false,
+            sidebar_compact: false,
             bookmarks,
         }
     }

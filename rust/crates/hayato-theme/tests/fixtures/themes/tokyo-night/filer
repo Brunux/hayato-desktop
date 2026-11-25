@@ -251,6 +251,28 @@ window.hayato-filer paned > separator {
     padding: 8px 6px;
 }
 
+.filer-sidebar.compact {
+    padding: 8px 4px;
+}
+
+.filer-sidebar.compact .filer-place-row {
+    padding: 7px 4px;
+}
+
+.filer-sidebar.compact .filer-place-icon {
+    font-size: 15px;
+}
+
+.filer-sidebar.compact .filer-device-card {
+    padding: 4px 2px;
+}
+
+.filer-sidebar-sep {
+    background-color: #7aa2f7;
+    min-height: 1px;
+    margin: 6px 6px;
+}
+
 .filer-section-label {
     color: #7a819e;
     font-family: "JetBrains Mono", monospace;
