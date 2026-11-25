@@ -162,8 +162,7 @@ impl SpectrumAnalyzer {
                 .max(start + 1)
                 .min(bins);
             let mut sum = 0.0f32;
-            for k in start..end {
-                let c = self.output[k];
+            for c in &self.output[start..end] {
                 sum += (c.re * c.re + c.im * c.im).sqrt();
             }
             let avg = sum / (end - start) as f32;
@@ -216,8 +215,8 @@ impl SpectrumAnalyzer {
             self.bands[i] = v.clamp(0.05, 0.85);
             self.peaks[i] = self.peaks[i].max(self.bands[i]);
         }
-        for i in 0..WAVE_POINTS {
-            self.wave[i] = ((i as f32 * 0.25 + phase * 1.5).sin() * 0.55).clamp(-1.0, 1.0);
+        for (i, slot) in self.wave.iter_mut().enumerate() {
+            *slot = ((i as f32 * 0.25 + phase * 1.5).sin() * 0.55).clamp(-1.0, 1.0);
         }
         self.beat_intensity = ((phase * 2.0).sin() * 0.5 + 0.5) * 0.5;
     }
