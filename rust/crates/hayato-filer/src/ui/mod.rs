@@ -1490,8 +1490,97 @@ impl FilerWindow {
                 }
                 self.attach_folder_drop_target(&wrap, mp.clone(), false);
             }
+            // Right-click context menu on removable drive card
+            {
+                let rclick = GestureClick::new();
+                rclick.set_button(3);
+                rclick.set_propagation_phase(gtk4::PropagationPhase::Capture);
+                let w_rc = Rc::clone(self);
+                let dev_rc = dev.clone();
+                let anchor = wrap.clone();
+                rclick.connect_pressed(move |gesture, _, x, y| {
+                    gesture.set_state(gtk4::EventSequenceState::Claimed);
+                    w_rc.show_device_context_menu(&anchor, &dev_rc, x, y);
+                });
+                wrap.add_controller(rclick);
+            }
+
             self.devices_box.append(&wrap);
         }
+    }
+
+    fn show_device_context_menu(
+        self: &Rc<Self>,
+        anchor: &GtkBox,
+        dev: &DeviceEntry,
+        x: f64,
+        y: f64,
+    ) {
+        let pop = Popover::new();
+        pop.set_parent(anchor);
+        pop.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+        pop.set_has_arrow(false);
+        unparent_on_close(&pop);
+
+        let col = GtkBox::new(Orientation::Vertical, 2);
+        let add = |icon: &str, label: &str, danger: bool, cb: Box<dyn Fn()>| {
+            let p = pop.clone();
+            let b = make_menu_item(icon, label, None, danger, move || {
+                p.popdown();
+                cb();
+            });
+            col.append(&b);
+        };
+
+        if let Some(mp) = dev.mountpoint.clone() {
+            let w = Rc::clone(self);
+            let mp1 = mp.clone();
+            add(
+                "\u{f07c}",
+                "Open",
+                false,
+                Box::new(move || w.navigate_to(mp1.clone())),
+            );
+            let w = Rc::clone(self);
+            add(
+                "\u{f067}",
+                "Open in New Tab",
+                false,
+                Box::new(move || w.open_new_tab(mp.clone())),
+            );
+            let w = Rc::clone(self);
+            let d_ej = dev.clone();
+            add(
+                "\u{f052}",
+                "Safely Eject",
+                false,
+                Box::new(move || w.eject_drive(d_ej.clone())),
+            );
+        } else {
+            let w = Rc::clone(self);
+            let dp = dev.dev_path.clone();
+            let dl = dev.label.clone();
+            add(
+                "\u{f04b}",
+                "Mount & Open",
+                false,
+                Box::new(move || w.mount_and_open(&dp, &dl)),
+            );
+        }
+
+        let sep = Separator::new(Orientation::Horizontal);
+        sep.add_css_class("filer-menu-sep");
+        col.append(&sep);
+
+        add(
+            "\u{f0a0}",
+            "Format Drive…",
+            true,
+            Box::new(tools::open_format_drive),
+        );
+
+        pop.set_child(Some(&col));
+        pop.popup();
     }
 
     fn mount_and_open(self: &Rc<Self>, dev_path: &str, label: &str) {
@@ -2332,13 +2421,6 @@ impl FilerWindow {
                 None,
                 false,
                 Box::new(move || tools::search_in_folder(&d2)),
-            );
-            add(
-                "\u{f0a0}",
-                "Format Drive…",
-                None,
-                false,
-                Box::new(tools::open_format_drive),
             );
         }
 
