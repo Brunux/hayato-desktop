@@ -254,7 +254,8 @@ mod tests {
             modified_secs: mtime,
             mode: if is_dir { 0o755 } else { 0o644 },
             kind: if is_dir { "Folder" } else { "File" }.to_string(),
-            icon_name: if is_dir { "folder" } else { "text-x-generic" }.to_string(),
+            icon_glyph: if is_dir { "\u{f07b}" } else { "\u{f15b}" },
+            icon_class: if is_dir { "icon-folder" } else { "icon-file" },
         }
     }
 

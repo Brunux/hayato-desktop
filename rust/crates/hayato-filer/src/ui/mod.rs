@@ -15,9 +15,10 @@ use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Application, ApplicationWindow, Box as GtkBox, Button, DragSource, DropTarget, Entry,
-    EventControllerKey, FlowBox, FlowBoxChild, GestureClick, Image, Label, ListBox, ListBoxRow,
-    Orientation, Overlay, Paned, Picture, Popover, ProgressBar, ScrolledWindow, SelectionMode,
+    Align, Application, ApplicationWindow, Box as GtkBox, Button, ContentFit, DragSource,
+    DropTarget, Entry, EventControllerKey, FlowBox, FlowBoxChild, GestureClick, Label, ListBox,
+    ListBoxRow, Orientation, Overlay, Paned, Picture, Popover, ProgressBar, ScrolledWindow,
+    SelectionMode, Separator,
 };
 
 use crate::fs::devices::{self, DeviceEntry};
@@ -25,7 +26,9 @@ use crate::fs::ops::{self, OpKind, OpProgress};
 use crate::fs::thumbs;
 use crate::fs::trash;
 use crate::fs::{FileEntry, format_mtime, format_size, free_space_bytes, list_dir};
-use crate::state::{AppState, SortField, ViewMode, home_dir, is_trash_files_dir, trash_files_dir};
+use crate::state::{
+    AppState, SortField, SortOrder, ViewMode, home_dir, is_trash_files_dir, trash_files_dir,
+};
 use crate::tools;
 
 pub struct FilerWindow {
@@ -45,6 +48,7 @@ pub struct FilerWindow {
     devices_box: GtkBox,
     banner_box: GtkBox,
     banner_label: Label,
+    list_header: GtkBox,
     canvas_scroll: ScrolledWindow,
     flow_box: FlowBox,
     list_box: ListBox,
@@ -68,16 +72,22 @@ impl FilerWindow {
         window.add_css_class("hayato-filer");
 
         // ── Top Header Bar ────────────────────────────────────────────────
-        let header = GtkBox::new(Orientation::Horizontal, 6);
+        let header = GtkBox::new(Orientation::Horizontal, 8);
         header.add_css_class("filer-header");
 
-        let back_btn = Button::with_label("◀");
+        let nav_group = GtkBox::new(Orientation::Horizontal, 2);
+        nav_group.add_css_class("filer-seg-group");
+        let back_btn = Button::with_label("\u{f053}");
         back_btn.add_css_class("filer-nav-btn");
+        back_btn.add_css_class("filer-glyph");
         back_btn.set_tooltip_text(Some("Back (Alt+Left)"));
 
-        let fwd_btn = Button::with_label("▶");
+        let fwd_btn = Button::with_label("\u{f054}");
         fwd_btn.add_css_class("filer-nav-btn");
+        fwd_btn.add_css_class("filer-glyph");
         fwd_btn.set_tooltip_text(Some("Forward (Alt+Right)"));
+        nav_group.append(&back_btn);
+        nav_group.append(&fwd_btn);
 
         let crumbs_box = GtkBox::new(Orientation::Horizontal, 0);
         crumbs_box.add_css_class("filer-breadcrumbs");
@@ -94,30 +104,36 @@ impl FilerWindow {
         filter_entry.set_width_chars(18);
         filter_entry.set_visible(false);
 
-        let filter_btn = Button::with_label("⌕");
+        let filter_btn = Button::with_label("\u{f002}");
         filter_btn.add_css_class("filer-tool-btn");
+        filter_btn.add_css_class("filer-glyph");
         filter_btn.set_tooltip_text(Some("Filter folder (Ctrl+F)"));
 
-        let grid_btn = Button::with_label("⊞");
+        let view_group = GtkBox::new(Orientation::Horizontal, 2);
+        view_group.add_css_class("filer-seg-group");
+        let grid_btn = Button::with_label("\u{f009}");
         grid_btn.add_css_class("filer-tool-btn");
+        grid_btn.add_css_class("filer-glyph");
         grid_btn.set_tooltip_text(Some("Icon Grid (Ctrl+1)"));
 
-        let list_btn = Button::with_label("☰");
+        let list_btn = Button::with_label("\u{f03a}");
         list_btn.add_css_class("filer-tool-btn");
+        list_btn.add_css_class("filer-glyph");
         list_btn.set_tooltip_text(Some("Compact List (Ctrl+2)"));
+        view_group.append(&grid_btn);
+        view_group.append(&list_btn);
 
-        let sort_btn = Button::with_label("⇅");
+        let sort_btn = Button::with_label("\u{f0dc}");
         sort_btn.add_css_class("filer-tool-btn");
+        sort_btn.add_css_class("filer-glyph");
         sort_btn.set_tooltip_text(Some("Sort & View Options"));
 
-        header.append(&back_btn);
-        header.append(&fwd_btn);
+        header.append(&nav_group);
         header.append(&crumbs_box);
         header.append(&path_entry);
         header.append(&filter_entry);
         header.append(&filter_btn);
-        header.append(&grid_btn);
-        header.append(&list_btn);
+        header.append(&view_group);
         header.append(&sort_btn);
 
         // ── Left Sidebar (Places + Devices) ───────────────────────────────
@@ -151,12 +167,18 @@ impl FilerWindow {
         let banner_label = Label::new(None);
         banner_label.set_hexpand(true);
         banner_label.set_halign(Align::Start);
-        let banner_close = Button::with_label("✕");
+        let banner_close = Button::with_label("\u{f00d}");
         banner_close.add_css_class("filer-dev-action");
+        banner_close.add_css_class("filer-glyph");
         let bb_close = banner_box.clone();
         banner_close.connect_clicked(move |_| bb_close.set_visible(false));
         banner_box.append(&banner_label);
         banner_box.append(&banner_close);
+
+        // ── Sticky List View Column Header ────────────────────────────────
+        let list_header = GtkBox::new(Orientation::Horizontal, 10);
+        list_header.add_css_class("filer-list-header");
+        list_header.set_visible(false);
 
         // ── Main Canvas (FlowBox Grid + ListBox Compact List) ─────────────
         let flow_box = FlowBox::new();
@@ -167,12 +189,12 @@ impl FilerWindow {
         flow_box.set_selection_mode(SelectionMode::Multiple);
         flow_box.set_activate_on_single_click(false);
         flow_box.set_homogeneous(true);
-        flow_box.set_column_spacing(4);
-        flow_box.set_row_spacing(4);
-        flow_box.set_margin_start(8);
-        flow_box.set_margin_end(8);
-        flow_box.set_margin_top(8);
-        flow_box.set_margin_bottom(8);
+        flow_box.set_column_spacing(6);
+        flow_box.set_row_spacing(6);
+        flow_box.set_margin_start(12);
+        flow_box.set_margin_end(12);
+        flow_box.set_margin_top(12);
+        flow_box.set_margin_bottom(12);
 
         let list_box = ListBox::new();
         list_box.add_css_class("filer-canvas");
@@ -211,6 +233,7 @@ impl FilerWindow {
         // ── Right Column & Paned Split ────────────────────────────────────
         let right_col = GtkBox::new(Orientation::Vertical, 0);
         right_col.append(&banner_box);
+        right_col.append(&list_header);
         right_col.append(&canvas_scroll);
 
         let paned = Paned::new(Orientation::Horizontal);
@@ -250,6 +273,7 @@ impl FilerWindow {
             devices_box,
             banner_box,
             banner_label,
+            list_header,
             canvas_scroll,
             flow_box,
             list_box,
@@ -263,6 +287,7 @@ impl FilerWindow {
         });
 
         this.wire_signals(&sort_btn, &cancel_btn);
+        this.rebuild_list_header();
         this.refresh_devices();
         this.reload_dir();
         this
@@ -712,11 +737,72 @@ impl FilerWindow {
     fn set_view_mode(self: &Rc<Self>, mode: ViewMode) {
         self.state.borrow_mut().view_mode = mode;
         self.update_view_buttons(mode);
-        match mode {
-            ViewMode::Grid => self.canvas_scroll.set_child(Some(&self.flow_box)),
-            ViewMode::List => self.canvas_scroll.set_child(Some(&self.list_box)),
-        }
+        self.list_header.set_visible(mode == ViewMode::List);
+        self.rebuild_list_header();
         self.render_canvas();
+    }
+
+    fn rebuild_list_header(self: &Rc<Self>) {
+        while let Some(c) = self.list_header.first_child() {
+            self.list_header.remove(&c);
+        }
+        let (active_field, order) = {
+            let st = self.state.borrow();
+            (st.sort_field, st.sort_order)
+        };
+        let arrow = |f: SortField| -> &'static str {
+            if f == active_field {
+                match order {
+                    SortOrder::Asc => " ▲",
+                    SortOrder::Desc => " ▼",
+                }
+            } else {
+                ""
+            }
+        };
+
+        let spacer = Label::new(None);
+        spacer.set_size_request(24, -1);
+        self.list_header.append(&spacer);
+
+        let cols: [(SortField, &str, bool, i32); 4] = [
+            (SortField::Name, "NAME", true, -1),
+            (SortField::Size, "SIZE", false, 9),
+            (SortField::Modified, "MODIFIED", false, 17),
+            (SortField::Kind, "TYPE", false, 8),
+        ];
+        for (field, title, expand, width_chars) in cols {
+            let lbl = Label::new(Some(&format!("{title}{}", arrow(field))));
+            lbl.set_halign(if expand { Align::Start } else { Align::End });
+            if width_chars > 0 {
+                lbl.set_width_chars(width_chars);
+            }
+            let btn = Button::new();
+            btn.set_child(Some(&lbl));
+            btn.add_css_class("filer-col-btn");
+            if field == active_field {
+                btn.add_css_class("active");
+            }
+            if expand {
+                btn.set_hexpand(true);
+            }
+            let w = Rc::clone(self);
+            btn.connect_clicked(move |_| {
+                {
+                    let mut st = w.state.borrow_mut();
+                    if st.sort_field == field {
+                        st.sort_order = st.sort_order.toggle();
+                    } else {
+                        st.sort_field = field;
+                        st.sort_order = SortOrder::Asc;
+                    }
+                    st.recompute_visible();
+                }
+                w.rebuild_list_header();
+                w.render_canvas();
+            });
+            self.list_header.append(&btn);
+        }
     }
 
     fn update_view_buttons(&self, mode: ViewMode) {
@@ -807,14 +893,14 @@ impl FilerWindow {
         let cur_trash = self.state.borrow().in_trash;
 
         let defaults: [(&str, &str, PathBuf, bool); 8] = [
-            ("⌂", "Home", home.clone(), false),
-            ("▤", "Desktop", home.join("Desktop"), false),
-            ("≡", "Documents", home.join("Documents"), false),
-            ("↓", "Downloads", home.join("Downloads"), false),
-            ("◫", "Pictures", home.join("Pictures"), false),
-            ("♪", "Music", home.join("Music"), false),
-            ("▶", "Videos", home.join("Videos"), false),
-            ("⌧", "Trash", trash_dir.clone(), true),
+            ("\u{f015}", "Home", home.clone(), false),
+            ("\u{f108}", "Desktop", home.join("Desktop"), false),
+            ("\u{f15c}", "Documents", home.join("Documents"), false),
+            ("\u{f019}", "Downloads", home.join("Downloads"), false),
+            ("\u{f03e}", "Pictures", home.join("Pictures"), false),
+            ("\u{f001}", "Music", home.join("Music"), false),
+            ("\u{f008}", "Videos", home.join("Videos"), false),
+            ("\u{f1f8}", "Trash", trash_dir.clone(), true),
         ];
 
         for (glyph, name, path, is_trash) in defaults {
@@ -843,7 +929,7 @@ impl FilerWindow {
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_else(|| bm.display().to_string());
             let active = !cur_trash && cur_cwd == bm;
-            let row = self.make_place_button("★", &name, bm, false, active, None);
+            let row = self.make_place_button("\u{f005}", &name, bm, false, active, None);
             self.places_box.append(&row);
         }
     }
@@ -859,6 +945,9 @@ impl FilerWindow {
     ) -> Button {
         let inner = GtkBox::new(Orientation::Horizontal, 8);
         let g = Label::new(Some(glyph));
+        g.add_css_class("filer-place-icon");
+        g.set_size_request(18, -1);
+        g.set_halign(Align::Center);
         let lbl = Label::new(Some(name));
         lbl.set_hexpand(true);
         lbl.set_halign(Align::Start);
@@ -919,20 +1008,23 @@ impl FilerWindow {
         }
         let cur_cwd = self.state.borrow().cwd.clone();
         for dev in devs {
-            let wrap = GtkBox::new(Orientation::Vertical, 2);
-            wrap.add_css_class("filer-place-row");
+            let wrap = GtkBox::new(Orientation::Vertical, 3);
+            wrap.add_css_class("filer-device-card");
             if let Some(mp) = &dev.mountpoint
                 && cur_cwd.starts_with(mp)
             {
                 wrap.add_css_class("active");
             }
 
-            let row = GtkBox::new(Orientation::Horizontal, 6);
+            let row = GtkBox::new(Orientation::Horizontal, 4);
             let main_btn = Button::new();
             main_btn.set_hexpand(true);
-            main_btn.add_css_class("filer-nav-btn");
-            let lbl_box = GtkBox::new(Orientation::Horizontal, 6);
-            let icon = Label::new(Some("⛁"));
+            main_btn.add_css_class("filer-device-btn");
+            let lbl_box = GtkBox::new(Orientation::Horizontal, 8);
+            let icon = Label::new(Some("\u{f0a0}"));
+            icon.add_css_class("filer-place-icon");
+            icon.set_size_request(18, -1);
+            icon.set_halign(Align::Center);
             let name = Label::new(Some(&dev.label));
             name.set_halign(Align::Start);
             name.set_hexpand(true);
@@ -953,16 +1045,18 @@ impl FilerWindow {
             row.append(&main_btn);
 
             if dev.is_mounted() {
-                let eject_btn = Button::with_label("⏏");
+                let eject_btn = Button::with_label("\u{f052}");
                 eject_btn.add_css_class("filer-dev-action");
+                eject_btn.add_css_class("filer-glyph");
                 eject_btn.set_tooltip_text(Some("Safely Eject"));
                 let w_ej = Rc::clone(self);
                 let dev_ej = dev.clone();
                 eject_btn.connect_clicked(move |_| w_ej.eject_drive(dev_ej.clone()));
                 row.append(&eject_btn);
             } else {
-                let mnt_btn = Button::with_label("▸");
+                let mnt_btn = Button::with_label("\u{f04b}");
                 mnt_btn.add_css_class("filer-dev-action");
+                mnt_btn.add_css_class("filer-glyph");
                 mnt_btn.set_tooltip_text(Some("Mount Drive"));
                 let w_mn = Rc::clone(self);
                 let dp = dev.dev_path.clone();
@@ -1040,12 +1134,51 @@ impl FilerWindow {
     }
 
     fn render_canvas(self: &Rc<Self>) {
-        let (mode, items) = {
+        let (mode, items, in_trash, has_filter) = {
             let st = self.state.borrow();
-            (st.view_mode, st.visible.clone())
+            (
+                st.view_mode,
+                st.visible.clone(),
+                st.in_trash,
+                !st.filter.trim().is_empty(),
+            )
         };
+        if items.is_empty() {
+            let empty = GtkBox::new(Orientation::Vertical, 8);
+            empty.add_css_class("filer-empty-state");
+            empty.set_halign(Align::Center);
+            empty.set_valign(Align::Center);
+            empty.set_vexpand(true);
+            empty.set_hexpand(true);
+
+            let (glyph, title, sub) = if has_filter {
+                ("\u{f002}", "No matching items", "Press Esc to clear filter")
+            } else if in_trash {
+                ("\u{f1f8}", "Trash is empty", "Deleted files appear here")
+            } else {
+                (
+                    "\u{f07c}",
+                    "This folder is empty",
+                    "Drag files here or press Ctrl+Shift+N to create a folder",
+                )
+            };
+            let g = Label::new(Some(glyph));
+            g.add_css_class("filer-empty-glyph");
+            let t = Label::new(Some(title));
+            t.add_css_class("filer-empty-title");
+            let s = Label::new(Some(sub));
+            s.add_css_class("filer-empty-sub");
+            empty.append(&g);
+            empty.append(&t);
+            empty.append(&s);
+            self.canvas_scroll.set_child(Some(&empty));
+            self.update_status_bar();
+            return;
+        }
+
         match mode {
             ViewMode::Grid => {
+                self.canvas_scroll.set_child(Some(&self.flow_box));
                 while let Some(c) = self.flow_box.first_child() {
                     self.flow_box.remove(&c);
                 }
@@ -1057,6 +1190,7 @@ impl FilerWindow {
                 }
             }
             ViewMode::List => {
+                self.canvas_scroll.set_child(Some(&self.list_box));
                 while let Some(r) = self.list_box.first_child() {
                     self.list_box.remove(&r);
                 }
@@ -1072,21 +1206,24 @@ impl FilerWindow {
     }
 
     fn build_grid_cell(self: &Rc<Self>, entry: &FileEntry) -> GtkBox {
-        let cell = GtkBox::new(Orientation::Vertical, 4);
+        let cell = GtkBox::new(Orientation::Vertical, 6);
         cell.add_css_class("filer-grid-item");
-        cell.set_size_request(96, 94);
+        cell.set_size_request(104, 102);
         cell.set_halign(Align::Center);
 
         let icon_box = GtkBox::new(Orientation::Vertical, 0);
-        icon_box.set_size_request(56, 56);
+        icon_box.set_size_request(60, 56);
         icon_box.set_halign(Align::Center);
         icon_box.set_valign(Align::Center);
 
-        let img = Image::from_icon_name(&entry.icon_name);
-        img.set_pixel_size(48);
-        icon_box.append(&img);
+        let glyph = Label::new(Some(entry.icon_glyph));
+        glyph.add_css_class("filer-grid-glyph");
+        glyph.add_css_class(entry.icon_class);
+        glyph.set_halign(Align::Center);
+        glyph.set_valign(Align::Center);
+        icon_box.append(&glyph);
 
-        // Async thumbnail for images
+        // Async framed thumbnail for images
         if entry.is_image() {
             let (tx, rx) = mpsc::channel();
             let p = entry.path.clone();
@@ -1100,10 +1237,17 @@ impl FilerWindow {
                     while let Some(c) = ib.first_child() {
                         ib.remove(&c);
                     }
+                    let frame = GtkBox::new(Orientation::Vertical, 0);
+                    frame.add_css_class("filer-thumb");
+                    frame.set_size_request(56, 56);
+                    frame.set_halign(Align::Center);
+                    frame.set_valign(Align::Center);
                     let pic = Picture::for_filename(&thumb_path);
-                    pic.set_size_request(52, 52);
+                    pic.set_size_request(56, 56);
+                    pic.set_content_fit(ContentFit::Cover);
                     pic.set_can_shrink(true);
-                    ib.append(&pic);
+                    frame.append(&pic);
+                    ib.append(&frame);
                     glib::ControlFlow::Break
                 }
                 Ok(None) => glib::ControlFlow::Break,
@@ -1117,7 +1261,7 @@ impl FilerWindow {
         if entry.is_dir {
             lbl.add_css_class("dir");
         }
-        lbl.set_max_width_chars(13);
+        lbl.set_max_width_chars(14);
         lbl.set_lines(2);
         lbl.set_wrap(true);
         lbl.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
@@ -1138,9 +1282,12 @@ impl FilerWindow {
         let row = GtkBox::new(Orientation::Horizontal, 10);
         row.add_css_class("filer-list-row");
 
-        let img = Image::from_icon_name(&entry.icon_name);
-        img.set_pixel_size(20);
-        row.append(&img);
+        let glyph = Label::new(Some(entry.icon_glyph));
+        glyph.add_css_class("filer-list-glyph");
+        glyph.add_css_class(entry.icon_class);
+        glyph.set_size_request(22, -1);
+        glyph.set_halign(Align::Center);
+        row.append(&glyph);
 
         let name = Label::new(Some(&entry.name));
         name.add_css_class("filer-item-name");
@@ -1375,15 +1522,9 @@ impl FilerWindow {
         pop.set_parent(anchor);
         let col = GtkBox::new(Orientation::Vertical, 2);
 
-        let add_item = |label: &str, cb: Box<dyn Fn()>| {
-            let b = Button::with_label(label);
-            b.add_css_class("filer-place-row");
-            let p = pop.clone();
-            b.connect_clicked(move |_| {
-                p.popdown();
-                cb();
-            });
-            col.append(&b);
+        let (cur_field, hidden) = {
+            let st = self.state.borrow();
+            (st.sort_field, st.show_hidden)
         };
 
         for (lbl, field) in [
@@ -1392,42 +1533,49 @@ impl FilerWindow {
             ("Sort by Size", SortField::Size),
             ("Sort by Type", SortField::Kind),
         ] {
+            let icon = if cur_field == field { "\u{f00c}" } else { "" };
             let w = Rc::clone(self);
-            add_item(
-                lbl,
-                Box::new(move || {
+            let p = pop.clone();
+            let b = make_menu_item(icon, lbl, None, false, move || {
+                p.popdown();
+                {
                     let mut st = w.state.borrow_mut();
                     if st.sort_field == field {
                         st.sort_order = st.sort_order.toggle();
                     } else {
                         st.sort_field = field;
-                        st.sort_order = crate::state::SortOrder::Asc;
+                        st.sort_order = SortOrder::Asc;
                     }
                     st.recompute_visible();
-                    drop(st);
-                    w.render_canvas();
-                }),
-            );
+                }
+                w.rebuild_list_header();
+                w.render_canvas();
+            });
+            col.append(&b);
         }
 
-        {
-            let w = Rc::clone(self);
-            let hidden = self.state.borrow().show_hidden;
-            add_item(
-                if hidden {
-                    "✓ Show Hidden Files"
-                } else {
-                    "Show Hidden Files"
-                },
-                Box::new(move || {
+        let sep = Separator::new(Orientation::Horizontal);
+        sep.add_css_class("filer-menu-sep");
+        col.append(&sep);
+
+        let w = Rc::clone(self);
+        let p = pop.clone();
+        let b = make_menu_item(
+            if hidden { "\u{f00c}" } else { "" },
+            "Show Hidden Files",
+            Some("Ctrl+H"),
+            false,
+            move || {
+                p.popdown();
+                {
                     let mut st = w.state.borrow_mut();
                     st.show_hidden = !st.show_hidden;
                     st.recompute_visible();
-                    drop(st);
-                    w.render_canvas();
-                }),
-            );
-        }
+                }
+                w.render_canvas();
+            },
+        );
+        col.append(&b);
 
         pop.set_child(Some(&col));
         pop.popup();
@@ -1444,15 +1592,19 @@ impl FilerWindow {
         let in_trash = self.state.borrow().in_trash;
         let cwd = self.state.borrow().cwd.clone();
 
-        let add = |label: &str, cb: Box<dyn Fn()>| {
-            let b = Button::with_label(label);
-            b.add_css_class("filer-place-row");
-            let p = pop.clone();
-            b.connect_clicked(move |_| {
-                p.popdown();
-                cb();
-            });
-            col.append(&b);
+        let add =
+            |icon: &str, label: &str, shortcut: Option<&str>, danger: bool, cb: Box<dyn Fn()>| {
+                let p = pop.clone();
+                let b = make_menu_item(icon, label, shortcut, danger, move || {
+                    p.popdown();
+                    cb();
+                });
+                col.append(&b);
+            };
+        let add_sep = || {
+            let sep = Separator::new(Orientation::Horizontal);
+            sep.add_css_class("filer-menu-sep");
+            col.append(&sep);
         };
 
         if let Some(first) = sel.first().cloned() {
@@ -1461,7 +1613,10 @@ impl FilerWindow {
                 let w = Rc::clone(self);
                 let ps = paths.clone();
                 add(
+                    "\u{f0e2}",
                     "Restore from Trash",
+                    None,
+                    false,
                     Box::new(move || {
                         for p in &ps {
                             let _ = trash::restore_from_trash(p);
@@ -1473,14 +1628,20 @@ impl FilerWindow {
                 let w = Rc::clone(self);
                 let ps = paths.clone();
                 add(
+                    "\u{f1f8}",
                     "Delete Permanently…",
+                    Some("Del"),
+                    true,
                     Box::new(move || w.confirm_permanent_delete(ps.clone())),
                 );
             } else {
                 let w = Rc::clone(self);
                 let f_open = first.clone();
                 add(
+                    "\u{f07c}",
                     "Open",
+                    Some("Enter"),
+                    false,
                     Box::new(move || {
                         if f_open.is_dir {
                             w.navigate_to(f_open.path.clone());
@@ -1490,12 +1651,22 @@ impl FilerWindow {
                     }),
                 );
                 let w = Rc::clone(self);
-                add("Quick Look (Space)", Box::new(move || w.toggle_quicklook()));
+                add(
+                    "\u{f06e}",
+                    "Quick Look",
+                    Some("Space"),
+                    false,
+                    Box::new(move || w.toggle_quicklook()),
+                );
+                add_sep();
 
                 let w = Rc::clone(self);
                 let ps = paths.clone();
                 add(
+                    "\u{f0c4}",
                     "Cut",
+                    Some("Ctrl+X"),
+                    false,
                     Box::new(move || {
                         tools::write_file_clipboard(&ps, true);
                         w.show_banner(&format!("Cut {} item(s)", ps.len()), "ok");
@@ -1504,7 +1675,10 @@ impl FilerWindow {
                 let w = Rc::clone(self);
                 let ps = paths.clone();
                 add(
+                    "\u{f0c5}",
                     "Copy",
+                    Some("Ctrl+C"),
+                    false,
                     Box::new(move || {
                         tools::write_file_clipboard(&ps, false);
                         w.show_banner(&format!("Copied {} item(s)", ps.len()), "ok");
@@ -1513,50 +1687,78 @@ impl FilerWindow {
                 if sel.len() == 1 {
                     let w = Rc::clone(self);
                     let f_ren = first.clone();
-                    add("Rename… (F2)", Box::new(move || w.prompt_rename(&f_ren)));
+                    add(
+                        "\u{f040}",
+                        "Rename…",
+                        Some("F2"),
+                        false,
+                        Box::new(move || w.prompt_rename(&f_ren)),
+                    );
                 }
                 let w = Rc::clone(self);
                 let ps = paths.clone();
                 add(
+                    "\u{f1f8}",
                     "Move to Trash",
+                    Some("Del"),
+                    true,
                     Box::new(move || w.run_op(OpKind::Trash, ps.clone(), None)),
                 );
+                add_sep();
 
                 // Hayato Tools Integration
                 let ps_share = paths.clone();
                 add(
+                    "\u{f064}",
                     "Share… (Hayato Share)",
+                    Some("Ctrl+⇧+S"),
+                    false,
                     Box::new(move || tools::share_paths(&ps_share)),
                 );
                 if first.is_audio() {
                     let p = first.path.clone();
                     add(
+                        "\u{f001}",
                         "Play in Cassette",
+                        None,
+                        false,
                         Box::new(move || tools::play_in_cassette(&p)),
                     );
                 }
                 if first.is_image() {
                     let p = first.path.clone();
                     add(
+                        "\u{f030}",
                         "Scan / OCR (Lens)",
+                        None,
+                        false,
                         Box::new(move || tools::open_in_lens(&p)),
                     );
                 }
                 if first.is_dir {
                     let p = first.path.clone();
                     add(
+                        "\u{f120}",
                         "Open Terminal Here",
+                        Some("Ctrl+⇧+T"),
+                        false,
                         Box::new(move || tools::open_terminal_here(&p)),
                     );
                     let p2 = first.path.clone();
                     add(
+                        "\u{f002}",
                         "Search Inside Folder…",
+                        None,
+                        false,
                         Box::new(move || tools::search_in_folder(&p2)),
                     );
                     let w = Rc::clone(self);
                     let p3 = first.path.clone();
                     add(
+                        "\u{f005}",
                         "Pin to Sidebar",
+                        None,
+                        false,
                         Box::new(move || {
                             if w.state.borrow_mut().pin_bookmark(p3.clone()) {
                                 w.render_places();
@@ -1567,13 +1769,21 @@ impl FilerWindow {
                 }
                 let p_act = first.path.clone();
                 add(
+                    "\u{f013}",
                     "More Actions…",
+                    None,
+                    false,
                     Box::new(move || tools::open_file_actions(&p_act)),
                 );
+                add_sep();
+
                 let w = Rc::clone(self);
                 let ps_cp = paths.clone();
                 add(
+                    "\u{f0ea}",
                     "Copy Path",
+                    Some("Ctrl+⇧+C"),
+                    false,
                     Box::new(move || {
                         tools::copy_paths_to_clipboard(&ps_cp);
                         w.show_banner("Copied path(s)", "ok");
@@ -1583,7 +1793,10 @@ impl FilerWindow {
         } else if in_trash {
             let w = Rc::clone(self);
             add(
+                "\u{f1f8}",
                 "Empty Trash…",
+                None,
+                true,
                 Box::new(move || {
                     if let Err(e) = trash::empty_trash() {
                         w.show_banner(&e, "danger");
@@ -1596,22 +1809,44 @@ impl FilerWindow {
         } else {
             let w = Rc::clone(self);
             add(
-                "New Folder… (Ctrl+Shift+N)",
+                "\u{f07b}",
+                "New Folder…",
+                Some("Ctrl+⇧+N"),
+                false,
                 Box::new(move || w.prompt_new_folder()),
             );
             let w = Rc::clone(self);
-            add("Paste (Ctrl+V)", Box::new(move || w.paste_from_clipboard()));
+            add(
+                "\u{f0ea}",
+                "Paste",
+                Some("Ctrl+V"),
+                false,
+                Box::new(move || w.paste_from_clipboard()),
+            );
+            add_sep();
             let d1 = cwd.clone();
             add(
+                "\u{f120}",
                 "Open Terminal Here",
+                Some("Ctrl+⇧+T"),
+                false,
                 Box::new(move || tools::open_terminal_here(&d1)),
             );
             let d2 = cwd.clone();
             add(
+                "\u{f002}",
                 "Search in This Folder…",
+                None,
+                false,
                 Box::new(move || tools::search_in_folder(&d2)),
             );
-            add("Format Drive…", Box::new(tools::open_format_drive));
+            add(
+                "\u{f0a0}",
+                "Format Drive…",
+                None,
+                false,
+                Box::new(tools::open_format_drive),
+            );
         }
 
         pop.set_child(Some(&col));
@@ -1775,4 +2010,40 @@ impl FilerWindow {
             }
         });
     }
+}
+
+fn make_menu_item(
+    icon: &str,
+    label: &str,
+    shortcut: Option<&str>,
+    danger: bool,
+    on_click: impl Fn() + 'static,
+) -> Button {
+    let row = GtkBox::new(Orientation::Horizontal, 8);
+    let ic = Label::new(Some(icon));
+    ic.add_css_class("filer-menu-icon");
+    ic.set_size_request(16, -1);
+    ic.set_halign(Align::Center);
+    row.append(&ic);
+
+    let lbl = Label::new(Some(label));
+    lbl.set_halign(Align::Start);
+    lbl.set_hexpand(true);
+    row.append(&lbl);
+
+    if let Some(sc) = shortcut {
+        let sc_lbl = Label::new(Some(sc));
+        sc_lbl.add_css_class("filer-menu-shortcut");
+        sc_lbl.set_halign(Align::End);
+        row.append(&sc_lbl);
+    }
+
+    let btn = Button::new();
+    btn.set_child(Some(&row));
+    btn.add_css_class("filer-menu-item");
+    if danger {
+        btn.add_css_class("danger");
+    }
+    btn.connect_clicked(move |_| on_click());
+    btn
 }

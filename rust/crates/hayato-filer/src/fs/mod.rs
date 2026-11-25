@@ -22,7 +22,8 @@ pub struct FileEntry {
     pub modified_secs: i64,
     pub mode: u32,
     pub kind: String,
-    pub icon_name: String,
+    pub icon_glyph: &'static str,
+    pub icon_class: &'static str,
 }
 
 impl FileEntry {
@@ -44,7 +45,7 @@ impl FileEntry {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
         let mode = meta.mode();
-        let (kind, icon_name) = classify_entry(&name, is_dir);
+        let (kind, icon_glyph, icon_class) = classify_entry(&name, is_dir, mode);
         Some(Self {
             path: path.to_path_buf(),
             name,
@@ -54,7 +55,8 @@ impl FileEntry {
             modified_secs,
             mode,
             kind,
-            icon_name,
+            icon_glyph,
+            icon_class,
         })
     }
 
@@ -131,35 +133,46 @@ pub fn ext_lower(name: &str) -> Option<String> {
         .map(|s| s.to_ascii_lowercase())
 }
 
-fn classify_entry(name: &str, is_dir: bool) -> (String, String) {
+fn classify_entry(name: &str, is_dir: bool, mode: u32) -> (String, &'static str, &'static str) {
     if is_dir {
-        return ("Folder".to_string(), "folder".to_string());
+        return ("Folder".to_string(), "\u{f07b}", "icon-folder");
     }
     match ext_lower(name).as_deref() {
         Some("png" | "jpg" | "jpeg" | "webp" | "gif" | "svg" | "bmp") => {
-            ("Image".to_string(), "image-x-generic".to_string())
+            ("Image".to_string(), "\u{f1c5}", "icon-image")
         }
         Some("mp3" | "flac" | "ogg" | "opus" | "wav" | "m4a" | "aac") => {
-            ("Audio".to_string(), "audio-x-generic".to_string())
+            ("Audio".to_string(), "\u{f1c7}", "icon-audio")
         }
         Some("mp4" | "mkv" | "webm" | "mov" | "avi") => {
-            ("Video".to_string(), "video-x-generic".to_string())
+            ("Video".to_string(), "\u{f1c8}", "icon-video")
         }
-        Some("pdf") => ("PDF".to_string(), "application-pdf".to_string()),
+        Some("pdf") => ("PDF".to_string(), "\u{f1c1}", "icon-pdf"),
         Some("zip" | "tar" | "gz" | "xz" | "zst" | "7z" | "rar" | "bz2") => {
-            ("Archive".to_string(), "package-x-generic".to_string())
+            ("Archive".to_string(), "\u{f1c6}", "icon-archive")
         }
-        Some("rs" | "py" | "sh" | "js" | "ts" | "c" | "h" | "cpp" | "toml" | "json" | "yaml") => {
-            ("Code".to_string(), "text-x-script".to_string())
+        Some(
+            "rs" | "py" | "sh" | "js" | "ts" | "c" | "h" | "cpp" | "toml" | "json" | "jsonc"
+            | "yaml" | "yml" | "css" | "html" | "xml",
+        ) => ("Code".to_string(), "\u{f1c9}", "icon-code"),
+        Some("md" | "txt" | "log" | "csv" | "conf" | "ini" | "desktop") => {
+            ("Text".to_string(), "\u{f15c}", "icon-file")
         }
-        Some("md" | "txt" | "log" | "csv" | "conf" | "ini") => {
-            ("Text".to_string(), "text-x-generic".to_string())
+        Some("deb" | "rpm" | "appimage") => ("Package".to_string(), "\u{f1c6}", "icon-archive"),
+        Some(ext) => {
+            if mode & 0o111 != 0 {
+                ("App".to_string(), "\u{f013}", "icon-exec")
+            } else {
+                (ext.to_ascii_uppercase(), "\u{f15b}", "icon-file")
+            }
         }
-        Some("deb" | "rpm" | "appimage") => {
-            ("Package".to_string(), "package-x-generic".to_string())
+        None => {
+            if mode & 0o111 != 0 {
+                ("App".to_string(), "\u{f013}", "icon-exec")
+            } else {
+                ("File".to_string(), "\u{f15b}", "icon-file")
+            }
         }
-        Some(ext) => (ext.to_ascii_uppercase(), "text-x-generic".to_string()),
-        None => ("File".to_string(), "text-x-generic".to_string()),
     }
 }
 

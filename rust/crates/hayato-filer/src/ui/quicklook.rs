@@ -46,8 +46,9 @@ pub fn build_quicklook_card(entry: &FileEntry, on_close: impl Fn() + 'static) ->
     header_col.append(&meta);
     top.append(&header_col);
 
-    let close_btn = Button::with_label("✕");
+    let close_btn = Button::with_label("\u{f00d}");
     close_btn.add_css_class("filer-nav-btn");
+    close_btn.add_css_class("filer-glyph");
     close_btn.connect_clicked(move |_| on_close());
     top.append(&close_btn);
     card.append(&top);
@@ -85,8 +86,9 @@ pub fn build_quicklook_card(entry: &FileEntry, on_close: impl Fn() + 'static) ->
         info_box.set_valign(Align::Center);
         info_box.set_halign(Align::Center);
 
-        let icon = gtk4::Image::from_icon_name(&entry.icon_name);
-        icon.set_pixel_size(64);
+        let icon = Label::new(Some(entry.icon_glyph));
+        icon.add_css_class("filer-ql-glyph");
+        icon.add_css_class(entry.icon_class);
         info_box.append(&icon);
 
         let path_lbl = Label::new(Some(&entry.path.display().to_string()));
