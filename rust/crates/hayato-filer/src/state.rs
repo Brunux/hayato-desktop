@@ -35,54 +35,52 @@ impl SortOrder {
 }
 
 #[derive(Clone, Debug)]
-pub struct AppState {
+pub struct TabState {
     pub cwd: PathBuf,
     pub in_trash: bool,
     pub history: Vec<PathBuf>,
     pub history_idx: usize,
-    pub view_mode: ViewMode,
-    pub sort_field: SortField,
-    pub sort_order: SortOrder,
-    pub folders_first: bool,
-    pub show_hidden: bool,
     pub filter: String,
     pub entries: Vec<FileEntry>,
     pub visible: Vec<FileEntry>,
-    pub bookmarks: Vec<PathBuf>,
 }
 
-impl AppState {
+impl TabState {
     pub fn new(initial: PathBuf) -> Self {
-        let bookmarks = load_bookmarks();
+        let in_trash = is_trash_files_dir(&initial);
         Self {
             cwd: initial.clone(),
-            in_trash: false,
+            in_trash,
             history: vec![initial],
             history_idx: 0,
-            view_mode: ViewMode::Grid,
-            sort_field: SortField::Name,
-            sort_order: SortOrder::Asc,
-            folders_first: true,
-            show_hidden: false,
             filter: String::new(),
             entries: Vec::new(),
             visible: Vec::new(),
-            bookmarks,
         }
     }
 
-    pub fn navigate(&mut self, target: PathBuf, in_trash: bool) {
-        if self.cwd == target && self.in_trash == in_trash {
-            return;
+    pub fn title(&self) -> String {
+        if self.in_trash {
+            return "Trash".to_string();
         }
-        self.in_trash = in_trash;
-        self.cwd = target.clone();
-        self.filter.clear();
-        if self.history_idx + 1 < self.history.len() {
-            self.history.truncate(self.history_idx + 1);
+        if self.cwd == home_dir() {
+            return "Home".to_string();
         }
-        self.history.push(target);
-        self.history_idx = self.history.len() - 1;
+        self.cwd
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "/".to_string())
+    }
+
+    pub fn icon_glyph(&self) -> &'static str {
+        if self.in_trash {
+            "\u{f1f8}"
+        } else if self.cwd == home_dir() {
+            "\u{f015}"
+        } else {
+            "\u{f07b}"
+        }
     }
 
     pub fn can_back(&self) -> bool {
@@ -92,39 +90,152 @@ impl AppState {
     pub fn can_forward(&self) -> bool {
         self.history_idx + 1 < self.history.len()
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct AppState {
+    pub tabs: Vec<TabState>,
+    pub active_tab: usize,
+    pub view_mode: ViewMode,
+    pub sort_field: SortField,
+    pub sort_order: SortOrder,
+    pub folders_first: bool,
+    pub show_hidden: bool,
+    pub bookmarks: Vec<PathBuf>,
+}
+
+impl AppState {
+    pub fn new(initial: PathBuf) -> Self {
+        let bookmarks = load_bookmarks();
+        Self {
+            tabs: vec![TabState::new(initial)],
+            active_tab: 0,
+            view_mode: ViewMode::Grid,
+            sort_field: SortField::Name,
+            sort_order: SortOrder::Asc,
+            folders_first: true,
+            show_hidden: false,
+            bookmarks,
+        }
+    }
+
+    pub fn tab(&self) -> &TabState {
+        &self.tabs[self.active_tab]
+    }
+
+    pub fn tab_mut(&mut self) -> &mut TabState {
+        &mut self.tabs[self.active_tab]
+    }
+
+    pub fn cwd(&self) -> &Path {
+        &self.tab().cwd
+    }
+
+    pub fn in_trash(&self) -> bool {
+        self.tab().in_trash
+    }
+
+    pub fn new_tab(&mut self, dir: PathBuf) -> usize {
+        self.tabs.push(TabState::new(dir));
+        self.active_tab = self.tabs.len() - 1;
+        self.active_tab
+    }
+
+    /// Closes tab at `idx`. Returns `false` if it was the only remaining tab.
+    pub fn close_tab(&mut self, idx: usize) -> bool {
+        if self.tabs.len() <= 1 || idx >= self.tabs.len() {
+            return false;
+        }
+        self.tabs.remove(idx);
+        if self.active_tab >= self.tabs.len() {
+            self.active_tab = self.tabs.len() - 1;
+        } else if idx < self.active_tab {
+            self.active_tab -= 1;
+        }
+        true
+    }
+
+    pub fn switch_tab(&mut self, idx: usize) -> bool {
+        if idx >= self.tabs.len() || idx == self.active_tab {
+            return false;
+        }
+        self.active_tab = idx;
+        true
+    }
+
+    pub fn next_tab(&mut self) -> bool {
+        if self.tabs.len() <= 1 {
+            return false;
+        }
+        self.active_tab = (self.active_tab + 1) % self.tabs.len();
+        true
+    }
+
+    pub fn prev_tab(&mut self) -> bool {
+        if self.tabs.len() <= 1 {
+            return false;
+        }
+        self.active_tab = (self.active_tab + self.tabs.len() - 1) % self.tabs.len();
+        true
+    }
+
+    pub fn navigate(&mut self, target: PathBuf, in_trash: bool) {
+        let tab = self.tab_mut();
+        if tab.cwd == target && tab.in_trash == in_trash {
+            return;
+        }
+        tab.in_trash = in_trash;
+        tab.cwd = target.clone();
+        tab.filter.clear();
+        if tab.history_idx + 1 < tab.history.len() {
+            tab.history.truncate(tab.history_idx + 1);
+        }
+        tab.history.push(target);
+        tab.history_idx = tab.history.len() - 1;
+    }
+
+    pub fn can_back(&self) -> bool {
+        self.tab().can_back()
+    }
+
+    pub fn can_forward(&self) -> bool {
+        self.tab().can_forward()
+    }
 
     pub fn go_back(&mut self) -> Option<PathBuf> {
-        if !self.can_back() {
+        let tab = self.tab_mut();
+        if !tab.can_back() {
             return None;
         }
-        self.history_idx -= 1;
-        let next = self.history[self.history_idx].clone();
-        self.in_trash = is_trash_files_dir(&next);
-        self.cwd = next.clone();
-        self.filter.clear();
+        tab.history_idx -= 1;
+        let next = tab.history[tab.history_idx].clone();
+        tab.in_trash = is_trash_files_dir(&next);
+        tab.cwd = next.clone();
+        tab.filter.clear();
         Some(next)
     }
 
     pub fn go_forward(&mut self) -> Option<PathBuf> {
-        if !self.can_forward() {
+        let tab = self.tab_mut();
+        if !tab.can_forward() {
             return None;
         }
-        self.history_idx += 1;
-        let next = self.history[self.history_idx].clone();
-        self.in_trash = is_trash_files_dir(&next);
-        self.cwd = next.clone();
-        self.filter.clear();
+        tab.history_idx += 1;
+        let next = tab.history[tab.history_idx].clone();
+        tab.in_trash = is_trash_files_dir(&next);
+        tab.cwd = next.clone();
+        tab.filter.clear();
         Some(next)
     }
 
     pub fn go_parent(&mut self) -> Option<PathBuf> {
-        if self.in_trash {
+        if self.in_trash() {
             let home = home_dir();
             self.navigate(home.clone(), false);
             return Some(home);
         }
-        let parent = self.cwd.parent()?.to_path_buf();
-        if parent == self.cwd {
+        let parent = self.cwd().parent()?.to_path_buf();
+        if parent == self.cwd() {
             return None;
         }
         self.navigate(parent.clone(), false);
@@ -132,17 +243,23 @@ impl AppState {
     }
 
     pub fn set_entries(&mut self, entries: Vec<FileEntry>) {
-        self.entries = entries;
+        self.tab_mut().entries = entries;
         self.recompute_visible();
     }
 
     pub fn recompute_visible(&mut self) {
-        let needle = self.filter.trim().to_lowercase();
-        let mut out: Vec<FileEntry> = self
+        let field = self.sort_field;
+        let order = self.sort_order;
+        let folders_first = self.folders_first;
+        let show_hidden = self.show_hidden;
+
+        let tab = self.tab_mut();
+        let needle = tab.filter.trim().to_lowercase();
+        let mut out: Vec<FileEntry> = tab
             .entries
             .iter()
             .filter(|e| {
-                if !self.show_hidden && !self.in_trash && e.name.starts_with('.') {
+                if !show_hidden && !tab.in_trash && e.name.starts_with('.') {
                     return false;
                 }
                 if !needle.is_empty() && !e.name.to_lowercase().contains(&needle) {
@@ -152,10 +269,6 @@ impl AppState {
             })
             .cloned()
             .collect();
-
-        let field = self.sort_field;
-        let order = self.sort_order;
-        let folders_first = self.folders_first;
 
         out.sort_by(|a, b| {
             if folders_first && a.is_dir != b.is_dir {
@@ -182,7 +295,7 @@ impl AppState {
             }
         });
 
-        self.visible = out;
+        tab.visible = out;
     }
 
     pub fn pin_bookmark(&mut self, dir: PathBuf) -> bool {
@@ -270,7 +383,34 @@ mod tests {
         assert!(st.can_forward());
         st.navigate(PathBuf::from("/home/u/Music"), false);
         assert!(!st.can_forward());
-        assert_eq!(st.cwd, PathBuf::from("/home/u/Music"));
+        assert_eq!(st.cwd(), Path::new("/home/u/Music"));
+    }
+
+    #[test]
+    fn tabs_open_switch_cycle_and_close() {
+        let mut st = AppState::new(PathBuf::from("/home/u"));
+        assert_eq!(st.tabs.len(), 1);
+        assert!(!st.close_tab(0));
+
+        let idx = st.new_tab(PathBuf::from("/tmp"));
+        assert_eq!(idx, 1);
+        assert_eq!(st.active_tab, 1);
+        assert_eq!(st.cwd(), Path::new("/tmp"));
+
+        st.new_tab(PathBuf::from("/var"));
+        assert_eq!(st.tabs.len(), 3);
+        assert_eq!(st.active_tab, 2);
+
+        assert!(st.next_tab());
+        assert_eq!(st.active_tab, 0);
+        assert!(st.prev_tab());
+        assert_eq!(st.active_tab, 2);
+
+        // Closing a tab before active shifts active_tab down cleanly
+        assert!(st.close_tab(0));
+        assert_eq!(st.tabs.len(), 2);
+        assert_eq!(st.active_tab, 1);
+        assert_eq!(st.cwd(), Path::new("/var"));
     }
 
     #[test]
@@ -283,7 +423,8 @@ mod tests {
             sample("beta.txt", false, 20, 300),
         ]);
         assert_eq!(
-            st.visible
+            st.tab()
+                .visible
                 .iter()
                 .map(|e| e.name.as_str())
                 .collect::<Vec<_>>(),
@@ -294,7 +435,8 @@ mod tests {
         st.sort_order = SortOrder::Desc;
         st.recompute_visible();
         assert_eq!(
-            st.visible
+            st.tab()
+                .visible
                 .iter()
                 .map(|e| e.name.as_str())
                 .collect::<Vec<_>>(),

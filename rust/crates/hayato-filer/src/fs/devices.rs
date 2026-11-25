@@ -1,11 +1,34 @@
 //! Removable block device discovery, mounting, safe eject, and busy-holder detection.
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use serde::Deserialize;
 
 use crate::fs::fs_usage_bytes;
+
+/// Fast, zero-subprocess fingerprint of connected block devices and mount table.
+/// Reads only in-memory procfs/sysfs so we can detect hotplug/mount changes
+/// without spawning `lsblk` until something actually changes.
+pub fn block_mount_signature() -> u64 {
+    let mut hasher = DefaultHasher::new();
+    if let Ok(rd) = std::fs::read_dir("/sys/class/block") {
+        let mut names: Vec<String> = rd
+            .flatten()
+            .filter_map(|e| e.file_name().into_string().ok())
+            .collect();
+        names.sort_unstable();
+        for n in names {
+            n.hash(&mut hasher);
+        }
+    }
+    if let Ok(mounts) = std::fs::read_to_string("/proc/self/mountinfo") {
+        mounts.hash(&mut hasher);
+    }
+    hasher.finish()
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceEntry {

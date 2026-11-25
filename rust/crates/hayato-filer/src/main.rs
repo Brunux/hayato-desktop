@@ -45,7 +45,7 @@ fn main() -> glib::ExitCode {
                 let (css, _) = theme::load_css_string();
                 assert!(!css.is_empty(), "filer CSS failed to render");
                 let st = state::AppState::new(state::home_dir());
-                assert!(st.history.len() == 1);
+                assert!(st.tab().history.len() == 1);
                 println!("ok\thayato-filer {}\tcss={}B", VERSION.trim(), css.len());
                 return glib::ExitCode::SUCCESS;
             }

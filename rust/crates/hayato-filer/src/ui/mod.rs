@@ -2,7 +2,7 @@
 
 pub mod quicklook;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -35,6 +35,9 @@ pub struct FilerWindow {
     pub window: ApplicationWindow,
     state: RefCell<AppState>,
     devices: RefCell<Vec<DeviceEntry>>,
+    device_sig: Cell<u64>,
+    devices_loaded: Cell<bool>,
+    _volume_monitor: gio::VolumeMonitor,
     back_btn: Button,
     fwd_btn: Button,
     crumbs_box: GtkBox,
@@ -43,6 +46,8 @@ pub struct FilerWindow {
     filter_entry: Entry,
     grid_btn: Button,
     list_btn: Button,
+    tab_bar: GtkBox,
+    tabs_box: GtkBox,
     sidebar_box: GtkBox,
     places_box: GtkBox,
     devices_box: GtkBox,
@@ -128,6 +133,11 @@ impl FilerWindow {
         sort_btn.add_css_class("filer-glyph");
         sort_btn.set_tooltip_text(Some("Sort & View Options"));
 
+        let new_tab_btn = Button::with_label("\u{f067}");
+        new_tab_btn.add_css_class("filer-tool-btn");
+        new_tab_btn.add_css_class("filer-glyph");
+        new_tab_btn.set_tooltip_text(Some("New Tab (Ctrl+T)"));
+
         header.append(&nav_group);
         header.append(&crumbs_box);
         header.append(&path_entry);
@@ -135,6 +145,26 @@ impl FilerWindow {
         header.append(&filter_btn);
         header.append(&view_group);
         header.append(&sort_btn);
+        header.append(&new_tab_btn);
+
+        // ── Minimalist Tab Bar (auto-hides when only 1 tab is open) ──────
+        let tab_bar = GtkBox::new(Orientation::Horizontal, 4);
+        tab_bar.add_css_class("filer-tabbar");
+        tab_bar.set_visible(false);
+
+        let tabs_box = GtkBox::new(Orientation::Horizontal, 4);
+        let tabs_scroll = ScrolledWindow::new();
+        tabs_scroll.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
+        tabs_scroll.set_hexpand(true);
+        tabs_scroll.set_child(Some(&tabs_box));
+
+        let tab_add_btn = Button::with_label("\u{f067}");
+        tab_add_btn.add_css_class("filer-tab-add");
+        tab_add_btn.add_css_class("filer-glyph");
+        tab_add_btn.set_tooltip_text(Some("New Tab (Ctrl+T)"));
+
+        tab_bar.append(&tabs_scroll);
+        tab_bar.append(&tab_add_btn);
 
         // ── Left Sidebar (Places + Devices) ───────────────────────────────
         let sidebar_box = GtkBox::new(Orientation::Vertical, 2);
@@ -246,6 +276,7 @@ impl FilerWindow {
 
         let root_col = GtkBox::new(Orientation::Vertical, 0);
         root_col.append(&header);
+        root_col.append(&tab_bar);
         root_col.append(&paned);
         root_col.append(&status_bar);
 
@@ -253,13 +284,16 @@ impl FilerWindow {
         overlay.set_child(Some(&root_col));
         window.set_child(Some(&overlay));
 
-        let mut init_state = AppState::new(initial_dir.clone());
-        init_state.in_trash = is_trash_files_dir(&initial_dir);
+        let init_state = AppState::new(initial_dir);
+        let volume_monitor = gio::VolumeMonitor::get();
 
         let this = Rc::new(Self {
             window,
             state: RefCell::new(init_state),
             devices: RefCell::new(Vec::new()),
+            device_sig: Cell::new(devices::block_mount_signature()),
+            devices_loaded: Cell::new(false),
+            _volume_monitor: volume_monitor,
             back_btn,
             fwd_btn,
             crumbs_box,
@@ -268,6 +302,8 @@ impl FilerWindow {
             filter_entry,
             grid_btn,
             list_btn,
+            tab_bar,
+            tabs_box,
             sidebar_box,
             places_box,
             devices_box,
@@ -286,14 +322,22 @@ impl FilerWindow {
             active_cancel: RefCell::new(None),
         });
 
-        this.wire_signals(&sort_btn, &cancel_btn);
+        this.wire_signals(&sort_btn, &new_tab_btn, &tab_add_btn, &cancel_btn);
         this.rebuild_list_header();
+        this.render_tabs();
         this.refresh_devices();
+        this.start_device_monitor();
         this.reload_dir();
         this
     }
 
-    fn wire_signals(self: &Rc<Self>, sort_btn: &Button, cancel_btn: &Button) {
+    fn wire_signals(
+        self: &Rc<Self>,
+        sort_btn: &Button,
+        new_tab_btn: &Button,
+        tab_add_btn: &Button,
+        cancel_btn: &Button,
+    ) {
         // Back / Forward
         {
             let w = Rc::clone(self);
@@ -351,7 +395,7 @@ impl FilerWindow {
         {
             let w = Rc::clone(self);
             self.filter_entry.connect_changed(move |entry| {
-                w.state.borrow_mut().filter = entry.text().to_string();
+                w.state.borrow_mut().tab_mut().filter = entry.text().to_string();
                 w.state.borrow_mut().recompute_visible();
                 w.render_canvas();
             });
@@ -374,6 +418,22 @@ impl FilerWindow {
             let w = Rc::clone(self);
             let btn = sort_btn.clone();
             sort_btn.connect_clicked(move |_| w.show_sort_popover(&btn));
+        }
+
+        // New tab buttons (header + tab bar)
+        {
+            let w = Rc::clone(self);
+            new_tab_btn.connect_clicked(move |_| {
+                let cwd = w.state.borrow().cwd().to_path_buf();
+                w.open_new_tab(cwd);
+            });
+        }
+        {
+            let w = Rc::clone(self);
+            tab_add_btn.connect_clicked(move |_| {
+                let cwd = w.state.borrow().cwd().to_path_buf();
+                w.open_new_tab(cwd);
+            });
         }
 
         // Cancel active async file operation
@@ -450,7 +510,7 @@ impl FilerWindow {
                     return false;
                 };
                 let paths: Vec<PathBuf> = fl.files().into_iter().filter_map(|f| f.path()).collect();
-                let dst = w.state.borrow().cwd.clone();
+                let dst = w.state.borrow().cwd().to_path_buf();
                 let is_copy = target
                     .current_drop()
                     .is_some_and(|d| d.actions() == gdk::DragAction::COPY);
@@ -506,8 +566,14 @@ impl FilerWindow {
                     return glib::Propagation::Stop;
                 }
                 gdk::Key::T | gdk::Key::t => {
-                    let cwd = self.state.borrow().cwd.clone();
+                    let cwd = self.state.borrow().cwd().to_path_buf();
                     tools::open_terminal_here(&cwd);
+                    return glib::Propagation::Stop;
+                }
+                gdk::Key::ISO_Left_Tab | gdk::Key::Tab => {
+                    if self.state.borrow_mut().prev_tab() {
+                        self.on_tab_switched();
+                    }
                     return glib::Propagation::Stop;
                 }
                 gdk::Key::S | gdk::Key::s => {
@@ -592,7 +658,29 @@ impl FilerWindow {
                     self.sidebar_box.set_visible(!self.sidebar_box.is_visible());
                     return glib::Propagation::Stop;
                 }
-                gdk::Key::w | gdk::Key::W | gdk::Key::q | gdk::Key::Q => {
+                gdk::Key::t | gdk::Key::T => {
+                    let cwd = self.state.borrow().cwd().to_path_buf();
+                    self.open_new_tab(cwd);
+                    return glib::Propagation::Stop;
+                }
+                gdk::Key::Tab | gdk::Key::Page_Down => {
+                    if self.state.borrow_mut().next_tab() {
+                        self.on_tab_switched();
+                    }
+                    return glib::Propagation::Stop;
+                }
+                gdk::Key::Page_Up => {
+                    if self.state.borrow_mut().prev_tab() {
+                        self.on_tab_switched();
+                    }
+                    return glib::Propagation::Stop;
+                }
+                gdk::Key::w | gdk::Key::W => {
+                    let idx = self.state.borrow().active_tab;
+                    self.close_tab_at(idx);
+                    return glib::Propagation::Stop;
+                }
+                gdk::Key::q | gdk::Key::Q => {
                     self.window.close();
                     return glib::Propagation::Stop;
                 }
@@ -620,6 +708,15 @@ impl FilerWindow {
                     }
                     return glib::Propagation::Stop;
                 }
+                gdk::Key::_1 => return self.jump_tab_shortcut(0),
+                gdk::Key::_2 => return self.jump_tab_shortcut(1),
+                gdk::Key::_3 => return self.jump_tab_shortcut(2),
+                gdk::Key::_4 => return self.jump_tab_shortcut(3),
+                gdk::Key::_5 => return self.jump_tab_shortcut(4),
+                gdk::Key::_6 => return self.jump_tab_shortcut(5),
+                gdk::Key::_7 => return self.jump_tab_shortcut(6),
+                gdk::Key::_8 => return self.jump_tab_shortcut(7),
+                gdk::Key::_9 => return self.jump_tab_shortcut(8),
                 _ => {}
             }
         }
@@ -653,7 +750,7 @@ impl FilerWindow {
             gdk::Key::Delete => {
                 let sel = self.selected_paths();
                 if !sel.is_empty() {
-                    if shift || self.state.borrow().in_trash {
+                    if shift || self.state.borrow().in_trash() {
                         self.confirm_permanent_delete(sel);
                     } else {
                         self.run_op(OpKind::Trash, sel, None);
@@ -662,6 +759,107 @@ impl FilerWindow {
                 glib::Propagation::Stop
             }
             _ => glib::Propagation::Proceed,
+        }
+    }
+
+    fn jump_tab_shortcut(self: &Rc<Self>, idx: usize) -> glib::Propagation {
+        self.switch_to_tab(idx);
+        glib::Propagation::Stop
+    }
+
+    pub fn open_new_tab(self: &Rc<Self>, dir: PathBuf) {
+        self.state.borrow_mut().new_tab(dir);
+        self.on_tab_switched();
+    }
+
+    fn switch_to_tab(self: &Rc<Self>, idx: usize) {
+        if self.state.borrow_mut().switch_tab(idx) {
+            self.on_tab_switched();
+        }
+    }
+
+    fn close_tab_at(self: &Rc<Self>, idx: usize) {
+        if self.state.borrow_mut().close_tab(idx) {
+            self.on_tab_switched();
+        } else {
+            self.window.close();
+        }
+    }
+
+    fn on_tab_switched(self: &Rc<Self>) {
+        let filter = self.state.borrow().tab().filter.clone();
+        self.filter_entry.set_text(&filter);
+        self.filter_entry.set_visible(!filter.is_empty());
+        self.hide_path_entry();
+        self.close_quicklook();
+        self.render_tabs();
+        self.reload_dir();
+    }
+
+    fn render_tabs(self: &Rc<Self>) {
+        while let Some(child) = self.tabs_box.first_child() {
+            self.tabs_box.remove(&child);
+        }
+        let (tabs, active_idx) = {
+            let st = self.state.borrow();
+            let info: Vec<(String, &'static str, PathBuf, bool)> = st
+                .tabs
+                .iter()
+                .map(|t| (t.title(), t.icon_glyph(), t.cwd.clone(), t.in_trash))
+                .collect();
+            (info, st.active_tab)
+        };
+        if tabs.len() <= 1 {
+            self.tab_bar.set_visible(false);
+            return;
+        }
+        self.tab_bar.set_visible(true);
+
+        for (i, (title, glyph, cwd, in_trash)) in tabs.into_iter().enumerate() {
+            let wrap = GtkBox::new(Orientation::Horizontal, 2);
+            wrap.add_css_class("filer-tab");
+            if i == active_idx {
+                wrap.add_css_class("active");
+            }
+
+            let btn_inner = GtkBox::new(Orientation::Horizontal, 6);
+            let ic = Label::new(Some(glyph));
+            ic.add_css_class("filer-tab-icon");
+            let lbl = Label::new(Some(&title));
+            lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+            lbl.set_max_width_chars(18);
+            lbl.set_halign(Align::Start);
+            lbl.set_hexpand(true);
+            btn_inner.append(&ic);
+            btn_inner.append(&lbl);
+
+            let tab_btn = Button::new();
+            tab_btn.set_child(Some(&btn_inner));
+            tab_btn.add_css_class("filer-tab-btn");
+            tab_btn.set_hexpand(true);
+            tab_btn.set_tooltip_text(Some(&cwd.display().to_string()));
+            let w_sw = Rc::clone(self);
+            tab_btn.connect_clicked(move |_| w_sw.switch_to_tab(i));
+
+            let close_btn = Button::with_label("\u{f00d}");
+            close_btn.add_css_class("filer-tab-close");
+            close_btn.set_tooltip_text(Some("Close Tab (Ctrl+W)"));
+            let w_cl = Rc::clone(self);
+            close_btn.connect_clicked(move |_| w_cl.close_tab_at(i));
+
+            // Middle-click on tab closes it
+            let mid = GestureClick::new();
+            mid.set_button(2);
+            let w_mid = Rc::clone(self);
+            mid.connect_pressed(move |_, _, _, _| w_mid.close_tab_at(i));
+            wrap.add_controller(mid);
+
+            // Drag & drop files directly onto any tab!
+            self.attach_folder_drop_target(&wrap, cwd, in_trash);
+
+            wrap.append(&tab_btn);
+            wrap.append(&close_btn);
+            self.tabs_box.append(&wrap);
         }
     }
 
@@ -675,14 +873,15 @@ impl FilerWindow {
     }
 
     pub fn reload_dir(self: &Rc<Self>) {
-        let (cwd, in_trash, can_back, can_fwd, mode) = {
+        let (cwd, in_trash, can_back, can_fwd, mode, tab_idx) = {
             let st = self.state.borrow();
             (
-                st.cwd.clone(),
-                st.in_trash,
+                st.cwd().to_path_buf(),
+                st.in_trash(),
                 st.can_back(),
                 st.can_forward(),
                 st.view_mode,
+                st.active_tab,
             )
         };
         self.back_btn.set_sensitive(can_back);
@@ -700,8 +899,10 @@ impl FilerWindow {
         };
         self.window.set_title(Some(&title));
 
+        self.render_tabs();
         self.render_breadcrumbs(&cwd, in_trash);
         self.render_places();
+        self.render_devices();
 
         // Ensure Trash/files exists when viewing Trash
         if in_trash {
@@ -719,7 +920,11 @@ impl FilerWindow {
         let w = Rc::clone(self);
         glib::timeout_add_local(Duration::from_millis(16), move || match rx.try_recv() {
             Ok(Ok(entries)) => {
-                if w.state.borrow().cwd == cwd {
+                let matches = {
+                    let st = w.state.borrow();
+                    st.active_tab == tab_idx && st.cwd() == cwd
+                };
+                if matches {
                     w.state.borrow_mut().set_entries(entries);
                     w.render_canvas();
                 }
@@ -816,7 +1021,7 @@ impl FilerWindow {
     }
 
     fn show_path_entry(&self) {
-        let cwd = self.state.borrow().cwd.display().to_string();
+        let cwd = self.state.borrow().cwd().display().to_string();
         self.crumbs_box.set_visible(false);
         self.path_entry.set_text(&cwd);
         self.path_entry.set_visible(true);
@@ -877,6 +1082,14 @@ impl FilerWindow {
             let target = path.clone();
             btn.connect_clicked(move |_| w.navigate_to(target.clone()));
 
+            // Middle-click opens breadcrumb folder in a new tab
+            let mid = GestureClick::new();
+            mid.set_button(2);
+            let w_mid = Rc::clone(self);
+            let t_mid = path.clone();
+            mid.connect_pressed(move |_, _, _, _| w_mid.open_new_tab(t_mid.clone()));
+            btn.add_controller(mid);
+
             // Breadcrumb DropTarget: drag files onto any ancestor folder!
             self.attach_folder_drop_target(&btn, path, false);
             self.crumbs_box.append(&btn);
@@ -889,8 +1102,8 @@ impl FilerWindow {
         }
         let home = home_dir();
         let trash_dir = trash_files_dir();
-        let cur_cwd = self.state.borrow().cwd.clone();
-        let cur_trash = self.state.borrow().in_trash;
+        let cur_cwd = self.state.borrow().cwd().to_path_buf();
+        let cur_trash = self.state.borrow().in_trash();
 
         let defaults: [(&str, &str, PathBuf, bool); 8] = [
             ("\u{f015}", "Home", home.clone(), false),
@@ -970,8 +1183,64 @@ impl FilerWindow {
         let target = path.clone();
         btn.connect_clicked(move |_| w.navigate_to(target.clone()));
 
+        // Middle-click opens place in a new tab
+        let mid = GestureClick::new();
+        mid.set_button(2);
+        let w_mid = Rc::clone(self);
+        let t_mid = path.clone();
+        mid.connect_pressed(move |_, _, _, _| w_mid.open_new_tab(t_mid.clone()));
+        btn.add_controller(mid);
+
         self.attach_folder_drop_target(&btn, path, is_trash);
         btn
+    }
+
+    /// Dynamically watches for USB/SD hotplug and mount/unmount events using both
+    /// GIO's `VolumeMonitor` (instant DBus/mountinfo signals) and a lightweight
+    /// sysfs/procfs signature check (zero subprocesses until a change occurs).
+    fn start_device_monitor(self: &Rc<Self>) {
+        let trigger = |weak: std::rc::Weak<Self>| {
+            if let Some(w) = weak.upgrade() {
+                w.device_sig.set(devices::block_mount_signature());
+                w.refresh_devices();
+            }
+        };
+
+        let weak = Rc::downgrade(self);
+        self._volume_monitor
+            .connect_volume_added(move |_, _| trigger(weak.clone()));
+        let weak = Rc::downgrade(self);
+        self._volume_monitor
+            .connect_volume_removed(move |_, _| trigger(weak.clone()));
+        let weak = Rc::downgrade(self);
+        self._volume_monitor
+            .connect_mount_added(move |_, _| trigger(weak.clone()));
+        let weak = Rc::downgrade(self);
+        self._volume_monitor
+            .connect_mount_removed(move |_, _| trigger(weak.clone()));
+        let weak = Rc::downgrade(self);
+        self._volume_monitor
+            .connect_drive_connected(move |_, _| trigger(weak.clone()));
+        let weak = Rc::downgrade(self);
+        self._volume_monitor
+            .connect_drive_disconnected(move |_, _| trigger(weak.clone()));
+
+        // Lightweight kernel sysfs/procfs fallback (works even without gvfs)
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_local(Duration::from_millis(1500), move || {
+            let Some(w) = weak.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            if !w.window.is_visible() {
+                return glib::ControlFlow::Break;
+            }
+            let sig = devices::block_mount_signature();
+            if sig != w.device_sig.get() {
+                w.device_sig.set(sig);
+                w.refresh_devices();
+            }
+            glib::ControlFlow::Continue
+        });
     }
 
     pub fn refresh_devices(self: &Rc<Self>) {
@@ -984,8 +1253,49 @@ impl FilerWindow {
         let w = Rc::clone(self);
         glib::timeout_add_local(Duration::from_millis(30), move || match rx.try_recv() {
             Ok(devs) => {
-                *w.devices.borrow_mut() = devs;
-                w.render_devices();
+                let prev = w.devices.borrow().clone();
+                let was_loaded = w.devices_loaded.replace(true);
+                if was_loaded && devs != prev {
+                    // Announce newly connected drives
+                    for d in &devs {
+                        if !prev.iter().any(|p| p.dev_path == d.dev_path) {
+                            w.show_banner(&format!("Drive connected: {}", d.label), "ok");
+                        }
+                    }
+                    // Handle disconnected or externally unmounted drives
+                    let mut active_affected = false;
+                    for p in &prev {
+                        if let Some(old_mp) = &p.mountpoint {
+                            let still_mounted = devs
+                                .iter()
+                                .any(|d| d.mountpoint.as_deref() == Some(old_mp.as_path()));
+                            if !still_mounted {
+                                let mut st = w.state.borrow_mut();
+                                let active = st.active_tab;
+                                for (i, tab) in st.tabs.iter_mut().enumerate() {
+                                    if tab.cwd.starts_with(old_mp) {
+                                        tab.cwd = home_dir();
+                                        tab.in_trash = false;
+                                        if i == active {
+                                            active_affected = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if !devs.iter().any(|d| d.dev_path == p.dev_path) {
+                            w.show_banner(&format!("Drive disconnected: {}", p.label), "warn");
+                        }
+                    }
+                    *w.devices.borrow_mut() = devs;
+                    w.render_devices();
+                    if active_affected {
+                        w.reload_dir();
+                    }
+                } else if !was_loaded {
+                    *w.devices.borrow_mut() = devs;
+                    w.render_devices();
+                }
                 glib::ControlFlow::Break
             }
             Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
@@ -1006,7 +1316,7 @@ impl FilerWindow {
             self.devices_box.append(&empty);
             return;
         }
-        let cur_cwd = self.state.borrow().cwd.clone();
+        let cur_cwd = self.state.borrow().cwd().to_path_buf();
         for dev in devs {
             let wrap = GtkBox::new(Orientation::Vertical, 3);
             wrap.add_css_class("filer-device-card");
@@ -1042,6 +1352,14 @@ impl FilerWindow {
                     w_click.mount_and_open(&dev_click.dev_path, &dev_click.label);
                 }
             });
+            if let Some(mp) = &dev.mountpoint {
+                let mid = GestureClick::new();
+                mid.set_button(2);
+                let w_mid = Rc::clone(self);
+                let mp_mid = mp.clone();
+                mid.connect_pressed(move |_, _, _, _| w_mid.open_new_tab(mp_mid.clone()));
+                main_btn.add_controller(mid);
+            }
             row.append(&main_btn);
 
             if dev.is_mounted() {
@@ -1105,11 +1423,27 @@ impl FilerWindow {
     }
 
     fn eject_drive(self: &Rc<Self>, dev: DeviceEntry) {
-        // Leave the drive directory before unmounting so we aren't holding it busy!
-        if let Some(mp) = &dev.mountpoint
-            && self.state.borrow().cwd.starts_with(mp)
-        {
-            self.navigate_to(home_dir());
+        // Leave the drive directory across all tabs before unmounting so we aren't holding it busy!
+        if let Some(mp) = &dev.mountpoint {
+            let mut active_affected = false;
+            {
+                let mut st = self.state.borrow_mut();
+                let active = st.active_tab;
+                for (i, tab) in st.tabs.iter_mut().enumerate() {
+                    if tab.cwd.starts_with(mp) {
+                        tab.cwd = home_dir();
+                        tab.in_trash = false;
+                        if i == active {
+                            active_affected = true;
+                        }
+                    }
+                }
+            }
+            if active_affected {
+                self.reload_dir();
+            } else {
+                self.render_tabs();
+            }
         }
         self.show_banner(&format!("Ejecting {}…", dev.label), "ok");
         let (tx, rx) = mpsc::channel();
@@ -1136,11 +1470,12 @@ impl FilerWindow {
     fn render_canvas(self: &Rc<Self>) {
         let (mode, items, in_trash, has_filter) = {
             let st = self.state.borrow();
+            let tab = st.tab();
             (
                 st.view_mode,
-                st.visible.clone(),
-                st.in_trash,
-                !st.filter.trim().is_empty(),
+                tab.visible.clone(),
+                tab.in_trash,
+                !tab.filter.trim().is_empty(),
             )
         };
         if items.is_empty() {
@@ -1274,6 +1609,12 @@ impl FilerWindow {
         self.attach_drag_source(&cell, entry.path.clone());
         if entry.is_dir {
             self.attach_folder_drop_target(&cell, entry.path.clone(), false);
+            let mid = GestureClick::new();
+            mid.set_button(2);
+            let w_mid = Rc::clone(self);
+            let p_mid = entry.path.clone();
+            mid.connect_pressed(move |_, _, _, _| w_mid.open_new_tab(p_mid.clone()));
+            cell.add_controller(mid);
         }
         cell
     }
@@ -1325,6 +1666,12 @@ impl FilerWindow {
         self.attach_drag_source(&row, entry.path.clone());
         if entry.is_dir {
             self.attach_folder_drop_target(&row, entry.path.clone(), false);
+            let mid = GestureClick::new();
+            mid.set_button(2);
+            let w_mid = Rc::clone(self);
+            let p_mid = entry.path.clone();
+            mid.connect_pressed(move |_, _, _, _| w_mid.open_new_tab(p_mid.clone()));
+            row.add_controller(mid);
         }
         row
     }
@@ -1409,7 +1756,7 @@ impl FilerWindow {
             self.show_banner("Clipboard has no files to paste", "warn");
             return;
         };
-        let dst = self.state.borrow().cwd.clone();
+        let dst = self.state.borrow().cwd().to_path_buf();
         let kind = if is_cut { OpKind::Move } else { OpKind::Copy };
         self.run_op(kind, paths, Some(dst));
     }
@@ -1474,7 +1821,7 @@ impl FilerWindow {
         };
         indices
             .into_iter()
-            .filter_map(|i| st.visible.get(i).cloned())
+            .filter_map(|i| st.tab().visible.get(i).cloned())
             .collect()
     }
 
@@ -1486,7 +1833,7 @@ impl FilerWindow {
     }
 
     fn activate_index(self: &Rc<Self>, idx: usize) {
-        let entry = self.state.borrow().visible.get(idx).cloned();
+        let entry = self.state.borrow().tab().visible.get(idx).cloned();
         let Some(entry) = entry else {
             return;
         };
@@ -1589,8 +1936,8 @@ impl FilerWindow {
 
         let col = GtkBox::new(Orientation::Vertical, 2);
         let sel = self.selected_entries();
-        let in_trash = self.state.borrow().in_trash;
-        let cwd = self.state.borrow().cwd.clone();
+        let in_trash = self.state.borrow().in_trash();
+        let cwd = self.state.borrow().cwd().to_path_buf();
 
         let add =
             |icon: &str, label: &str, shortcut: Option<&str>, danger: bool, cb: Box<dyn Fn()>| {
@@ -1650,6 +1997,17 @@ impl FilerWindow {
                         }
                     }),
                 );
+                if first.is_dir {
+                    let w = Rc::clone(self);
+                    let p_tab = first.path.clone();
+                    add(
+                        "\u{f067}",
+                        "Open in New Tab",
+                        Some("Mid-Click"),
+                        false,
+                        Box::new(move || w.open_new_tab(p_tab.clone())),
+                    );
+                }
                 let w = Rc::clone(self);
                 add(
                     "\u{f06e}",
@@ -1875,7 +2233,7 @@ impl FilerWindow {
             if name.is_empty() || name.contains('/') {
                 return;
             }
-            let target = w.state.borrow().cwd.join(&name);
+            let target = w.state.borrow().cwd().join(&name);
             match std::fs::create_dir(&target) {
                 Ok(()) => {
                     w.show_banner(&format!("Created folder {name}"), "ok");
@@ -1975,8 +2333,8 @@ impl FilerWindow {
 
     fn update_status_bar(&self) {
         let st = self.state.borrow();
-        let total = st.visible.len();
-        let cwd = st.cwd.clone();
+        let total = st.tab().visible.len();
+        let cwd = st.cwd().to_path_buf();
         drop(st);
 
         let sel = self.selected_entries();

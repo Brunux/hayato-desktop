@@ -163,6 +163,88 @@ window.hayato-filer paned > separator {
     min-height: 26px;
 }
 
+/* ── Minimalist Finder / elementary OS Tab Bar ───────────────────────────── */
+.filer-tabbar {
+    background-color: #20153f;
+    border-bottom: 1px solid #ff66ff;
+    padding: 3px 8px;
+    min-height: 30px;
+}
+
+.filer-tab {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-bottom: 2px solid transparent;
+    border-radius: 6px;
+    padding: 1px 4px;
+    min-width: 96px;
+}
+
+.filer-tab:hover {
+    background-color: #452c80;
+}
+
+.filer-tab.active {
+    background-color: #130c2b;
+    border-color: #ff66ff;
+    border-bottom-color: #ff66ff;
+}
+
+.filer-tab-btn {
+    background-color: transparent;
+    border: none;
+    padding: 2px 6px;
+    color: #967aa6;
+    font-size: 12px;
+}
+
+.filer-tab.active .filer-tab-btn {
+    color: #ffffff;
+    font-weight: 600;
+}
+
+.filer-tab-icon {
+    font-family: "FontAwesome", "Font Awesome 6 Free Solid", sans-serif;
+    font-size: 11px;
+    color: #967aa6;
+}
+
+.filer-tab.active .filer-tab-icon {
+    color: #ff66ff;
+}
+
+.filer-tab-close {
+    background-color: transparent;
+    border: none;
+    border-radius: 4px;
+    color: #967aa6;
+    padding: 1px 4px;
+    min-height: 18px;
+    min-width: 18px;
+    font-family: "FontAwesome", "Font Awesome 6 Free Solid", sans-serif;
+    font-size: 10px;
+}
+
+.filer-tab-close:hover {
+    background-color: #452c80;
+    color: #ff5588;
+}
+
+.filer-tab-add {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    color: #967aa6;
+    padding: 2px 7px;
+    min-height: 22px;
+    min-width: 24px;
+}
+
+.filer-tab-add:hover {
+    background-color: #452c80;
+    color: #ffffff;
+}
+
 /* ── Left Sidebar (Places & Devices) ─────────────────────────────────────── */
 .filer-sidebar {
     background-color: #20153f;
