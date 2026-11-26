@@ -1057,7 +1057,7 @@ mod tests {
     #[test]
     fn audio_needed_tools() {
         assert!(NEEDED.contains(&"pactl"));
-        assert!(NEEDED.contains(&"pavucontrol"));
+        assert!(!NEEDED.contains(&"pavucontrol"));
     }
 
     #[test]

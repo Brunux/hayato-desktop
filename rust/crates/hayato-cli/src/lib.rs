@@ -517,6 +517,10 @@ fn query(resolved: &Resolved) -> Option<i32> {
             }
             Some(EXIT_OK)
         }
+        ("menu setup", ["--status"] | ["status"]) => {
+            println!("{}", system::setup::status_summary());
+            Some(EXIT_OK)
+        }
         ("installer", ["--check"] | ["check"]) => Some(installer::check()),
         ("installer", ["apply", ..]) => {
             let rest: Vec<String> = resolved.args.iter().skip(1).cloned().collect();
@@ -663,7 +667,14 @@ fn execute(
         "menu dictate" => system::dictate::menu_with_args(&resolved.args),
         "menu theme" => system::theme_picker::menu(terminal, design),
         "menu greeter" => greeter::settings::menu(terminal, design),
-        "menu welcome" => system::welcome::menu(terminal, design),
+        "menu setup" => system::setup::menu(&resolved.args, terminal, design),
+        "menu welcome" => {
+            if resolved.args.iter().any(|a| a == "--briefing") {
+                system::welcome::menu(terminal, design)
+            } else {
+                system::setup::menu(&resolved.args, terminal, design)
+            }
+        }
         "task attach" => task_cmd::attach(resolved, terminal, design),
         "installer" => {
             let dry_run = resolved.args.iter().any(|a| a == "--dry-run");

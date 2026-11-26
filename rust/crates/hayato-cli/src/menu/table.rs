@@ -811,6 +811,17 @@ pub const PALETTE_EXTRA: &[MenuItem] = &[
         },
     ),
     item(
+        "setup",
+        "Setup Assistant",
+        "guided 8-step setup: security, network, hardware, software, privacy, backup",
+        Glyph::Sparkle,
+        System,
+        Action::Run {
+            program: Program::System("hayato"),
+            args: &[Arg::Lit("menu"), Arg::Lit("setup")],
+        },
+    ),
+    item(
         "vpn",
         "VPN",
         "WireGuard & OpenVPN tunnels: import, connect, autoconnect",
