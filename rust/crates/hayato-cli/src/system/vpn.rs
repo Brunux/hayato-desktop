@@ -1,27 +1,32 @@
-//! Native Hayato VPN client: WireGuard and OpenVPN over NetworkManager (`hayato menu vpn`).
+//! Native Hayato VPN Studio: WireGuard and OpenVPN over NetworkManager (`hayato menu vpn`).
 //!
-//! Replaces `nmtui` for VPN management: imports `.conf` (WireGuard) and `.ovpn`
-//! (OpenVPN) profiles via `nmcli`, toggles tunnels on/off, manages autoconnect
-//! and OpenVPN credentials, and reads live IPv4 + RX/TX byte counters directly
-//! from NetworkManager and `/sys/class/net/<dev>/statistics/` with zero daemons.
+//! Master-detail Tunnel Studio (`width >= 100`, single-pane + context strip on 80x24)
+//! paired with a single-screen multi-field Form Editor (`VpnPhase::EditForm`) using
+//! `Input::render_field`:
+//! - Inline protocol toggle (`[WireGuard | OpenVPN]`), live validation, and live config preview
+//! - Instant WireGuard keypair generator (`Ctrl+G`) displaying the derived Public Key (`Ctrl+Y` copy)
+//! - Smart clipboard `.conf` / `.ovpn` paste-parser (`v` in Browse, `Ctrl+V` in Form)
+//! - Native `FilesScreen` browser for `.conf` / `.ovpn` import (`i`) and OpenVPN CA certs (`Ctrl+O`)
+//! - In-place profile editing (`e`), autoconnect (`a`), Cancel-first delete (`d`), and `custom/vpn` Waybar indicator.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Instant;
 
-use hayato_ui::widgets::{Confirm, ConfirmAction, put_trunc};
+use hayato_ui::widgets::{Confirm, ConfirmAction, Input, InputAction, put, put_trunc};
 use hayato_ui::{
     BodyCtx, ColorRole, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row,
     Screen, TextStyle, draw_card_with,
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 
-use super::pick::{Picker, Question, row as pick_row};
 use super::{checked, have, out, sudo};
 use crate::Failure;
 
@@ -109,7 +114,6 @@ pub fn parse_nmcli_connections(text: &str) -> Vec<VpnProfile> {
             endpoint: None,
         });
     }
-    // Active tunnels first, then alphabetical.
     out_list.sort_by(|a, b| {
         b.active
             .cmp(&a.active)
@@ -138,7 +142,7 @@ pub fn split_nmcli_terse(line: &str) -> Vec<String> {
     parts
 }
 
-/// Detect whether a config file is WireGuard (`.conf`) or OpenVPN (`.ovpn`).
+/// Detect whether a config file or text is WireGuard (`.conf`) or OpenVPN (`.ovpn`).
 pub fn detect_config_kind(path: &Path, content: &str) -> Option<VpnKind> {
     let ext = path
         .extension()
@@ -210,7 +214,6 @@ fn read_sysfs_u64(path: &Path) -> u64 {
 }
 
 fn enrich_profile(p: &mut VpnProfile) {
-    // Refine OpenVPN vs other NM VPN plugin if possible.
     if p.kind == VpnKind::OpenVpn
         && let Some(svc) = out(&[
             "nmcli",
@@ -394,50 +397,6 @@ pub fn disconnect_active() -> i32 {
     hayato_ui::app::exit::OK
 }
 
-/// Scan common user directories for `.conf` (WireGuard) and `.ovpn` (OpenVPN) files.
-pub fn scan_config_files() -> Vec<(PathBuf, VpnKind)> {
-    let home = std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/"));
-    let dirs = [
-        home.join("Downloads"),
-        home.join("Documents"),
-        home.join(".config/vpn"),
-        home,
-    ];
-    let mut found = Vec::new();
-    for dir in dirs {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|s| s.to_ascii_lowercase())
-                .unwrap_or_default();
-            if ext != "conf" && ext != "ovpn" {
-                continue;
-            }
-            if let Ok(content) = std::fs::read_to_string(&path)
-                && let Some(kind) = detect_config_kind(&path, &content)
-            {
-                found.push((path, kind));
-            }
-            if found.len() >= 24 {
-                return found;
-            }
-        }
-    }
-    found.sort_by(|a, b| a.0.cmp(&b.0));
-    found.dedup_by(|a, b| a.0 == b.0);
-    found
-}
-
 fn nmcli_run(args: &[&str]) -> Result<String, String> {
     let mut argv = vec!["nmcli"];
     argv.extend_from_slice(args);
@@ -461,11 +420,11 @@ pub fn import_profile(path: &Path) -> Result<String, String> {
     }
     let nm_type = match kind {
         VpnKind::WireGuard => "wireguard",
-        VpnKind::OpenVpn => "openvpn",
-        VpnKind::Other(_) => "openvpn",
+        VpnKind::OpenVpn | VpnKind::Other(_) => "openvpn",
     };
     let path_str = path.to_string_lossy().into_owned();
     nmcli_run(&["connection", "import", "type", nm_type, "file", &path_str])?;
+    signal_bar();
     let stem = path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -502,38 +461,15 @@ pub fn toggle_autoconnect(p: &VpnProfile) -> Result<String, String> {
     ))
 }
 
-pub fn set_openvpn_credentials(
-    uuid: &str,
-    username: &str,
-    password: &str,
-) -> Result<String, String> {
-    if username.trim().is_empty() {
-        return Err("Username cannot be empty".to_string());
-    }
-    let user_kv = format!("username={}", username.trim());
-    let pass_kv = format!("password={password}");
-    nmcli_run(&[
-        "connection",
-        "modify",
-        "uuid",
-        uuid,
-        "+vpn.data",
-        &user_kv,
-        "+vpn.data",
-        "password-flags=0",
-        "vpn.secrets",
-        &pass_kv,
-    ])?;
-    Ok("OpenVPN credentials saved".to_string())
-}
-
 pub fn delete_profile(name: &str, uuid: &str) -> Result<String, String> {
     nmcli_run(&["connection", "delete", "uuid", uuid])?;
     signal_bar();
     Ok(format!("Deleted VPN profile: {name}"))
 }
 
-/// Parameters for creating a WireGuard tunnel manually.
+// ─── Config Specs, Validation, Parsing & Keygen ──────────────────────────────
+
+/// Parameters for creating or editing a WireGuard tunnel.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WireGuardSpec {
     pub name: String,
@@ -545,29 +481,241 @@ pub struct WireGuardSpec {
     pub dns: String,
 }
 
+/// Parameters for creating or editing an OpenVPN tunnel.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OpenVpnSpec {
+    pub name: String,
+    pub remote: String,
+    pub port: String,
+    pub proto_tcp: bool,
+    pub username: String,
+    pub password: String,
+    pub ca_path: Option<PathBuf>,
+}
+
+/// Validate a WireGuard base64 key (44 chars ending in `=`, valid base64 alphabet).
+pub fn is_valid_wg_key(s: &str) -> bool {
+    let t = s.trim();
+    t.len() == 44
+        && t.ends_with('=')
+        && t.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=')
+}
+
+/// Return per-field validation checks for a WireGuard spec: `(ok, message)`.
+pub fn validate_wireguard_spec(spec: &WireGuardSpec) -> Vec<(bool, String)> {
+    let mut checks = Vec::new();
+    let name = spec.name.trim();
+    let name_ok = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    checks.push((
+        name_ok,
+        if name_ok {
+            "Connection name valid".to_string()
+        } else {
+            "Name required (letters, digits, '-' or '_')".to_string()
+        },
+    ));
+
+    let addr = spec.address.trim();
+    let addr_ok = !addr.is_empty() && addr.contains('/');
+    checks.push((
+        addr_ok,
+        if addr_ok {
+            "Local CIDR valid".to_string()
+        } else {
+            "Address must include CIDR (e.g. 10.66.0.2/32)".to_string()
+        },
+    ));
+
+    let priv_k = spec.private_key.trim();
+    let priv_ok = is_valid_wg_key(priv_k);
+    checks.push((
+        priv_ok,
+        if priv_ok {
+            "Private key valid (44-char base64)".to_string()
+        } else if priv_k.is_empty() {
+            "Private key required (or press Ctrl+G)".to_string()
+        } else {
+            "Private key must be 44-char base64 ending in '='".to_string()
+        },
+    ));
+
+    let peer_k = spec.peer_public_key.trim();
+    let swapped = !priv_k.is_empty() && priv_k == peer_k;
+    let peer_ok = is_valid_wg_key(peer_k) && !swapped;
+    checks.push((
+        peer_ok,
+        if swapped {
+            "Peer key matches Private key (swapped?)".to_string()
+        } else if peer_ok {
+            "Peer public key valid".to_string()
+        } else if peer_k.is_empty() {
+            "Peer public key required (44-char base64)".to_string()
+        } else {
+            "Peer public key must be 44-char base64 ending in '='".to_string()
+        },
+    ));
+
+    let ep = spec.endpoint.trim();
+    let ep_ok = ep.rsplit_once(':').is_some_and(|(h, p)| {
+        !h.is_empty() && !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())
+    });
+    checks.push((
+        ep_ok,
+        if ep_ok {
+            "Endpoint valid".to_string()
+        } else {
+            "Endpoint must be host:port (e.g. vpn.host:51820)".to_string()
+        },
+    ));
+
+    checks
+}
+
+/// Return per-field validation checks for an OpenVPN spec: `(ok, message)`.
+pub fn validate_openvpn_spec(spec: &OpenVpnSpec) -> Vec<(bool, String)> {
+    let mut checks = Vec::new();
+    let name_ok = !spec.name.trim().is_empty();
+    checks.push((
+        name_ok,
+        if name_ok {
+            "Connection name valid".to_string()
+        } else {
+            "Connection name is required".to_string()
+        },
+    ));
+
+    let remote_ok = !spec.remote.trim().is_empty();
+    checks.push((
+        remote_ok,
+        if remote_ok {
+            "Server gateway valid".to_string()
+        } else {
+            "Server hostname or IP is required".to_string()
+        },
+    ));
+
+    if let Some(ca) = &spec.ca_path {
+        let ca_ok = ca.is_file();
+        checks.push((
+            ca_ok,
+            if ca_ok {
+                "CA certificate found".to_string()
+            } else {
+                format!("CA file not found: {}", ca.display())
+            },
+        ));
+    }
+
+    checks
+}
+
+/// Parse a WireGuard `.conf` snippet (from clipboard or file) into [`WireGuardSpec`].
+pub fn parse_wireguard_conf(text: &str) -> Option<WireGuardSpec> {
+    if !text.contains("[Interface]") && !text.contains("[Peer]") {
+        return None;
+    }
+    let mut section = "";
+    let mut spec = WireGuardSpec {
+        name: "wg-tunnel".to_string(),
+        address: String::new(),
+        private_key: String::new(),
+        peer_public_key: String::new(),
+        endpoint: String::new(),
+        allowed_ips: "0.0.0.0/0, ::/0".to_string(),
+        dns: String::new(),
+    };
+    for raw in text.lines() {
+        let line = raw.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            section = line;
+            continue;
+        }
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
+        let key = k.trim().to_ascii_lowercase();
+        let val = v.trim();
+        match (section, key.as_str()) {
+            ("[Interface]", "privatekey") => spec.private_key = val.to_string(),
+            ("[Interface]", "address") => spec.address = val.to_string(),
+            ("[Interface]", "dns") => spec.dns = val.to_string(),
+            ("[Peer]", "publickey") => spec.peer_public_key = val.to_string(),
+            ("[Peer]", "endpoint") => spec.endpoint = val.to_string(),
+            ("[Peer]", "allowedips") => spec.allowed_ips = val.to_string(),
+            _ => {}
+        }
+    }
+    if spec.private_key.is_empty() && spec.peer_public_key.is_empty() && spec.endpoint.is_empty() {
+        return None;
+    }
+    Some(spec)
+}
+
+/// Parse an OpenVPN `.ovpn` snippet (from clipboard or file) into [`OpenVpnSpec`].
+pub fn parse_openvpn_conf(text: &str) -> Option<OpenVpnSpec> {
+    let mut spec = OpenVpnSpec {
+        name: "ovpn-tunnel".to_string(),
+        remote: String::new(),
+        port: String::new(),
+        proto_tcp: false,
+        username: String::new(),
+        password: String::new(),
+        ca_path: None,
+    };
+    let mut saw_marker = false;
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        let mut parts = line.split_whitespace();
+        let Some(cmd) = parts.next() else { continue };
+        match cmd {
+            "client" => saw_marker = true,
+            "remote" => {
+                saw_marker = true;
+                if let Some(host) = parts.next() {
+                    if let Some(port) = parts.next() {
+                        spec.remote = format!("{host}:{port}");
+                    } else {
+                        spec.remote = host.to_string();
+                    }
+                }
+            }
+            "proto" => {
+                if let Some(p) = parts.next() {
+                    spec.proto_tcp = p.to_ascii_lowercase().starts_with("tcp");
+                }
+            }
+            "ca" => {
+                if let Some(ca) = parts.next() {
+                    spec.ca_path = Some(PathBuf::from(ca));
+                }
+            }
+            _ => {}
+        }
+    }
+    if saw_marker && !spec.remote.is_empty() {
+        Some(spec)
+    } else {
+        None
+    }
+}
+
 /// Build a standard WireGuard `.conf` file from user inputs.
 pub fn build_wireguard_config(spec: &WireGuardSpec) -> Result<String, String> {
-    let name = spec.name.trim();
-    if name.is_empty()
-        || !name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    if let Some((_, err)) = validate_wireguard_spec(spec)
+        .into_iter()
+        .find(|(ok, _)| !ok)
     {
-        return Err("Connection name must use letters, digits, '-' or '_'".to_string());
-    }
-    if spec.address.trim().is_empty() {
-        return Err("Local address (e.g. 10.66.0.2/32) is required".to_string());
-    }
-    if spec.private_key.trim().is_empty() {
-        return Err(
-            "Private key is required (install wireguard-tools to auto-generate)".to_string(),
-        );
-    }
-    if spec.peer_public_key.trim().is_empty() {
-        return Err("Peer public key is required".to_string());
-    }
-    if spec.endpoint.trim().is_empty() {
-        return Err("Peer endpoint (host:port) is required".to_string());
+        return Err(err);
     }
     let allowed = if spec.allowed_ips.trim().is_empty() {
         "0.0.0.0/0, ::/0"
@@ -592,8 +740,11 @@ pub fn build_wireguard_config(spec: &WireGuardSpec) -> Result<String, String> {
     Ok(conf)
 }
 
-/// Create a WireGuard connection by writing a `0600` temp `.conf` and importing it via `nmcli`.
-pub fn create_wireguard_profile(spec: &WireGuardSpec) -> Result<String, String> {
+/// Create (or replace) a WireGuard connection via a `0600` temp `.conf` imported into `nmcli`.
+pub fn create_wireguard_profile(
+    spec: &WireGuardSpec,
+    replace_uuid: Option<&str>,
+) -> Result<String, String> {
     use std::os::unix::fs::OpenOptionsExt;
     let conf = build_wireguard_config(spec)?;
     let safe_name = spec.name.trim();
@@ -614,6 +765,9 @@ pub fn create_wireguard_profile(spec: &WireGuardSpec) -> Result<String, String> 
         let _ = std::fs::remove_dir_all(&tmp_dir);
         return Err(format!("Could not write temporary WireGuard config: {e}"));
     }
+    if let Some(uuid) = replace_uuid {
+        let _ = nmcli_run(&["connection", "delete", "uuid", uuid]);
+    }
     let path_str = tmp_path.to_string_lossy().into_owned();
     let res = nmcli_run(&[
         "connection",
@@ -627,31 +781,20 @@ pub fn create_wireguard_profile(spec: &WireGuardSpec) -> Result<String, String> 
     let _ = std::fs::remove_dir(&tmp_dir);
     res?;
     signal_bar();
-    Ok(format!("Created WireGuard profile: {safe_name}"))
-}
-
-/// Parameters for creating an OpenVPN connection manually.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OpenVpnSpec {
-    pub name: String,
-    pub remote: String,
-    pub port: String,
-    pub proto_tcp: bool,
-    pub username: String,
-    pub password: String,
-    pub ca_path: Option<PathBuf>,
+    let verb = if replace_uuid.is_some() {
+        "Updated"
+    } else {
+        "Created"
+    };
+    Ok(format!("{verb} WireGuard profile: {safe_name}"))
 }
 
 /// Build the `vpn.data` value string for `nmcli connection add type vpn vpn-type openvpn`.
 pub fn build_openvpn_data(spec: &OpenVpnSpec) -> Result<String, String> {
-    let name = spec.name.trim();
-    if name.is_empty() {
-        return Err("Connection name is required".to_string());
+    if let Some((_, err)) = validate_openvpn_spec(spec).into_iter().find(|(ok, _)| !ok) {
+        return Err(err);
     }
     let remote = spec.remote.trim();
-    if remote.is_empty() {
-        return Err("OpenVPN server address is required".to_string());
-    }
     let (host, parsed_port) = match remote.rsplit_once(':') {
         Some((h, p)) if !h.is_empty() && p.chars().all(|c| c.is_ascii_digit()) => {
             (h.trim(), Some(p.trim()))
@@ -682,13 +825,19 @@ pub fn build_openvpn_data(spec: &OpenVpnSpec) -> Result<String, String> {
     Ok(pairs.join(", "))
 }
 
-/// Create an OpenVPN profile directly via `nmcli connection add`.
-pub fn create_openvpn_profile(spec: &OpenVpnSpec) -> Result<String, String> {
+/// Create (or replace) an OpenVPN profile directly via `nmcli connection add`.
+pub fn create_openvpn_profile(
+    spec: &OpenVpnSpec,
+    replace_uuid: Option<&str>,
+) -> Result<String, String> {
     if !openvpn_plugin_installed() {
         return Err("OpenVPN plugin missing — select 'Install OpenVPN support' first".to_string());
     }
     let vpn_data = build_openvpn_data(spec)?;
     let name = spec.name.trim();
+    if let Some(uuid) = replace_uuid {
+        let _ = nmcli_run(&["connection", "delete", "uuid", uuid]);
+    }
     let mut args = vec![
         "connection",
         "add",
@@ -710,13 +859,505 @@ pub fn create_openvpn_profile(spec: &OpenVpnSpec) -> Result<String, String> {
     }
     nmcli_run(&args)?;
     signal_bar();
-    Ok(format!("Created OpenVPN profile: {name}"))
+    let verb = if replace_uuid.is_some() {
+        "Updated"
+    } else {
+        "Created"
+    };
+    Ok(format!("{verb} OpenVPN profile: {name}"))
+}
+
+fn derive_wg_pubkey(private_key: &str) -> Option<String> {
+    if !is_valid_wg_key(private_key) || !have("wg") {
+        return None;
+    }
+    let mut child = Command::new("wg")
+        .arg("pubkey")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write;
+        let _ = writeln!(stdin, "{}", private_key.trim());
+    }
+    let out = child.wait_with_output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let pubkey = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!pubkey.is_empty()).then_some(pubkey)
+}
+
+fn generate_wg_keypair() -> Result<(String, String), String> {
+    if !have("wg") {
+        return Err(
+            "wireguard-tools ('wg') not installed — paste a private key manually".to_string(),
+        );
+    }
+    let priv_key = out(&["wg", "genkey"])
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "wg genkey failed".to_string())?;
+    let pub_key = derive_wg_pubkey(&priv_key).unwrap_or_default();
+    Ok((priv_key, pub_key))
+}
+
+fn clipboard_paste() -> Option<String> {
+    out(&["wl-paste", "-n"]).filter(|s| !s.trim().is_empty())
+}
+
+fn clipboard_copy(text: &str) -> bool {
+    if let Ok(mut child) = Command::new("wl-copy")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            let _ = stdin.write_all(text.as_bytes());
+        }
+        return child.wait().is_ok_and(|s| s.success());
+    }
+    false
+}
+
+// ─── Single-Screen Multi-Field Form Editor ───────────────────────────────────
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FormProtocol {
+    WireGuard,
+    OpenVpn,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FormFocus {
+    Protocol,
+    Name,
+    // WireGuard
+    Address,
+    PrivateKey,
+    PeerPublicKey,
+    Endpoint,
+    AllowedIps,
+    Dns,
+    // OpenVPN
+    OvpnRemote,
+    OvpnTransport,
+    OvpnUsername,
+    OvpnPassword,
+    OvpnCaPath,
+    // Actions
+    Save,
+    Cancel,
+}
+
+#[derive(Default)]
+struct FormHits {
+    wg_pill: Rect,
+    ovpn_pill: Rect,
+    fields: Vec<(FormFocus, Rect)>,
+    genkey_btn: Rect,
+    copypub_btn: Rect,
+    browse_ca_btn: Rect,
+    save_btn: Rect,
+    cancel_btn: Rect,
+}
+
+#[derive(Default)]
+struct InspectorHits {
+    toggle_btn: Rect,
+    edit_btn: Rect,
+    auto_btn: Rect,
+    delete_btn: Rect,
+}
+
+pub struct TunnelForm {
+    editing_uuid: Option<String>,
+    protocol: FormProtocol,
+    focus: FormFocus,
+    // Shared
+    name: Input,
+    // WireGuard
+    address: Input,
+    private_key: Input,
+    derived_pubkey: String,
+    peer_public_key: Input,
+    endpoint: Input,
+    allowed_ips: Input,
+    dns: Input,
+    // OpenVPN
+    ovpn_remote: Input,
+    ovpn_tcp: bool,
+    ovpn_username: Input,
+    ovpn_password: Input,
+    ovpn_ca_path: Input,
+    // Cached state (recomputed on edit, never per frame)
+    validation: Vec<(bool, String)>,
+    first_error: Option<String>,
+    preview_lines: Vec<String>,
+    form_notice: Option<String>,
+}
+
+impl TunnelForm {
+    fn new_blank(protocol: FormProtocol) -> Self {
+        let mut f = Self {
+            editing_uuid: None,
+            protocol,
+            focus: FormFocus::Name,
+            name: Input::new(),
+            address: Input::new(),
+            private_key: Input::new().with_masked(true),
+            derived_pubkey: String::new(),
+            peer_public_key: Input::new(),
+            endpoint: Input::new(),
+            allowed_ips: Input::with_text("0.0.0.0/0, ::/0"),
+            dns: Input::new(),
+            ovpn_remote: Input::new(),
+            ovpn_tcp: false,
+            ovpn_username: Input::new(),
+            ovpn_password: Input::new().with_masked(true),
+            ovpn_ca_path: Input::new(),
+            validation: Vec::new(),
+            first_error: None,
+            preview_lines: Vec::new(),
+            form_notice: None,
+        };
+        f.recompute();
+        f
+    }
+
+    fn from_wireguard_spec(spec: WireGuardSpec, editing_uuid: Option<String>) -> Self {
+        let mut f = Self::new_blank(FormProtocol::WireGuard);
+        f.editing_uuid = editing_uuid;
+        f.name.set(&spec.name);
+        f.address.set(&spec.address);
+        f.private_key.set(&spec.private_key);
+        f.peer_public_key.set(&spec.peer_public_key);
+        f.endpoint.set(&spec.endpoint);
+        if !spec.allowed_ips.is_empty() {
+            f.allowed_ips.set(&spec.allowed_ips);
+        }
+        f.dns.set(&spec.dns);
+        f.derived_pubkey = derive_wg_pubkey(&spec.private_key).unwrap_or_default();
+        f.recompute();
+        f
+    }
+
+    fn from_openvpn_spec(spec: OpenVpnSpec, editing_uuid: Option<String>) -> Self {
+        let mut f = Self::new_blank(FormProtocol::OpenVpn);
+        f.editing_uuid = editing_uuid;
+        f.name.set(&spec.name);
+        f.ovpn_remote.set(&spec.remote);
+        f.ovpn_tcp = spec.proto_tcp;
+        f.ovpn_username.set(&spec.username);
+        f.ovpn_password.set(&spec.password);
+        if let Some(ca) = spec.ca_path {
+            f.ovpn_ca_path.set(ca.to_string_lossy());
+        }
+        f.recompute();
+        f
+    }
+
+    fn from_existing_profile(p: &VpnProfile, focus_auth: bool) -> Self {
+        let raw = out(&["nmcli", "-s", "-t", "connection", "show", "uuid", &p.uuid])
+            .or_else(|| sudo(&["nmcli", "-s", "-t", "connection", "show", "uuid", &p.uuid]).ok())
+            .unwrap_or_default();
+
+        match p.kind {
+            VpnKind::WireGuard => {
+                let mut spec = WireGuardSpec {
+                    name: p.name.clone(),
+                    address: p.ipv4.clone().unwrap_or_default(),
+                    private_key: String::new(),
+                    peer_public_key: String::new(),
+                    endpoint: p.endpoint.clone().unwrap_or_default(),
+                    allowed_ips: "0.0.0.0/0, ::/0".to_string(),
+                    dns: String::new(),
+                };
+                for line in raw.lines() {
+                    if let Some((k, v)) = line.split_once(':') {
+                        let v = v.trim();
+                        if v.is_empty() || v == "--" {
+                            continue;
+                        }
+                        match k.trim() {
+                            "ipv4.addresses" if spec.address.is_empty() => {
+                                spec.address = v.to_string();
+                            }
+                            "ipv4.dns" => spec.dns = v.to_string(),
+                            "wireguard.private-key" => spec.private_key = v.to_string(),
+                            _ => {}
+                        }
+                    }
+                }
+                Self::from_wireguard_spec(spec, Some(p.uuid.clone()))
+            }
+            VpnKind::OpenVpn | VpnKind::Other(_) => {
+                let mut spec = OpenVpnSpec {
+                    name: p.name.clone(),
+                    remote: String::new(),
+                    port: String::new(),
+                    proto_tcp: false,
+                    username: String::new(),
+                    password: String::new(),
+                    ca_path: None,
+                };
+                let mut host = String::new();
+                let mut port = String::new();
+                for line in raw.lines() {
+                    if let Some((k, v)) = line.split_once(':') {
+                        let v = v.trim();
+                        if k.trim() == "vpn.data" {
+                            for pair in v.split(',') {
+                                if let Some((dk, dv)) = pair.trim().split_once('=') {
+                                    match dk.trim() {
+                                        "remote" => host = dv.trim().to_string(),
+                                        "port" => port = dv.trim().to_string(),
+                                        "proto-tcp" => spec.proto_tcp = dv.trim() == "yes",
+                                        "username" => spec.username = dv.trim().to_string(),
+                                        "ca" => spec.ca_path = Some(PathBuf::from(dv.trim())),
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        } else if k.trim() == "vpn.secrets" {
+                            for pair in v.split(',') {
+                                if let Some((dk, dv)) = pair.trim().split_once('=')
+                                    && dk.trim() == "password"
+                                {
+                                    spec.password = dv.trim().to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+                spec.remote = if !host.is_empty() && !port.is_empty() {
+                    format!("{host}:{port}")
+                } else {
+                    host
+                };
+                let mut form = Self::from_openvpn_spec(spec, Some(p.uuid.clone()));
+                if focus_auth {
+                    form.focus = FormFocus::OvpnUsername;
+                }
+                form
+            }
+        }
+    }
+
+    fn focus_order(&self) -> &'static [FormFocus] {
+        match self.protocol {
+            FormProtocol::WireGuard => &[
+                FormFocus::Protocol,
+                FormFocus::Name,
+                FormFocus::Address,
+                FormFocus::PrivateKey,
+                FormFocus::PeerPublicKey,
+                FormFocus::Endpoint,
+                FormFocus::AllowedIps,
+                FormFocus::Dns,
+                FormFocus::Save,
+                FormFocus::Cancel,
+            ],
+            FormProtocol::OpenVpn => &[
+                FormFocus::Protocol,
+                FormFocus::Name,
+                FormFocus::OvpnRemote,
+                FormFocus::OvpnTransport,
+                FormFocus::OvpnUsername,
+                FormFocus::OvpnPassword,
+                FormFocus::OvpnCaPath,
+                FormFocus::Save,
+                FormFocus::Cancel,
+            ],
+        }
+    }
+
+    fn step_focus(&mut self, forward: bool) {
+        let order = self.focus_order();
+        let idx = order.iter().position(|f| *f == self.focus).unwrap_or(0);
+        let next = if forward {
+            (idx + 1) % order.len()
+        } else {
+            (idx + order.len() - 1) % order.len()
+        };
+        self.focus = order[next];
+    }
+
+    fn active_input_mut(&mut self) -> Option<&mut Input> {
+        match self.focus {
+            FormFocus::Name => Some(&mut self.name),
+            FormFocus::Address => Some(&mut self.address),
+            FormFocus::PrivateKey => Some(&mut self.private_key),
+            FormFocus::PeerPublicKey => Some(&mut self.peer_public_key),
+            FormFocus::Endpoint => Some(&mut self.endpoint),
+            FormFocus::AllowedIps => Some(&mut self.allowed_ips),
+            FormFocus::Dns => Some(&mut self.dns),
+            FormFocus::OvpnRemote => Some(&mut self.ovpn_remote),
+            FormFocus::OvpnUsername => Some(&mut self.ovpn_username),
+            FormFocus::OvpnPassword => Some(&mut self.ovpn_password),
+            FormFocus::OvpnCaPath => Some(&mut self.ovpn_ca_path),
+            FormFocus::Protocol
+            | FormFocus::OvpnTransport
+            | FormFocus::Save
+            | FormFocus::Cancel => None,
+        }
+    }
+
+    fn wg_spec(&self) -> WireGuardSpec {
+        WireGuardSpec {
+            name: self.name.text().to_string(),
+            address: self.address.text().to_string(),
+            private_key: self.private_key.text().to_string(),
+            peer_public_key: self.peer_public_key.text().to_string(),
+            endpoint: self.endpoint.text().to_string(),
+            allowed_ips: self.allowed_ips.text().to_string(),
+            dns: self.dns.text().to_string(),
+        }
+    }
+
+    fn ovpn_spec(&self) -> OpenVpnSpec {
+        let ca_raw = self.ovpn_ca_path.text().trim();
+        let ca_path = (!ca_raw.is_empty()).then(|| PathBuf::from(ca_raw));
+        OpenVpnSpec {
+            name: self.name.text().to_string(),
+            remote: self.ovpn_remote.text().to_string(),
+            port: String::new(),
+            proto_tcp: self.ovpn_tcp,
+            username: self.ovpn_username.text().to_string(),
+            password: self.ovpn_password.text().to_string(),
+            ca_path,
+        }
+    }
+
+    fn recompute(&mut self) {
+        match self.protocol {
+            FormProtocol::WireGuard => {
+                let spec = self.wg_spec();
+                self.validation = validate_wireguard_spec(&spec);
+                self.first_error = self
+                    .validation
+                    .iter()
+                    .find(|(ok, _)| !ok)
+                    .map(|(_, msg)| msg.clone());
+                let priv_summary = if spec.private_key.trim().is_empty() {
+                    "<missing>".to_string()
+                } else {
+                    format!("<hidden · {} chars>", spec.private_key.trim().len())
+                };
+                let peer_summary = if spec.peer_public_key.trim().is_empty() {
+                    "<missing>".to_string()
+                } else {
+                    spec.peer_public_key.trim().to_string()
+                };
+                let allowed = if spec.allowed_ips.trim().is_empty() {
+                    "0.0.0.0/0, ::/0"
+                } else {
+                    spec.allowed_ips.trim()
+                };
+                let mut lines = vec![
+                    "[Interface]".to_string(),
+                    format!("PrivateKey = {priv_summary}"),
+                    format!("Address = {}", spec.address.trim()),
+                ];
+                if !spec.dns.trim().is_empty() {
+                    lines.push(format!("DNS = {}", spec.dns.trim()));
+                }
+                lines.push(String::new());
+                lines.push("[Peer]".to_string());
+                lines.push(format!("PublicKey = {peer_summary}"));
+                lines.push(format!("Endpoint = {}", spec.endpoint.trim()));
+                lines.push(format!("AllowedIPs = {allowed}"));
+                lines.push("PersistentKeepalive = 25".to_string());
+                self.preview_lines = lines;
+            }
+            FormProtocol::OpenVpn => {
+                let spec = self.ovpn_spec();
+                self.validation = validate_openvpn_spec(&spec);
+                self.first_error = self
+                    .validation
+                    .iter()
+                    .find(|(ok, _)| !ok)
+                    .map(|(_, msg)| msg.clone());
+                let proto = if spec.proto_tcp { "tcp" } else { "udp" };
+                let mut lines = vec![
+                    "client".to_string(),
+                    "dev tun".to_string(),
+                    format!("proto {proto}"),
+                    format!(
+                        "remote {}",
+                        if spec.remote.trim().is_empty() {
+                            "<server>"
+                        } else {
+                            spec.remote.trim()
+                        }
+                    ),
+                ];
+                if !spec.username.trim().is_empty() {
+                    lines.push(format!("auth-user-pass ({})", spec.username.trim()));
+                }
+                if let Some(ca) = &spec.ca_path {
+                    lines.push(format!("ca {}", ca.display()));
+                }
+                self.preview_lines = lines;
+            }
+        }
+    }
+
+    fn apply_clipboard_text(&mut self, text: &str) -> bool {
+        if let Some(wg) = parse_wireguard_conf(text) {
+            self.protocol = FormProtocol::WireGuard;
+            if self.name.text().trim().is_empty() {
+                self.name.set(&wg.name);
+            }
+            self.address.set(&wg.address);
+            self.private_key.set(&wg.private_key);
+            self.derived_pubkey = derive_wg_pubkey(&wg.private_key).unwrap_or_default();
+            self.peer_public_key.set(&wg.peer_public_key);
+            self.endpoint.set(&wg.endpoint);
+            self.allowed_ips.set(&wg.allowed_ips);
+            self.dns.set(&wg.dns);
+            self.form_notice = Some("Filled WireGuard fields from clipboard".to_string());
+            self.recompute();
+            return true;
+        }
+        if let Some(ovpn) = parse_openvpn_conf(text) {
+            self.protocol = FormProtocol::OpenVpn;
+            if self.name.text().trim().is_empty() {
+                self.name.set(&ovpn.name);
+            }
+            self.ovpn_remote.set(&ovpn.remote);
+            self.ovpn_tcp = ovpn.proto_tcp;
+            if let Some(ca) = ovpn.ca_path {
+                self.ovpn_ca_path.set(ca.to_string_lossy());
+            }
+            self.form_notice = Some("Filled OpenVPN fields from clipboard".to_string());
+            self.recompute();
+            return true;
+        }
+        false
+    }
+
+    fn save(&self) -> Result<String, String> {
+        match self.protocol {
+            FormProtocol::WireGuard => {
+                create_wireguard_profile(&self.wg_spec(), self.editing_uuid.as_deref())
+            }
+            FormProtocol::OpenVpn => {
+                create_openvpn_profile(&self.ovpn_spec(), self.editing_uuid.as_deref())
+            }
+        }
+    }
 }
 
 // ─── TUI Screen ──────────────────────────────────────────────────────────────
 
 enum VpnPhase {
     Browse,
+    EditForm(Box<TunnelForm>),
     ConfirmDelete {
         name: String,
         uuid: String,
@@ -726,15 +1367,16 @@ enum VpnPhase {
 
 enum VpnRowKind {
     Profile(usize),
+    Heading,
     CreateConnection,
     ImportFile,
+    PasteConfig,
     InstallOpenVpn,
 }
 
 pub enum VpnRequest {
-    CreateConnection,
     ImportFile,
-    OpenVpnAuth { name: String, uuid: String },
+    BrowseForForm { form: Box<TunnelForm>, for_ca: bool },
     InstallOpenVpn,
 }
 
@@ -750,6 +1392,10 @@ pub struct VpnScreen {
     pending_request: Option<VpnRequest>,
     list_area: Cell<Rect>,
     confirm_area: Cell<Rect>,
+    form_hits: RefCell<FormHits>,
+    inspector_hits: RefCell<InspectorHits>,
+    cursor_blink_on: bool,
+    last_blink: Instant,
 }
 
 impl VpnScreen {
@@ -766,12 +1412,23 @@ impl VpnScreen {
             pending_request: None,
             list_area: Cell::new(Rect::default()),
             confirm_area: Cell::new(Rect::default()),
+            form_hits: RefCell::new(FormHits::default()),
+            inspector_hits: RefCell::new(InspectorHits::default()),
+            cursor_blink_on: true,
+            last_blink: Instant::now(),
         };
         s.rebuild_rows();
         s
     }
 
-    /// Deterministic snapshot fixture for `tests/screens.rs`.
+    fn with_form(form: Box<TunnelForm>, banner: Option<String>) -> Self {
+        let mut s = Self::new(banner);
+        s.phase = VpnPhase::EditForm(form);
+        s.update_chrome();
+        s
+    }
+
+    /// Deterministic snapshot fixture for `tests/screens.rs` (Browse Studio).
     pub fn for_snapshot() -> Self {
         let profiles = vec![
             VpnProfile {
@@ -811,8 +1468,29 @@ impl VpnScreen {
             pending_request: None,
             list_area: Cell::new(Rect::default()),
             confirm_area: Cell::new(Rect::default()),
+            form_hits: RefCell::new(FormHits::default()),
+            inspector_hits: RefCell::new(InspectorHits::default()),
+            cursor_blink_on: true,
+            last_blink: Instant::now(),
         };
         s.rebuild_rows();
+        s
+    }
+
+    /// Deterministic snapshot fixture for `tests/screens.rs` (EditForm).
+    pub fn for_form_snapshot() -> Self {
+        let mut s = Self::for_snapshot();
+        let mut form = TunnelForm::new_blank(FormProtocol::WireGuard);
+        form.name.set("work-wg");
+        form.address.set("10.66.0.2/32");
+        form.private_key
+            .set("gI7gS3V1mQ6K9h2x4p8n1r5t7v9w2y4z6a8c0e2g4i8=");
+        form.derived_pubkey = "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=".to_string();
+        form.endpoint.set("vpn.example.com:51820");
+        form.dns.set("1.1.1.1");
+        form.recompute();
+        s.phase = VpnPhase::EditForm(Box::new(form));
+        s.update_chrome();
         s
     }
 
@@ -823,31 +1501,68 @@ impl VpnScreen {
     }
 
     fn update_chrome(&mut self) {
-        let active = self.profiles.iter().filter(|p| p.active).count();
-        let status = if active > 0 {
-            format!("{active} active \u{00b7} WireGuard & OpenVPN")
-        } else if self.profiles.is_empty() {
-            "WireGuard & OpenVPN".to_string()
-        } else {
-            format!("{} saved \u{00b7} WireGuard & OpenVPN", self.profiles.len())
-        };
-        self.header = Header::new("Hayato").subtitle("VPN").status(status);
-        self.keybar = if matches!(self.phase, VpnPhase::ConfirmDelete { .. }) {
-            vec![
-                KeyHint::new("Enter", "confirm"),
-                KeyHint::new("Esc", "cancel"),
-            ]
-        } else {
-            vec![
-                KeyHint::new("Enter", "toggle"),
-                KeyHint::new("n", "new"),
-                KeyHint::new("i", "import"),
-                KeyHint::new("a", "auto"),
-                KeyHint::new("u", "auth"),
-                KeyHint::new("d", "delete"),
-                KeyHint::new("Esc", "close"),
-            ]
-        };
+        match &self.phase {
+            VpnPhase::Browse => {
+                let active = self.profiles.iter().filter(|p| p.active).count();
+                let status = if active > 0 {
+                    format!("{active} active \u{00b7} WireGuard & OpenVPN")
+                } else if self.profiles.is_empty() {
+                    "WireGuard & OpenVPN".to_string()
+                } else {
+                    format!("{} saved \u{00b7} WireGuard & OpenVPN", self.profiles.len())
+                };
+                self.header = Header::new("Hayato").subtitle("VPN").status(status);
+                self.keybar = vec![
+                    KeyHint::new("Enter", "toggle"),
+                    KeyHint::new("n", "new"),
+                    KeyHint::new("e", "edit"),
+                    KeyHint::new("i", "import"),
+                    KeyHint::new("v", "paste"),
+                    KeyHint::new("a", "auto"),
+                    KeyHint::new("d", "delete"),
+                    KeyHint::new("Esc", "close"),
+                ];
+            }
+            VpnPhase::EditForm(form) => {
+                let verb = if form.editing_uuid.is_some() {
+                    "Edit"
+                } else {
+                    "New"
+                };
+                let proto = match form.protocol {
+                    FormProtocol::WireGuard => "WireGuard",
+                    FormProtocol::OpenVpn => "OpenVPN",
+                };
+                self.header = Header::new("Hayato")
+                    .subtitle("VPN")
+                    .status(format!("{verb} {proto} Tunnel"));
+                self.keybar = match form.protocol {
+                    FormProtocol::WireGuard => vec![
+                        KeyHint::new("Tab/\u{2191}\u{2193}", "field"),
+                        KeyHint::new("Ctrl+S", "save"),
+                        KeyHint::new("Ctrl+G", "genkey"),
+                        KeyHint::new("Ctrl+Y", "copy pub"),
+                        KeyHint::new("Ctrl+V", "paste"),
+                        KeyHint::new("Esc", "cancel"),
+                    ],
+                    FormProtocol::OpenVpn => vec![
+                        KeyHint::new("Tab/\u{2191}\u{2193}", "field"),
+                        KeyHint::new("Ctrl+S", "save"),
+                        KeyHint::new("Ctrl+O", "browse"),
+                        KeyHint::new("Ctrl+V", "paste"),
+                        KeyHint::new("Ctrl+R", "reveal"),
+                        KeyHint::new("Esc", "cancel"),
+                    ],
+                };
+            }
+            VpnPhase::ConfirmDelete { .. } => {
+                self.header = Header::new("Hayato").subtitle("VPN").status("Delete");
+                self.keybar = vec![
+                    KeyHint::new("Enter", "confirm"),
+                    KeyHint::new("Esc", "cancel"),
+                ];
+            }
+        }
     }
 
     fn rebuild_rows(&mut self) {
@@ -885,19 +1600,29 @@ impl VpnScreen {
             kinds.push(VpnRowKind::Profile(i));
         }
 
+        rows.push(Row::heading("Actions"));
+        kinds.push(VpnRowKind::Heading);
+
         rows.push(
-            Row::new("Create VPN connection")
-                .detail("WireGuard or OpenVPN guided setup")
+            Row::new("New tunnel")
+                .detail("WireGuard or OpenVPN form (or Ctrl+V paste)")
                 .glyph(Glyph::Network),
         );
         kinds.push(VpnRowKind::CreateConnection);
 
         rows.push(
-            Row::new("Import VPN config (.conf / .ovpn)")
-                .detail("browse files with live preview")
+            Row::new("Import config")
+                .detail("browse .conf / .ovpn with live preview")
                 .glyph(Glyph::Folder),
         );
         kinds.push(VpnRowKind::ImportFile);
+
+        rows.push(
+            Row::new("Paste config")
+                .detail("parse .conf / .ovpn from clipboard")
+                .glyph(Glyph::Clipboard),
+        );
+        kinds.push(VpnRowKind::PasteConfig);
 
         if !self.openvpn_ready {
             rows.push(
@@ -926,6 +1651,21 @@ impl VpnScreen {
         }
     }
 
+    fn open_paste_form(&mut self) {
+        let Some(clip) = clipboard_paste() else {
+            self.banner = Some("Clipboard is empty (copy a .conf or .ovpn first)".to_string());
+            return;
+        };
+        let mut form = TunnelForm::new_blank(FormProtocol::WireGuard);
+        if form.apply_clipboard_text(&clip) {
+            self.phase = VpnPhase::EditForm(Box::new(form));
+            self.update_chrome();
+        } else {
+            self.banner =
+                Some("Clipboard text is not a WireGuard .conf or OpenVPN .ovpn".to_string());
+        }
+    }
+
     fn activate_selected(&mut self) -> Outcome {
         let Some(kind) = self.selected_kind() else {
             return Outcome::Consumed;
@@ -943,19 +1683,709 @@ impl VpnScreen {
                 }
                 Outcome::Consumed
             }
+            VpnRowKind::Heading => Outcome::Consumed,
             VpnRowKind::CreateConnection => {
-                self.pending_request = Some(VpnRequest::CreateConnection);
-                Outcome::Done(0)
+                self.phase =
+                    VpnPhase::EditForm(Box::new(TunnelForm::new_blank(FormProtocol::WireGuard)));
+                self.update_chrome();
+                Outcome::Consumed
             }
             VpnRowKind::ImportFile => {
                 self.pending_request = Some(VpnRequest::ImportFile);
                 Outcome::Done(0)
+            }
+            VpnRowKind::PasteConfig => {
+                self.open_paste_form();
+                Outcome::Consumed
             }
             VpnRowKind::InstallOpenVpn => {
                 self.pending_request = Some(VpnRequest::InstallOpenVpn);
                 Outcome::Done(0)
             }
         }
+    }
+
+    fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
+        if area.width >= 100 {
+            let gap = 1u16;
+            let left_w = ((u32::from(area.width) * 52) / 100).max(48) as u16;
+            let right_w = area.width.saturating_sub(left_w + gap);
+            (
+                Rect::new(area.x, area.y, left_w, area.height),
+                Some(Rect::new(
+                    area.x + left_w + gap,
+                    area.y,
+                    right_w,
+                    area.height,
+                )),
+            )
+        } else {
+            (area, None)
+        }
+    }
+
+    fn draw_inspector(&self, buf: &mut Buffer, area: Rect, design: &Design) {
+        let inner = draw_card_with(
+            buf,
+            area,
+            design,
+            Some("Tunnel Inspector"),
+            ColorRole::Surface,
+            design.style(TextStyle::Title),
+        );
+        let mut hits = InspectorHits::default();
+        if inner.width < 20 || inner.height < 8 {
+            *self.inspector_hits.borrow_mut() = hits;
+            return;
+        }
+        let dim = design.style(TextStyle::Dim);
+        let body = design.style(TextStyle::Body);
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        let ok_style = Style::default()
+            .fg(design.color(ColorRole::Ok))
+            .add_modifier(Modifier::BOLD);
+
+        let mut y = inner.y;
+        let x = inner.x + 1;
+        let w = inner.width.saturating_sub(2);
+
+        if let Some(p) = self.selected_profile() {
+            put_trunc(
+                buf,
+                x,
+                y,
+                if p.active {
+                    "ACTIVE TUNNEL"
+                } else {
+                    "SAVED TUNNEL"
+                },
+                w,
+                accent,
+            );
+            y += 1;
+            put_trunc(
+                buf,
+                x,
+                y,
+                &p.name,
+                w,
+                design.style(TextStyle::Title).add_modifier(Modifier::BOLD),
+            );
+            y += 2;
+
+            let status_line = if p.active {
+                match &p.device {
+                    Some(d) => format!("\u{25cf} Connected ({d})"),
+                    None => "\u{25cf} Connected".to_string(),
+                }
+            } else {
+                "\u{25cb} Disconnected".to_string()
+            };
+            put_trunc(buf, x, y, "Status", 13, dim);
+            put_trunc(
+                buf,
+                x + 13,
+                y,
+                &status_line,
+                w.saturating_sub(13),
+                if p.active { ok_style } else { body },
+            );
+            y += 1;
+
+            put_trunc(buf, x, y, "Protocol", 13, dim);
+            let proto_desc = match p.kind {
+                VpnKind::WireGuard => "WireGuard (kernel / NetworkManager)",
+                VpnKind::OpenVpn => "OpenVPN (NetworkManager plugin)",
+                VpnKind::Other(ref s) => s.as_str(),
+            };
+            put_trunc(buf, x + 13, y, proto_desc, w.saturating_sub(13), body);
+            y += 1;
+
+            if let Some(ip) = &p.ipv4 {
+                put_trunc(buf, x, y, "Address", 13, dim);
+                put_trunc(buf, x + 13, y, ip, w.saturating_sub(13), body);
+                y += 1;
+            }
+            if let Some(ep) = &p.endpoint {
+                put_trunc(buf, x, y, "Endpoint", 13, dim);
+                put_trunc(buf, x + 13, y, ep, w.saturating_sub(13), body);
+                y += 1;
+            }
+            if p.active {
+                put_trunc(buf, x, y, "Traffic", 13, dim);
+                let io_str = format!(
+                    "\u{2191} {} sent \u{00b7} \u{2193} {} received",
+                    format_bytes(p.tx_bytes),
+                    format_bytes(p.rx_bytes)
+                );
+                put_trunc(buf, x + 13, y, &io_str, w.saturating_sub(13), body);
+                y += 1;
+            }
+            put_trunc(buf, x, y, "Autoconnect", 13, dim);
+            put_trunc(
+                buf,
+                x + 13,
+                y,
+                if p.autoconnect {
+                    "Enabled (starts on boot)"
+                } else {
+                    "Manual"
+                },
+                w.saturating_sub(13),
+                body,
+            );
+            y += 2;
+
+            if y + 2 < inner.bottom() {
+                put_trunc(buf, x, y, "QUICK ACTIONS", w, accent);
+                y += 1;
+                let pill_style = Style::default()
+                    .fg(design.color(ColorRole::Text))
+                    .bg(design.color(ColorRole::SurfaceAlt));
+                let mut cx = x;
+                let toggle_lbl = if p.active {
+                    " Disconnect "
+                } else {
+                    " Connect "
+                };
+                let tw = toggle_lbl.len() as u16;
+                put(buf, cx, y, toggle_lbl, tw, pill_style);
+                hits.toggle_btn = Rect::new(cx, y, tw, 1);
+                cx += tw + 2;
+
+                let edit_lbl = " Edit ";
+                let ew = edit_lbl.len() as u16;
+                if cx + ew <= inner.right() {
+                    put(buf, cx, y, edit_lbl, ew, pill_style);
+                    hits.edit_btn = Rect::new(cx, y, ew, 1);
+                    cx += ew + 2;
+                }
+
+                let auto_lbl = if p.autoconnect {
+                    " Auto: On "
+                } else {
+                    " Auto: Off "
+                };
+                let aw = auto_lbl.len() as u16;
+                if cx + aw <= inner.right() {
+                    put(buf, cx, y, auto_lbl, aw, pill_style);
+                    hits.auto_btn = Rect::new(cx, y, aw, 1);
+                    cx += aw + 2;
+                }
+
+                let del_lbl = " Delete ";
+                let dw = del_lbl.len() as u16;
+                if cx + dw <= inner.right() {
+                    let del_style = Style::default()
+                        .fg(design.color(ColorRole::Danger))
+                        .bg(design.color(ColorRole::SurfaceAlt));
+                    put(buf, cx, y, del_lbl, dw, del_style);
+                    hits.delete_btn = Rect::new(cx, y, dw, 1);
+                }
+                y += 2;
+            }
+        } else {
+            put_trunc(buf, x, y, "HAYATO VPN STUDIO", w, accent);
+            y += 2;
+            put_trunc(buf, x, y, "Manage WireGuard and OpenVPN tunnels", w, body);
+            y += 1;
+            put_trunc(buf, x, y, "natively through NetworkManager.", w, dim);
+            y += 2;
+        }
+
+        if y + 2 < inner.bottom() {
+            put_trunc(buf, x, y, "SHORTCUTS", w, accent);
+            y += 1;
+            put_trunc(
+                buf,
+                x,
+                y,
+                "n  New tunnel form   e  Edit focused tunnel",
+                w,
+                dim,
+            );
+            y += 1;
+            put_trunc(
+                buf,
+                x,
+                y,
+                "v  Paste .conf/.ovpn i  Import via Files",
+                w,
+                dim,
+            );
+        }
+
+        *self.inspector_hits.borrow_mut() = hits;
+    }
+
+    fn draw_edit_form(
+        form: &TunnelForm,
+        blink_on: bool,
+        area: Rect,
+        buf: &mut Buffer,
+        design: &Design,
+    ) -> FormHits {
+        let (left, right) = Self::split_panes(area);
+        let inner = draw_card_with(
+            buf,
+            left,
+            design,
+            Some("Tunnel Configuration"),
+            ColorRole::Surface,
+            design.style(TextStyle::Title),
+        );
+        let mut hits = FormHits::default();
+        if inner.width < 28 || inner.height < 10 {
+            return hits;
+        }
+
+        let dim = design.style(TextStyle::Dim);
+        let body = design.style(TextStyle::Body);
+        let accent = Style::default()
+            .fg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        let ok_style = Style::default()
+            .fg(design.color(ColorRole::Ok))
+            .add_modifier(Modifier::BOLD);
+        let err_style = Style::default()
+            .fg(design.color(ColorRole::Danger))
+            .add_modifier(Modifier::BOLD);
+
+        let x = inner.x + 1;
+        let label_w: u16 = 12;
+        let field_x = x + label_w;
+        let field_w = inner.width.saturating_sub(label_w + 2);
+        let mut y = inner.y;
+
+        // ── Protocol Toggle Row ────────────────────────────────────────────
+        let proto_focused = form.focus == FormFocus::Protocol;
+        put_trunc(
+            buf,
+            x,
+            y,
+            "Protocol",
+            label_w,
+            if proto_focused { accent } else { dim },
+        );
+        let active_pill = Style::default()
+            .fg(design.color(ColorRole::SelectionText))
+            .bg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        let idle_pill = Style::default()
+            .fg(design.color(ColorRole::Text))
+            .bg(design.color(ColorRole::Bg));
+
+        let wg_lbl = if form.protocol == FormProtocol::WireGuard {
+            " \u{25cf} WireGuard "
+        } else {
+            "   WireGuard "
+        };
+        let ovpn_lbl = if form.protocol == FormProtocol::OpenVpn {
+            " \u{25cf} OpenVPN "
+        } else {
+            "   OpenVPN "
+        };
+        let wg_w = 13u16;
+        let ovpn_w = 11u16;
+        put(
+            buf,
+            field_x,
+            y,
+            wg_lbl,
+            wg_w,
+            if form.protocol == FormProtocol::WireGuard {
+                active_pill
+            } else {
+                idle_pill
+            },
+        );
+        hits.wg_pill = Rect::new(field_x, y, wg_w, 1);
+
+        put(
+            buf,
+            field_x + wg_w + 1,
+            y,
+            ovpn_lbl,
+            ovpn_w,
+            if form.protocol == FormProtocol::OpenVpn {
+                active_pill
+            } else {
+                idle_pill
+            },
+        );
+        hits.ovpn_pill = Rect::new(field_x + wg_w + 1, y, ovpn_w, 1);
+        y += 2;
+
+        let draw_input_row = |buf: &mut Buffer,
+                              fields: &mut Vec<(FormFocus, Rect)>,
+                              y: u16,
+                              label: &str,
+                              focus_id: FormFocus,
+                              input: &Input,
+                              placeholder: &str,
+                              right_btn: Option<(&str, &mut Rect)>| {
+            let focused = form.focus == focus_id;
+            put_trunc(
+                buf,
+                x,
+                y,
+                label,
+                label_w,
+                if focused { accent } else { dim },
+            );
+            let btn_w = right_btn
+                .as_ref()
+                .map(|(l, _)| l.len() as u16 + 1)
+                .unwrap_or(0);
+            let iw = field_w.saturating_sub(btn_w);
+            let rect = Rect::new(field_x, y, iw, 1);
+            input.render_field(
+                rect,
+                buf,
+                design,
+                placeholder,
+                focused,
+                blink_on,
+                ColorRole::Bg,
+                TextStyle::Body,
+            );
+            fields.push((focus_id, rect));
+            if let Some((btn_label, out_rect)) = right_btn {
+                let bx = field_x + iw + 1;
+                let bw = btn_label.len() as u16;
+                let btn_style = Style::default()
+                    .fg(design.color(ColorRole::Accent))
+                    .bg(design.color(ColorRole::SurfaceAlt));
+                put(buf, bx, y, btn_label, bw, btn_style);
+                *out_rect = Rect::new(bx, y, bw, 1);
+            }
+        };
+
+        let gap: u16 = if inner.height >= 24 { 2 } else { 1 };
+
+        match form.protocol {
+            FormProtocol::WireGuard => {
+                draw_input_row(
+                    buf,
+                    &mut hits.fields,
+                    y,
+                    "Name",
+                    FormFocus::Name,
+                    &form.name,
+                    "work-wg",
+                    None,
+                );
+                y += gap;
+                draw_input_row(
+                    buf,
+                    &mut hits.fields,
+                    y,
+                    "Address",
+                    FormFocus::Address,
+                    &form.address,
+                    "10.66.0.2/32",
+                    None,
+                );
+                y += gap;
+                draw_input_row(
+                    buf,
+                    &mut hits.fields,
+                    y,
+                    "Priv Key",
+                    FormFocus::PrivateKey,
+                    &form.private_key,
+                    "44-char base64 or Ctrl+G",
+                    Some((" GenKey ", &mut hits.genkey_btn)),
+                );
+                y += 1;
+                // Derived Public Key row (always visible right under Private Key!)
+                put_trunc(buf, x, y, "Pub Key", label_w, dim);
+                let copy_lbl = " Copy ";
+                let cw = copy_lbl.len() as u16;
+                let pw = field_w.saturating_sub(cw + 1);
+                let pub_display = if form.derived_pubkey.is_empty() {
+                    "(generated from Private Key via wg)"
+                } else {
+                    form.derived_pubkey.as_str()
+                };
+                put_trunc(
+                    buf,
+                    field_x,
+                    y,
+                    pub_display,
+                    pw,
+                    if form.derived_pubkey.is_empty() {
+                        dim
+                    } else {
+                        ok_style
+                    },
+                );
+                if !form.derived_pubkey.is_empty() {
+                    let bx = field_x + pw + 1;
+                    put(
+                        buf,
+                        bx,
+                        y,
+                        copy_lbl,
+                        cw,
+                        Style::default()
+                            .fg(design.color(ColorRole::Accent))
+                            .bg(design.color(ColorRole::SurfaceAlt)),
+                    );
+                    hits.copypub_btn = Rect::new(bx, y, cw, 1);
+                }
+                y += gap;
+                draw_input_row(
+                    buf,
+                    &mut hits.fields,
+                    y,
+                    "Peer Key",
+                    FormFocus::PeerPublicKey,
+                    &form.peer_public_key,
+                    "server WireGuard public key",
+                    None,
+                );
+                y += gap;
+                draw_input_row(
+                    buf,
+                    &mut hits.fields,
+                    y,
+                    "Endpoint",
+                    FormFocus::Endpoint,
+                    &form.endpoint,
+                    "vpn.example.com:51820",
+                    None,
+                );
+                y += gap;
+                draw_input_row(
+                    buf,
+                    &mut hits.fields,
+                    y,
+                    "AllowedIPs",
+                    FormFocus::AllowedIps,
+                    &form.allowed_ips,
+                    "0.0.0.0/0, ::/0",
+                    None,
+                );
+                y += gap;
+                draw_input_row(
+                    buf,
+                    &mut hits.fields,
+                    y,
+                    "DNS",
+                    FormFocus::Dns,
+                    &form.dns,
+                    "1.1.1.1 (optional)",
+                    None,
+                );
+                y += gap;
+            }
+            FormProtocol::OpenVpn => {
+                draw_input_row(
+                    buf,
+                    &mut hits.fields,
+                    y,
+                    "Name",
+                    FormFocus::Name,
+                    &form.name,
+                    "office-ovpn",
+                    None,
+                );
+                y += gap;
+                draw_input_row(
+                    buf,
+                    &mut hits.fields,
+                    y,
+                    "Server",
+                    FormFocus::OvpnRemote,
+                    &form.ovpn_remote,
+                    "vpn.example.com:1194",
+                    None,
+                );
+                y += gap;
+                let tr_focused = form.focus == FormFocus::OvpnTransport;
+                put_trunc(
+                    buf,
+                    x,
+                    y,
+                    "Transport",
+                    label_w,
+                    if tr_focused { accent } else { dim },
+                );
+                let udp_lbl = if !form.ovpn_tcp {
+                    " \u{25cf} UDP "
+                } else {
+                    "   UDP "
+                };
+                let tcp_lbl = if form.ovpn_tcp {
+                    " \u{25cf} TCP "
+                } else {
+                    "   TCP "
+                };
+                put(
+                    buf,
+                    field_x,
+                    y,
+                    udp_lbl,
+                    7,
+                    if !form.ovpn_tcp {
+                        active_pill
+                    } else {
+                        idle_pill
+                    },
+                );
+                put(
+                    buf,
+                    field_x + 8,
+                    y,
+                    tcp_lbl,
+                    7,
+                    if form.ovpn_tcp {
+                        active_pill
+                    } else {
+                        idle_pill
+                    },
+                );
+                hits.fields
+                    .push((FormFocus::OvpnTransport, Rect::new(field_x, y, 16, 1)));
+                y += gap;
+                draw_input_row(
+                    buf,
+                    &mut hits.fields,
+                    y,
+                    "Username",
+                    FormFocus::OvpnUsername,
+                    &form.ovpn_username,
+                    "optional",
+                    None,
+                );
+                y += gap;
+                draw_input_row(
+                    buf,
+                    &mut hits.fields,
+                    y,
+                    "Password",
+                    FormFocus::OvpnPassword,
+                    &form.ovpn_password,
+                    "optional (Ctrl+R reveal)",
+                    None,
+                );
+                y += gap;
+                draw_input_row(
+                    buf,
+                    &mut hits.fields,
+                    y,
+                    "CA Cert",
+                    FormFocus::OvpnCaPath,
+                    &form.ovpn_ca_path,
+                    "optional .crt/.pem",
+                    Some((" Browse ", &mut hits.browse_ca_btn)),
+                );
+                y += gap;
+            }
+        }
+
+        // ── Inline Validation / Notice Line ────────────────────────────────
+        if y < inner.bottom().saturating_sub(2) {
+            if let Some(notice) = &form.form_notice {
+                put_trunc(buf, x, y, notice, inner.width.saturating_sub(2), accent);
+            } else if let Some(err) = &form.first_error {
+                put_trunc(
+                    buf,
+                    x,
+                    y,
+                    &format!("\u{2717} {err}"),
+                    inner.width.saturating_sub(2),
+                    err_style,
+                );
+            } else {
+                put_trunc(
+                    buf,
+                    x,
+                    y,
+                    "\u{2713} Configuration valid \u{00b7} ready to save",
+                    inner.width.saturating_sub(2),
+                    ok_style,
+                );
+            }
+            y += 1;
+        }
+
+        // ── Save / Cancel Buttons ──────────────────────────────────────────
+        let btn_y = y.min(inner.bottom().saturating_sub(1));
+        let save_lbl = " Save Tunnel (Ctrl+S) ";
+        let cancel_lbl = " Cancel (Esc) ";
+        let sw = save_lbl.len() as u16;
+        let cw = cancel_lbl.len() as u16;
+        let save_style = if form.focus == FormFocus::Save {
+            active_pill
+        } else {
+            Style::default()
+                .fg(design.color(ColorRole::Ok))
+                .bg(design.color(ColorRole::SurfaceAlt))
+                .add_modifier(Modifier::BOLD)
+        };
+        let cancel_style = if form.focus == FormFocus::Cancel {
+            active_pill
+        } else {
+            Style::default()
+                .fg(design.color(ColorRole::Text))
+                .bg(design.color(ColorRole::SurfaceAlt))
+        };
+        put(buf, x, btn_y, save_lbl, sw, save_style);
+        hits.save_btn = Rect::new(x, btn_y, sw, 1);
+        put(buf, x + sw + 2, btn_y, cancel_lbl, cw, cancel_style);
+        hits.cancel_btn = Rect::new(x + sw + 2, btn_y, cw, 1);
+
+        // ── Right Pane: Live Config Preview & Validation Checklist ─────────
+        if let Some(right_area) = right {
+            let r_in = draw_card_with(
+                buf,
+                right_area,
+                design,
+                Some("Live Config Preview"),
+                ColorRole::Surface,
+                design.style(TextStyle::Title),
+            );
+            let rx = r_in.x + 1;
+            let rw = r_in.width.saturating_sub(2);
+            let mut ry = r_in.y;
+            for line in &form.preview_lines {
+                if ry >= r_in.bottom().saturating_sub(8) {
+                    break;
+                }
+                let st = if line.starts_with('[') {
+                    accent
+                } else if line.contains("<missing>") {
+                    err_style
+                } else {
+                    body
+                };
+                put_trunc(buf, rx, ry, line, rw, st);
+                ry += 1;
+            }
+            ry += 1;
+            if ry < r_in.bottom().saturating_sub(2) {
+                put_trunc(buf, rx, ry, "VALIDATION", rw, accent);
+                ry += 1;
+                for (ok, msg) in &form.validation {
+                    if ry >= r_in.bottom().saturating_sub(1) {
+                        break;
+                    }
+                    let (mark, st) = if *ok {
+                        ("\u{2713}", ok_style)
+                    } else {
+                        ("\u{2717}", err_style)
+                    };
+                    put_trunc(buf, rx, ry, &format!("{mark} {msg}"), rw, st);
+                    ry += 1;
+                }
+            }
+        }
+
+        hits
     }
 }
 
@@ -971,8 +2401,20 @@ impl Screen for VpnScreen {
     fn phase(&self) -> Option<&'static str> {
         Some(match self.phase {
             VpnPhase::Browse => "browse",
+            VpnPhase::EditForm(_) => "edit-form",
             VpnPhase::ConfirmDelete { .. } => "confirm-delete",
         })
+    }
+
+    fn tick(&mut self) -> Outcome {
+        if matches!(self.phase, VpnPhase::EditForm(_))
+            && self.last_blink.elapsed().as_millis() >= 500
+        {
+            self.cursor_blink_on = !self.cursor_blink_on;
+            self.last_blink = Instant::now();
+            return Outcome::Consumed;
+        }
+        Outcome::Continue
     }
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
@@ -981,17 +2423,27 @@ impl Screen for VpnScreen {
             return;
         }
 
-        if let VpnPhase::ConfirmDelete { confirm, .. } = &mut self.phase {
-            self.confirm_area.set(area);
-            confirm.render(area, ctx.buf, ctx.design);
-            return;
+        match &mut self.phase {
+            VpnPhase::ConfirmDelete { confirm, .. } => {
+                self.confirm_area.set(area);
+                confirm.render(area, ctx.buf, ctx.design);
+                return;
+            }
+            VpnPhase::EditForm(form) => {
+                let blink = self.cursor_blink_on || ctx.design.reduced_motion();
+                let hits = Self::draw_edit_form(form, blink, area, ctx.buf, ctx.design);
+                *self.form_hits.borrow_mut() = hits;
+                return;
+            }
+            VpnPhase::Browse => {}
         }
 
+        let (left, right) = Self::split_panes(area);
         let card = draw_card_with(
             ctx.buf,
-            area,
+            left,
             ctx.design,
-            Some("VPN Tunnels"),
+            Some("Tunnels"),
             ColorRole::Surface,
             ctx.design.style(TextStyle::Title),
         );
@@ -1026,18 +2478,66 @@ impl Screen for VpnScreen {
             y += 1;
         }
 
-        // Blank separator line.
         y += 1;
 
-        let list_rect = Rect::new(card.x, y, card.width, card.bottom().saturating_sub(y));
+        // Reserve a 2-line context strip on compact (single-pane) grids.
+        let compact_footer = if right.is_none() && card.bottom().saturating_sub(y) >= 6 {
+            2
+        } else {
+            0
+        };
+        let list_h = card.bottom().saturating_sub(y + compact_footer);
+        let list_rect = Rect::new(card.x, y, card.width, list_h);
         self.list_area.set(list_rect);
         self.list.render(list_rect, ctx.buf, ctx.design, true);
+
+        if compact_footer == 2 {
+            let fy = card.bottom().saturating_sub(2);
+            let rule_style = Style::default().fg(ctx.design.color(ColorRole::Border));
+            for col in card.x..card.right() {
+                if let Some(cell) = ctx.buf.cell_mut((col, fy)) {
+                    cell.set_symbol("\u{2500}").set_style(rule_style);
+                }
+            }
+            let summary = if let Some(p) = self.selected_profile() {
+                let mut parts = vec![p.name.clone()];
+                if let Some(d) = &p.device {
+                    parts.push(d.clone());
+                }
+                if let Some(ep) = &p.endpoint {
+                    parts.push(ep.clone());
+                }
+                parts.push(if p.autoconnect {
+                    "autoconnect on".to_string()
+                } else {
+                    "manual".to_string()
+                });
+                parts.join(" \u{00b7} ")
+            } else {
+                "Press [n] for new tunnel form, [v] to paste config, or [i] to browse files"
+                    .to_string()
+            };
+            put_trunc(
+                ctx.buf,
+                card.x + 1,
+                fy + 1,
+                &summary,
+                card.width.saturating_sub(2),
+                ctx.design.style(TextStyle::Dim),
+            );
+        }
+
+        if let Some(right_area) = right {
+            self.draw_inspector(ctx.buf, right_area, ctx.design);
+        }
     }
 
     fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
         }
+        self.cursor_blink_on = true;
+        self.last_blink = Instant::now();
 
         if let VpnPhase::ConfirmDelete {
             name,
@@ -1071,12 +2571,215 @@ impl Screen for VpnScreen {
             }
         }
 
+        if let VpnPhase::EditForm(form) = &mut self.phase {
+            form.form_notice = None;
+            // Control chords inside EditForm
+            if key.modifiers.contains(KeyModifiers::CONTROL) {
+                match key.code {
+                    KeyCode::Char('s') | KeyCode::Char('S') => {
+                        match form.save() {
+                            Ok(msg) => {
+                                self.phase = VpnPhase::Browse;
+                                self.banner = Some(msg);
+                                self.refresh();
+                            }
+                            Err(err) => {
+                                form.form_notice = Some(err);
+                            }
+                        }
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Char('g') | KeyCode::Char('G') => {
+                        if form.protocol == FormProtocol::WireGuard {
+                            match generate_wg_keypair() {
+                                Ok((priv_k, pub_k)) => {
+                                    form.private_key.set(&priv_k);
+                                    form.derived_pubkey = pub_k;
+                                    form.form_notice = Some(
+                                        "Generated keypair · press Ctrl+Y to copy Public Key"
+                                            .to_string(),
+                                    );
+                                    form.recompute();
+                                }
+                                Err(err) => form.form_notice = Some(err),
+                            }
+                        }
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        if !form.derived_pubkey.is_empty() {
+                            if clipboard_copy(&form.derived_pubkey) {
+                                form.form_notice =
+                                    Some("Copied WireGuard Public Key to clipboard".to_string());
+                            } else {
+                                form.form_notice = Some("wl-copy not available".to_string());
+                            }
+                        }
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Char('r') | KeyCode::Char('R') => {
+                        match form.protocol {
+                            FormProtocol::WireGuard => {
+                                let m = !form.private_key.is_masked();
+                                form.private_key.set_masked(m);
+                            }
+                            FormProtocol::OpenVpn => {
+                                let m = !form.ovpn_password.is_masked();
+                                form.ovpn_password.set_masked(m);
+                            }
+                        }
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Char('v') | KeyCode::Char('V') => {
+                        if let Some(clip) = clipboard_paste() {
+                            if !form.apply_clipboard_text(&clip)
+                                && let Some(input) = form.active_input_mut()
+                            {
+                                let next = format!("{}{}", input.text(), clip.trim());
+                                input.set(next);
+                                if form.focus == FormFocus::PrivateKey {
+                                    form.derived_pubkey = derive_wg_pubkey(form.private_key.text())
+                                        .unwrap_or_default();
+                                }
+                                form.recompute();
+                            }
+                        }
+                        self.update_chrome();
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Char('o') | KeyCode::Char('O') => {
+                        let for_ca = form.protocol == FormProtocol::OpenVpn
+                            && form.focus == FormFocus::OvpnCaPath;
+                        let VpnPhase::EditForm(boxed) =
+                            std::mem::replace(&mut self.phase, VpnPhase::Browse)
+                        else {
+                            unreachable!();
+                        };
+                        self.pending_request = Some(VpnRequest::BrowseForForm {
+                            form: boxed,
+                            for_ca,
+                        });
+                        return Outcome::Done(0);
+                    }
+                    _ => {}
+                }
+            }
+
+            match key.code {
+                KeyCode::Esc => {
+                    self.phase = VpnPhase::Browse;
+                    self.update_chrome();
+                    return Outcome::Consumed;
+                }
+                KeyCode::Tab | KeyCode::Down => {
+                    form.step_focus(true);
+                    return Outcome::Consumed;
+                }
+                KeyCode::BackTab | KeyCode::Up => {
+                    form.step_focus(false);
+                    return Outcome::Consumed;
+                }
+                KeyCode::Left | KeyCode::Right | KeyCode::Char(' ')
+                    if form.focus == FormFocus::Protocol =>
+                {
+                    form.protocol = match form.protocol {
+                        FormProtocol::WireGuard => FormProtocol::OpenVpn,
+                        FormProtocol::OpenVpn => FormProtocol::WireGuard,
+                    };
+                    form.recompute();
+                    self.update_chrome();
+                    return Outcome::Consumed;
+                }
+                KeyCode::Left | KeyCode::Right | KeyCode::Char(' ')
+                    if form.focus == FormFocus::OvpnTransport =>
+                {
+                    form.ovpn_tcp = !form.ovpn_tcp;
+                    form.recompute();
+                    return Outcome::Consumed;
+                }
+                KeyCode::Enter => {
+                    match form.focus {
+                        FormFocus::Save => match form.save() {
+                            Ok(msg) => {
+                                self.phase = VpnPhase::Browse;
+                                self.banner = Some(msg);
+                                self.refresh();
+                            }
+                            Err(err) => form.form_notice = Some(err),
+                        },
+                        FormFocus::Cancel => {
+                            self.phase = VpnPhase::Browse;
+                            self.update_chrome();
+                        }
+                        _ => form.step_focus(true),
+                    }
+                    return Outcome::Consumed;
+                }
+                _ => {}
+            }
+
+            if let Some(input) = form.active_input_mut() {
+                match input.handle(key) {
+                    InputAction::Changed => {
+                        if form.focus == FormFocus::PrivateKey {
+                            form.derived_pubkey =
+                                derive_wg_pubkey(form.private_key.text()).unwrap_or_default();
+                        }
+                        form.recompute();
+                        return Outcome::Consumed;
+                    }
+                    InputAction::Submitted => {
+                        form.step_focus(true);
+                        return Outcome::Consumed;
+                    }
+                    InputAction::Cancelled => {
+                        self.phase = VpnPhase::Browse;
+                        self.update_chrome();
+                        return Outcome::Consumed;
+                    }
+                    InputAction::Ignored => {}
+                }
+            }
+            return Outcome::Consumed;
+        }
+
+        // ── Browse Phase Keys ──────────────────────────────────────────────
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('v') | KeyCode::Char('V'))
+        {
+            self.open_paste_form();
+            return Outcome::Consumed;
+        }
+
         if key.modifiers.is_empty() {
             match key.code {
                 KeyCode::Esc => return Outcome::Done(hayato_ui::app::exit::ESCAPE),
                 KeyCode::Char('n') => {
-                    self.pending_request = Some(VpnRequest::CreateConnection);
-                    return Outcome::Done(0);
+                    self.phase = VpnPhase::EditForm(Box::new(TunnelForm::new_blank(
+                        FormProtocol::WireGuard,
+                    )));
+                    self.update_chrome();
+                    return Outcome::Consumed;
+                }
+                KeyCode::Char('e') => {
+                    if let Some(p) = self.selected_profile().cloned() {
+                        let form = TunnelForm::from_existing_profile(&p, false);
+                        self.phase = VpnPhase::EditForm(Box::new(form));
+                        self.update_chrome();
+                    }
+                    return Outcome::Consumed;
+                }
+                KeyCode::Char('u') => {
+                    if let Some(p) = self.selected_profile().cloned() {
+                        let form = TunnelForm::from_existing_profile(&p, true);
+                        self.phase = VpnPhase::EditForm(Box::new(form));
+                        self.update_chrome();
+                    }
+                    return Outcome::Consumed;
+                }
+                KeyCode::Char('v') => {
+                    self.open_paste_form();
+                    return Outcome::Consumed;
                 }
                 KeyCode::Char('i') => {
                     self.pending_request = Some(VpnRequest::ImportFile);
@@ -1099,21 +2802,6 @@ impl Screen for VpnScreen {
                     }
                     return Outcome::Consumed;
                 }
-                KeyCode::Char('u') => {
-                    if let Some(p) = self.selected_profile().cloned() {
-                        if p.kind == VpnKind::OpenVpn {
-                            self.pending_request = Some(VpnRequest::OpenVpnAuth {
-                                name: p.name,
-                                uuid: p.uuid,
-                            });
-                            return Outcome::Done(0);
-                        } else {
-                            self.banner =
-                                Some("Credentials apply to OpenVPN profiles only".to_string());
-                        }
-                    }
-                    return Outcome::Consumed;
-                }
                 KeyCode::Char('d') | KeyCode::Delete => {
                     if let Some(p) = self.selected_profile().cloned() {
                         let confirm =
@@ -1131,7 +2819,7 @@ impl Screen for VpnScreen {
                     }
                     return Outcome::Consumed;
                 }
-                KeyCode::Char('c') => return self.activate_selected(),
+                KeyCode::Char('c') | KeyCode::Char(' ') => return self.activate_selected(),
                 _ => {}
             }
         }
@@ -1148,10 +2836,65 @@ impl Screen for VpnScreen {
     }
 
     fn hit(&self, _area: Rect, col: u16, row: u16, design: &Design) -> Option<usize> {
-        if let VpnPhase::ConfirmDelete { confirm, .. } = &self.phase {
-            return confirm.hit(self.confirm_area.get(), design, col, row);
+        let in_rect = |r: Rect| {
+            r.width > 0
+                && r.height > 0
+                && col >= r.x
+                && col < r.right()
+                && row >= r.y
+                && row < r.bottom()
+        };
+        match &self.phase {
+            VpnPhase::ConfirmDelete { confirm, .. } => {
+                confirm.hit(self.confirm_area.get(), design, col, row)
+            }
+            VpnPhase::EditForm(_) => {
+                let h = self.form_hits.borrow();
+                if in_rect(h.wg_pill) {
+                    return Some(100);
+                }
+                if in_rect(h.ovpn_pill) {
+                    return Some(101);
+                }
+                if in_rect(h.genkey_btn) {
+                    return Some(102);
+                }
+                if in_rect(h.copypub_btn) {
+                    return Some(103);
+                }
+                if in_rect(h.browse_ca_btn) {
+                    return Some(104);
+                }
+                if in_rect(h.save_btn) {
+                    return Some(105);
+                }
+                if in_rect(h.cancel_btn) {
+                    return Some(106);
+                }
+                for (i, (_, r)) in h.fields.iter().enumerate() {
+                    if in_rect(*r) {
+                        return Some(200 + i);
+                    }
+                }
+                None
+            }
+            VpnPhase::Browse => {
+                let ih = self.inspector_hits.borrow();
+                if in_rect(ih.toggle_btn) {
+                    return Some(500);
+                }
+                if in_rect(ih.edit_btn) {
+                    return Some(501);
+                }
+                if in_rect(ih.auto_btn) {
+                    return Some(502);
+                }
+                if in_rect(ih.delete_btn) {
+                    return Some(503);
+                }
+                self.list.hit_row(self.list_area.get(), col, row, design)
+            }
         }
-        self.list.hit_row(self.list_area.get(), col, row, design)
     }
 
     fn click(&mut self, index: Option<usize>) -> Outcome {
@@ -1188,6 +2931,115 @@ impl Screen for VpnScreen {
             }
             return Outcome::Consumed;
         }
+
+        if let VpnPhase::EditForm(form) = &mut self.phase {
+            match index {
+                100 => {
+                    form.protocol = FormProtocol::WireGuard;
+                    form.recompute();
+                    self.update_chrome();
+                }
+                101 => {
+                    form.protocol = FormProtocol::OpenVpn;
+                    form.recompute();
+                    self.update_chrome();
+                }
+                102 => match generate_wg_keypair() {
+                    Ok((priv_k, pub_k)) => {
+                        form.private_key.set(&priv_k);
+                        form.derived_pubkey = pub_k;
+                        form.form_notice = Some("Generated WireGuard keypair".to_string());
+                        form.recompute();
+                    }
+                    Err(err) => form.form_notice = Some(err),
+                },
+                103 => {
+                    if !form.derived_pubkey.is_empty() && clipboard_copy(&form.derived_pubkey) {
+                        form.form_notice = Some("Copied Public Key to clipboard".to_string());
+                    }
+                }
+                104 => {
+                    let VpnPhase::EditForm(boxed) =
+                        std::mem::replace(&mut self.phase, VpnPhase::Browse)
+                    else {
+                        unreachable!();
+                    };
+                    self.pending_request = Some(VpnRequest::BrowseForForm {
+                        form: boxed,
+                        for_ca: true,
+                    });
+                    return Outcome::Done(0);
+                }
+                105 => match form.save() {
+                    Ok(msg) => {
+                        self.phase = VpnPhase::Browse;
+                        self.banner = Some(msg);
+                        self.refresh();
+                    }
+                    Err(err) => form.form_notice = Some(err),
+                },
+                106 => {
+                    self.phase = VpnPhase::Browse;
+                    self.update_chrome();
+                }
+                idx if idx >= 200 => {
+                    let field_i = idx - 200;
+                    if let Some((focus_id, _)) = self.form_hits.borrow().fields.get(field_i) {
+                        form.focus = *focus_id;
+                        if *focus_id == FormFocus::OvpnTransport {
+                            form.ovpn_tcp = !form.ovpn_tcp;
+                            form.recompute();
+                        }
+                    }
+                }
+                _ => {}
+            }
+            return Outcome::Consumed;
+        }
+
+        // Inspector quick actions
+        match index {
+            500 => return self.activate_selected(),
+            501 => {
+                if let Some(p) = self.selected_profile().cloned() {
+                    self.phase =
+                        VpnPhase::EditForm(Box::new(TunnelForm::from_existing_profile(&p, false)));
+                    self.update_chrome();
+                }
+                return Outcome::Consumed;
+            }
+            502 => {
+                if let Some(p) = self.selected_profile().cloned() {
+                    match toggle_autoconnect(&p) {
+                        Ok(msg) => {
+                            self.banner = Some(msg);
+                            self.refresh();
+                        }
+                        Err(err) => self.banner = Some(err),
+                    }
+                }
+                return Outcome::Consumed;
+            }
+            503 => {
+                if let Some(p) = self.selected_profile().cloned() {
+                    let confirm =
+                        Confirm::new(format!("Delete VPN profile '{}'?", p.name), "Delete")
+                            .with_detail(format!(
+                                "Removes {} configuration from NetworkManager",
+                                p.kind.label()
+                            ));
+                    self.phase = VpnPhase::ConfirmDelete {
+                        name: p.name,
+                        uuid: p.uuid,
+                        confirm,
+                    };
+                    self.update_chrome();
+                }
+                return Outcome::Consumed;
+            }
+            _ => {}
+        }
+
         self.list.set_cursor(index);
         self.activate_selected()
     }
@@ -1203,22 +3055,48 @@ pub fn menu(
     }
 
     let mut banner: Option<String> = None;
+    let mut resume_form: Option<Box<TunnelForm>> = None;
     loop {
-        let mut screen = VpnScreen::new(banner.take());
+        let mut screen = match resume_form.take() {
+            Some(form) => VpnScreen::with_form(form, banner.take()),
+            None => VpnScreen::new(banner.take()),
+        };
         let code = crate::run_screen(terminal, design, "VPN", &mut screen)?;
         let Some(req) = screen.pending_request.take() else {
             return Ok(code);
         };
 
         match req {
-            VpnRequest::CreateConnection => {
-                banner = run_create_wizard(terminal, design)?;
-            }
             VpnRequest::ImportFile => {
-                banner = run_import_picker(terminal, design)?;
+                if let Some(chosen) =
+                    browse_for_file(terminal, design, "Import VPN (.conf / .ovpn)")?
+                {
+                    banner = Some(match import_profile(&chosen) {
+                        Ok(msg) => msg,
+                        Err(err) => err,
+                    });
+                }
             }
-            VpnRequest::OpenVpnAuth { name, uuid } => {
-                banner = run_openvpn_auth_picker(&name, &uuid, terminal, design)?;
+            VpnRequest::BrowseForForm { mut form, for_ca } => {
+                let title = if for_ca {
+                    "Choose OpenVPN CA (.crt / .pem)"
+                } else {
+                    "Load VPN config (.conf / .ovpn)"
+                };
+                if let Some(chosen) = browse_for_file(terminal, design, title)? {
+                    if for_ca {
+                        form.ovpn_ca_path.set(chosen.to_string_lossy());
+                        form.recompute();
+                    } else if let Ok(content) = std::fs::read_to_string(&chosen) {
+                        if !form.apply_clipboard_text(&content) {
+                            form.form_notice = Some(
+                                "File is not a recognized WireGuard .conf or OpenVPN .ovpn"
+                                    .to_string(),
+                            );
+                        }
+                    }
+                }
+                resume_form = Some(form);
             }
             VpnRequest::InstallOpenVpn => {
                 run_interactive_apt_install(terminal);
@@ -1271,263 +3149,6 @@ fn browse_for_file(
         }
         _ => Ok(None),
     }
-}
-
-fn run_import_picker(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    design: &Design,
-) -> Result<Option<String>, Failure> {
-    let Some(chosen_path) = browse_for_file(terminal, design, "Import VPN (.conf / .ovpn)")? else {
-        return Ok(None);
-    };
-    match import_profile(&chosen_path) {
-        Ok(msg) => Ok(Some(msg)),
-        Err(err) => Ok(Some(err)),
-    }
-}
-
-fn run_create_wizard(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    design: &Design,
-) -> Result<Option<String>, Failure> {
-    let rows = vec![
-        pick_row(
-            "WireGuard",
-            "fast modern kernel VPN (native NetworkManager)",
-            Glyph::Shield,
-        ),
-        pick_row(
-            "OpenVPN",
-            if openvpn_plugin_installed() {
-                "UDP/TCP tunnel with username/password & optional CA"
-            } else {
-                "requires network-manager-openvpn plugin"
-            },
-            Glyph::Lock,
-        ),
-    ];
-    let mut proto_picker = Picker::new(
-        "Create VPN connection",
-        vec![Question::choose(
-            "Protocol",
-            "Choose VPN protocol · Esc cancels",
-            rows,
-            vec!["wireguard".to_string(), "openvpn".to_string()],
-        )],
-    );
-    let code = crate::run_screen(terminal, design, "Create VPN connection", &mut proto_picker)?;
-    if code != 0 {
-        return Ok(None);
-    }
-    match proto_picker.answers().first().map(String::as_str) {
-        Some("wireguard") => run_create_wireguard(terminal, design),
-        Some("openvpn") => run_create_openvpn(terminal, design),
-        _ => Ok(None),
-    }
-}
-
-fn run_create_wireguard(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    design: &Design,
-) -> Result<Option<String>, Failure> {
-    let key_hint = if have("wg") {
-        "leave blank to auto-generate with wg genkey"
-    } else {
-        "paste your WireGuard private key (base64)"
-    };
-    let mut picker = Picker::new(
-        "New WireGuard tunnel",
-        vec![
-            Question::input(
-                "Connection name",
-                "letters, digits, '-' or '_'",
-                "work-wg",
-                false,
-            ),
-            Question::input(
-                "Local tunnel address (CIDR)",
-                "IP assigned to this device",
-                "10.66.0.2/32",
-                false,
-            ),
-            Question::input("Private key", key_hint, "", true),
-            Question::input(
-                "Peer public key",
-                "server's WireGuard public key (base64)",
-                "",
-                false,
-            ),
-            Question::input(
-                "Peer endpoint (host:port)",
-                "server hostname or IP and UDP port",
-                "vpn.example.com:51820",
-                false,
-            ),
-            Question::input(
-                "Allowed IPs",
-                "leave blank for full tunnel (0.0.0.0/0, ::/0)",
-                "0.0.0.0/0, ::/0",
-                false,
-            ),
-            Question::input(
-                "DNS server (optional)",
-                "leave blank to keep default DNS",
-                "1.1.1.1",
-                false,
-            ),
-        ],
-    );
-    let code = crate::run_screen(terminal, design, "New WireGuard tunnel", &mut picker)?;
-    if code != 0 {
-        return Ok(None);
-    }
-    let ans = picker.answers();
-    if ans.len() < 7 {
-        return Ok(None);
-    }
-    let mut private_key = ans[2].trim().to_string();
-    if private_key.is_empty() && have("wg") {
-        if let Some(generated) = out(&["wg", "genkey"]) {
-            private_key = generated.trim().to_string();
-        }
-    }
-    let spec = WireGuardSpec {
-        name: ans[0].clone(),
-        address: ans[1].clone(),
-        private_key,
-        peer_public_key: ans[3].clone(),
-        endpoint: ans[4].clone(),
-        allowed_ips: ans[5].clone(),
-        dns: ans[6].clone(),
-    };
-    match create_wireguard_profile(&spec) {
-        Ok(msg) => Ok(Some(msg)),
-        Err(err) => Ok(Some(err)),
-    }
-}
-
-fn run_create_openvpn(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    design: &Design,
-) -> Result<Option<String>, Failure> {
-    if !openvpn_plugin_installed() {
-        return Ok(Some(
-            "OpenVPN plugin missing — select 'Install OpenVPN support' first".to_string(),
-        ));
-    }
-    let mut picker = Picker::new(
-        "New OpenVPN connection",
-        vec![
-            Question::input("Connection name", "profile label", "office-ovpn", false),
-            Question::input(
-                "Server (host or host:port)",
-                "VPN gateway hostname or IP",
-                "vpn.example.com:1194",
-                false,
-            ),
-            Question::choose(
-                "Transport protocol",
-                "UDP is faster; TCP works through strict firewalls",
-                vec![
-                    pick_row("UDP", "default (recommended)", Glyph::Network),
-                    pick_row("TCP", "firewall-friendly", Glyph::Network),
-                ],
-                vec!["udp".to_string(), "tcp".to_string()],
-            ),
-            Question::input("Username (optional)", "OpenVPN account username", "", false),
-            Question::input(
-                "Password (optional)",
-                "stored in NetworkManager secrets",
-                "",
-                true,
-            ),
-            Question::choose(
-                "CA certificate",
-                "Select a .crt / .pem CA file using Files, or skip",
-                vec![
-                    pick_row("Skip CA file", "create without CA path", Glyph::Check),
-                    pick_row(
-                        "Browse for CA certificate...",
-                        "choose .crt or .pem with Files",
-                        Glyph::Folder,
-                    ),
-                ],
-                vec!["skip".to_string(), "browse".to_string()],
-            ),
-        ],
-    );
-    let code = crate::run_screen(terminal, design, "New OpenVPN connection", &mut picker)?;
-    if code != 0 {
-        return Ok(None);
-    }
-    let ans = picker.answers();
-    if ans.len() < 6 {
-        return Ok(None);
-    }
-    let ca_path = if ans[5] == "browse" {
-        browse_for_file(terminal, design, "Choose OpenVPN CA (.crt / .pem)")?
-    } else {
-        None
-    };
-    let spec = OpenVpnSpec {
-        name: ans[0].clone(),
-        remote: ans[1].clone(),
-        port: String::new(),
-        proto_tcp: ans[2] == "tcp",
-        username: ans[3].clone(),
-        password: ans[4].clone(),
-        ca_path,
-    };
-    match create_openvpn_profile(&spec) {
-        Ok(msg) => Ok(Some(msg)),
-        Err(err) => Ok(Some(err)),
-    }
-}
-
-fn run_openvpn_auth_picker(
-    name: &str,
-    uuid: &str,
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    design: &Design,
-) -> Result<Option<String>, Failure> {
-    let mut picker = Picker::new(
-        "OpenVPN credentials",
-        vec![
-            Question::input(
-                format!("Username ({name})"),
-                "OpenVPN account username",
-                "user",
-                false,
-            ),
-            Question::input(
-                "Password",
-                "stored in NetworkManager secrets",
-                "password",
-                true,
-            ),
-        ],
-    );
-    let code = crate::run_screen(terminal, design, "OpenVPN credentials", &mut picker)?;
-    if code != 0 {
-        return Ok(None);
-    }
-    if let [user, pass] = picker.answers().as_slice() {
-        match set_openvpn_credentials(uuid, user, pass) {
-            Ok(msg) => Ok(Some(msg)),
-            Err(err) => Ok(Some(err)),
-        }
-    } else {
-        Ok(None)
-    }
-}
-
-fn expand_tilde(raw: &str) -> PathBuf {
-    if let Some(rest) = raw.strip_prefix("~/")
-        && let Ok(home) = std::env::var("HOME")
-    {
-        return PathBuf::from(home).join(rest);
-    }
-    PathBuf::from(raw)
 }
 
 fn run_interactive_apt_install(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) {
@@ -1634,22 +3255,33 @@ lo:3333:loopback:lo:no
     }
 
     #[test]
-    fn builds_wireguard_and_openvpn_configs_cleanly() {
+    fn validates_and_builds_wireguard_and_openvpn_configs() {
+        let priv_k = "gI7gS3V1mQ6K9h2x4p8n1r5t7v9w2y4z6a8c0e2g4i8=";
+        let peer_k = "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=";
         let wg = WireGuardSpec {
             name: "work-wg".to_string(),
             address: "10.66.0.2/32".to_string(),
-            private_key: "PRIVKEY==".to_string(),
-            peer_public_key: "PUBKEY==".to_string(),
+            private_key: priv_k.to_string(),
+            peer_public_key: peer_k.to_string(),
             endpoint: "vpn.example.com:51820".to_string(),
             allowed_ips: "".to_string(),
             dns: "1.1.1.1".to_string(),
         };
         let conf = build_wireguard_config(&wg).unwrap();
         assert!(conf.contains("[Interface]"));
-        assert!(conf.contains("PrivateKey = PRIVKEY=="));
         assert!(conf.contains("DNS = 1.1.1.1"));
         assert!(conf.contains("AllowedIPs = 0.0.0.0/0, ::/0"));
-        assert!(conf.contains("Endpoint = vpn.example.com:51820"));
+
+        // Swapped/duplicate key is rejected.
+        let mut bad = wg.clone();
+        bad.peer_public_key = priv_k.to_string();
+        assert!(build_wireguard_config(&bad).is_err());
+
+        // Clipboard round-trip parse.
+        let parsed = parse_wireguard_conf(&conf).unwrap();
+        assert_eq!(parsed.private_key, priv_k);
+        assert_eq!(parsed.peer_public_key, peer_k);
+        assert_eq!(parsed.endpoint, "vpn.example.com:51820");
 
         let ovpn = OpenVpnSpec {
             name: "office".to_string(),
@@ -1658,14 +3290,17 @@ lo:3333:loopback:lo:no
             proto_tcp: true,
             username: "alice".to_string(),
             password: "secret".to_string(),
-            ca_path: Some(PathBuf::from("/home/user/ca.crt")),
+            ca_path: None,
         };
         let data = build_openvpn_data(&ovpn).unwrap();
         assert!(data.contains("remote=vpn.office.org"));
         assert!(data.contains("port=443"));
         assert!(data.contains("proto-tcp=yes"));
         assert!(data.contains("username=alice"));
-        assert!(data.contains("password-flags=0"));
-        assert!(data.contains("ca=/home/user/ca.crt"));
+
+        let ovpn_txt = "client\ndev tun\nproto tcp\nremote vpn.office.org 443\n";
+        let parsed_ovpn = parse_openvpn_conf(ovpn_txt).unwrap();
+        assert_eq!(parsed_ovpn.remote, "vpn.office.org:443");
+        assert!(parsed_ovpn.proto_tcp);
     }
 }

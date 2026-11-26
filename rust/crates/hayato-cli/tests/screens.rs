@@ -411,4 +411,5 @@ fn the_setup_assistant_renders_at_both_grids() {
 #[test]
 fn the_vpn_client_renders_tunnels_at_both_grids() {
     golden("vpn", || Box::new(VpnScreen::for_snapshot()));
+    golden("vpn-form", || Box::new(VpnScreen::for_form_snapshot()));
 }

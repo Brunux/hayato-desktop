@@ -1,45 +1,45 @@
 Hayato · VPN                                                                                                             1 active · WireGuard & OpenVPN 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-╭ VPN Tunnels ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  WireGuard: native (NM) · OpenVPN: ready                                                                                                             │
-│                                                                                                                                                      │
-│ ▍   ● work-wg [WG]  10.66.0.2/32 · ↑4.2 MB ↓38.1 MB · auto                                                                                          │
-│     ○ home-ovpn [OVPN]  disconnected                                                                                                                │
-│     Create VPN connection  WireGuard or OpenVPN guided setup                                                                                        │
-│     Import VPN config (.conf / .ovpn)  browse files with live preview                                                                               │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-│                                                                                                                                                      │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- [Enter]  toggle   [n]  new   [i]  import   [a]  auto   [u]  auth   [d]  delete   [Esc]  close                                                          
+╭ Tunnels ────────────────────────────────────────────────────────────────────╮ ╭ Tunnel Inspector ────────────────────────────────────────────────────╮
+│  WireGuard: native (NM) · OpenVPN: ready                                    │ │  ACTIVE TUNNEL                                                       │
+│                                                                             │ │  work-wg                                                             │
+│ ▍   ● work-wg [WG]  10.66.0.2/32 · ↑4.2 MB ↓38.1 MB · auto                 │ │                                                                      │
+│     ○ home-ovpn [OVPN]  disconnected                                       │ │  Status       ● Connected (wg0)                                      │
+│  Actions  ───────────────────────────────────────────────────────────────   │ │  Protocol     WireGuard (kernel / NetworkManager)                    │
+│     New tunnel  WireGuard or OpenVPN form (or Ctrl+V paste)                │ │  Address      10.66.0.2/32                                           │
+│     Import config  browse .conf / .ovpn with live preview                  │ │  Endpoint     203.0.113.10:51820                                     │
+│     Paste config  parse .conf / .ovpn from clipboard                       │ │  Traffic      ↑ 4.2 MB sent · ↓ 38.1 MB received                     │
+│                                                                             │ │  Autoconnect  Enabled (starts on boot)                               │
+│                                                                             │ │                                                                      │
+│                                                                             │ │  QUICK ACTIONS                                                       │
+│                                                                             │ │   Disconnect    Edit    Auto: On    Delete                           │
+│                                                                             │ │                                                                      │
+│                                                                             │ │  SHORTCUTS                                                           │
+│                                                                             │ │  n  New tunnel form   e  Edit focused tunnel                         │
+│                                                                             │ │  v  Paste .conf/.ovpn i  Import via Files                            │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+╰─────────────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────────────────────────────╯
+ [Enter]  toggle   [n]  new   [e]  edit   [i]  import   [v]  paste   [a]  auto   [d]  delete   [Esc]  close                                             
