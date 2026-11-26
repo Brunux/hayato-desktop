@@ -73,9 +73,9 @@ fi
 command -v foot >/dev/null 2>&1 || exit 0
 
 mkdir -p "$marker_dir"
-# Launch the interactive Ratatui Mission Briefing (`hayato menu welcome`),
+# Launch the interactive Personal Setup Assistant (`hayato menu setup`),
 # falling back to the plain-ASCII pager if `hayato` is not yet installed.
-if foot --app-id=hayato-welcome --title='Welcome to Hayato' \
-	-e sh -c 'if command -v hayato >/dev/null 2>&1; then exec hayato menu welcome; else "$0" --print; read -r _ || true; fi' "$0"; then
+if foot --app-id=hayato-welcome --title='Hayato Setup Assistant' \
+	-e sh -c 'if command -v hayato >/dev/null 2>&1; then exec hayato menu setup; else "$0" --print; read -r _ || true; fi' "$0"; then
 	printf '%s\n' "$machine_id" >"$marker"
 fi

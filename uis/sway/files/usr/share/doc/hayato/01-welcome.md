@@ -11,6 +11,27 @@ targets. On **Hayato** and **Kukui**, hardware support comes from our tuned
 ARM64 targets, Debian's packaged `linux-image-arm64` drives the hardware and Debian
 supplies everything above the kernel.
 
+## The Personal Setup Assistant
+
+On first boot, `hayato-welcome` opens the **Personal Setup Assistant** (`hayato menu setup`, also reachable via `hayato menu welcome`, **Settings → System → Setup Assistant**, or the command palette). Every step is **optional, recoverable, and resumable** — close it anytime with `Esc` and pick up where you left off later. Progress is stored in `~/.local/state/hayato/setup.json` keyed to `/etc/machine-id` and `/etc/hayato/installation`.
+
+| Step | What you can configure |
+|---|---|
+| **1. Welcome** | Machine identification, install provenance (fresh install vs. pre-built image), and a live "Ready vs. Needs Attention" checklist |
+| **2. Security** | Change account password (`chpasswd`), default-password risk check, disk encryption status, UFW firewall toggle, SSH/VNC remote access, and idle lock |
+| **3. Connectivity** | Wi-Fi networks, Bluetooth devices, DNS resolvers, and VPN (`nmtui`) |
+| **4. Personalization** | Live Theme & Wallpaper picker, timezone/NTP, language & locale, keyboard layout, and touchpad preferences |
+| **5. Hardware** | Speaker stereo chime test, 3 s microphone record + playback test, webcam preview, touchscreen tap verification, external display, and audio mixer |
+| **6. Software** | Curated capability bundles (Office, Media & Creative, Developer Toolkit, Games & Emulation, Offline AI & Voice Models) with `dpkg` detection, APT browser, and default apps |
+| **7. Privacy** | Local-only vs. Cloud AI posture, clipboard history toggle & wipe, default microphone mute, USB auto-mount, and notification / DND settings |
+| **8. Protection** | Encrypted profile backup (`hayato-profile`), full bare-metal system image backup (`backup-system.sh`), boot-type recovery guidance, auxiliary swap, and free space cleanup |
+
+Useful CLI flags:
+
+* `hayato menu setup --step <name>` — jump straight to a step (`welcome`, `security`, `connectivity`, `personalization`, `hardware`, `software`, `privacy`, `protection`).
+* `hayato menu setup --status` — print a one-line progress summary (`X/8 steps done`).
+* `hayato menu welcome --briefing` — open the classic 4-tab Mission Briefing reference card.
+
 ## The first five minutes
 
 * Log in with the user account the image was built with (`brunux` by default,
@@ -33,7 +54,7 @@ supplies everything above the kernel.
 | the terminal | **foot**: tokyo-night palette, no GPU renderer, about half the memory of an Alacritty window |
 | the launcher | **hayato**: applications (`hayato menu apps`), windows (`hayato menu window`), commands (`hayato menu run`), and the session's native Ratatui TUI menus and studios inside floating `foot` windows |
 | notifications | **hayato-notify**, native layer-shell desktop notification cards anchored under the top-right corner of the bar |
-| the session | `greetd` launches `hayato-greeter` at boot and opens sway on login; `hayato-welcome` shows the interactive Mission Briefing once per install; swayidle runs the idle screen at 150 s and the lock at 300 s |
+| the session | `greetd` launches `hayato-greeter` at boot and opens sway on login; `hayato-welcome` launches the 8-step Personal Setup Assistant once per install; swayidle runs the idle screen at 150 s and the lock at 300 s |
 
 **The workspace pills say what is in them.** Each pill is the number of the
 workspace plus one glyph per *kind* of window open there - a terminal, a
@@ -113,7 +134,7 @@ Beyond the core launcher and file browser, Hayato ships focused local-first stud
 
 | Studio / Tool | Shortcut or Command | What it does |
 |---|---|---|
-| **Mission Briefing** | `hayato menu welcome` | Interactive 4-tab first-boot welcome screen (Boot telemetry, Hotkeys, Tools, Launchpad); shown once per install via `hayato-welcome` |
+| **Personal Setup Assistant** | `hayato menu setup` (`hayato menu welcome`) | Guided 8-step first-run & recovery wizard (Welcome, Security, Connectivity, Personalization, Hardware, Software, Privacy, Protection); resumable via `setup.json`; `--briefing` opens the classic 4-tab Mission Briefing |
 | **Hayato Lens** | **Alt+I** (`hayato menu lens`) | Local Circle-to-Search: drag a region to extract OCR text or QR codes, open or clean URLs, translate, or save to Notes |
 | **Hayato Drop** | `hayato menu drop` | Ephemeral LAN nearby share: send or receive files over local Wi-Fi via an in-TUI scannable QR code |
 | **Local AI** | **Alt+Space** → Ask / **Alt+Ctrl+T** | Offline `Qwen3.5-0.8B` Ask & Translate running locally on the machine with no cloud account required |

@@ -651,12 +651,23 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &[],
     },
     CommandSpec {
-        // `hayato menu welcome`: interactive first-boot Mission Briefing.
+        // `hayato menu setup`: 8-step Personal Setup Assistant (optional,
+        // recoverable, resumable). Persists progress in
+        // `$XDG_STATE_HOME/hayato/setup.json`.
+        path: "menu setup",
+        summary: "Personal Setup Assistant: 8-step guided first-run and recovery setup",
+        shape: Shape::Task,
+        symlinks: &[],
+        installed: &[],
+    },
+    CommandSpec {
+        // `hayato menu welcome`: launches the Personal Setup Assistant
+        // (`--briefing` opens the legacy 4-tab Mission Briefing).
         // Intentionally has no installed symlink because `~/.config/bin/hayato-welcome`
         // is the wrapper script that handles `--print` and the `/etc/machine-id` marker.
         path: "menu welcome",
-        summary: "first-boot Mission Briefing: boot banner, hotkeys, tools and launchpad",
-        shape: Shape::Pick,
+        summary: "first-boot Personal Setup Assistant (or --briefing for Mission Briefing)",
+        shape: Shape::Task,
         symlinks: &[],
         installed: &[],
     },

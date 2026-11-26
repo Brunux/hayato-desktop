@@ -137,6 +137,7 @@ pub mod quake;
 pub mod remind;
 pub mod run;
 pub mod settings;
+pub mod setup;
 pub mod share;
 pub mod ssh;
 pub mod step;
