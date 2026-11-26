@@ -105,6 +105,18 @@ pub struct Bookmark {
     pub icon: String,
 }
 
+/// One non-Home entry in the sidebar PLACES list (either a default XDG folder,
+/// Trash, or a user-pinned bookmark) that can be freely reordered by drag-and-drop.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlaceItem {
+    pub key: String,
+    pub glyph: String,
+    pub name: String,
+    pub path: PathBuf,
+    pub is_trash: bool,
+    pub is_bookmark: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct AppState {
     pub tabs: Vec<TabState>,
@@ -116,6 +128,8 @@ pub struct AppState {
     pub show_hidden: bool,
     pub sidebar_compact: bool,
     pub bookmarks: Vec<Bookmark>,
+    /// Persisted order of non-Home PLACES entries (both defaults and pinned folders).
+    pub place_order: Vec<String>,
     /// Session undo history, newest last. Finder-style: Ctrl+Z reverses the
     /// most recent rename, move, trash, copy or folder creation.
     pub undo: Vec<UndoAction>,
@@ -124,6 +138,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(initial: PathBuf) -> Self {
         let bookmarks = load_bookmarks();
+        let place_order = load_place_order();
         Self {
             tabs: vec![TabState::new(initial)],
             active_tab: 0,
@@ -134,6 +149,7 @@ impl AppState {
             show_hidden: false,
             sidebar_compact: false,
             bookmarks,
+            place_order,
             undo: Vec::new(),
         }
     }
@@ -368,13 +384,125 @@ impl AppState {
         if self.bookmarks.len() == before {
             return false;
         }
+        let pin_key = format!("pin:{}", dir.display());
+        self.place_order.retain(|k| k != &pin_key);
         save_bookmarks(&self.bookmarks);
+        save_place_order(&self.place_order);
         true
     }
 
     pub fn is_bookmarked(&self, dir: &Path) -> bool {
         self.bookmarks.iter().any(|b| b.path == dir)
     }
+
+    /// Returns all non-Home PLACES entries (defaults + Trash + pinned bookmarks)
+    /// in the user's persisted order. `Home` is always static and rendered first.
+    pub fn ordered_places(&self) -> Vec<PlaceItem> {
+        let home = home_dir();
+        let trash_dir = trash_files_dir();
+        let mut items: Vec<PlaceItem> = Vec::new();
+
+        for (key, glyph, name, path, is_trash) in [
+            (
+                "desktop",
+                "\u{f108}",
+                "Desktop",
+                home.join("Desktop"),
+                false,
+            ),
+            (
+                "documents",
+                "\u{f15c}",
+                "Documents",
+                home.join("Documents"),
+                false,
+            ),
+            (
+                "downloads",
+                "\u{f019}",
+                "Downloads",
+                home.join("Downloads"),
+                false,
+            ),
+            (
+                "pictures",
+                "\u{f03e}",
+                "Pictures",
+                home.join("Pictures"),
+                false,
+            ),
+            ("music", "\u{f001}", "Music", home.join("Music"), false),
+            ("videos", "\u{f008}", "Videos", home.join("Videos"), false),
+            ("trash", "\u{f1f8}", "Trash", trash_dir, true),
+        ] {
+            if !is_trash && !path.is_dir() {
+                continue;
+            }
+            items.push(PlaceItem {
+                key: key.to_string(),
+                glyph: glyph.to_string(),
+                name: name.to_string(),
+                path,
+                is_trash,
+                is_bookmark: false,
+            });
+        }
+
+        for bm in &self.bookmarks {
+            let name = bm
+                .path
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| bm.path.display().to_string());
+            items.push(PlaceItem {
+                key: format!("pin:{}", bm.path.display()),
+                glyph: bm.icon.clone(),
+                name,
+                path: bm.path.clone(),
+                is_trash: false,
+                is_bookmark: true,
+            });
+        }
+
+        order_place_items(items, &self.place_order)
+    }
+
+    /// Reorder a non-Home PLACES item (`from_key`) to the position of `to_key`.
+    pub fn reorder_place(&mut self, from_key: &str, to_key: &str) -> bool {
+        if from_key == to_key || from_key == "home" || to_key == "home" {
+            return false;
+        }
+        let mut keys: Vec<String> = self
+            .ordered_places()
+            .into_iter()
+            .map(|item| item.key)
+            .collect();
+        let Some(from_idx) = keys.iter().position(|k| k == from_key) else {
+            return false;
+        };
+        let Some(to_idx) = keys.iter().position(|k| k == to_key) else {
+            return false;
+        };
+        let moved = keys.remove(from_idx);
+        keys.insert(to_idx, moved);
+        self.place_order = keys;
+        save_place_order(&self.place_order);
+        true
+    }
+}
+
+fn order_place_items(mut items: Vec<PlaceItem>, order: &[String]) -> Vec<PlaceItem> {
+    if order.is_empty() {
+        return items;
+    }
+    let mut out = Vec::with_capacity(items.len());
+    for key in order {
+        if let Some(pos) = items.iter().position(|it| &it.key == key) {
+            out.push(items.remove(pos));
+        }
+    }
+    out.extend(items);
+    out
 }
 
 /// Curated fallback pool of distinct Font Awesome glyphs (verified in FA 4.7 & 6),
@@ -565,6 +693,32 @@ fn save_bookmarks(bookmarks: &[Bookmark]) {
     }
 }
 
+fn place_order_path() -> PathBuf {
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME")
+        && !xdg.is_empty()
+    {
+        return PathBuf::from(xdg).join("hayato/filer-places-order.json");
+    }
+    home_dir().join(".config/hayato/filer-places-order.json")
+}
+
+fn load_place_order() -> Vec<String> {
+    let Ok(raw) = std::fs::read_to_string(place_order_path()) else {
+        return Vec::new();
+    };
+    serde_json::from_str::<Vec<String>>(&raw).unwrap_or_default()
+}
+
+fn save_place_order(order: &[String]) {
+    let path = place_order_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(order) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -723,5 +877,36 @@ mod tests {
         assert_eq!(upgraded[1].icon, "\u{f120}");
         assert_ne!(upgraded[2].icon, upgraded[0].icon);
         assert_ne!(upgraded[2].icon, upgraded[1].icon);
+    }
+
+    #[test]
+    fn places_order_respects_saved_keys_and_refuses_home() {
+        let mk = |k: &str| PlaceItem {
+            key: k.to_string(),
+            glyph: "\u{f07b}".to_string(),
+            name: k.to_string(),
+            path: PathBuf::from(format!("/{k}")),
+            is_trash: k == "trash",
+            is_bookmark: k.starts_with("pin:"),
+        };
+        let items = vec![
+            mk("desktop"),
+            mk("downloads"),
+            mk("trash"),
+            mk("pin:/home/u/Dev"),
+        ];
+        let ordered = order_place_items(
+            items,
+            &["pin:/home/u/Dev".to_string(), "downloads".to_string()],
+        );
+        let keys: Vec<&str> = ordered.iter().map(|i| i.key.as_str()).collect();
+        assert_eq!(
+            keys,
+            vec!["pin:/home/u/Dev", "downloads", "desktop", "trash"]
+        );
+
+        let mut st = AppState::new(PathBuf::from("/tmp"));
+        assert!(!st.reorder_place("home", "trash"));
+        assert!(!st.reorder_place("trash", "home"));
     }
 }

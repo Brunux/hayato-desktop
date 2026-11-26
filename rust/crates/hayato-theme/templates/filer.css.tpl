@@ -304,6 +304,10 @@ window.hayato-filer paned > separator {
     font-weight: 600;
 }
 
+.filer-place-row.reorder-hover {
+    border-top: 2px solid {{ accent }};
+}
+
 .filer-device-card {
     background-color: transparent;
     border: 1px solid transparent;

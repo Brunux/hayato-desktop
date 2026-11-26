@@ -29,9 +29,7 @@ use crate::fs::thumbs;
 use crate::fs::trash;
 use crate::fs::{FileEntry, format_mtime, format_size, free_space_bytes, list_dir};
 use crate::prefs;
-use crate::state::{
-    AppState, SortField, SortOrder, ViewMode, home_dir, is_trash_files_dir, trash_files_dir,
-};
+use crate::state::{AppState, SortField, SortOrder, ViewMode, home_dir, is_trash_files_dir};
 use crate::tools;
 
 pub struct FilerWindow {
@@ -1470,52 +1468,84 @@ impl FilerWindow {
             self.places_box.remove(&child);
         }
         let home = home_dir();
-        let trash_dir = trash_files_dir();
         let cur_cwd = self.state.borrow().cwd().to_path_buf();
         let cur_trash = self.state.borrow().in_trash();
 
-        let defaults: [(&str, &str, PathBuf, bool); 8] = [
-            ("\u{f015}", "Home", home.clone(), false),
-            ("\u{f108}", "Desktop", home.join("Desktop"), false),
-            ("\u{f15c}", "Documents", home.join("Documents"), false),
-            ("\u{f019}", "Downloads", home.join("Downloads"), false),
-            ("\u{f03e}", "Pictures", home.join("Pictures"), false),
-            ("\u{f001}", "Music", home.join("Music"), false),
-            ("\u{f008}", "Videos", home.join("Videos"), false),
-            ("\u{f1f8}", "Trash", trash_dir.clone(), true),
-        ];
+        // Home is always static and fixed to the first entry (never draggable/reorderable).
+        let home_active = !cur_trash && cur_cwd == home;
+        let home_row = self.make_place_button("\u{f015}", "Home", home, false, home_active, None);
+        self.places_box.append(&home_row);
 
-        for (glyph, name, path, is_trash) in defaults {
-            if !is_trash && path != home && !path.is_dir() {
-                continue;
-            }
-            let active = if is_trash {
+        let items = self.state.borrow().ordered_places();
+        for item in items {
+            let active = if item.is_trash {
                 cur_trash
             } else {
-                !cur_trash && cur_cwd == path
+                !cur_trash && cur_cwd == item.path
             };
-            let badge = if is_trash {
+            let badge = if item.is_trash {
                 let n = trash::trash_count();
                 (n > 0).then(|| n.to_string())
             } else {
                 None
             };
-            let row = self.make_place_button(glyph, name, path, is_trash, active, badge.as_deref());
+            let row = self.make_place_button(
+                &item.glyph,
+                &item.name,
+                item.path.clone(),
+                item.is_trash,
+                active,
+                badge.as_deref(),
+            );
+            self.attach_place_reorder(&row, item.key);
+            if item.is_bookmark {
+                self.attach_unpin_menu(&row, item.path);
+            }
             self.places_box.append(&row);
         }
+    }
 
-        let bookmarks = self.state.borrow().bookmarks.clone();
-        for bm in bookmarks {
-            let name = bm
-                .path
-                .file_name()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| bm.path.display().to_string());
-            let active = !cur_trash && cur_cwd == bm.path;
-            let row = self.make_place_button(&bm.icon, &name, bm.path.clone(), false, active, None);
-            self.attach_unpin_menu(&row, bm.path);
-            self.places_box.append(&row);
-        }
+    /// Drag-and-drop reordering strictly within the PLACES column.
+    /// Uses a private `String` payload (`hayato-place-reorder:<key>`), never
+    /// `gdk::FileList`, so a dragged Place/Pin is rejected everywhere outside
+    /// PLACES (cannot be dropped onto the folder canvas, tabs, or devices).
+    fn attach_place_reorder(self: &Rc<Self>, btn: &Button, key: String) {
+        const PREFIX: &str = "hayato-place-reorder:";
+
+        let src = DragSource::new();
+        src.set_actions(gdk::DragAction::MOVE);
+        let payload = format!("{PREFIX}{key}");
+        src.connect_prepare(move |_, _, _| {
+            Some(gdk::ContentProvider::for_value(&payload.to_value()))
+        });
+        btn.add_controller(src);
+
+        let dt = DropTarget::new(String::static_type(), gdk::DragAction::MOVE);
+        let b_enter = btn.clone();
+        dt.connect_enter(move |_, _, _| {
+            b_enter.add_css_class("reorder-hover");
+            gdk::DragAction::MOVE
+        });
+        let b_leave = btn.clone();
+        dt.connect_leave(move |_| b_leave.remove_css_class("reorder-hover"));
+        let b_drop = btn.clone();
+        let w = Rc::clone(self);
+        let target_key = key;
+        dt.connect_drop(move |_, val, _, _| {
+            b_drop.remove_css_class("reorder-hover");
+            let Ok(raw) = val.get::<String>() else {
+                return false;
+            };
+            let Some(from_key) = raw.strip_prefix(PREFIX) else {
+                return false;
+            };
+            if w.state.borrow_mut().reorder_place(from_key, &target_key) {
+                w.render_places();
+                return true;
+            }
+            false
+        });
+        btn.add_controller(dt);
     }
 
     fn toggle_sidebar_compact(self: &Rc<Self>) {
