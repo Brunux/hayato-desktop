@@ -3,15 +3,21 @@
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
-use crate::fs::FileEntry;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+use crate::fs::FileEntry;
+use crate::fs::ops::UndoAction;
+use crate::prefs::FilerPrefs;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ViewMode {
     Grid,
     List,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SortField {
     Name,
     Modified,
@@ -19,7 +25,8 @@ pub enum SortField {
     Kind,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SortOrder {
     Asc,
     Desc,
@@ -103,6 +110,9 @@ pub struct AppState {
     pub show_hidden: bool,
     pub sidebar_compact: bool,
     pub bookmarks: Vec<PathBuf>,
+    /// Session undo history, newest last. Finder-style: Ctrl+Z reverses the
+    /// most recent rename, move, trash, copy or folder creation.
+    pub undo: Vec<UndoAction>,
 }
 
 impl AppState {
@@ -118,7 +128,40 @@ impl AppState {
             show_hidden: false,
             sidebar_compact: false,
             bookmarks,
+            undo: Vec::new(),
         }
+    }
+
+    /// Apply persisted window & view preferences onto a fresh state.
+    pub fn apply_prefs(&mut self, prefs: &FilerPrefs) {
+        self.view_mode = prefs.view_mode;
+        self.sort_field = prefs.sort_field;
+        self.sort_order = prefs.sort_order;
+        self.folders_first = prefs.folders_first;
+        self.show_hidden = prefs.show_hidden;
+        self.sidebar_compact = prefs.sidebar_compact;
+    }
+
+    /// Snapshot the view choices into a persistable struct.
+    pub fn to_prefs(&self, width: i32, height: i32) -> FilerPrefs {
+        FilerPrefs {
+            view_mode: self.view_mode,
+            sort_field: self.sort_field,
+            sort_order: self.sort_order,
+            folders_first: self.folders_first,
+            show_hidden: self.show_hidden,
+            sidebar_compact: self.sidebar_compact,
+            window_width: width,
+            window_height: height,
+        }
+    }
+
+    pub fn push_undo(&mut self, action: UndoAction) {
+        self.undo.push(action);
+    }
+
+    pub fn take_undo(&mut self) -> Option<UndoAction> {
+        self.undo.pop()
     }
 
     pub fn tab(&self) -> &TabState {
@@ -301,12 +344,28 @@ impl AppState {
     }
 
     pub fn pin_bookmark(&mut self, dir: PathBuf) -> bool {
-        if !dir.is_dir() || self.bookmarks.contains(&dir) {
+        if !dir.is_dir() || self.is_bookmarked(&dir) {
             return false;
         }
         self.bookmarks.push(dir);
         save_bookmarks(&self.bookmarks);
         true
+    }
+
+    /// Remove a pinned folder from PLACES. Returns `false` when it was not a
+    /// bookmark, so a caller never announces an unpin that did not happen.
+    pub fn unpin_bookmark(&mut self, dir: &Path) -> bool {
+        let before = self.bookmarks.len();
+        self.bookmarks.retain(|b| b != dir);
+        if self.bookmarks.len() == before {
+            return false;
+        }
+        save_bookmarks(&self.bookmarks);
+        true
+    }
+
+    pub fn is_bookmarked(&self, dir: &Path) -> bool {
+        self.bookmarks.iter().any(|b| b == dir)
     }
 }
 
@@ -413,6 +472,53 @@ mod tests {
         assert_eq!(st.tabs.len(), 2);
         assert_eq!(st.active_tab, 1);
         assert_eq!(st.cwd(), Path::new("/var"));
+    }
+
+    #[test]
+    fn prefs_round_trip_through_app_state() {
+        let mut st = AppState::new(PathBuf::from("/home/u"));
+        let prefs = FilerPrefs {
+            view_mode: ViewMode::List,
+            sort_field: SortField::Modified,
+            sort_order: SortOrder::Desc,
+            folders_first: false,
+            show_hidden: true,
+            sidebar_compact: true,
+            window_width: 1200,
+            window_height: 700,
+        };
+        st.apply_prefs(&prefs);
+        assert_eq!(st.view_mode, ViewMode::List);
+        assert_eq!(st.sort_field, SortField::Modified);
+        assert_eq!(st.sort_order, SortOrder::Desc);
+        assert!(!st.folders_first);
+        assert!(st.show_hidden);
+        assert!(st.sidebar_compact);
+        assert_eq!(st.to_prefs(1200, 700), prefs);
+    }
+
+    #[test]
+    fn undo_history_is_last_in_first_out() {
+        let mut st = AppState::new(PathBuf::from("/home/u"));
+        assert!(st.take_undo().is_none());
+        st.push_undo(UndoAction::Rename {
+            from: PathBuf::from("/tmp/a"),
+            to: PathBuf::from("/tmp/b"),
+        });
+        st.push_undo(UndoAction::Created(vec![PathBuf::from("/tmp/new")]));
+        assert_eq!(st.undo.len(), 2);
+        assert_eq!(
+            st.take_undo(),
+            Some(UndoAction::Created(vec![PathBuf::from("/tmp/new")]))
+        );
+        assert_eq!(
+            st.take_undo(),
+            Some(UndoAction::Rename {
+                from: PathBuf::from("/tmp/a"),
+                to: PathBuf::from("/tmp/b"),
+            })
+        );
+        assert!(st.undo.is_empty());
     }
 
     #[test]

@@ -29,6 +29,7 @@ window.hayato-filer paned > separator {
 .filer-grid-glyph,
 .filer-list-glyph,
 .filer-ql-glyph,
+.filer-shelf-glyph,
 .filer-empty-glyph {
     font-family: "FontAwesome", "Font Awesome 6 Free Solid", sans-serif;
 }
@@ -527,6 +528,89 @@ list > row:selected .filer-list-row {
     border: 1px solid {{ border }};
     border-radius: 6px;
     padding: 8px;
+}
+
+/* ── Drag-and-Drop Staging Shelf ─────────────────────────────────────────── */
+.filer-shelf {
+    background-color: {{ surface }};
+    border-top: 1px solid {{ border }};
+    padding: 5px 10px;
+    min-height: 36px;
+}
+
+.filer-shelf-title {
+    color: {{ dim }};
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+}
+
+.filer-shelf-hint {
+    color: {{ faint }};
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    padding: 2px 4px;
+}
+
+.filer-shelf-chip {
+    background-color: {{ background }};
+    border: 1px solid {{ border }};
+    border-radius: 6px;
+    padding: 2px 4px 2px 8px;
+    margin: 1px 0;
+}
+
+.filer-shelf-chip:hover {
+    border-color: {{ accent }};
+}
+
+.filer-shelf-glyph {
+    font-size: 12px;
+    color: {{ dim }};
+}
+
+.filer-shelf-remove {
+    background-color: transparent;
+    border: none;
+    border-radius: 4px;
+    color: {{ dim }};
+    padding: 1px 4px;
+    min-height: 18px;
+    min-width: 18px;
+    font-size: 10px;
+}
+
+.filer-shelf-remove:hover {
+    background-color: {{ surface_alt }};
+    color: {{ danger_text }};
+}
+
+/* ── Quick Properties Inspector ──────────────────────────────────────────── */
+.filer-properties {
+    background-color: {{ surface }};
+    border: 1px solid {{ accent }};
+    border-radius: 10px;
+    padding: 16px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.filer-properties-title {
+    color: {{ strong }};
+    font-weight: 700;
+    font-size: 14px;
+}
+
+.filer-properties-label {
+    color: {{ dim }};
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+}
+
+.filer-properties-value {
+    color: {{ text }};
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
 }
 
 .filer-banner {

@@ -1,5 +1,6 @@
 //! Main GTK4 window assembly for `hayato-filer`: Finder/elementary minimalism + Hayato Cyber-HUD.
 
+pub mod properties;
 pub mod quicklook;
 
 use std::cell::{Cell, RefCell};
@@ -18,14 +19,16 @@ use gtk4::{
     Align, Application, ApplicationWindow, Box as GtkBox, Button, ContentFit, DragSource,
     DropTarget, Entry, EventControllerKey, FlowBox, FlowBoxChild, GestureClick, Label, ListBox,
     ListBoxRow, Orientation, Overlay, Paned, Picture, Popover, ProgressBar, ScrolledWindow,
-    SelectionMode, Separator,
+    SelectionMode, Separator, Widget,
 };
 
+use crate::fs::archive::{self, ArchiveFormat};
 use crate::fs::devices::{self, DeviceEntry};
 use crate::fs::ops::{self, OpKind, OpProgress};
 use crate::fs::thumbs;
 use crate::fs::trash;
 use crate::fs::{FileEntry, format_mtime, format_size, free_space_bytes, list_dir};
+use crate::prefs;
 use crate::state::{
     AppState, SortField, SortOrder, ViewMode, home_dir, is_trash_files_dir, trash_files_dir,
 };
@@ -64,11 +67,26 @@ pub struct FilerWindow {
     list_box: ListBox,
     overlay: Overlay,
     quicklook_slot: RefCell<Option<GtkBox>>,
+    properties_slot: RefCell<Option<GtkBox>>,
     status_label: Label,
     progress_box: GtkBox,
     progress_bar: ProgressBar,
     progress_label: Label,
     active_cancel: RefCell<Option<Arc<AtomicBool>>>,
+    /// Live watcher for the open folder (inotify via GIO).
+    dir_monitor: RefCell<Option<gio::FileMonitor>>,
+    refresh_scheduled: Cell<bool>,
+    /// The widget under the current drag, held for the whole drag so a
+    /// spring-loaded navigation cannot finalize the source mid-drag.
+    drag_hold: RefCell<Option<Widget>>,
+    /// Staging shelf: files collected from anywhere, dragged out as a batch.
+    shelf_box: GtkBox,
+    shelf_chips: GtkBox,
+    shelf_btn: Button,
+    shelf: RefCell<Vec<PathBuf>>,
+    /// Header New Tab button: hidden while the tab strip (which carries its own
+    /// add button) is showing, so only one "+" is ever visible.
+    new_tab_btn: Button,
 }
 
 impl FilerWindow {
@@ -148,6 +166,13 @@ impl FilerWindow {
         new_tab_btn.add_css_class("filer-glyph");
         new_tab_btn.set_tooltip_text(Some("New Tab (Ctrl+T)"));
 
+        let shelf_btn = Button::with_label("\u{f0c9}");
+        shelf_btn.add_css_class("filer-tool-btn");
+        shelf_btn.add_css_class("filer-glyph");
+        shelf_btn.set_tooltip_text(Some(
+            "Staging Shelf — drop files here to collect them, then drag the batch out",
+        ));
+
         header.append(&sidebar_toggle_btn);
         header.append(&nav_group);
         header.append(&crumbs_box);
@@ -156,6 +181,7 @@ impl FilerWindow {
         header.append(&filter_btn);
         header.append(&view_group);
         header.append(&sort_btn);
+        header.append(&shelf_btn);
         header.append(&new_tab_btn);
 
         // ── Minimalist Tab Bar (auto-hides when only 1 tab is open) ──────
@@ -290,17 +316,62 @@ impl FilerWindow {
         paned.set_resize_start_child(false);
         paned.set_vexpand(true);
 
+        // ── Drag-and-Drop Staging Shelf (hidden until it holds something) ──
+        let shelf_box = GtkBox::new(Orientation::Horizontal, 8);
+        shelf_box.add_css_class("filer-shelf");
+        shelf_box.set_visible(false);
+        let shelf_title = Label::new(Some("SHELF"));
+        shelf_title.add_css_class("filer-shelf-title");
+        shelf_title.set_valign(Align::Center);
+        let shelf_chips = GtkBox::new(Orientation::Horizontal, 6);
+        shelf_chips.set_valign(Align::Center);
+        let shelf_scroll = ScrolledWindow::new();
+        shelf_scroll.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
+        shelf_scroll.set_hexpand(true);
+        shelf_scroll.set_child(Some(&shelf_chips));
+        let shelf_clear = Button::with_label("Clear");
+        shelf_clear.add_css_class("filer-dev-action");
+        let shelf_close = Button::with_label("\u{f00d}");
+        shelf_close.add_css_class("filer-dev-action");
+        shelf_close.add_css_class("filer-glyph");
+        shelf_close.set_tooltip_text(Some("Hide Shelf (keeps the files)"));
+        shelf_box.append(&shelf_title);
+        shelf_box.append(&shelf_scroll);
+        shelf_box.append(&shelf_clear);
+        shelf_box.append(&shelf_close);
+
         let root_col = GtkBox::new(Orientation::Vertical, 0);
         root_col.append(&header);
         root_col.append(&tab_bar);
         root_col.append(&paned);
+        root_col.append(&shelf_box);
         root_col.append(&status_bar);
 
         let overlay = Overlay::new();
         overlay.set_child(Some(&root_col));
         window.set_child(Some(&overlay));
 
-        let init_state = AppState::new(initial_dir);
+        let prefs = prefs::load();
+        // A size saved on a bigger screen must not open a window this panel
+        // cannot show; the monitor is the ceiling, the prefs floor is already
+        // enforced by `FilerPrefs::sanitized`.
+        let monitor = gtk4::prelude::WidgetExt::display(&window)
+            .monitors()
+            .item(0)
+            .and_downcast::<gdk::Monitor>();
+        let (w, h) = match monitor {
+            Some(m) => {
+                let geo = m.geometry();
+                (
+                    prefs.window_width.min(geo.width()),
+                    prefs.window_height.min(geo.height()),
+                )
+            }
+            None => (prefs.window_width, prefs.window_height),
+        };
+        window.set_default_size(w, h);
+        let mut init_state = AppState::new(initial_dir);
+        init_state.apply_prefs(&prefs);
         let volume_monitor = gio::VolumeMonitor::get();
 
         let this = Rc::new(Self {
@@ -336,19 +407,34 @@ impl FilerWindow {
             list_box,
             overlay,
             quicklook_slot: RefCell::new(None),
+            properties_slot: RefCell::new(None),
             status_label,
             progress_box,
             progress_bar,
             progress_label,
             active_cancel: RefCell::new(None),
+            dir_monitor: RefCell::new(None),
+            refresh_scheduled: Cell::new(false),
+            drag_hold: RefCell::new(None),
+            shelf_box,
+            shelf_chips,
+            shelf_btn,
+            shelf: RefCell::new(Vec::new()),
+            new_tab_btn: new_tab_btn.clone(),
         });
 
         this.wire_signals(&sort_btn, &new_tab_btn, &tab_add_btn, &cancel_btn);
+        this.wire_shelf(&shelf_clear, &shelf_close);
+        this.wire_pin_drop_target();
+        this.set_sidebar_compact(prefs.sidebar_compact);
+        this.update_view_buttons(prefs.view_mode);
+        this.list_header.set_visible(prefs.view_mode == ViewMode::List);
         this.rebuild_list_header();
         this.render_tabs();
         this.refresh_devices();
         this.start_device_monitor();
         this.reload_dir();
+        this.save_prefs_on_close();
         this
     }
 
@@ -543,9 +629,7 @@ impl FilerWindow {
                 };
                 let paths: Vec<PathBuf> = fl.files().into_iter().filter_map(|f| f.path()).collect();
                 let dst = w.state.borrow().cwd().to_path_buf();
-                let is_copy = target
-                    .current_drop()
-                    .is_some_and(|d| d.actions() == gdk::DragAction::COPY);
+                let is_copy = drop_is_copy(target);
                 w.handle_drop(paths, dst, is_copy);
                 true
             });
@@ -588,6 +672,11 @@ impl FilerWindow {
             && (key == gdk::Key::Escape || key == gdk::Key::space)
         {
             self.close_quicklook();
+            return glib::Propagation::Stop;
+        }
+        // Properties dismiss
+        if self.properties_slot.borrow().is_some() && key == gdk::Key::Escape {
+            self.close_properties();
             return glib::Propagation::Stop;
         }
 
@@ -686,6 +775,14 @@ impl FilerWindow {
                     self.reload_dir();
                     return glib::Propagation::Stop;
                 }
+                gdk::Key::z | gdk::Key::Z => {
+                    self.undo_last();
+                    return glib::Propagation::Stop;
+                }
+                gdk::Key::i | gdk::Key::I => {
+                    self.toggle_properties();
+                    return glib::Propagation::Stop;
+                }
                 gdk::Key::b | gdk::Key::B => {
                     self.sidebar_box.set_visible(!self.sidebar_box.is_visible());
                     return glib::Propagation::Stop;
@@ -738,6 +835,10 @@ impl FilerWindow {
                     if self.state.borrow_mut().go_parent().is_some() {
                         self.reload_dir();
                     }
+                    return glib::Propagation::Stop;
+                }
+                gdk::Key::Return | gdk::Key::KP_Enter => {
+                    self.toggle_properties();
                     return glib::Propagation::Stop;
                 }
                 gdk::Key::_1 => return self.jump_tab_shortcut(0),
@@ -824,6 +925,7 @@ impl FilerWindow {
         self.filter_entry.set_visible(!filter.is_empty());
         self.hide_path_entry();
         self.close_quicklook();
+        self.close_properties();
         self.render_tabs();
         self.reload_dir();
     }
@@ -843,9 +945,11 @@ impl FilerWindow {
         };
         if tabs.len() <= 1 {
             self.tab_bar.set_visible(false);
+            self.new_tab_btn.set_visible(true);
             return;
         }
         self.tab_bar.set_visible(true);
+        self.new_tab_btn.set_visible(false);
 
         for (i, (title, glyph, cwd, in_trash)) in tabs.into_iter().enumerate() {
             let wrap = GtkBox::new(Orientation::Horizontal, 2);
@@ -886,8 +990,15 @@ impl FilerWindow {
             mid.connect_pressed(move |_, _, _, _| w_mid.close_tab_at(i));
             wrap.add_controller(mid);
 
-            // Drag & drop files directly onto any tab!
-            self.attach_folder_drop_target(&wrap, cwd, in_trash);
+            // Drag & drop files directly onto any tab! Hovering it for a moment
+            // spring-loads: the tab opens so you can drop deeper.
+            let w_spring = Rc::clone(self);
+            self.attach_folder_drop_target(
+                &wrap,
+                cwd,
+                in_trash,
+                Some(Rc::new(move || w_spring.switch_to_tab(i))),
+            );
 
             wrap.append(&tab_btn);
             wrap.append(&close_btn);
@@ -901,6 +1012,7 @@ impl FilerWindow {
         self.filter_entry.set_text("");
         self.filter_entry.set_visible(false);
         self.close_quicklook();
+        self.close_properties();
         self.reload_dir();
     }
 
@@ -935,6 +1047,7 @@ impl FilerWindow {
         self.render_breadcrumbs(&cwd, in_trash);
         self.render_places();
         self.render_devices();
+        self.watch_dir(&cwd);
 
         // Ensure Trash/files exists when viewing Trash
         if in_trash {
@@ -969,6 +1082,227 @@ impl FilerWindow {
             Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
             Err(mpsc::TryRecvError::Disconnected) => glib::ControlFlow::Break,
         });
+    }
+
+    // ── Live folder auto-refresh (inotify via GIO) ────────────────────────
+
+    /// Watch the folder we are showing so a file written by a browser, a
+    /// terminal or another app appears without an F5. The monitor is replaced
+    /// on every navigation, so only the open folder is watched.
+    fn watch_dir(self: &Rc<Self>, cwd: &Path) {
+        *self.dir_monitor.borrow_mut() = None;
+        let Ok(monitor) = gio::File::for_path(cwd)
+            .monitor_directory(gio::FileMonitorFlags::NONE, gio::Cancellable::NONE)
+        else {
+            return;
+        };
+        let weak = Rc::downgrade(self);
+        monitor.connect_changed(move |_, _, _, _| {
+            if let Some(w) = weak.upgrade() {
+                w.schedule_refresh();
+            }
+        });
+        *self.dir_monitor.borrow_mut() = Some(monitor);
+    }
+
+    /// Coalesce a burst of filesystem events into one reload.
+    fn schedule_refresh(self: &Rc<Self>) {
+        if self.refresh_scheduled.replace(true) {
+            return;
+        }
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_local_once(Duration::from_millis(250), move || {
+            if let Some(w) = weak.upgrade() {
+                w.refresh_scheduled.set(false);
+                w.reload_dir();
+            }
+        });
+    }
+
+    // ── Preferences persistence ───────────────────────────────────────────
+
+    fn save_prefs_on_close(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        self.window.connect_close_request(move |_| {
+            if let Some(w) = weak.upgrade() {
+                w.persist_prefs();
+            }
+            glib::Propagation::Proceed
+        });
+    }
+
+    fn persist_prefs(&self) {
+        let width = self.window.width().max(1);
+        let height = self.window.height().max(1);
+        let prefs = self.state.borrow().to_prefs(width, height);
+        prefs::save(&prefs);
+    }
+
+    // ── Staging shelf ─────────────────────────────────────────────────────
+
+    fn wire_shelf(self: &Rc<Self>, clear_btn: &Button, close_btn: &Button) {
+        {
+            let w = Rc::clone(self);
+            self.shelf_btn.connect_clicked(move |_| w.toggle_shelf());
+        }
+        {
+            let w = Rc::clone(self);
+            let b = self.shelf_box.clone();
+            clear_btn.connect_clicked(move |_| {
+                w.shelf.borrow_mut().clear();
+                w.render_shelf();
+                b.set_visible(false);
+            });
+        }
+        {
+            let b = self.shelf_box.clone();
+            close_btn.connect_clicked(move |_| b.set_visible(false));
+        }
+
+        // Drop files onto the shelf to collect them.
+        let dt = DropTarget::new(
+            gdk::FileList::static_type(),
+            gdk::DragAction::COPY | gdk::DragAction::MOVE,
+        );
+        let sb = self.shelf_box.clone();
+        dt.connect_enter(move |_, _, _| {
+            sb.add_css_class("drop-hover");
+            gdk::DragAction::COPY
+        });
+        let sb2 = self.shelf_box.clone();
+        dt.connect_leave(move |_| sb2.remove_css_class("drop-hover"));
+        let w = Rc::clone(self);
+        let sb3 = self.shelf_box.clone();
+        dt.connect_drop(move |_, val, _, _| {
+            sb3.remove_css_class("drop-hover");
+            let Ok(fl) = val.get::<gdk::FileList>() else {
+                return false;
+            };
+            let paths: Vec<PathBuf> = fl.files().into_iter().filter_map(|f| f.path()).collect();
+            w.add_to_shelf(paths);
+            true
+        });
+        self.shelf_box.add_controller(dt);
+
+        // Drag the whole shelf out as one batch.
+        let src = DragSource::new();
+        src.set_actions(gdk::DragAction::COPY | gdk::DragAction::MOVE);
+        let w = Rc::clone(self);
+        src.connect_prepare(move |_, _, _| {
+            let paths = w.shelf.borrow().clone();
+            if paths.is_empty() {
+                return None;
+            }
+            *w.drag_hold.borrow_mut() = Some(w.shelf_chips.clone().upcast::<Widget>());
+            let files: Vec<gio::File> = paths.iter().map(gio::File::for_path).collect();
+            let list = gdk::FileList::from_array(&files);
+            Some(gdk::ContentProvider::for_value(&list.to_value()))
+        });
+        let w = Rc::clone(self);
+        src.connect_drag_end(move |_, _, _| {
+            *w.drag_hold.borrow_mut() = None;
+        });
+        self.shelf_box.add_controller(src);
+    }
+
+    fn toggle_shelf(self: &Rc<Self>) {
+        let vis = !self.shelf_box.is_visible();
+        self.shelf_box.set_visible(vis);
+        if vis {
+            self.render_shelf();
+        }
+    }
+
+    fn add_to_shelf(self: &Rc<Self>, paths: Vec<PathBuf>) {
+        if paths.is_empty() {
+            return;
+        }
+        {
+            let mut shelf = self.shelf.borrow_mut();
+            for p in paths {
+                if !shelf.contains(&p) {
+                    shelf.push(p);
+                }
+            }
+        }
+        self.render_shelf();
+        self.shelf_box.set_visible(true);
+    }
+
+    fn remove_from_shelf(self: &Rc<Self>, path: &Path) {
+        self.shelf.borrow_mut().retain(|p| p != path);
+        self.render_shelf();
+        if self.shelf.borrow().is_empty() {
+            self.shelf_box.set_visible(false);
+        }
+    }
+
+    fn render_shelf(self: &Rc<Self>) {
+        // A chip names something that exists: a reference whose file was
+        // moved away, trashed or deleted since it was collected is dropped
+        // here, so dragging a chip never carries a path that is gone.
+        self.shelf
+            .borrow_mut()
+            .retain(|p| std::fs::symlink_metadata(p).is_ok());
+        while let Some(c) = self.shelf_chips.first_child() {
+            self.shelf_chips.remove(&c);
+        }
+        let paths = self.shelf.borrow().clone();
+        if paths.is_empty() {
+            let hint = Label::new(Some("Drop files here to collect them, then drag the batch out"));
+            hint.add_css_class("filer-shelf-hint");
+            self.shelf_chips.append(&hint);
+            return;
+        }
+        for p in paths {
+            let chip = GtkBox::new(Orientation::Horizontal, 4);
+            chip.add_css_class("filer-shelf-chip");
+            let is_dir = p.is_dir();
+            let glyph = Label::new(Some(if is_dir { "\u{f07b}" } else { "\u{f15b}" }));
+            glyph.add_css_class("filer-shelf-glyph");
+            glyph.add_css_class(if is_dir { "icon-folder" } else { "icon-file" });
+            let name = Label::new(Some(
+                &p.file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| p.display().to_string()),
+            ));
+            name.set_ellipsize(gtk4::pango::EllipsizeMode::Middle);
+            name.set_max_width_chars(18);
+            let rm = Button::with_label("\u{f00d}");
+            rm.add_css_class("filer-shelf-remove");
+            rm.add_css_class("filer-glyph");
+            rm.set_tooltip_text(Some(&p.display().to_string()));
+            let w = Rc::clone(self);
+            let p_rm = p.clone();
+            rm.connect_clicked(move |_| w.remove_from_shelf(&p_rm));
+            chip.append(&glyph);
+            chip.append(&name);
+            chip.append(&rm);
+            self.shelf_chips.append(&chip);
+        }
+    }
+
+    // ── Quick Properties card ─────────────────────────────────────────────
+
+    fn toggle_properties(self: &Rc<Self>) {
+        if self.properties_slot.borrow().is_some() {
+            self.close_properties();
+            return;
+        }
+        let Some(entry) = self.selected_entries().into_iter().next() else {
+            return;
+        };
+        self.close_quicklook();
+        let w = Rc::clone(self);
+        let card = properties::build_properties_card(&entry, move || w.close_properties());
+        self.overlay.add_overlay(&card);
+        *self.properties_slot.borrow_mut() = Some(card);
+    }
+
+    fn close_properties(&self) {
+        if let Some(card) = self.properties_slot.borrow_mut().take() {
+            self.overlay.remove_overlay(&card);
+        }
     }
 
     fn set_view_mode(self: &Rc<Self>, mode: ViewMode) {
@@ -1123,7 +1457,14 @@ impl FilerWindow {
             btn.add_controller(mid);
 
             // Breadcrumb DropTarget: drag files onto any ancestor folder!
-            self.attach_folder_drop_target(&btn, path, false);
+            let w_spring = Rc::clone(self);
+            let p_spring = path.clone();
+            self.attach_folder_drop_target(
+                &btn,
+                path,
+                false,
+                Some(Rc::new(move || w_spring.navigate_to(p_spring.clone()))),
+            );
             self.crumbs_box.append(&btn);
         }
     }
@@ -1174,17 +1515,19 @@ impl FilerWindow {
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_else(|| bm.display().to_string());
             let active = !cur_trash && cur_cwd == bm;
-            let row = self.make_place_button("\u{f005}", &name, bm, false, active, None);
+            let row = self.make_place_button("\u{f005}", &name, bm.clone(), false, active, None);
+            self.attach_unpin_menu(&row, bm);
             self.places_box.append(&row);
         }
     }
 
     fn toggle_sidebar_compact(self: &Rc<Self>) {
-        let compact = {
-            let mut st = self.state.borrow_mut();
-            st.sidebar_compact = !st.sidebar_compact;
-            st.sidebar_compact
-        };
+        let compact = !self.state.borrow().sidebar_compact;
+        self.set_sidebar_compact(compact);
+    }
+
+    fn set_sidebar_compact(self: &Rc<Self>, compact: bool) {
+        self.state.borrow_mut().sidebar_compact = compact;
         if compact {
             self.sidebar_box.add_css_class("compact");
             self.sidebar_box.set_size_request(50, -1);
@@ -1264,8 +1607,102 @@ impl FilerWindow {
         mid.connect_pressed(move |_, _, _, _| w_mid.open_new_tab(t_mid.clone()));
         btn.add_controller(mid);
 
-        self.attach_folder_drop_target(&btn, path, is_trash);
+        self.attach_folder_drop_target(&btn, path, is_trash, None);
         btn
+    }
+
+    /// Right-click on a pinned bookmark offers Open in New Tab / Unpin.
+    fn attach_unpin_menu(self: &Rc<Self>, btn: &Button, path: PathBuf) {
+        let rclick = GestureClick::new();
+        rclick.set_button(3);
+        rclick.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        let w_rc = Rc::clone(self);
+        let anchor = btn.clone();
+        rclick.connect_pressed(move |gesture, _, x, y| {
+            gesture.set_state(gtk4::EventSequenceState::Claimed);
+            w_rc.show_bookmark_menu(&anchor, &path, x, y);
+        });
+        btn.add_controller(rclick);
+    }
+
+    fn show_bookmark_menu(self: &Rc<Self>, anchor: &Button, dir: &Path, x: f64, y: f64) {
+        let pop = Popover::new();
+        pop.set_parent(anchor);
+        pop.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+        pop.set_has_arrow(false);
+        unparent_on_close(&pop);
+        let col = GtkBox::new(Orientation::Vertical, 2);
+
+        let w = Rc::clone(self);
+        let d_tab = dir.to_path_buf();
+        let p1 = pop.clone();
+        col.append(&make_menu_item("\u{f067}", "Open in New Tab", None, false, move || {
+            p1.popdown();
+            w.open_new_tab(d_tab.clone());
+        }));
+
+        let w = Rc::clone(self);
+        let d_un = dir.to_path_buf();
+        let p2 = pop.clone();
+        col.append(&make_menu_item(
+            "\u{f00d}",
+            "Unpin from Places",
+            None,
+            false,
+            move || {
+                p2.popdown();
+                if w.state.borrow_mut().unpin_bookmark(&d_un) {
+                    w.render_places();
+                    w.show_banner("Unpinned from Places", "ok");
+                }
+            },
+        ));
+
+        pop.set_child(Some(&col));
+        pop.popup();
+    }
+
+    /// Dropping a folder on the PLACES heading pins it, rather than moving it.
+    fn wire_pin_drop_target(self: &Rc<Self>) {
+        self.places_hdr
+            .set_tooltip_text(Some("Drop a folder here to pin it to PLACES"));
+        let dt = DropTarget::new(
+            gdk::FileList::static_type(),
+            gdk::DragAction::COPY | gdk::DragAction::MOVE,
+        );
+        let hdr = self.places_hdr.clone();
+        dt.connect_enter(move |_, _, _| {
+            hdr.add_css_class("drop-hover");
+            gdk::DragAction::COPY
+        });
+        let hdr2 = self.places_hdr.clone();
+        dt.connect_leave(move |_| hdr2.remove_css_class("drop-hover"));
+        let w = Rc::clone(self);
+        let hdr3 = self.places_hdr.clone();
+        dt.connect_drop(move |_, val, _, _| {
+            hdr3.remove_css_class("drop-hover");
+            let Ok(fl) = val.get::<gdk::FileList>() else {
+                return false;
+            };
+            let dirs: Vec<PathBuf> = fl
+                .files()
+                .into_iter()
+                .filter_map(|f| f.path())
+                .filter(|p| p.is_dir())
+                .collect();
+            let mut pinned = 0usize;
+            for d in dirs {
+                if w.state.borrow_mut().pin_bookmark(d) {
+                    pinned += 1;
+                }
+            }
+            if pinned > 0 {
+                w.render_places();
+                w.show_banner(&format!("Pinned {pinned} folder(s) to Places"), "ok");
+            }
+            pinned > 0
+        });
+        self.places_hdr.add_controller(dt);
     }
 
     /// Dynamically watches for USB/SD hotplug and mount/unmount events using both
@@ -1488,7 +1925,7 @@ impl FilerWindow {
                     bar.set_margin_end(6);
                     wrap.append(&bar);
                 }
-                self.attach_folder_drop_target(&wrap, mp.clone(), false);
+                self.attach_folder_drop_target(&wrap, mp.clone(), false, None);
             }
             // Right-click context menu on removable drive card
             {
@@ -1794,7 +2231,14 @@ impl FilerWindow {
 
         self.attach_drag_source(&cell, entry.path.clone());
         if entry.is_dir {
-            self.attach_folder_drop_target(&cell, entry.path.clone(), false);
+            let w_spring = Rc::clone(self);
+            let p_spring = entry.path.clone();
+            self.attach_folder_drop_target(
+                &cell,
+                entry.path.clone(),
+                false,
+                Some(Rc::new(move || w_spring.navigate_to(p_spring.clone()))),
+            );
             let mid = GestureClick::new();
             mid.set_button(2);
             let w_mid = Rc::clone(self);
@@ -1851,7 +2295,14 @@ impl FilerWindow {
 
         self.attach_drag_source(&row, entry.path.clone());
         if entry.is_dir {
-            self.attach_folder_drop_target(&row, entry.path.clone(), false);
+            let w_spring = Rc::clone(self);
+            let p_spring = entry.path.clone();
+            self.attach_folder_drop_target(
+                &row,
+                entry.path.clone(),
+                false,
+                Some(Rc::new(move || w_spring.navigate_to(p_spring.clone()))),
+            );
             let mid = GestureClick::new();
             mid.set_button(2);
             let w_mid = Rc::clone(self);
@@ -1862,11 +2313,20 @@ impl FilerWindow {
         row
     }
 
-    fn attach_drag_source(self: &Rc<Self>, widget: &impl IsA<gtk4::Widget>, item_path: PathBuf) {
+    fn attach_drag_source(
+        self: &Rc<Self>,
+        widget: &(impl IsA<gtk4::Widget> + Clone),
+        item_path: PathBuf,
+    ) {
         let src = DragSource::new();
         src.set_actions(gdk::DragAction::COPY | gdk::DragAction::MOVE);
         let w = Rc::clone(self);
+        // Hold the dragged widget for the whole drag: a spring-loaded
+        // navigation rebuilds the canvas, and letting the source be finalized
+        // would cancel the drag the person is still holding.
+        let held: Widget = Clone::clone(widget).upcast::<Widget>();
         src.connect_prepare(move |_, _, _| {
+            *w.drag_hold.borrow_mut() = Some(held.clone());
             let mut paths = w.selected_paths();
             if !paths.contains(&item_path) {
                 paths = vec![item_path.clone()];
@@ -1875,14 +2335,22 @@ impl FilerWindow {
             let list = gdk::FileList::from_array(&files);
             Some(gdk::ContentProvider::for_value(&list.to_value()))
         });
+        let w = Rc::clone(self);
+        src.connect_drag_end(move |_, _, _| {
+            *w.drag_hold.borrow_mut() = None;
+        });
         widget.add_controller(src);
     }
 
+    /// `spring` is the spring-load action: hold a drag over this widget for a
+    /// moment and it runs (open the folder, switch the tab) so the drop can
+    /// land deeper than one level.
     fn attach_folder_drop_target(
         self: &Rc<Self>,
         widget: &impl IsA<gtk4::Widget>,
         target_dir: PathBuf,
         is_trash: bool,
+        spring: Option<Rc<dyn Fn()>>,
     ) {
         let dt = DropTarget::new(
             gdk::FileList::static_type(),
@@ -1893,18 +2361,58 @@ impl FilerWindow {
         } else {
             "drop-hover"
         };
+        let timer: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+        // Hovering is true only while a drag is over this widget, so a timer
+        // that outlives a leave (or a navigation) cannot fire a stale action.
+        let hovering = Rc::new(Cell::new(false));
+
         let w_enter = widget.clone();
+        let hover_enter = Rc::clone(&hovering);
+        let timer_enter = Rc::clone(&timer);
+        let spring_enter = spring.clone();
         dt.connect_enter(move |_, _, _| {
             w_enter.add_css_class(cls);
+            hover_enter.set(true);
+            if let Some(action) = spring_enter.clone() {
+                if let Some(old) = timer_enter.borrow_mut().take() {
+                    old.remove();
+                }
+                let hover = Rc::clone(&hover_enter);
+                let timer_fire = Rc::clone(&timer_enter);
+                let id = glib::timeout_add_local(Duration::from_millis(600), move || {
+                    // The source ends with this callback: forget it, so a later
+                    // leave or drop cannot try to remove a source that is gone
+                    // (glib 0.22 panics on that and would abort the window).
+                    *timer_fire.borrow_mut() = None;
+                    if hover.get() {
+                        action();
+                    }
+                    glib::ControlFlow::Break
+                });
+                *timer_enter.borrow_mut() = Some(id);
+            }
             gdk::DragAction::MOVE
         });
         let w_leave = widget.clone();
-        dt.connect_leave(move |_| w_leave.remove_css_class(cls));
+        let hover_leave = Rc::clone(&hovering);
+        let timer_leave = Rc::clone(&timer);
+        dt.connect_leave(move |_| {
+            w_leave.remove_css_class(cls);
+            hover_leave.set(false);
+            if let Some(id) = timer_leave.borrow_mut().take() {
+                id.remove();
+            }
+        });
 
         let w_drop = widget.clone();
+        let hover_drop = Rc::clone(&hovering);
         let this = Rc::clone(self);
         dt.connect_drop(move |target, val, _, _| {
             w_drop.remove_css_class(cls);
+            hover_drop.set(false);
+            if let Some(id) = timer.borrow_mut().take() {
+                id.remove();
+            }
             let Ok(fl) = val.get::<gdk::FileList>() else {
                 return false;
             };
@@ -1915,9 +2423,7 @@ impl FilerWindow {
             if is_trash {
                 this.run_op(OpKind::Trash, paths, None);
             } else {
-                let is_copy = target
-                    .current_drop()
-                    .is_some_and(|d| d.actions() == gdk::DragAction::COPY);
+                let is_copy = drop_is_copy(target);
                 this.handle_drop(paths, target_dir.clone(), is_copy);
             }
             true
@@ -1952,41 +2458,97 @@ impl FilerWindow {
         *self.active_cancel.borrow_mut() = Some(Arc::clone(&cancel));
         let (tx, rx) = mpsc::channel();
         ops::spawn_batch(kind, sources, dest_dir, tx, cancel);
+        self.pump_progress(rx);
+    }
 
+    /// Extract archives in place (no undo: the extracted tree is the answer).
+    fn run_extract(self: &Rc<Self>, archives: Vec<PathBuf>) {
+        let cancel = Arc::new(AtomicBool::new(false));
+        *self.active_cancel.borrow_mut() = Some(Arc::clone(&cancel));
+        let (tx, rx) = mpsc::channel();
+        archive::spawn_extract(archives, tx, cancel);
+        self.pump_progress(rx);
+    }
+
+    /// Compress the selection into the current folder.
+    fn run_compress(self: &Rc<Self>, sources: Vec<PathBuf>, format: ArchiveFormat) {
+        let dest = self.state.borrow().cwd().to_path_buf();
+        let cancel = Arc::new(AtomicBool::new(false));
+        *self.active_cancel.borrow_mut() = Some(Arc::clone(&cancel));
+        let (tx, rx) = mpsc::channel();
+        archive::spawn_compress(sources, format, dest, tx, cancel);
+        self.pump_progress(rx);
+    }
+
+    /// Drive the bottom progress bar from any worker's `OpProgress` channel and
+    /// record the undo it hands back.
+    fn pump_progress(self: &Rc<Self>, rx: mpsc::Receiver<OpProgress>) {
         self.progress_box.set_visible(true);
         self.progress_bar.set_fraction(0.0);
         self.progress_label.set_text("Working…");
 
         let w = Rc::clone(self);
-        glib::timeout_add_local(Duration::from_millis(30), move || {
-            loop {
-                match rx.try_recv() {
-                    Ok(OpProgress::Update { label, fraction }) => {
-                        w.progress_label.set_text(&label);
-                        w.progress_bar.set_fraction(fraction);
+        glib::timeout_add_local(Duration::from_millis(30), move || loop {
+            match rx.try_recv() {
+                Ok(OpProgress::Update { label, fraction }) => {
+                    w.progress_label.set_text(&label);
+                    w.progress_bar.set_fraction(fraction);
+                }
+                Ok(OpProgress::Done { summary, undo }) => {
+                    w.progress_box.set_visible(false);
+                    *w.active_cancel.borrow_mut() = None;
+                    let reversible = undo.is_some();
+                    if let Some(action) = undo {
+                        w.state.borrow_mut().push_undo(action);
                     }
-                    Ok(OpProgress::Done { summary }) => {
-                        w.progress_box.set_visible(false);
-                        *w.active_cancel.borrow_mut() = None;
-                        w.show_banner(&summary, "ok");
-                        w.reload_dir();
-                        return glib::ControlFlow::Break;
-                    }
-                    Ok(OpProgress::Error { message }) => {
-                        w.progress_box.set_visible(false);
-                        *w.active_cancel.borrow_mut() = None;
-                        w.show_banner(&message, "danger");
-                        w.reload_dir();
-                        return glib::ControlFlow::Break;
-                    }
-                    Err(mpsc::TryRecvError::Empty) => return glib::ControlFlow::Continue,
-                    Err(mpsc::TryRecvError::Disconnected) => {
-                        w.progress_box.set_visible(false);
-                        return glib::ControlFlow::Break;
-                    }
+                    let msg = if reversible {
+                        format!("{summary} · Ctrl+Z to undo")
+                    } else {
+                        summary
+                    };
+                    w.show_banner(&msg, "ok");
+                    w.reload_dir();
+                    w.render_shelf();
+                    return glib::ControlFlow::Break;
+                }
+                Ok(OpProgress::Error { message }) => {
+                    w.progress_box.set_visible(false);
+                    *w.active_cancel.borrow_mut() = None;
+                    w.show_banner(&message, "danger");
+                    w.reload_dir();
+                    w.render_shelf();
+                    return glib::ControlFlow::Break;
+                }
+                Err(mpsc::TryRecvError::Empty) => return glib::ControlFlow::Continue,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    w.progress_box.set_visible(false);
+                    return glib::ControlFlow::Break;
                 }
             }
         });
+    }
+
+    /// Ctrl+Z: reverse the most recent rename, move, trash, copy or folder
+    /// creation.
+    fn undo_last(self: &Rc<Self>) {
+        let Some(action) = self.state.borrow_mut().take_undo() else {
+            self.show_banner("Nothing to undo", "warn");
+            return;
+        };
+        let label = action.label();
+        match ops::undo(&action) {
+            Ok(msg) => {
+                self.show_banner(&msg, "ok");
+                self.reload_dir();
+                self.render_shelf();
+            }
+            Err(e) => {
+                // Put it back so a second Ctrl+Z can retry after the person
+                // clears whatever blocked it.
+                self.state.borrow_mut().push_undo(action);
+                self.show_banner(&format!("Could not undo {label}: {e}"), "danger");
+            }
+        }
     }
 
     fn selected_entries(&self) -> Vec<FileEntry> {
@@ -2038,6 +2600,7 @@ impl FilerWindow {
         let Some(entry) = self.selected_entries().into_iter().next() else {
             return;
         };
+        self.close_properties();
         let w = Rc::clone(self);
         let card = quicklook::build_quicklook_card(&entry, move || w.close_quicklook());
         self.overlay.add_overlay(&card);
@@ -2240,6 +2803,50 @@ impl FilerWindow {
                     false,
                     Box::new(move || w.toggle_quicklook()),
                 );
+                let archives: Vec<PathBuf> = sel
+                    .iter()
+                    .filter(|e| archive::is_archive(&e.path))
+                    .map(|e| e.path.clone())
+                    .collect();
+                if !archives.is_empty() {
+                    let w = Rc::clone(self);
+                    let label = if archives.len() > 1 {
+                        format!("Extract {} Archives Here", archives.len())
+                    } else {
+                        "Extract Here".to_string()
+                    };
+                    add(
+                        "\u{f1c6}",
+                        &label,
+                        None,
+                        false,
+                        Box::new(move || w.run_extract(archives.clone())),
+                    );
+                }
+                let w = Rc::clone(self);
+                let ps_shelf = paths.clone();
+                add(
+                    "\u{f0c9}",
+                    "Add to Shelf",
+                    None,
+                    false,
+                    Box::new(move || w.add_to_shelf(ps_shelf.clone())),
+                );
+                for (label, format) in [
+                    ("Compress to .zip", ArchiveFormat::Zip),
+                    ("Compress to .tar.gz", ArchiveFormat::TarGz),
+                    ("Compress to .tar.xz", ArchiveFormat::TarXz),
+                ] {
+                    let w = Rc::clone(self);
+                    let ps = paths.clone();
+                    add(
+                        "\u{f1c6}",
+                        label,
+                        None,
+                        false,
+                        Box::new(move || w.run_compress(ps.clone(), format)),
+                    );
+                }
                 add_sep();
 
                 let w = Rc::clone(self);
@@ -2454,7 +3061,10 @@ impl FilerWindow {
             let target = w.state.borrow().cwd().join(&name);
             match std::fs::create_dir(&target) {
                 Ok(()) => {
-                    w.show_banner(&format!("Created folder {name}"), "ok");
+                    w.state
+                        .borrow_mut()
+                        .push_undo(ops::UndoAction::Created(vec![target.clone()]));
+                    w.show_banner(&format!("Created folder {name} · Ctrl+Z to undo"), "ok");
                     w.reload_dir();
                 }
                 Err(err) => w.show_banner(&format!("Failed: {err}"), "danger"),
@@ -2497,7 +3107,11 @@ impl FilerWindow {
             let new_path = parent.join(&new_name);
             match std::fs::rename(&old_path, &new_path) {
                 Ok(()) => {
-                    w.show_banner(&format!("Renamed to {new_name}"), "ok");
+                    w.state.borrow_mut().push_undo(ops::UndoAction::Rename {
+                        from: old_path.clone(),
+                        to: new_path.clone(),
+                    });
+                    w.show_banner(&format!("Renamed to {new_name} · Ctrl+Z to undo"), "ok");
                     w.reload_dir();
                 }
                 Err(err) => w.show_banner(&format!("Rename failed: {err}"), "danger"),
@@ -2587,6 +3201,26 @@ impl FilerWindow {
                 bb.set_visible(false);
             }
         });
+    }
+}
+
+/// Whether a drop copies instead of moving.
+///
+/// A source that offers MOVE is one of ours (a canvas item, a tab, the shelf):
+/// on Wayland the drag is offered as COPY, so `actions()` is what the source
+/// allows and MOVE in that set is the intent. A source that offers only COPY
+/// is another application (a browser, an archive tool) and is copied, and a
+/// cross-filesystem drop is forced to a copy by `handle_drop` either way.
+fn drop_is_copy(target: &DropTarget) -> bool {
+    match target.current_drop() {
+        // A drop that carries its `GdkDrag` came from this application (a
+        // canvas item, a tab, the shelf): move it, as Finder does on one
+        // volume. GDK reports every local drop as COPY, so the drag object is
+        // the only reliable signal; `handle_drop` still copies across
+        // filesystems, and a source that is another application (a browser,
+        // an archive tool) is copied.
+        Some(d) => d.drag().is_none(),
+        None => true,
     }
 }
 

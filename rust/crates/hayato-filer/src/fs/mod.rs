@@ -1,5 +1,6 @@
 //! Filesystem model, directory listing, formatting helpers, and submodules.
 
+pub mod archive;
 pub mod devices;
 pub mod ops;
 pub mod thumbs;
