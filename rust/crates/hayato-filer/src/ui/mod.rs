@@ -2843,21 +2843,40 @@ impl FilerWindow {
                     false,
                     Box::new(move || w.add_to_shelf(ps_shelf.clone())),
                 );
-                for (label, format) in [
-                    ("Compress to .zip", ArchiveFormat::Zip),
-                    ("Compress to .tar.gz", ArchiveFormat::TarGz),
-                    ("Compress to .tar.xz", ArchiveFormat::TarXz),
+                // Compact 1-row archive compressor: saves vertical menu height
+                // while keeping all three formats one click away.
+                let comp_row = GtkBox::new(Orientation::Horizontal, 4);
+                comp_row.set_margin_start(8);
+                comp_row.set_margin_end(8);
+                comp_row.set_margin_top(2);
+                comp_row.set_margin_bottom(2);
+                let comp_ic = Label::new(Some("\u{f1c6}"));
+                comp_ic.add_css_class("filer-menu-icon");
+                comp_ic.set_size_request(16, -1);
+                comp_ic.set_halign(Align::Center);
+                let comp_lbl = Label::new(Some("Compress"));
+                comp_lbl.set_halign(Align::Start);
+                comp_lbl.set_hexpand(true);
+                comp_lbl.set_margin_start(4);
+                comp_row.append(&comp_ic);
+                comp_row.append(&comp_lbl);
+                for (short, format) in [
+                    (".zip", ArchiveFormat::Zip),
+                    (".tar.gz", ArchiveFormat::TarGz),
+                    (".tar.xz", ArchiveFormat::TarXz),
                 ] {
+                    let b = Button::with_label(short);
+                    b.add_css_class("filer-dev-action");
                     let w = Rc::clone(self);
+                    let p = pop.clone();
                     let ps = paths.clone();
-                    add(
-                        "\u{f1c6}",
-                        label,
-                        None,
-                        false,
-                        Box::new(move || w.run_compress(ps.clone(), format)),
-                    );
+                    b.connect_clicked(move |_| {
+                        p.popdown();
+                        w.run_compress(ps.clone(), format);
+                    });
+                    comp_row.append(&b);
                 }
+                col.append(&comp_row);
                 add_sep();
 
                 let w = Rc::clone(self);
@@ -3042,7 +3061,23 @@ impl FilerWindow {
             );
         }
 
-        pop.set_child(Some(&col));
+        // Open into whichever half of the canvas has more room, and wrap in a
+        // natural-height ScrolledWindow so tall menus never clip off small windows.
+        let canvas_h = self.canvas_scroll.height().max(300) as f64;
+        if y > canvas_h * 0.55 {
+            pop.set_position(gtk4::PositionType::Top);
+        } else {
+            pop.set_position(gtk4::PositionType::Bottom);
+        }
+        let max_h = (self.window.height() - 64).clamp(240, 540);
+        let menu_scroll = ScrolledWindow::new();
+        menu_scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+        menu_scroll.set_propagate_natural_width(true);
+        menu_scroll.set_propagate_natural_height(true);
+        menu_scroll.set_max_content_height(max_h);
+        menu_scroll.set_child(Some(&col));
+
+        pop.set_child(Some(&menu_scroll));
         pop.popup();
     }
 

@@ -277,10 +277,9 @@ impl ThemePickerScreen {
                 let mark = if is_active { "\u{25cf}" } else { "\u{25cb}" };
                 let label = format!("{mark} {}", theme.name);
 
-                let row = Row::new(label)
-                    .glyph(Glyph::Theme)
-                    .detail(slug)
-                    .value(roles.accent.hashed());
+                // Keep the left rail clean so full theme names never truncate;
+                // slug and accent hex are shown in the preview pane on the right.
+                let row = Row::new(label).glyph(Glyph::Theme);
 
                 rows.push(row);
                 entries.push(ThemeEntry {
@@ -619,11 +618,11 @@ impl Screen for ThemePickerScreen {
         // Wallpaper metadata and cycle hint
         let wp_count = selected.theme.wallpapers.len();
         let wp_info = if wp_count > 1 {
-            format!("Wallpaper: {current_wp} ({wp_count} bundled) \u{2014} Press [w] to cycle")
+            format!("Wallpaper: {current_wp} ({wp_count} presets \u{00b7} [w] next)")
         } else {
-            format!("Wallpaper: {current_wp} (standard theme background)")
+            format!("Wallpaper: {current_wp}")
         };
-        put(
+        put_trunc(
             ctx.buf,
             px,
             py,
@@ -666,12 +665,13 @@ impl Screen for ThemePickerScreen {
             ("15", colors.bright7),
         ];
 
+        let swatch_w = (pw / 8).clamp(3, 5);
         let mut cx = px;
         for (label, hex) in regular {
             let col = hayato_ui::design::color(hex.0);
             let style = Style::default().bg(col).fg(bg_color);
-            put(ctx.buf, cx, py, &format!(" {label} "), 5, style);
-            cx += 5;
+            put(ctx.buf, cx, py, &format!(" {label} "), swatch_w, style);
+            cx += swatch_w;
         }
         py += 1;
 
@@ -679,8 +679,8 @@ impl Screen for ThemePickerScreen {
         for (label, hex) in bright {
             let col = hayato_ui::design::color(hex.0);
             let style = Style::default().bg(col).fg(bg_color);
-            put(ctx.buf, cx, py, &format!(" {label} "), 5, style);
-            cx += 5;
+            put(ctx.buf, cx, py, &format!(" {label} "), swatch_w, style);
+            cx += swatch_w;
         }
         py += 2;
 
@@ -887,15 +887,11 @@ impl Screen for ThemePickerScreen {
                 }
             }
 
-            // Wallpaper cycle for selected theme. A custom wallpaper from
-            // Settings -> Appearance is a later sway drop-in (36-custom-
-            // wallpaper.conf) and wins over the theme's 35-theme.conf on the
-            // reload below, so the cycle looked like it did nothing. Cycling a
-            // theme wallpaper is an explicit choice: drop the custom one first.
+            // Wallpaper cycle for selected theme (`cycle_wallpaper_for` clears any
+            // custom wallpaper override and applies the next preset immediately).
             KeyCode::Char('w') => {
                 if let Some(selected) = self.selected_entry() {
                     let slug = selected.slug.clone();
-                    let _ = crate::system::appearance::clear_custom_wallpaper();
                     match cycle_wallpaper_for(&p, Some(&slug)) {
                         Ok((wp, _)) => {
                             if let Some(entry) = self.selected_entry_mut() {
@@ -905,7 +901,7 @@ impl Screen for ThemePickerScreen {
                                     entry.theme.wallpapers.rotate_left(pos);
                                 }
                             }
-                            self.status_msg = Some(format!("Cycled wallpaper for {slug}: {wp}"));
+                            self.status_msg = Some(format!("Wallpaper: {wp}"));
                         }
                         Err(err) => {
                             self.status_msg = Some(err);

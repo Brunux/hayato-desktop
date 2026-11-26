@@ -354,8 +354,9 @@ fn set(paths: &Paths, args: &[&str]) -> i32 {
 ///
 /// None of this is a daemon: `swaymsg reload` re-reads the configuration (which
 /// re-runs the `exec` lines that read a palette), waybar re-reads its stylesheet
-/// on SIGUSR2 and `hayato-notify` reloads its palette on SIGUSR1. A missing
-/// program is a line, not a failure - a theme set over ssh has nothing to reload.
+/// on SIGUSR2 and `hayato-notify`/`hayato-cassette`/`hayato-filer` reload their
+/// palette on SIGUSR1. Optional apps that are not currently running exit 1 from
+/// `pkill`, which is normal and stays silent so TUI callers are never garbled.
 pub fn reload() {
     if std::env::var("WAYLAND_DISPLAY").is_err() {
         return;
@@ -367,15 +368,12 @@ pub fn reload() {
         ("pkill", vec!["-USR1", "-x", "hayato-cassette"]),
         ("pkill", vec!["-USR1", "-x", "hayato-filer"]),
     ] {
-        match std::process::Command::new(program).args(&args).output() {
-            Ok(output) if output.status.success() => {}
-            Ok(_) => eprintln!(
-                "hayato theme: {program} {} reported nothing to do",
-                args.join(" ")
-            ),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => eprintln!("hayato theme: cannot run {program}: {error}"),
-        }
+        let _ = std::process::Command::new(program)
+            .args(&args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
     }
 }
 
@@ -567,6 +565,10 @@ fn render_into(args: &[&str]) -> i32 {
 }
 
 /// Cycle the wallpaper for `for_slug` (or active theme if None).
+///
+/// Always clears any custom wallpaper drop-in (`36-custom-wallpaper.conf`) so
+/// cycling presets via `Alt+Shift+W`, Settings, or Theme Picker never gets
+/// stuck behind a previously selected custom image.
 pub fn cycle_wallpaper_for(
     paths: &Paths,
     for_slug: Option<&str>,
@@ -597,12 +599,32 @@ pub fn cycle_wallpaper_for(
     };
     let mut theme = theme;
     theme.wallpapers.rotate_left(next);
+    // Drop any custom wallpaper override so 36-custom-wallpaper.conf does not
+    // shadow 35-theme.conf on reload.
+    crate::system::appearance::clear_custom_wallpaper_files();
     let surface = SURFACES
         .iter()
         .find(|surface| surface.name == "sway")
         .expect("the wallpaper surface is in the table");
     store::install(paths, surface, &theme, &slug, true)?;
+    if let Some(parent) = state.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     let _ = std::fs::write(&state, &theme.wallpapers[0]);
+    if std::env::var("WAYLAND_DISPLAY").is_ok() {
+        let wp_path = paths
+            .home
+            .join("Pictures/Wallpapers")
+            .join(&theme.wallpapers[0]);
+        if wp_path.is_file() {
+            let _ = std::process::Command::new("swaymsg")
+                .arg(format!("output * bg \"{}\" fill", wp_path.display()))
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+    }
     reload();
     Ok((theme.wallpapers[0].clone(), surface.name))
 }
