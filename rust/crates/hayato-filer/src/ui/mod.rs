@@ -17,9 +17,9 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
     Align, Application, ApplicationWindow, Box as GtkBox, Button, ContentFit, DragSource,
-    DropTarget, Entry, EventControllerKey, FlowBox, FlowBoxChild, GestureClick, Label, ListBox,
-    ListBoxRow, Orientation, Overlay, Paned, Picture, Popover, ProgressBar, ScrolledWindow,
-    SelectionMode, Separator, Widget,
+    DropTarget, Entry, EventControllerFocus, EventControllerKey, FlowBox, FlowBoxChild,
+    GestureClick, Label, ListBox, ListBoxRow, Orientation, Overlay, Paned, Picture, Popover,
+    ProgressBar, ScrolledWindow, SelectionMode, Separator, SizeGroup, SizeGroupMode, Widget,
 };
 
 use crate::fs::archive::{self, ArchiveFormat};
@@ -80,7 +80,12 @@ pub struct FilerWindow {
     shelf_box: GtkBox,
     shelf_chips: GtkBox,
     shelf_btn: Button,
+    shelf_badge: Label,
     shelf: RefCell<Vec<PathBuf>>,
+    /// Horizontal SizeGroups keeping List View headers and rows pixel-aligned.
+    col_size_sg: SizeGroup,
+    col_mtime_sg: SizeGroup,
+    col_kind_sg: SizeGroup,
     /// Header New Tab button: hidden while the tab strip (which carries its own
     /// add button) is showing, so only one "+" is ever visible.
     new_tab_btn: Button,
@@ -167,12 +172,20 @@ impl FilerWindow {
         new_tab_btn.add_css_class("filer-glyph");
         new_tab_btn.set_tooltip_text(Some("New Tab (Ctrl+T)"));
 
-        let shelf_btn = Button::with_label("\u{f0c9}");
+        let shelf_btn = Button::new();
         shelf_btn.add_css_class("filer-tool-btn");
-        shelf_btn.add_css_class("filer-glyph");
         shelf_btn.set_tooltip_text(Some(
-            "Staging Shelf — drop files here to collect them, then drag the batch out",
+            "Staging Shelf — drop files here to collect them, then drag or move the batch",
         ));
+        let shelf_btn_box = GtkBox::new(Orientation::Horizontal, 4);
+        let shelf_ic = Label::new(Some("\u{f01c}"));
+        shelf_ic.add_css_class("filer-glyph");
+        let shelf_badge = Label::new(None);
+        shelf_badge.add_css_class("filer-badge");
+        shelf_badge.set_visible(false);
+        shelf_btn_box.append(&shelf_ic);
+        shelf_btn_box.append(&shelf_badge);
+        shelf_btn.set_child(Some(&shelf_btn_box));
 
         header.append(&sidebar_toggle_btn);
         header.append(&nav_group);
@@ -279,8 +292,9 @@ impl FilerWindow {
         let progress_bar = ProgressBar::new();
         progress_bar.add_css_class("filer-progress");
         progress_bar.set_valign(Align::Center);
-        let cancel_btn = Button::with_label("✕");
+        let cancel_btn = Button::with_label("\u{f00d}");
         cancel_btn.add_css_class("filer-dev-action");
+        cancel_btn.add_css_class("filer-glyph");
         progress_box.append(&progress_label);
         progress_box.append(&progress_bar);
         progress_box.append(&cancel_btn);
@@ -314,6 +328,12 @@ impl FilerWindow {
         shelf_scroll.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
         shelf_scroll.set_hexpand(true);
         shelf_scroll.set_child(Some(&shelf_chips));
+        let shelf_move = Button::with_label("Move Here");
+        shelf_move.add_css_class("filer-dev-action");
+        let shelf_copy = Button::with_label("Copy Here");
+        shelf_copy.add_css_class("filer-dev-action");
+        let shelf_share = Button::with_label("Share");
+        shelf_share.add_css_class("filer-dev-action");
         let shelf_clear = Button::with_label("Clear");
         shelf_clear.add_css_class("filer-dev-action");
         let shelf_close = Button::with_label("\u{f00d}");
@@ -322,6 +342,9 @@ impl FilerWindow {
         shelf_close.set_tooltip_text(Some("Hide Shelf (keeps the files)"));
         shelf_box.append(&shelf_title);
         shelf_box.append(&shelf_scroll);
+        shelf_box.append(&shelf_move);
+        shelf_box.append(&shelf_copy);
+        shelf_box.append(&shelf_share);
         shelf_box.append(&shelf_clear);
         shelf_box.append(&shelf_close);
 
@@ -403,12 +426,22 @@ impl FilerWindow {
             shelf_box,
             shelf_chips,
             shelf_btn,
+            shelf_badge,
             shelf: RefCell::new(Vec::new()),
+            col_size_sg: SizeGroup::new(SizeGroupMode::Horizontal),
+            col_mtime_sg: SizeGroup::new(SizeGroupMode::Horizontal),
+            col_kind_sg: SizeGroup::new(SizeGroupMode::Horizontal),
             new_tab_btn: new_tab_btn.clone(),
         });
 
         this.wire_signals(&sort_btn, &new_tab_btn, &tab_add_btn, &cancel_btn);
-        this.wire_shelf(&shelf_clear, &shelf_close);
+        this.wire_shelf(
+            &shelf_move,
+            &shelf_copy,
+            &shelf_share,
+            &shelf_clear,
+            &shelf_close,
+        );
         this.wire_pin_drop_target();
         this.set_sidebar_compact(prefs.sidebar_compact);
         this.update_view_buttons(prefs.view_mode);
@@ -455,7 +488,22 @@ impl FilerWindow {
             });
         }
 
-        // Editable path entry (Ctrl+L)
+        // Click empty space in breadcrumb bar to edit path directly
+        {
+            let w = Rc::clone(self);
+            let click = GestureClick::new();
+            click.set_button(1);
+            click.connect_released(move |_, _, _, _| w.show_path_entry());
+            self.crumbs_scroll.add_controller(click);
+        }
+
+        // Editable path entry (Ctrl+L) — auto-reverts to breadcrumbs on blur
+        {
+            let w = Rc::clone(self);
+            let focus = EventControllerFocus::new();
+            focus.connect_leave(move |_| w.hide_path_entry());
+            self.path_entry.add_controller(focus);
+        }
         {
             let w = Rc::clone(self);
             self.path_entry.connect_activate(move |entry| {
@@ -485,8 +533,10 @@ impl FilerWindow {
                 let vis = !gtk4::prelude::WidgetExt::is_visible(&w.filter_entry);
                 w.filter_entry.set_visible(vis);
                 if vis {
+                    w.filter_btn.add_css_class("active");
                     w.filter_entry.grab_focus();
                 } else {
+                    w.filter_btn.remove_css_class("active");
                     w.filter_entry.set_text("");
                 }
             });
@@ -621,10 +671,12 @@ impl FilerWindow {
             self.canvas_scroll.add_controller(dt);
         }
 
-        // Global keyboard shortcuts
+        // Global keyboard shortcuts (Capture phase so focused sidebar/header
+        // buttons never swallow Space for Quick Look or BackSpace for parent dir)
         {
             let w = Rc::clone(self);
             let key_ctl = EventControllerKey::new();
+            key_ctl.set_propagation_phase(gtk4::PropagationPhase::Capture);
             key_ctl.connect_key_pressed(move |_, key, _, mods| w.handle_key(key, mods));
             self.window.add_controller(key_ctl);
         }
@@ -635,7 +687,8 @@ impl FilerWindow {
         let shift = mods.contains(gdk::ModifierType::SHIFT_MASK);
         let alt = mods.contains(gdk::ModifierType::ALT_MASK);
 
-        // If typing in path_entry or filter_entry, only intercept Escape
+        // If typing in path_entry, filter_entry, or a popover Entry (rename / new folder),
+        // let the Entry handle normal typing and only intercept Escape where appropriate.
         if self.path_entry.has_focus() {
             if key == gdk::Key::Escape {
                 self.hide_path_entry();
@@ -647,17 +700,33 @@ impl FilerWindow {
             if key == gdk::Key::Escape {
                 self.filter_entry.set_text("");
                 self.filter_entry.set_visible(false);
+                self.filter_btn.remove_css_class("active");
+                self.focus_canvas();
                 return glib::Propagation::Stop;
             }
             return glib::Propagation::Proceed;
         }
+        if gtk4::prelude::GtkWindowExt::focus(&self.window).is_some_and(|w| w.is::<Entry>()) {
+            return glib::Propagation::Proceed;
+        }
 
-        // Quick Look dismiss
-        if self.quicklook_slot.borrow().is_some()
-            && (key == gdk::Key::Escape || key == gdk::Key::space)
-        {
-            self.close_quicklook();
-            return glib::Propagation::Stop;
+        // Quick Look dismiss & arrow-key stepping through items
+        if self.quicklook_slot.borrow().is_some() {
+            match key {
+                gdk::Key::Escape | gdk::Key::space => {
+                    self.close_quicklook();
+                    return glib::Propagation::Stop;
+                }
+                gdk::Key::Right | gdk::Key::Down => {
+                    self.step_quicklook(1);
+                    return glib::Propagation::Stop;
+                }
+                gdk::Key::Left | gdk::Key::Up => {
+                    self.step_quicklook(-1);
+                    return glib::Propagation::Stop;
+                }
+                _ => {}
+            }
         }
         // Properties dismiss
         if self.properties_slot.borrow().is_some() && key == gdk::Key::Escape {
@@ -1125,10 +1194,52 @@ impl FilerWindow {
 
     // ── Staging shelf ─────────────────────────────────────────────────────
 
-    fn wire_shelf(self: &Rc<Self>, clear_btn: &Button, close_btn: &Button) {
+    fn wire_shelf(
+        self: &Rc<Self>,
+        move_btn: &Button,
+        copy_btn: &Button,
+        share_btn: &Button,
+        clear_btn: &Button,
+        close_btn: &Button,
+    ) {
         {
             let w = Rc::clone(self);
             self.shelf_btn.connect_clicked(move |_| w.toggle_shelf());
+        }
+        {
+            let w = Rc::clone(self);
+            move_btn.connect_clicked(move |_| {
+                let paths = w.shelf.borrow().clone();
+                if paths.is_empty() {
+                    return;
+                }
+                let dst = w.state.borrow().cwd().to_path_buf();
+                w.shelf.borrow_mut().clear();
+                w.render_shelf();
+                w.shelf_box.set_visible(false);
+                w.shelf_btn.remove_css_class("active");
+                w.run_op(OpKind::Move, paths, Some(dst));
+            });
+        }
+        {
+            let w = Rc::clone(self);
+            copy_btn.connect_clicked(move |_| {
+                let paths = w.shelf.borrow().clone();
+                if paths.is_empty() {
+                    return;
+                }
+                let dst = w.state.borrow().cwd().to_path_buf();
+                w.run_op(OpKind::Copy, paths, Some(dst));
+            });
+        }
+        {
+            let w = Rc::clone(self);
+            share_btn.connect_clicked(move |_| {
+                let paths = w.shelf.borrow().clone();
+                if !paths.is_empty() {
+                    tools::share_paths(&paths);
+                }
+            });
         }
         {
             let w = Rc::clone(self);
@@ -1137,11 +1248,43 @@ impl FilerWindow {
                 w.shelf.borrow_mut().clear();
                 w.render_shelf();
                 b.set_visible(false);
+                w.shelf_btn.remove_css_class("active");
             });
         }
         {
+            let w = Rc::clone(self);
             let b = self.shelf_box.clone();
-            close_btn.connect_clicked(move |_| b.set_visible(false));
+            close_btn.connect_clicked(move |_| {
+                b.set_visible(false);
+                w.shelf_btn.remove_css_class("active");
+            });
+        }
+
+        // Drop files onto the header Shelf button even while the shelf is closed!
+        {
+            let dt = DropTarget::new(
+                gdk::FileList::static_type(),
+                gdk::DragAction::COPY | gdk::DragAction::MOVE,
+            );
+            let sb = self.shelf_btn.clone();
+            dt.connect_enter(move |_, _, _| {
+                sb.add_css_class("drop-hover");
+                gdk::DragAction::COPY
+            });
+            let sb2 = self.shelf_btn.clone();
+            dt.connect_leave(move |_| sb2.remove_css_class("drop-hover"));
+            let w = Rc::clone(self);
+            let sb3 = self.shelf_btn.clone();
+            dt.connect_drop(move |_, val, _, _| {
+                sb3.remove_css_class("drop-hover");
+                let Ok(fl) = val.get::<gdk::FileList>() else {
+                    return false;
+                };
+                let paths: Vec<PathBuf> = fl.files().into_iter().filter_map(|f| f.path()).collect();
+                w.add_to_shelf(paths);
+                true
+            });
+            self.shelf_btn.add_controller(dt);
         }
 
         // Drop files onto the shelf to collect them.
@@ -1194,7 +1337,10 @@ impl FilerWindow {
         let vis = !self.shelf_box.is_visible();
         self.shelf_box.set_visible(vis);
         if vis {
+            self.shelf_btn.add_css_class("active");
             self.render_shelf();
+        } else {
+            self.shelf_btn.remove_css_class("active");
         }
     }
 
@@ -1212,6 +1358,7 @@ impl FilerWindow {
         }
         self.render_shelf();
         self.shelf_box.set_visible(true);
+        self.shelf_btn.add_css_class("active");
     }
 
     fn remove_from_shelf(self: &Rc<Self>, path: &Path) {
@@ -1219,6 +1366,7 @@ impl FilerWindow {
         self.render_shelf();
         if self.shelf.borrow().is_empty() {
             self.shelf_box.set_visible(false);
+            self.shelf_btn.remove_css_class("active");
         }
     }
 
@@ -1233,6 +1381,12 @@ impl FilerWindow {
             self.shelf_chips.remove(&c);
         }
         let paths = self.shelf.borrow().clone();
+        if paths.is_empty() {
+            self.shelf_badge.set_visible(false);
+        } else {
+            self.shelf_badge.set_text(&paths.len().to_string());
+            self.shelf_badge.set_visible(true);
+        }
         if paths.is_empty() {
             let hint = Label::new(Some(
                 "Drop files here to collect them, then drag the batch out",
@@ -1269,6 +1423,47 @@ impl FilerWindow {
         }
     }
 
+    fn focus_canvas(&self) {
+        match self.state.borrow().view_mode {
+            ViewMode::Grid => {
+                self.flow_box.grab_focus();
+            }
+            ViewMode::List => {
+                self.list_box.grab_focus();
+            }
+        }
+    }
+
+    fn wrap_modal_scrim(card: GtkBox, on_close: impl Fn() + 'static) -> GtkBox {
+        let backdrop = GtkBox::new(Orientation::Vertical, 0);
+        backdrop.add_css_class("filer-backdrop");
+        backdrop.set_hexpand(true);
+        backdrop.set_vexpand(true);
+        backdrop.set_halign(Align::Fill);
+        backdrop.set_valign(Align::Fill);
+
+        card.set_halign(Align::Center);
+        card.set_valign(Align::Center);
+        card.set_vexpand(true);
+        backdrop.append(&card);
+
+        let click = GestureClick::new();
+        click.set_button(1);
+        let card_ref = card.clone();
+        click.connect_released(move |_, _, x, y| {
+            let alloc = card_ref.allocation();
+            let inside = x >= f64::from(alloc.x())
+                && x <= f64::from(alloc.x() + alloc.width())
+                && y >= f64::from(alloc.y())
+                && y <= f64::from(alloc.y() + alloc.height());
+            if !inside {
+                on_close();
+            }
+        });
+        backdrop.add_controller(click);
+        backdrop
+    }
+
     // ── Quick Properties card ─────────────────────────────────────────────
 
     fn toggle_properties(self: &Rc<Self>) {
@@ -1282,8 +1477,10 @@ impl FilerWindow {
         self.close_quicklook();
         let w = Rc::clone(self);
         let card = properties::build_properties_card(&entry, move || w.close_properties());
-        self.overlay.add_overlay(&card);
-        *self.properties_slot.borrow_mut() = Some(card);
+        let w2 = Rc::clone(self);
+        let modal = Self::wrap_modal_scrim(card, move || w2.close_properties());
+        self.overlay.add_overlay(&modal);
+        *self.properties_slot.borrow_mut() = Some(modal);
     }
 
     fn close_properties(&self) {
@@ -1338,6 +1535,12 @@ impl FilerWindow {
             let btn = Button::new();
             btn.set_child(Some(&lbl));
             btn.add_css_class("filer-col-btn");
+            match field {
+                SortField::Size => self.col_size_sg.add_widget(&btn),
+                SortField::Modified => self.col_mtime_sg.add_widget(&btn),
+                SortField::Kind => self.col_kind_sg.add_widget(&btn),
+                SortField::Name => {}
+            }
             if field == active_field {
                 btn.add_css_class("active");
             }
@@ -1561,7 +1764,8 @@ impl FilerWindow {
             self.paned.set_position(52);
             self.places_hdr.set_visible(false);
             self.devices_hdr.set_visible(false);
-            self.sidebar_sep.set_visible(true);
+            self.sidebar_sep
+                .set_visible(!self.devices.borrow().is_empty());
             self.sidebar_toggle_btn.add_css_class("active");
         } else {
             self.sidebar_box.remove_css_class("compact");
@@ -1852,6 +2056,7 @@ impl FilerWindow {
         }
         let compact = self.state.borrow().sidebar_compact;
         let devs = self.devices.borrow().clone();
+        self.sidebar_sep.set_visible(compact && !devs.is_empty());
         if devs.is_empty() {
             if !compact {
                 let empty = Label::new(Some("No removable drives"));
@@ -2124,6 +2329,10 @@ impl FilerWindow {
     }
 
     fn render_canvas(self: &Rc<Self>) {
+        // Remember current selection so background inotify refreshes or
+        // Grid <-> List switches never wipe the user's selected items.
+        let prev_selected = self.selected_paths();
+
         let (mode, items, in_trash, has_filter) = {
             let st = self.state.borrow();
             let tab = st.tab();
@@ -2135,6 +2344,12 @@ impl FilerWindow {
             )
         };
         if items.is_empty() {
+            while let Some(c) = self.flow_box.first_child() {
+                self.flow_box.remove(&c);
+            }
+            while let Some(r) = self.list_box.first_child() {
+                self.list_box.remove(&r);
+            }
             let empty = GtkBox::new(Orientation::Vertical, 8);
             empty.add_css_class("filer-empty-state");
             empty.set_halign(Align::Center);
@@ -2178,6 +2393,9 @@ impl FilerWindow {
                     let child = FlowBoxChild::new();
                     child.set_child(Some(&cell));
                     self.flow_box.insert(&child, -1);
+                    if prev_selected.contains(&entry.path) {
+                        self.flow_box.select_child(&child);
+                    }
                 }
             }
             ViewMode::List => {
@@ -2190,6 +2408,9 @@ impl FilerWindow {
                     let row = ListBoxRow::new();
                     row.set_child(Some(&row_widget));
                     self.list_box.append(&row);
+                    if prev_selected.contains(&entry.path) {
+                        self.list_box.select_row(Some(&row));
+                    }
                 }
             }
         }
@@ -2312,18 +2533,21 @@ impl FilerWindow {
         size_lbl.add_css_class("filer-item-meta");
         size_lbl.set_width_chars(9);
         size_lbl.set_xalign(1.0);
+        self.col_size_sg.add_widget(&size_lbl);
         row.append(&size_lbl);
 
         let mtime_lbl = Label::new(Some(&format_mtime(entry.modified_secs)));
         mtime_lbl.add_css_class("filer-item-meta");
         mtime_lbl.set_width_chars(17);
         mtime_lbl.set_xalign(1.0);
+        self.col_mtime_sg.add_widget(&mtime_lbl);
         row.append(&mtime_lbl);
 
         let kind_lbl = Label::new(Some(&entry.kind));
         kind_lbl.add_css_class("filer-item-meta");
         kind_lbl.set_width_chars(8);
         kind_lbl.set_xalign(1.0);
+        self.col_kind_sg.add_widget(&kind_lbl);
         row.append(&kind_lbl);
 
         self.attach_drag_source(&row, entry.path.clone());
@@ -2635,11 +2859,60 @@ impl FilerWindow {
         let Some(entry) = self.selected_entries().into_iter().next() else {
             return;
         };
+        self.open_quicklook_for(&entry);
+    }
+
+    fn open_quicklook_for(self: &Rc<Self>, entry: &FileEntry) {
+        self.close_quicklook();
         self.close_properties();
         let w = Rc::clone(self);
-        let card = quicklook::build_quicklook_card(&entry, move || w.close_quicklook());
-        self.overlay.add_overlay(&card);
-        *self.quicklook_slot.borrow_mut() = Some(card);
+        let card = quicklook::build_quicklook_card(entry, move || w.close_quicklook());
+        let w2 = Rc::clone(self);
+        let modal = Self::wrap_modal_scrim(card, move || w2.close_quicklook());
+        self.overlay.add_overlay(&modal);
+        *self.quicklook_slot.borrow_mut() = Some(modal);
+    }
+
+    fn step_quicklook(self: &Rc<Self>, delta: isize) {
+        let (mode, len) = {
+            let st = self.state.borrow();
+            (st.view_mode, st.tab().visible.len())
+        };
+        if len == 0 {
+            return;
+        }
+        let cur_idx: isize = match mode {
+            ViewMode::Grid => self
+                .flow_box
+                .selected_children()
+                .first()
+                .map(|c| c.index() as isize)
+                .unwrap_or(0),
+            ViewMode::List => self
+                .list_box
+                .selected_rows()
+                .first()
+                .map(|r| r.index() as isize)
+                .unwrap_or(0),
+        };
+        let next_idx = (cur_idx + delta).rem_euclid(len as isize) as usize;
+        match mode {
+            ViewMode::Grid => {
+                self.flow_box.unselect_all();
+                if let Some(child) = self.flow_box.child_at_index(next_idx as i32) {
+                    self.flow_box.select_child(&child);
+                }
+            }
+            ViewMode::List => {
+                self.list_box.unselect_all();
+                if let Some(row) = self.list_box.row_at_index(next_idx as i32) {
+                    self.list_box.select_row(Some(&row));
+                }
+            }
+        }
+        if let Some(entry) = self.state.borrow().tab().visible.get(next_idx).cloned() {
+            self.open_quicklook_for(&entry);
+        }
     }
 
     fn close_quicklook(&self) {
@@ -2861,7 +3134,7 @@ impl FilerWindow {
                 let w = Rc::clone(self);
                 let ps_shelf = paths.clone();
                 add(
-                    "\u{f0c9}",
+                    "\u{f01c}",
                     "Add to Shelf",
                     None,
                     false,
@@ -3010,6 +3283,14 @@ impl FilerWindow {
                         }),
                     );
                 }
+                let w = Rc::clone(self);
+                add(
+                    "\u{f05a}",
+                    "Properties…",
+                    Some("Ctrl+I"),
+                    false,
+                    Box::new(move || w.toggle_properties()),
+                );
                 let p_act = first.path.clone();
                 add(
                     "\u{f013}",
@@ -3040,14 +3321,7 @@ impl FilerWindow {
                 "Empty Trash…",
                 None,
                 true,
-                Box::new(move || {
-                    if let Err(e) = trash::empty_trash() {
-                        w.show_banner(&e, "danger");
-                    } else {
-                        w.show_banner("Trash emptied", "ok");
-                        w.reload_dir();
-                    }
-                }),
+                Box::new(move || w.confirm_empty_trash()),
             );
         } else {
             let w = Rc::clone(self);
@@ -3082,6 +3356,14 @@ impl FilerWindow {
                 None,
                 false,
                 Box::new(move || tools::search_in_folder(&d2)),
+            );
+            let d3 = cwd.clone();
+            add(
+                "\u{f019}",
+                "Receive via Hayato Share…",
+                None,
+                false,
+                Box::new(move || tools::receive_in_folder(&d3)),
             );
         }
 
@@ -3218,6 +3500,7 @@ impl FilerWindow {
         cancel.add_css_class("filer-tool-btn");
         let del = Button::with_label("Delete Permanently");
         del.add_css_class("filer-tool-btn");
+        del.add_css_class("danger");
 
         let p1 = pop.clone();
         cancel.connect_clicked(move |_| p1.popdown());
@@ -3235,12 +3518,57 @@ impl FilerWindow {
         pop.popup();
     }
 
+    fn confirm_empty_trash(self: &Rc<Self>) {
+        let pop = Popover::new();
+        pop.set_parent(&self.crumbs_scroll);
+        unparent_on_close(&pop);
+        let col = GtkBox::new(Orientation::Vertical, 8);
+        let lbl = Label::new(Some("Empty Trash permanently? This cannot be undone."));
+        let btns = GtkBox::new(Orientation::Horizontal, 6);
+        btns.set_halign(Align::End);
+        let cancel = Button::with_label("Cancel");
+        cancel.add_css_class("filer-tool-btn");
+        let empty = Button::with_label("Empty Trash");
+        empty.add_css_class("filer-tool-btn");
+        empty.add_css_class("danger");
+
+        let p1 = pop.clone();
+        cancel.connect_clicked(move |_| p1.popdown());
+        let w = Rc::clone(self);
+        let p2 = pop.clone();
+        empty.connect_clicked(move |_| {
+            p2.popdown();
+            if let Err(e) = trash::empty_trash() {
+                w.show_banner(&e, "danger");
+            } else {
+                w.show_banner("Trash emptied", "ok");
+                w.reload_dir();
+            }
+        });
+        btns.append(&cancel);
+        btns.append(&empty);
+        col.append(&lbl);
+        col.append(&btns);
+        pop.set_child(Some(&col));
+        pop.popup();
+    }
+
     fn update_status_bar(&self) {
         let st = self.state.borrow();
-        let total = st.tab().visible.len();
+        let tab = st.tab();
+        let visible = tab.visible.len();
+        let all_count = tab.entries.len();
+        let filtered = !tab.filter.trim().is_empty();
+        let show_hidden = st.show_hidden;
         let cwd = st.cwd().to_path_buf();
         drop(st);
 
+        let count_part = if filtered {
+            format!("{visible}/{all_count} items (filtered)")
+        } else {
+            format!("{visible} items")
+        };
+        let hidden_part = if show_hidden { " · hidden" } else { "" };
         let sel = self.selected_entries();
         let sel_part = if sel.is_empty() {
             String::new()
@@ -3252,7 +3580,7 @@ impl FilerWindow {
             .map(|b| format!(" · {} free", format_size(b)))
             .unwrap_or_default();
         self.status_label
-            .set_text(&format!("{total} items{sel_part}{free_part}"));
+            .set_text(&format!("{count_part}{hidden_part}{sel_part}{free_part}"));
     }
 
     fn show_banner(&self, msg: &str, tone: &str) {

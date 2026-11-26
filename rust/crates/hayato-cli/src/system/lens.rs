@@ -117,11 +117,21 @@ fn capture_region() -> Result<Option<(String, &'static str)>, String> {
         return Err("grim failed to capture the selected region".to_string());
     }
 
+    let res = scan_image_file(&png);
+    let _ = std::fs::remove_file(&png);
+    res.map(Some)
+}
+
+/// Scan an existing image file with `zbarimg` (QR/barcode) then `tesseract` (OCR).
+pub fn scan_image_file(path: &std::path::Path) -> Result<(String, &'static str), String> {
+    if !path.is_file() {
+        return Err(format!("Image not found: {}", path.display()));
+    }
     // Try QR / barcode scan first (instant and exact).
     if have("zbarimg")
         && let Ok(out_qr) = Command::new("zbarimg")
             .args(["--quiet", "--raw"])
-            .arg(&png)
+            .arg(path)
             .stdin(Stdio::null())
             .stderr(Stdio::null())
             .output()
@@ -129,26 +139,23 @@ fn capture_region() -> Result<Option<(String, &'static str)>, String> {
     {
         let qr_text = String::from_utf8_lossy(&out_qr.stdout).trim().to_string();
         if !qr_text.is_empty() {
-            let _ = std::fs::remove_file(&png);
-            return Ok(Some((qr_text, "QR / Barcode")));
+            return Ok((qr_text, "QR / Barcode"));
         }
     }
 
     // Fall back to Tesseract OCR.
     if !have("tesseract") {
-        let _ = std::fs::remove_file(&png);
         return Err("tesseract is not installed for OCR".to_string());
     }
     let ocr = Command::new("tesseract")
-        .arg(&png)
+        .arg(path)
         .arg("stdout")
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()
         .map_err(|e| format!("Could not run tesseract: {e}"))?;
-    let _ = std::fs::remove_file(&png);
     let text = String::from_utf8_lossy(&ocr.stdout).trim().to_string();
-    Ok(Some((text, "OCR")))
+    Ok((text, "OCR"))
 }
 
 fn copy_text(text: &str) -> bool {
@@ -573,6 +580,13 @@ pub fn menu(
         && let Some(val) = args.get(pos + 1)
     {
         (val.clone(), explicit_source.unwrap_or("Text"))
+    } else if let Some(pos) = args.iter().position(|a| a == "--image")
+        && let Some(path) = args.get(pos + 1)
+    {
+        match scan_image_file(std::path::Path::new(path)) {
+            Ok((t, src)) => (t, src),
+            Err(e) => return Err(crate::Failure::new("Hayato Lens", e)),
+        }
     } else if args.iter().any(|a| a == "--clipboard") {
         let clip = out(&["wl-paste", "-n"]).unwrap_or_default();
         (clip.trim().to_string(), "Clipboard")

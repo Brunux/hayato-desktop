@@ -2,6 +2,12 @@
 /* Hayato Filer: minimalistic Finder / elementary OS Files layout with Hayato
  * Cyber-HUD geometry, vector Font Awesome icons, and live theme tokens.
  *
+ * Colour rules (all 16 dark & light themes):
+ * - Always use {{ text }} (with font-weight) for primary/emphasis text, never
+ *   {{ strong }} (which blends into the background on Catppuccin Latte).
+ * - Use translucent {{ text:rgb }} hairlines and hovers so passive chrome stays
+ *   calm like Waybar while {{ accent }} is reserved for focus & active cues.
+ *
  * This file is generated; edit rust/crates/hayato-theme/templates/filer.css.tpl.
  */
 
@@ -18,7 +24,7 @@ window.hayato-filer button {
 }
 
 window.hayato-filer paned > separator {
-    background-color: {{ border }};
+    background-color: rgba({{ text:rgb }}, 0.11);
     min-width: 1px;
 }
 
@@ -40,7 +46,7 @@ window.hayato-filer paned > separator {
 
 .filer-place-icon {
     font-size: 13px;
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.68);
 }
 
 .filer-place-row.active .filer-place-icon,
@@ -62,7 +68,7 @@ window.hayato-filer paned > separator {
 
 .filer-empty-glyph {
     font-size: 44px;
-    color: {{ faint }};
+    color: rgba({{ text:rgb }}, 0.36);
 }
 
 .icon-folder  { color: {{ accent }}; }
@@ -73,19 +79,19 @@ window.hayato-filer paned > separator {
 .icon-archive { color: {{ warn }}; }
 .icon-code    { color: {{ accent_alt }}; }
 .icon-exec    { color: {{ ok }}; }
-.icon-file    { color: {{ dim }}; }
+.icon-file    { color: rgba({{ text:rgb }}, 0.68); }
 
 /* ── Top Header, Segmented Controls & Breadcrumbs ────────────────────────── */
 .filer-header {
     background-color: {{ surface }};
-    border-bottom: 1px solid {{ border }};
+    border-bottom: 1px solid rgba({{ text:rgb }}, 0.11);
     padding: 6px 10px;
     min-height: 40px;
 }
 
 .filer-seg-group {
     background-color: {{ background }};
-    border: 1px solid {{ border }};
+    border: 1px solid rgba({{ text:rgb }}, 0.12);
     border-radius: 6px;
     padding: 2px;
 }
@@ -103,23 +109,35 @@ window.hayato-filer paned > separator {
 
 .filer-nav-btn:hover,
 .filer-tool-btn:hover {
-    background-color: {{ surface_alt }};
-    color: {{ strong }};
+    background-color: rgba({{ text:rgb }}, 0.08);
+    color: {{ text }};
 }
 
 .filer-nav-btn:disabled {
-    color: {{ faint }};
+    color: rgba({{ text:rgb }}, 0.36);
 }
 
 .filer-tool-btn.active {
-    background-color: {{ selection }};
-    border-color: {{ accent }};
-    color: {{ strong }};
+    background-color: rgba({{ accent:rgb }}, 0.18);
+    border-color: transparent;
+    color: {{ accent }};
+    font-weight: 600;
+}
+
+.filer-tool-btn.danger {
+    background-color: rgba({{ danger:rgb }}, 0.16);
+    border-color: rgba({{ danger:rgb }}, 0.45);
+    color: {{ danger_text }};
+    font-weight: 600;
+}
+
+.filer-tool-btn.danger:hover {
+    background-color: rgba({{ danger:rgb }}, 0.26);
 }
 
 .filer-breadcrumbs {
     background-color: {{ background }};
-    border: 1px solid {{ border }};
+    border: 1px solid rgba({{ text:rgb }}, 0.12);
     border-radius: 6px;
     padding: 2px 6px;
     min-height: 28px;
@@ -127,34 +145,38 @@ window.hayato-filer paned > separator {
     font-size: 12px;
 }
 
+.filer-breadcrumbs:hover {
+    border-color: rgba({{ text:rgb }}, 0.22);
+}
+
 .filer-crumb {
     background-color: transparent;
     border: 1px solid transparent;
     border-radius: 4px;
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.70);
     padding: 2px 6px;
     min-height: 22px;
 }
 
 .filer-crumb:hover {
-    background-color: {{ surface_alt }};
-    color: {{ strong }};
+    background-color: rgba({{ text:rgb }}, 0.08);
+    color: {{ text }};
 }
 
 .filer-crumb.current {
-    color: {{ strong }};
+    color: {{ text }};
     font-weight: 700;
 }
 
 .filer-crumb-sep {
-    color: {{ faint }};
+    color: rgba({{ text:rgb }}, 0.42);
     padding: 0 2px;
 }
 
 .filer-path-entry,
 .filer-filter-entry {
     background-color: {{ background }};
-    color: {{ strong }};
+    color: {{ text }};
     border: 1px solid {{ accent }};
     border-radius: 6px;
     padding: 2px 8px;
@@ -166,7 +188,7 @@ window.hayato-filer paned > separator {
 /* ── Minimalist Finder / elementary OS Tab Bar ───────────────────────────── */
 .filer-tabbar {
     background-color: {{ surface }};
-    border-bottom: 1px solid {{ border }};
+    border-bottom: 1px solid rgba({{ text:rgb }}, 0.11);
     padding: 3px 8px;
     min-height: 30px;
 }
@@ -181,12 +203,12 @@ window.hayato-filer paned > separator {
 }
 
 .filer-tab:hover {
-    background-color: {{ surface_alt }};
+    background-color: rgba({{ text:rgb }}, 0.08);
 }
 
 .filer-tab.active {
     background-color: {{ background }};
-    border-color: {{ border }};
+    border-color: rgba({{ text:rgb }}, 0.12);
     border-bottom-color: {{ accent }};
 }
 
@@ -194,19 +216,19 @@ window.hayato-filer paned > separator {
     background-color: transparent;
     border: none;
     padding: 2px 6px;
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.70);
     font-size: 12px;
 }
 
 .filer-tab.active .filer-tab-btn {
-    color: {{ strong }};
+    color: {{ text }};
     font-weight: 600;
 }
 
 .filer-tab-icon {
     font-family: "FontAwesome", "Font Awesome 6 Free Solid", sans-serif;
     font-size: 11px;
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.65);
 }
 
 .filer-tab.active .filer-tab-icon {
@@ -217,7 +239,7 @@ window.hayato-filer paned > separator {
     background-color: transparent;
     border: none;
     border-radius: 4px;
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.62);
     padding: 1px 4px;
     min-height: 18px;
     min-width: 18px;
@@ -226,7 +248,7 @@ window.hayato-filer paned > separator {
 }
 
 .filer-tab-close:hover {
-    background-color: {{ surface_alt }};
+    background-color: rgba({{ text:rgb }}, 0.10);
     color: {{ danger_text }};
 }
 
@@ -234,15 +256,15 @@ window.hayato-filer paned > separator {
     background-color: transparent;
     border: 1px solid transparent;
     border-radius: 5px;
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.70);
     padding: 2px 7px;
     min-height: 22px;
     min-width: 24px;
 }
 
 .filer-tab-add:hover {
-    background-color: {{ surface_alt }};
-    color: {{ strong }};
+    background-color: rgba({{ text:rgb }}, 0.08);
+    color: {{ text }};
 }
 
 /* ── Left Sidebar (Places & Devices) ─────────────────────────────────────── */
@@ -268,13 +290,13 @@ window.hayato-filer paned > separator {
 }
 
 .filer-sidebar-sep {
-    background-color: {{ border }};
+    background-color: rgba({{ text:rgb }}, 0.11);
     min-height: 1px;
     margin: 6px 6px;
 }
 
 .filer-section-label {
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.60);
     font-family: "JetBrains Mono", monospace;
     font-size: 10px;
     font-weight: 700;
@@ -293,14 +315,14 @@ window.hayato-filer paned > separator {
 }
 
 .filer-place-row:hover {
-    background-color: {{ surface_alt }};
-    color: {{ strong }};
+    background-color: rgba({{ text:rgb }}, 0.08);
+    color: {{ text }};
 }
 
 .filer-place-row.active {
-    background-color: {{ selection }};
+    background-color: rgba({{ accent:rgb }}, 0.14);
     border-left-color: {{ accent }};
-    color: {{ strong }};
+    color: {{ text }};
     font-weight: 600;
 }
 
@@ -318,11 +340,11 @@ window.hayato-filer paned > separator {
 }
 
 .filer-device-card:hover {
-    background-color: {{ surface_alt }};
+    background-color: rgba({{ text:rgb }}, 0.08);
 }
 
 .filer-device-card.active {
-    background-color: {{ selection }};
+    background-color: rgba({{ accent:rgb }}, 0.14);
     border-left-color: {{ accent }};
 }
 
@@ -334,32 +356,33 @@ window.hayato-filer paned > separator {
 }
 
 .filer-badge {
-    background-color: {{ surface_alt }};
-    color: {{ dim }};
+    background-color: rgba({{ text:rgb }}, 0.12);
+    color: {{ text }};
     border-radius: 8px;
     padding: 1px 6px;
     font-family: "JetBrains Mono", monospace;
     font-size: 10px;
+    font-weight: 600;
 }
 
 .filer-dev-action {
     background-color: transparent;
     border: 1px solid transparent;
     border-radius: 4px;
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.70);
     padding: 2px 6px;
     min-height: 20px;
     min-width: 22px;
 }
 
 .filer-dev-action:hover {
-    background-color: {{ background }};
-    border-color: {{ border }};
+    background-color: rgba({{ text:rgb }}, 0.10);
+    border-color: rgba({{ text:rgb }}, 0.16);
     color: {{ accent }};
 }
 
 .filer-usage-bar trough {
-    background-color: {{ background }};
+    background-color: rgba({{ text:rgb }}, 0.12);
     border-radius: 2px;
     min-height: 3px;
 }
@@ -396,27 +419,27 @@ flowboxchild:selected {
 }
 
 .filer-grid-item:hover {
-    background-color: {{ surface }};
-    border-color: {{ border }};
+    background-color: rgba({{ text:rgb }}, 0.06);
+    border-color: rgba({{ text:rgb }}, 0.12);
 }
 
 flowboxchild:selected .filer-grid-item {
-    background-color: {{ selection }};
+    background-color: rgba({{ accent:rgb }}, 0.16);
     border-color: {{ accent }};
 }
 
 .filer-thumb {
     border-radius: 6px;
-    border: 1px solid {{ border }};
+    border: 1px solid rgba({{ text:rgb }}, 0.16);
     background-color: {{ surface }};
     overflow: hidden;
 }
 
-/* Sticky List View Column Header */
+/* Sticky List View Column Header (blends cleanly into the canvas) */
 .filer-list-header {
-    background-color: {{ surface }};
-    border-bottom: 1px solid {{ border }};
-    padding: 3px 12px;
+    background-color: {{ background }};
+    border-bottom: 1px solid rgba({{ text:rgb }}, 0.10);
+    padding: 4px 16px;
 }
 
 .filer-col-btn {
@@ -424,7 +447,7 @@ flowboxchild:selected .filer-grid-item {
     border: none;
     border-radius: 4px;
     padding: 2px 4px;
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.62);
     font-family: "JetBrains Mono", monospace;
     font-size: 10px;
     font-weight: 700;
@@ -433,7 +456,7 @@ flowboxchild:selected .filer-grid-item {
 
 .filer-col-btn:hover,
 .filer-col-btn.active {
-    color: {{ strong }};
+    color: {{ text }};
 }
 
 list > row {
@@ -455,11 +478,11 @@ list > row:selected {
 }
 
 .filer-list-row:hover {
-    background-color: {{ surface }};
+    background-color: rgba({{ text:rgb }}, 0.06);
 }
 
 list > row:selected .filer-list-row {
-    background-color: {{ selection }};
+    background-color: rgba({{ accent:rgb }}, 0.16);
     border-left-color: {{ accent }};
 }
 
@@ -469,12 +492,12 @@ list > row:selected .filer-list-row {
 }
 
 .filer-item-name.dir {
-    color: {{ strong }};
+    color: {{ text }};
     font-weight: 600;
 }
 
 .filer-item-meta {
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.70);
     font-family: "JetBrains Mono", monospace;
     font-size: 11px;
 }
@@ -485,41 +508,45 @@ list > row:selected .filer-list-row {
 }
 
 .filer-empty-title {
-    color: {{ strong }};
+    color: {{ text }};
     font-size: 14px;
     font-weight: 600;
 }
 
 .filer-empty-sub {
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.68);
     font-family: "JetBrains Mono", monospace;
     font-size: 11px;
 }
 
 /* ── Drag & Drop Highlighting ────────────────────────────────────────────── */
 .drop-hover {
-    background-color: {{ selection }};
+    background-color: rgba({{ accent:rgb }}, 0.16);
     border: 1px dashed {{ accent }};
     border-radius: 6px;
 }
 
 .drop-hover-trash {
-    background-color: {{ surface_alt }};
+    background-color: rgba({{ warn:rgb }}, 0.16);
     border: 1px dashed {{ warn_text }};
     border-radius: 6px;
 }
 
-/* ── Quick Look Overlay & Banners ────────────────────────────────────────── */
+/* ── Modal Backdrop Scrim & Quick Look / Properties Cards ────────────────── */
+.filer-backdrop {
+    background-color: rgba(0, 0, 0, 0.35);
+}
+
 .filer-quicklook {
     background-color: {{ surface }};
     border: 1px solid {{ accent }};
     border-radius: 10px;
     padding: 16px;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
 }
 
 .filer-quicklook-title {
-    color: {{ strong }};
+    color: {{ text }};
     font-weight: 700;
     font-size: 14px;
 }
@@ -529,7 +556,7 @@ list > row:selected .filer-list-row {
     color: {{ text }};
     font-family: "JetBrains Mono", monospace;
     font-size: 12px;
-    border: 1px solid {{ border }};
+    border: 1px solid rgba({{ text:rgb }}, 0.14);
     border-radius: 6px;
     padding: 8px;
 }
@@ -537,13 +564,13 @@ list > row:selected .filer-list-row {
 /* ── Drag-and-Drop Staging Shelf ─────────────────────────────────────────── */
 .filer-shelf {
     background-color: {{ surface }};
-    border-top: 1px solid {{ border }};
+    border-top: 1px solid rgba({{ text:rgb }}, 0.11);
     padding: 5px 10px;
     min-height: 36px;
 }
 
 .filer-shelf-title {
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.65);
     font-family: "JetBrains Mono", monospace;
     font-size: 10px;
     font-weight: 700;
@@ -551,7 +578,7 @@ list > row:selected .filer-list-row {
 }
 
 .filer-shelf-hint {
-    color: {{ faint }};
+    color: rgba({{ text:rgb }}, 0.50);
     font-family: "JetBrains Mono", monospace;
     font-size: 11px;
     padding: 2px 4px;
@@ -559,7 +586,7 @@ list > row:selected .filer-list-row {
 
 .filer-shelf-chip {
     background-color: {{ background }};
-    border: 1px solid {{ border }};
+    border: 1px solid rgba({{ text:rgb }}, 0.16);
     border-radius: 6px;
     padding: 2px 4px 2px 8px;
     margin: 1px 0;
@@ -571,14 +598,14 @@ list > row:selected .filer-list-row {
 
 .filer-shelf-glyph {
     font-size: 12px;
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.68);
 }
 
 .filer-shelf-remove {
     background-color: transparent;
     border: none;
     border-radius: 4px;
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.65);
     padding: 1px 4px;
     min-height: 18px;
     min-width: 18px;
@@ -586,7 +613,7 @@ list > row:selected .filer-list-row {
 }
 
 .filer-shelf-remove:hover {
-    background-color: {{ surface_alt }};
+    background-color: rgba({{ text:rgb }}, 0.10);
     color: {{ danger_text }};
 }
 
@@ -596,17 +623,17 @@ list > row:selected .filer-list-row {
     border: 1px solid {{ accent }};
     border-radius: 10px;
     padding: 16px;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
 }
 
 .filer-properties-title {
-    color: {{ strong }};
+    color: {{ text }};
     font-weight: 700;
     font-size: 14px;
 }
 
 .filer-properties-label {
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.68);
     font-family: "JetBrains Mono", monospace;
     font-size: 11px;
 }
@@ -617,39 +644,19 @@ list > row:selected .filer-list-row {
     font-size: 11px;
 }
 
-.filer-banner {
-    background-color: {{ surface_alt }};
-    border-bottom: 1px solid {{ border }};
-    padding: 5px 12px;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 11px;
-}
-
-.filer-banner.warn {
-    color: {{ warn_text }};
-}
-
-.filer-banner.danger {
-    color: {{ danger_text }};
-}
-
-.filer-banner.ok {
-    color: {{ ok_text }};
-}
-
 /* ── Bottom Monospace HUD Status Bar ─────────────────────────────────────── */
 .filer-statusbar {
     background-color: {{ surface }};
-    border-top: 1px solid {{ border }};
+    border-top: 1px solid rgba({{ text:rgb }}, 0.11);
     padding: 4px 12px;
     min-height: 26px;
     font-family: "JetBrains Mono", monospace;
     font-size: 11px;
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.70);
 }
 
 .filer-progress trough {
-    background-color: {{ background }};
+    background-color: rgba({{ text:rgb }}, 0.12);
     border-radius: 2px;
     min-height: 5px;
     min-width: 90px;
@@ -665,11 +672,11 @@ list > row:selected .filer-list-row {
 popover > contents {
     background-color: {{ surface }};
     color: {{ text }};
-    border: 1px solid {{ border }};
+    border: 1px solid rgba({{ text:rgb }}, 0.18);
     border-radius: 8px;
     padding: 6px;
     min-width: 215px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
 }
 
 .filer-menu-item {
@@ -681,8 +688,8 @@ popover > contents {
 }
 
 .filer-menu-item:hover {
-    background-color: {{ selection }};
-    color: {{ strong }};
+    background-color: rgba({{ accent:rgb }}, 0.16);
+    color: {{ text }};
 }
 
 .filer-menu-item.danger {
@@ -691,7 +698,7 @@ popover > contents {
 
 .filer-menu-icon {
     font-size: 12px;
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.68);
 }
 
 .filer-menu-item:hover .filer-menu-icon {
@@ -703,13 +710,13 @@ popover > contents {
 }
 
 .filer-menu-shortcut {
-    color: {{ dim }};
+    color: rgba({{ text:rgb }}, 0.60);
     font-family: "JetBrains Mono", monospace;
     font-size: 10px;
 }
 
 .filer-menu-sep {
-    background-color: {{ border }};
+    background-color: rgba({{ text:rgb }}, 0.11);
     min-height: 1px;
     margin: 4px 2px;
 }

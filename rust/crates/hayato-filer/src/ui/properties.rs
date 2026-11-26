@@ -25,7 +25,7 @@ pub fn build_properties_card(entry: &FileEntry, on_close: impl Fn() + 'static) -
     card.add_css_class("filer-properties");
     card.set_halign(Align::Center);
     card.set_valign(Align::Center);
-    card.set_size_request(520, -1);
+    card.set_size_request(460, -1);
 
     // Header: name + close
     let top = GtkBox::new(Orientation::Horizontal, 8);
@@ -49,11 +49,7 @@ pub fn build_properties_card(entry: &FileEntry, on_close: impl Fn() + 'static) -
     grid.append(&row("Kind", &entry.kind));
 
     let size_val = if entry.is_dir {
-        format!(
-            "{} ({} items)",
-            format_size(entry.size),
-            count_children(&entry.path)
-        )
+        format!("{} items", count_children(&entry.path))
     } else {
         format!("{} ({} bytes)", format_size(entry.size), entry.size)
     };
@@ -187,8 +183,14 @@ pub fn build_properties_card(entry: &FileEntry, on_close: impl Fn() + 'static) -
     let copy_btn = Button::with_label("Copy Path");
     copy_btn.add_css_class("filer-tool-btn");
     let p_copy = entry.path.clone();
-    copy_btn
-        .connect_clicked(move |_| tools::copy_paths_to_clipboard(std::slice::from_ref(&p_copy)));
+    copy_btn.connect_clicked(move |btn| {
+        tools::copy_paths_to_clipboard(std::slice::from_ref(&p_copy));
+        btn.set_label("Copied!");
+        let b = btn.clone();
+        glib::timeout_add_local_once(Duration::from_millis(1200), move || {
+            b.set_label("Copy Path");
+        });
+    });
     actions.append(&copy_btn);
 
     card.append(&hash_lbl);

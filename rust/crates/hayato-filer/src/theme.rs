@@ -7,6 +7,11 @@ use gtk4::CssProvider;
 use crate::state::home_dir;
 
 pub fn filer_css_path() -> PathBuf {
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME")
+        && !xdg.is_empty()
+    {
+        return PathBuf::from(xdg).join("hayato/filer.css");
+    }
     home_dir().join(".config/hayato/filer.css")
 }
 

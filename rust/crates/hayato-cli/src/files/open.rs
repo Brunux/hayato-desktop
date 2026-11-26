@@ -435,6 +435,14 @@ pub fn plan(path: &Path, text: bool, tools: &dyn Tools) -> Result<Plan, Refusal>
             &shown,
         ]));
     }
+    if family == Family::Audio {
+        if tools.has("hayato-cassette") {
+            return Ok(run(&["hayato-cassette", "--play", &shown]));
+        }
+        if tools.has("mpv") {
+            return Ok(run(&["mpv", "--no-config", "--no-video", "--", &shown]));
+        }
+    }
     if family == Family::Video && tools.has("mpv") {
         let title = format!("--title={name}");
         let mut argv = vec![

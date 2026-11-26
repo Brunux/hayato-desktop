@@ -43,6 +43,17 @@ pub fn share_paths(paths: &[PathBuf]) {
     spawn_detached("hayato", &args);
 }
 
+pub fn receive_in_folder(dir: &Path) {
+    spawn_detached(
+        "hayato",
+        &[
+            "share".to_string(),
+            "--receive".to_string(),
+            dir.to_string_lossy().into_owned(),
+        ],
+    );
+}
+
 pub fn play_in_cassette(path: &Path) {
     spawn_detached(
         "hayato-cassette",
