@@ -533,6 +533,186 @@ pub fn delete_profile(name: &str, uuid: &str) -> Result<String, String> {
     Ok(format!("Deleted VPN profile: {name}"))
 }
 
+/// Parameters for creating a WireGuard tunnel manually.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WireGuardSpec {
+    pub name: String,
+    pub address: String,
+    pub private_key: String,
+    pub peer_public_key: String,
+    pub endpoint: String,
+    pub allowed_ips: String,
+    pub dns: String,
+}
+
+/// Build a standard WireGuard `.conf` file from user inputs.
+pub fn build_wireguard_config(spec: &WireGuardSpec) -> Result<String, String> {
+    let name = spec.name.trim();
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("Connection name must use letters, digits, '-' or '_'".to_string());
+    }
+    if spec.address.trim().is_empty() {
+        return Err("Local address (e.g. 10.66.0.2/32) is required".to_string());
+    }
+    if spec.private_key.trim().is_empty() {
+        return Err(
+            "Private key is required (install wireguard-tools to auto-generate)".to_string(),
+        );
+    }
+    if spec.peer_public_key.trim().is_empty() {
+        return Err("Peer public key is required".to_string());
+    }
+    if spec.endpoint.trim().is_empty() {
+        return Err("Peer endpoint (host:port) is required".to_string());
+    }
+    let allowed = if spec.allowed_ips.trim().is_empty() {
+        "0.0.0.0/0, ::/0"
+    } else {
+        spec.allowed_ips.trim()
+    };
+
+    let mut conf = format!(
+        "[Interface]\nPrivateKey = {}\nAddress = {}\n",
+        spec.private_key.trim(),
+        spec.address.trim()
+    );
+    if !spec.dns.trim().is_empty() {
+        conf.push_str(&format!("DNS = {}\n", spec.dns.trim()));
+    }
+    conf.push_str(&format!(
+        "\n[Peer]\nPublicKey = {}\nEndpoint = {}\nAllowedIPs = {}\nPersistentKeepalive = 25\n",
+        spec.peer_public_key.trim(),
+        spec.endpoint.trim(),
+        allowed
+    ));
+    Ok(conf)
+}
+
+/// Create a WireGuard connection by writing a `0600` temp `.conf` and importing it via `nmcli`.
+pub fn create_wireguard_profile(spec: &WireGuardSpec) -> Result<String, String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let conf = build_wireguard_config(spec)?;
+    let safe_name = spec.name.trim();
+    let tmp_dir = std::env::temp_dir().join(format!("hayato-wg-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&tmp_dir);
+    let tmp_path = tmp_dir.join(format!("{safe_name}.conf"));
+    let write_res = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&tmp_path)
+        .and_then(|mut f| {
+            use std::io::Write;
+            f.write_all(conf.as_bytes())
+        });
+    if let Err(e) = write_res {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(format!("Could not write temporary WireGuard config: {e}"));
+    }
+    let path_str = tmp_path.to_string_lossy().into_owned();
+    let res = nmcli_run(&[
+        "connection",
+        "import",
+        "type",
+        "wireguard",
+        "file",
+        &path_str,
+    ]);
+    let _ = std::fs::remove_file(&tmp_path);
+    let _ = std::fs::remove_dir(&tmp_dir);
+    res?;
+    signal_bar();
+    Ok(format!("Created WireGuard profile: {safe_name}"))
+}
+
+/// Parameters for creating an OpenVPN connection manually.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OpenVpnSpec {
+    pub name: String,
+    pub remote: String,
+    pub port: String,
+    pub proto_tcp: bool,
+    pub username: String,
+    pub password: String,
+    pub ca_path: Option<PathBuf>,
+}
+
+/// Build the `vpn.data` value string for `nmcli connection add type vpn vpn-type openvpn`.
+pub fn build_openvpn_data(spec: &OpenVpnSpec) -> Result<String, String> {
+    let name = spec.name.trim();
+    if name.is_empty() {
+        return Err("Connection name is required".to_string());
+    }
+    let remote = spec.remote.trim();
+    if remote.is_empty() {
+        return Err("OpenVPN server address is required".to_string());
+    }
+    let (host, parsed_port) = match remote.rsplit_once(':') {
+        Some((h, p)) if !h.is_empty() && p.chars().all(|c| c.is_ascii_digit()) => {
+            (h.trim(), Some(p.trim()))
+        }
+        _ => (remote, None),
+    };
+    let port = if !spec.port.trim().is_empty() {
+        spec.port.trim()
+    } else {
+        parsed_port.unwrap_or("1194")
+    };
+    let mut pairs = vec![
+        format!("remote={host}"),
+        format!("port={port}"),
+        format!("proto-tcp={}", if spec.proto_tcp { "yes" } else { "no" }),
+        "connection-type=password".to_string(),
+        "dev-type=tun".to_string(),
+    ];
+    if !spec.username.trim().is_empty() {
+        pairs.push(format!("username={}", spec.username.trim()));
+    }
+    if !spec.password.is_empty() {
+        pairs.push("password-flags=0".to_string());
+    }
+    if let Some(ca) = &spec.ca_path {
+        pairs.push(format!("ca={}", ca.display()));
+    }
+    Ok(pairs.join(", "))
+}
+
+/// Create an OpenVPN profile directly via `nmcli connection add`.
+pub fn create_openvpn_profile(spec: &OpenVpnSpec) -> Result<String, String> {
+    if !openvpn_plugin_installed() {
+        return Err("OpenVPN plugin missing — select 'Install OpenVPN support' first".to_string());
+    }
+    let vpn_data = build_openvpn_data(spec)?;
+    let name = spec.name.trim();
+    let mut args = vec![
+        "connection",
+        "add",
+        "type",
+        "vpn",
+        "vpn-type",
+        "openvpn",
+        "con-name",
+        name,
+        "--",
+        "vpn.data",
+        &vpn_data,
+    ];
+    let secrets;
+    if !spec.password.is_empty() {
+        secrets = format!("password={}", spec.password);
+        args.push("vpn.secrets");
+        args.push(&secrets);
+    }
+    nmcli_run(&args)?;
+    signal_bar();
+    Ok(format!("Created OpenVPN profile: {name}"))
+}
+
 // ─── TUI Screen ──────────────────────────────────────────────────────────────
 
 enum VpnPhase {
@@ -546,11 +726,13 @@ enum VpnPhase {
 
 enum VpnRowKind {
     Profile(usize),
+    CreateConnection,
     ImportFile,
     InstallOpenVpn,
 }
 
 pub enum VpnRequest {
+    CreateConnection,
     ImportFile,
     OpenVpnAuth { name: String, uuid: String },
     InstallOpenVpn,
@@ -658,6 +840,7 @@ impl VpnScreen {
         } else {
             vec![
                 KeyHint::new("Enter", "toggle"),
+                KeyHint::new("n", "new"),
                 KeyHint::new("i", "import"),
                 KeyHint::new("a", "auto"),
                 KeyHint::new("u", "auth"),
@@ -703,9 +886,16 @@ impl VpnScreen {
         }
 
         rows.push(
+            Row::new("Create VPN connection")
+                .detail("WireGuard or OpenVPN guided setup")
+                .glyph(Glyph::Network),
+        );
+        kinds.push(VpnRowKind::CreateConnection);
+
+        rows.push(
             Row::new("Import VPN config (.conf / .ovpn)")
-                .detail("WireGuard or OpenVPN profile file")
-                .glyph(Glyph::Download),
+                .detail("browse files with live preview")
+                .glyph(Glyph::Folder),
         );
         kinds.push(VpnRowKind::ImportFile);
 
@@ -752,6 +942,10 @@ impl VpnScreen {
                     }
                 }
                 Outcome::Consumed
+            }
+            VpnRowKind::CreateConnection => {
+                self.pending_request = Some(VpnRequest::CreateConnection);
+                Outcome::Done(0)
             }
             VpnRowKind::ImportFile => {
                 self.pending_request = Some(VpnRequest::ImportFile);
@@ -880,6 +1074,10 @@ impl Screen for VpnScreen {
         if key.modifiers.is_empty() {
             match key.code {
                 KeyCode::Esc => return Outcome::Done(hayato_ui::app::exit::ESCAPE),
+                KeyCode::Char('n') => {
+                    self.pending_request = Some(VpnRequest::CreateConnection);
+                    return Outcome::Done(0);
+                }
                 KeyCode::Char('i') => {
                     self.pending_request = Some(VpnRequest::ImportFile);
                     return Outcome::Done(0);
@@ -1013,6 +1211,9 @@ pub fn menu(
         };
 
         match req {
+            VpnRequest::CreateConnection => {
+                banner = run_create_wizard(terminal, design)?;
+            }
             VpnRequest::ImportFile => {
                 banner = run_import_picker(terminal, design)?;
             }
@@ -1031,73 +1232,253 @@ pub fn menu(
     }
 }
 
+/// Browse for a file using Hayato's native `FilesScreen` (with live preview).
+fn browse_for_file(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    design: &Design,
+    subtitle: &str,
+) -> Result<Option<PathBuf>, Failure> {
+    let home = std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/"));
+    let downloads = home.join("Downloads");
+    let start_dir = if downloads.is_dir() {
+        downloads
+    } else {
+        home.clone()
+    };
+    let state_dir = std::env::var("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| home.join(".local/state"))
+        .join("hayato");
+    let setup = crate::files::browse::Setup {
+        dir: start_dir,
+        mode: crate::files::browse::Mode::Browse,
+        hidden: false,
+        home: home.clone(),
+        memory: state_dir.join("vpn-browse-last"),
+        path_var: std::env::var("PATH").unwrap_or_default(),
+    };
+    let previewer = crate::files::preview::Previewer::for_session(&home);
+    let mut screen = crate::files::browse::FilesScreen::new(setup, Some(previewer));
+    let code = crate::run_screen(terminal, design, subtitle, &mut screen)?;
+    if code != 0 {
+        return Ok(None);
+    }
+    match screen.chosen {
+        Some(crate::files::Chosen::Open(path)) | Some(crate::files::Chosen::Actions(path)) => {
+            Ok(Some(path))
+        }
+        _ => Ok(None),
+    }
+}
+
 fn run_import_picker(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     design: &Design,
 ) -> Result<Option<String>, Failure> {
-    let discovered = scan_config_files();
-    let mut rows = Vec::new();
-    let mut keys = Vec::new();
-    for (path, kind) in &discovered {
-        let label = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("config")
-            .to_string();
-        let detail = format!("{} \u{00b7} {}", kind.label(), path.display());
-        rows.push(pick_row(label, detail, Glyph::File));
-        keys.push(path.to_string_lossy().into_owned());
-    }
-    rows.push(pick_row(
-        "Enter config file path...",
-        "type or paste path to .conf or .ovpn",
-        Glyph::Terminal,
-    ));
-    keys.push("__custom__".to_string());
-
-    let note = if discovered.is_empty() {
-        "No .conf/.ovpn files found in ~/Downloads or ~/Documents".to_string()
-    } else {
-        format!(
-            "Found {} config file(s) \u{00b7} Enter imports \u{00b7} Esc cancels",
-            discovered.len()
-        )
+    let Some(chosen_path) = browse_for_file(terminal, design, "Import VPN (.conf / .ovpn)")? else {
+        return Ok(None);
     };
-    let mut picker = Picker::new(
-        "Import VPN profile",
-        vec![Question::choose("Import VPN profile", note, rows, keys)],
+    match import_profile(&chosen_path) {
+        Ok(msg) => Ok(Some(msg)),
+        Err(err) => Ok(Some(err)),
+    }
+}
+
+fn run_create_wizard(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    design: &Design,
+) -> Result<Option<String>, Failure> {
+    let rows = vec![
+        pick_row(
+            "WireGuard",
+            "fast modern kernel VPN (native NetworkManager)",
+            Glyph::Shield,
+        ),
+        pick_row(
+            "OpenVPN",
+            if openvpn_plugin_installed() {
+                "UDP/TCP tunnel with username/password & optional CA"
+            } else {
+                "requires network-manager-openvpn plugin"
+            },
+            Glyph::Lock,
+        ),
+    ];
+    let mut proto_picker = Picker::new(
+        "Create VPN connection",
+        vec![Question::choose(
+            "Protocol",
+            "Choose VPN protocol · Esc cancels",
+            rows,
+            vec!["wireguard".to_string(), "openvpn".to_string()],
+        )],
     );
-    let code = crate::run_screen(terminal, design, "Import VPN profile", &mut picker)?;
+    let code = crate::run_screen(terminal, design, "Create VPN connection", &mut proto_picker)?;
     if code != 0 {
         return Ok(None);
     }
-    let Some(choice) = picker.answers().first().cloned() else {
-        return Ok(None);
-    };
+    match proto_picker.answers().first().map(String::as_str) {
+        Some("wireguard") => run_create_wireguard(terminal, design),
+        Some("openvpn") => run_create_openvpn(terminal, design),
+        _ => Ok(None),
+    }
+}
 
-    let chosen_path = if choice == "__custom__" {
-        let mut input = Picker::new(
-            "VPN config path",
-            vec![Question::input(
-                "Path to .conf (WireGuard) or .ovpn (OpenVPN)",
-                "Supports ~/ prefix \u{00b7} Esc cancels",
-                "~/Downloads/wg0.conf",
-                false,
-            )],
-        );
-        let c = crate::run_screen(terminal, design, "VPN config path", &mut input)?;
-        if c != 0 {
-            return Ok(None);
-        }
-        let Some(raw) = input.answers().first().cloned() else {
-            return Ok(None);
-        };
-        expand_tilde(raw.trim())
+fn run_create_wireguard(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    design: &Design,
+) -> Result<Option<String>, Failure> {
+    let key_hint = if have("wg") {
+        "leave blank to auto-generate with wg genkey"
     } else {
-        PathBuf::from(choice)
+        "paste your WireGuard private key (base64)"
     };
+    let mut picker = Picker::new(
+        "New WireGuard tunnel",
+        vec![
+            Question::input(
+                "Connection name",
+                "letters, digits, '-' or '_'",
+                "work-wg",
+                false,
+            ),
+            Question::input(
+                "Local tunnel address (CIDR)",
+                "IP assigned to this device",
+                "10.66.0.2/32",
+                false,
+            ),
+            Question::input("Private key", key_hint, "", true),
+            Question::input(
+                "Peer public key",
+                "server's WireGuard public key (base64)",
+                "",
+                false,
+            ),
+            Question::input(
+                "Peer endpoint (host:port)",
+                "server hostname or IP and UDP port",
+                "vpn.example.com:51820",
+                false,
+            ),
+            Question::input(
+                "Allowed IPs",
+                "leave blank for full tunnel (0.0.0.0/0, ::/0)",
+                "0.0.0.0/0, ::/0",
+                false,
+            ),
+            Question::input(
+                "DNS server (optional)",
+                "leave blank to keep default DNS",
+                "1.1.1.1",
+                false,
+            ),
+        ],
+    );
+    let code = crate::run_screen(terminal, design, "New WireGuard tunnel", &mut picker)?;
+    if code != 0 {
+        return Ok(None);
+    }
+    let ans = picker.answers();
+    if ans.len() < 7 {
+        return Ok(None);
+    }
+    let mut private_key = ans[2].trim().to_string();
+    if private_key.is_empty() && have("wg") {
+        if let Some(generated) = out(&["wg", "genkey"]) {
+            private_key = generated.trim().to_string();
+        }
+    }
+    let spec = WireGuardSpec {
+        name: ans[0].clone(),
+        address: ans[1].clone(),
+        private_key,
+        peer_public_key: ans[3].clone(),
+        endpoint: ans[4].clone(),
+        allowed_ips: ans[5].clone(),
+        dns: ans[6].clone(),
+    };
+    match create_wireguard_profile(&spec) {
+        Ok(msg) => Ok(Some(msg)),
+        Err(err) => Ok(Some(err)),
+    }
+}
 
-    match import_profile(&chosen_path) {
+fn run_create_openvpn(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    design: &Design,
+) -> Result<Option<String>, Failure> {
+    if !openvpn_plugin_installed() {
+        return Ok(Some(
+            "OpenVPN plugin missing — select 'Install OpenVPN support' first".to_string(),
+        ));
+    }
+    let mut picker = Picker::new(
+        "New OpenVPN connection",
+        vec![
+            Question::input("Connection name", "profile label", "office-ovpn", false),
+            Question::input(
+                "Server (host or host:port)",
+                "VPN gateway hostname or IP",
+                "vpn.example.com:1194",
+                false,
+            ),
+            Question::choose(
+                "Transport protocol",
+                "UDP is faster; TCP works through strict firewalls",
+                vec![
+                    pick_row("UDP", "default (recommended)", Glyph::Network),
+                    pick_row("TCP", "firewall-friendly", Glyph::Network),
+                ],
+                vec!["udp".to_string(), "tcp".to_string()],
+            ),
+            Question::input("Username (optional)", "OpenVPN account username", "", false),
+            Question::input(
+                "Password (optional)",
+                "stored in NetworkManager secrets",
+                "",
+                true,
+            ),
+            Question::choose(
+                "CA certificate",
+                "Select a .crt / .pem CA file using Files, or skip",
+                vec![
+                    pick_row("Skip CA file", "create without CA path", Glyph::Check),
+                    pick_row(
+                        "Browse for CA certificate...",
+                        "choose .crt or .pem with Files",
+                        Glyph::Folder,
+                    ),
+                ],
+                vec!["skip".to_string(), "browse".to_string()],
+            ),
+        ],
+    );
+    let code = crate::run_screen(terminal, design, "New OpenVPN connection", &mut picker)?;
+    if code != 0 {
+        return Ok(None);
+    }
+    let ans = picker.answers();
+    if ans.len() < 6 {
+        return Ok(None);
+    }
+    let ca_path = if ans[5] == "browse" {
+        browse_for_file(terminal, design, "Choose OpenVPN CA (.crt / .pem)")?
+    } else {
+        None
+    };
+    let spec = OpenVpnSpec {
+        name: ans[0].clone(),
+        remote: ans[1].clone(),
+        port: String::new(),
+        proto_tcp: ans[2] == "tcp",
+        username: ans[3].clone(),
+        password: ans[4].clone(),
+        ca_path,
+    };
+    match create_openvpn_profile(&spec) {
         Ok(msg) => Ok(Some(msg)),
         Err(err) => Ok(Some(err)),
     }
@@ -1250,5 +1631,41 @@ lo:3333:loopback:lo:no
         assert!(json.contains("work-wg (wg0)"), "{json}");
         assert!(json.contains("10.66.0.2/32"), "{json}");
         assert!(json.contains("[LMB] VPN · [RMB] disconnect"), "{json}");
+    }
+
+    #[test]
+    fn builds_wireguard_and_openvpn_configs_cleanly() {
+        let wg = WireGuardSpec {
+            name: "work-wg".to_string(),
+            address: "10.66.0.2/32".to_string(),
+            private_key: "PRIVKEY==".to_string(),
+            peer_public_key: "PUBKEY==".to_string(),
+            endpoint: "vpn.example.com:51820".to_string(),
+            allowed_ips: "".to_string(),
+            dns: "1.1.1.1".to_string(),
+        };
+        let conf = build_wireguard_config(&wg).unwrap();
+        assert!(conf.contains("[Interface]"));
+        assert!(conf.contains("PrivateKey = PRIVKEY=="));
+        assert!(conf.contains("DNS = 1.1.1.1"));
+        assert!(conf.contains("AllowedIPs = 0.0.0.0/0, ::/0"));
+        assert!(conf.contains("Endpoint = vpn.example.com:51820"));
+
+        let ovpn = OpenVpnSpec {
+            name: "office".to_string(),
+            remote: "vpn.office.org:443".to_string(),
+            port: String::new(),
+            proto_tcp: true,
+            username: "alice".to_string(),
+            password: "secret".to_string(),
+            ca_path: Some(PathBuf::from("/home/user/ca.crt")),
+        };
+        let data = build_openvpn_data(&ovpn).unwrap();
+        assert!(data.contains("remote=vpn.office.org"));
+        assert!(data.contains("port=443"));
+        assert!(data.contains("proto-tcp=yes"));
+        assert!(data.contains("username=alice"));
+        assert!(data.contains("password-flags=0"));
+        assert!(data.contains("ca=/home/user/ca.crt"));
     }
 }

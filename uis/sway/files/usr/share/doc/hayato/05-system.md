@@ -254,7 +254,8 @@ The `--status` subcommand returns the current servers and ignore-auto-dns state.
 
 The native **VPN** client (`hayato menu vpn`, Settings → *Network → VPN*, or the command palette) manages **WireGuard** (`.conf`) and **OpenVPN** (`.ovpn`) tunnels directly through NetworkManager without spawning `nmtui`:
 
-* **Import (`i`)**: scans `~/Downloads`, `~/Documents`, `~/.config/vpn`, and `~` for `.conf` / `.ovpn` files (auto-detecting WireGuard vs. OpenVPN) or accepts any custom file path.
+* **Create (`n`)**: guided setup wizard for creating a new **WireGuard** (with optional `wg genkey` key generation) or **OpenVPN** (UDP/TCP, credentials, optional CA file via Files) connection directly in NetworkManager.
+* **Import (`i`)**: opens Hayato's native **Files** browser (with live config preview) to pick any `.conf` (WireGuard) or `.ovpn` (OpenVPN) file from disk.
 * **Connect / Disconnect (`Enter` or `c`)**: brings the tunnel up or down and shows its live IPv4 address and `↑` / `↓` transfer counters from `/sys/class/net/<dev>/statistics/`.
 * **Autoconnect (`a`)**: toggles `connection.autoconnect` so a tunnel comes up automatically on boot.
 * **OpenVPN credentials (`u`)**: stores OpenVPN username and password in NetworkManager secrets. If `network-manager-openvpn` is not installed yet, the menu offers an inline **Install OpenVPN support** row.

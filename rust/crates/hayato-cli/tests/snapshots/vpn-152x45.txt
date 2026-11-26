@@ -5,8 +5,8 @@ Hayato · VPN                                                                   
 │                                                                                                                                                      │
 │ ▍   ● work-wg [WG]  10.66.0.2/32 · ↑4.2 MB ↓38.1 MB · auto                                                                                          │
 │     ○ home-ovpn [OVPN]  disconnected                                                                                                                │
-│     Import VPN config (.conf / .ovpn)  WireGuard or OpenVPN profile file                                                                            │
-│                                                                                                                                                      │
+│     Create VPN connection  WireGuard or OpenVPN guided setup                                                                                        │
+│     Import VPN config (.conf / .ovpn)  browse files with live preview                                                                               │
 │                                                                                                                                                      │
 │                                                                                                                                                      │
 │                                                                                                                                                      │
@@ -42,4 +42,4 @@ Hayato · VPN                                                                   
 │                                                                                                                                                      │
 │                                                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- [Enter]  toggle   [i]  import   [a]  auto   [u]  auth   [d]  delete   [Esc]  close                                                                     
+ [Enter]  toggle   [n]  new   [i]  import   [a]  auto   [u]  auth   [d]  delete   [Esc]  close                                                          
