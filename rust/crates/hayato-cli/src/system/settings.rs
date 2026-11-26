@@ -112,7 +112,7 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("onscreen-keyboard", "On-screen keyboard", "wvkbd"),
         ("translate", "Translate", "translate config"),
         ("audio", "Audio output", "bar-audio"),
-        ("mixer", "Volume per application", "pavucontrol"),
+        ("mixer", "Volume per application", "hayato menu audio"),
         ("media", "Media", "hayato-media"),
         ("power", "Battery", "bar-power"),
         ("power-profile", "Power profile", "powerprofilesctl"),
@@ -2487,8 +2487,7 @@ pub fn menu(
                 let _ = super::audio::menu(terminal, design)?;
             }
             "mixer" => {
-                spawn_subcommand("pavucontrol", &[]);
-                return Ok(0);
+                let _ = super::audio::menu(terminal, design)?;
             }
             "media" => {
                 let _ = super::media::menu(terminal, design)?;

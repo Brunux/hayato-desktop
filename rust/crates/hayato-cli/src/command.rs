@@ -451,7 +451,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         // Audio output picker (spec 011): the bar's sink list.
         path: "menu audio",
-        summary: "switch the default sink, mute, pavucontrol (spec 011)",
+        summary: "switch the default sink, mute, and per-app audio mixer (spec 011)",
         shape: Shape::Pick,
         symlinks: &["bar-audio"],
         installed: &["bar-audio"],

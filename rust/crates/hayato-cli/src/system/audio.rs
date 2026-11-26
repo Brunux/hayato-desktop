@@ -1,10 +1,11 @@
-//! Audio output & mixer (`bar-audio`, `hayato menu audio`).
+//! Audio output, microphones & per-app mixer (`bar-audio`, `hayato menu audio`).
 //!
 //! Displays a live Output & Microphone hero card with `draw_gauge` volume bars
-//! and `[DEFAULT]` / `[MUTED]` badges, lists all PipeWire/PulseAudio sinks with
-//! their volume percentages, and supports inline `Left`/`Right` (`-`/`+`)
-//! volume adjustment, `m` mute toggling, default sink switching, and launching
-//! `pavucontrol` — all in-window without external notifications.
+//! and `[DEFAULT]` / `[MUTED]` badges, lists all PipeWire/PulseAudio sinks,
+//! microphones, and active per-application audio streams (`sink-inputs`), and
+//! supports inline `Left`/`Right` (`-`/`+`) volume adjustment, `Ctrl+M`/`Ctrl+I`
+//! mute toggling, default sink switching, and per-app output routing — all
+//! natively in-window without spawning `pavucontrol`.
 
 use std::cell::Cell;
 use std::process::{Command, Stdio};
@@ -21,7 +22,92 @@ use ratatui::style::Style;
 
 use crate::system::{missing, out};
 
-const NEEDED: &[&str] = &["pactl", "pavucontrol"];
+const NEEDED: &[&str] = &["pactl"];
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SinkInput {
+    pub id: String,
+    pub sink_index: String,
+    pub app_name: String,
+    pub media_name: String,
+    pub volume: u8,
+    pub muted: bool,
+}
+
+/// Parse `pactl list sink-inputs` output into per-application streams.
+pub fn parse_sink_inputs(output: &str) -> Vec<SinkInput> {
+    let mut inputs = Vec::new();
+    let mut id = String::new();
+    let mut sink_index = String::new();
+    let mut app_name = String::new();
+    let mut media_name = String::new();
+    let mut muted = false;
+    let mut volume = 100u8;
+
+    let flush = |inputs: &mut Vec<SinkInput>,
+                 id: &mut String,
+                 sink_index: &mut String,
+                 app_name: &mut String,
+                 media_name: &mut String,
+                 muted: &mut bool,
+                 volume: &mut u8| {
+        if !id.is_empty() {
+            let app = if app_name.is_empty() {
+                format!("Stream #{}", id)
+            } else {
+                std::mem::take(app_name)
+            };
+            inputs.push(SinkInput {
+                id: std::mem::take(id),
+                sink_index: std::mem::take(sink_index),
+                app_name: app,
+                media_name: std::mem::take(media_name),
+                volume: *volume,
+                muted: *muted,
+            });
+            *muted = false;
+            *volume = 100;
+        }
+    };
+
+    for raw_line in output.lines() {
+        let line = raw_line.trim();
+        if let Some(rest) = raw_line.strip_prefix("Sink Input #") {
+            flush(
+                &mut inputs,
+                &mut id,
+                &mut sink_index,
+                &mut app_name,
+                &mut media_name,
+                &mut muted,
+                &mut volume,
+            );
+            id = rest.trim().to_string();
+        } else if let Some(rest) = line.strip_prefix("Sink: ") {
+            sink_index = rest.trim().to_string();
+        } else if let Some(rest) = line.strip_prefix("Mute: ") {
+            muted = rest.trim() == "yes";
+        } else if line.starts_with("Volume: ")
+            && let Some(pct) = parse_volume_percent(line)
+        {
+            volume = pct;
+        } else if let Some(rest) = line.strip_prefix("application.name = ") {
+            app_name = rest.trim().trim_matches('"').to_string();
+        } else if let Some(rest) = line.strip_prefix("media.name = ") {
+            media_name = rest.trim().trim_matches('"').to_string();
+        }
+    }
+    flush(
+        &mut inputs,
+        &mut id,
+        &mut sink_index,
+        &mut app_name,
+        &mut media_name,
+        &mut muted,
+        &mut volume,
+    );
+    inputs
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sink {
@@ -187,6 +273,7 @@ pub fn parse_sources(output: &str, default: &str) -> Vec<Sink> {
 pub struct AudioScreen {
     sinks: Vec<Sink>,
     sources: Vec<Sink>,
+    inputs: Vec<SinkInput>,
     default_sink: String,
     default_source: String,
     source_volume: u8,
@@ -212,20 +299,21 @@ impl AudioScreen {
             keys: Vec::new(),
             sinks: Vec::new(),
             sources: Vec::new(),
+            inputs: Vec::new(),
             default_sink: String::new(),
             default_source: String::new(),
             source_volume: 0,
             source_muted: false,
-            status: "Enter switches default \u{00b7} \u{2190}/\u{2192} adjusts volume \u{00b7} Tab focuses actions"
+            status: "Enter switches/routes \u{00b7} \u{2190}/\u{2192} volume \u{00b1}5% \u{00b7} Ctrl+M mute"
                 .to_string(),
             strip: ActionStrip::default(),
             list: ListState::new(),
-            header: Header::new("Hayato").subtitle("Audio & Microphones"),
+            header: Header::new("Hayato").subtitle("Audio & Per-App Mixer"),
             keybar: vec![
-                KeyHint::new("Enter", "switch device"),
+                KeyHint::new("Enter", "switch/route"),
                 KeyHint::new("\u{2190}/\u{2192}", "volume \u{00b1}5%"),
                 KeyHint::new("Tab", "actions"),
-                KeyHint::new("Ctrl+M", "mute out"),
+                KeyHint::new("Ctrl+M", "mute"),
                 KeyHint::new("Ctrl+I", "mute mic"),
                 KeyHint::new("Esc", "back"),
             ],
@@ -248,6 +336,8 @@ impl AudioScreen {
             .to_string();
         let raw_sources = out(&["pactl", "list", "sources"]).unwrap_or_default();
         self.sources = parse_sources(&raw_sources, &self.default_source);
+        let raw_inputs = out(&["pactl", "list", "sink-inputs"]).unwrap_or_default();
+        self.inputs = parse_sink_inputs(&raw_inputs);
         self.source_volume = out(&["pactl", "get-source-volume", "@DEFAULT_SOURCE@"])
             .and_then(|s| parse_volume_percent(&s))
             .unwrap_or(0);
@@ -255,7 +345,7 @@ impl AudioScreen {
             .is_some_and(|s| s.contains("yes"));
         self.build_rows(preserve);
         self.header = Header::new("Hayato")
-            .subtitle("Audio & Microphones")
+            .subtitle("Audio & Per-App Mixer")
             .status(self.status.clone());
     }
 
@@ -278,7 +368,7 @@ impl AudioScreen {
         self.strip.set_items(vec![
             ActionItem::new("mute-sink", "^M", out_label).glyph(Glyph::Volume),
             ActionItem::new("mute-source", "^I", mic_label).glyph(Glyph::Mic),
-            ActionItem::new("pavucontrol", "^P", "Mixer (pavucontrol)").glyph(Glyph::Sliders),
+            ActionItem::new("refresh", "^R", "Refresh streams").glyph(Glyph::Sync),
         ]);
 
         let mut rows = Vec::new();
@@ -340,6 +430,37 @@ impl AudioScreen {
             }
         }
 
+        rows.push(Row::heading("Applications (Per-App Mixer)"));
+        keys.push(String::new());
+        if self.inputs.is_empty() {
+            rows.push(
+                Row::new("No apps playing audio")
+                    .glyph(Glyph::Sliders)
+                    .detail("Active streams appear here · \u{2190}/\u{2192} volume · Enter routes"),
+            );
+            keys.push(String::new());
+        } else {
+            for app in &self.inputs {
+                let badge = if app.muted {
+                    format!("muted ({:>3}%)", app.volume)
+                } else {
+                    format!("\u{25cf} {:>3}%", app.volume)
+                };
+                let detail = if app.media_name.is_empty() {
+                    format!("stream #{} · Enter cycles output", app.id)
+                } else {
+                    app.media_name.clone()
+                };
+                keys.push(format!("app:{}", app.id));
+                rows.push(
+                    Row::new(app.app_name.clone())
+                        .glyph(Glyph::Sliders)
+                        .detail(detail)
+                        .value(badge),
+                );
+            }
+        }
+
         self.keys = keys;
         if preserve {
             self.list.update_rows(rows);
@@ -365,25 +486,51 @@ impl AudioScreen {
     fn adjust_volume(&mut self, delta: i8) {
         if let Some(idx) = self.list.selected_index()
             && let Some(key) = self.keys.get(idx)
-            && let Some(src_name) = key.strip_prefix("source:")
         {
-            let current = self
-                .sources
-                .iter()
-                .find(|s| s.name == src_name)
-                .map(|s| s.volume)
-                .unwrap_or(self.source_volume);
-            let next = (current as i16 + delta as i16).clamp(0, 100) as u8;
-            let arg = format!("{next}%");
-            let _ = Command::new("pactl")
-                .args(["set-source-volume", src_name, &arg])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-            self.status = format!("Microphone volume: {next}%");
-            self.reload(true);
-            return;
+            if let Some(app_id) = key.strip_prefix("app:") {
+                let current = self
+                    .inputs
+                    .iter()
+                    .find(|a| a.id == app_id)
+                    .map(|a| a.volume)
+                    .unwrap_or(100);
+                let next = (current as i16 + delta as i16).clamp(0, 100) as u8;
+                let arg = format!("{next}%");
+                let _ = Command::new("pactl")
+                    .args(["set-sink-input-volume", app_id, &arg])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+                let name = self
+                    .inputs
+                    .iter()
+                    .find(|a| a.id == app_id)
+                    .map(|a| a.app_name.clone())
+                    .unwrap_or_else(|| format!("Stream #{app_id}"));
+                self.status = format!("{name} volume: {next}%");
+                self.reload(true);
+                return;
+            }
+            if let Some(src_name) = key.strip_prefix("source:") {
+                let current = self
+                    .sources
+                    .iter()
+                    .find(|s| s.name == src_name)
+                    .map(|s| s.volume)
+                    .unwrap_or(self.source_volume);
+                let next = (current as i16 + delta as i16).clamp(0, 100) as u8;
+                let arg = format!("{next}%");
+                let _ = Command::new("pactl")
+                    .args(["set-source-volume", src_name, &arg])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+                self.status = format!("Microphone volume: {next}%");
+                self.reload(true);
+                return;
+            }
         }
         let target = self.target_sink();
         let current = self
@@ -408,6 +555,17 @@ impl AudioScreen {
         if let Some(idx) = self.list.selected_index()
             && let Some(key) = self.keys.get(idx).map(String::as_str)
         {
+            if let Some(app_id) = key.strip_prefix("app:") {
+                let _ = Command::new("pactl")
+                    .args(["set-sink-input-mute", app_id, "toggle"])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+                self.status = format!("Toggled app stream #{app_id} mute");
+                self.reload(true);
+                return;
+            }
             if key == "mute-source" || key.starts_with("source:") {
                 let target_src = key
                     .strip_prefix("source:")
@@ -633,13 +791,14 @@ impl Screen for AudioScreen {
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
                 KeyCode::Char('m') | KeyCode::Char('M') => {
-                    return self.run_strip_action("mute-sink");
+                    self.toggle_selected_mute();
+                    return Outcome::Consumed;
                 }
                 KeyCode::Char('i') | KeyCode::Char('I') => {
                     return self.run_strip_action("mute-source");
                 }
-                KeyCode::Char('p') | KeyCode::Char('P') => {
-                    return self.run_strip_action("pavucontrol");
+                KeyCode::Char('r') | KeyCode::Char('R') => {
+                    return self.run_strip_action("refresh");
                 }
                 _ => {}
             }
@@ -718,9 +877,10 @@ impl Screen for AudioScreen {
 impl AudioScreen {
     fn run_strip_action(&mut self, id: &'static str) -> Outcome {
         match id {
-            "pavucontrol" => {
-                crate::system::spawn_detached("exec pavucontrol");
-                Outcome::Done(hayato_ui::app::exit::OK)
+            "refresh" => {
+                self.status = "Refreshed audio devices and app streams".to_string();
+                self.reload(true);
+                Outcome::Consumed
             }
             "mute-sink" => {
                 let _ = Command::new("pactl")
@@ -756,6 +916,38 @@ impl AudioScreen {
         let key = self.keys.get(index).cloned().unwrap_or_default();
         if key.is_empty() || key == "-" {
             return Outcome::Continue;
+        }
+        if let Some(app_id) = key.strip_prefix("app:") {
+            if self.sinks.len() > 1 {
+                // Move this app stream to the next non-default (or next) sink.
+                let next_sink = self
+                    .sinks
+                    .iter()
+                    .find(|s| !s.is_default)
+                    .or(self.sinks.first());
+                if let Some(sink) = next_sink {
+                    let sink_name = sink.name.clone();
+                    let sink_desc = sink.description.clone();
+                    let _ = Command::new("pactl")
+                        .args(["move-sink-input", app_id, &sink_name])
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .status();
+                    self.status = format!("Routed stream #{app_id} to {sink_desc}");
+                    self.reload(true);
+                }
+            } else {
+                let _ = Command::new("pactl")
+                    .args(["set-sink-input-mute", app_id, "toggle"])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+                self.status = format!("Toggled stream #{app_id} mute");
+                self.reload(true);
+            }
+            return Outcome::Consumed;
         }
         if let Some(name) = key.strip_prefix("source:") {
             let _ = Command::new("pactl")
@@ -810,9 +1002,10 @@ impl AudioScreen {
             Outcome::Consumed
         } else {
             match key.as_str() {
-                "pavucontrol" => {
-                    crate::system::spawn_detached("exec pavucontrol");
-                    Outcome::Done(hayato_ui::app::exit::OK)
+                "refresh" => {
+                    self.status = "Refreshed audio devices and app streams".to_string();
+                    self.reload(true);
+                    Outcome::Consumed
                 }
                 "mute-sink" => {
                     let _ = Command::new("pactl")
@@ -850,7 +1043,7 @@ pub fn menu(
     if let Some(said) = missing(NEEDED) {
         return Err(crate::Failure::new(
             "Audio output",
-            format!("{said} (pactl, pavucontrol)"),
+            format!("{said} (pactl)"),
         ));
     }
     let mut screen = AudioScreen::new();
@@ -923,5 +1116,36 @@ Source #12
         assert_eq!(sources[1].description, "Internal Microphone");
         assert!(!sources[1].is_default);
         assert_eq!(sources[1].volume, 80);
+    }
+
+    #[test]
+    fn parses_pactl_sink_inputs_for_per_app_mixer() {
+        let raw = "\
+Sink Input #42
+\tSink: 51
+\tMute: no
+\tVolume: front-left: 52428 /  80% / -5.80 dB
+\tProperties:
+\t\tapplication.name = \"Firefox\"
+\t\tmedia.name = \"Lofi Beats\"
+Sink Input #43
+\tSink: 52
+\tMute: yes
+\tVolume: front-left: 32768 /  50% / -18.06 dB
+\tProperties:
+\t\tapplication.name = \"mpv\"
+";
+        let inputs = parse_sink_inputs(raw);
+        assert_eq!(inputs.len(), 2);
+        assert_eq!(inputs[0].id, "42");
+        assert_eq!(inputs[0].app_name, "Firefox");
+        assert_eq!(inputs[0].media_name, "Lofi Beats");
+        assert_eq!(inputs[0].volume, 80);
+        assert!(!inputs[0].muted);
+
+        assert_eq!(inputs[1].id, "43");
+        assert_eq!(inputs[1].app_name, "mpv");
+        assert_eq!(inputs[1].volume, 50);
+        assert!(inputs[1].muted);
     }
 }
