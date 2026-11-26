@@ -17,6 +17,4 @@ zbus = { version = "5", features = ["blocking-api", "async-io"] }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
-calloop = "0.14"
-calloop-wayland-source = "0.3"
 tempfile = "3"
