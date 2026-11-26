@@ -60,8 +60,6 @@ pub struct FilerWindow {
     sidebar_sep: Separator,
     devices_hdr: Label,
     devices_box: GtkBox,
-    banner_box: GtkBox,
-    banner_label: Label,
     list_header: GtkBox,
     canvas_scroll: ScrolledWindow,
     flow_box: FlowBox,
@@ -237,21 +235,6 @@ impl FilerWindow {
         sidebar_scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
         sidebar_scroll.set_child(Some(&sidebar_box));
 
-        // ── Notification Banner (hidden when idle) ────────────────────────
-        let banner_box = GtkBox::new(Orientation::Horizontal, 8);
-        banner_box.add_css_class("filer-banner");
-        banner_box.set_visible(false);
-        let banner_label = Label::new(None);
-        banner_label.set_hexpand(true);
-        banner_label.set_halign(Align::Start);
-        let banner_close = Button::with_label("\u{f00d}");
-        banner_close.add_css_class("filer-dev-action");
-        banner_close.add_css_class("filer-glyph");
-        let bb_close = banner_box.clone();
-        banner_close.connect_clicked(move |_| bb_close.set_visible(false));
-        banner_box.append(&banner_label);
-        banner_box.append(&banner_close);
-
         // ── Sticky List View Column Header ────────────────────────────────
         let list_header = GtkBox::new(Orientation::Horizontal, 10);
         list_header.add_css_class("filer-list-header");
@@ -309,7 +292,6 @@ impl FilerWindow {
 
         // ── Right Column & Paned Split ────────────────────────────────────
         let right_col = GtkBox::new(Orientation::Vertical, 0);
-        right_col.append(&banner_box);
         right_col.append(&list_header);
         right_col.append(&canvas_scroll);
 
@@ -405,8 +387,6 @@ impl FilerWindow {
             sidebar_sep,
             devices_hdr,
             devices_box,
-            banner_box,
-            banner_label,
             list_header,
             canvas_scroll,
             flow_box,
@@ -3246,21 +3226,7 @@ impl FilerWindow {
     }
 
     fn show_banner(&self, msg: &str, tone: &str) {
-        self.banner_box.remove_css_class("ok");
-        self.banner_box.remove_css_class("warn");
-        self.banner_box.remove_css_class("danger");
-        self.banner_box.add_css_class(tone);
-        self.banner_label.set_text(msg);
-        self.banner_box.set_visible(true);
-
-        let bb = self.banner_box.clone();
-        let expected = msg.to_string();
-        let bl = self.banner_label.clone();
-        glib::timeout_add_local_once(Duration::from_secs(4), move || {
-            if bl.text() == expected {
-                bb.set_visible(false);
-            }
-        });
+        tools::notify(msg, tone);
     }
 }
 
