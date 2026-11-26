@@ -1,22 +1,22 @@
 Hayato · Theme & Appearance                                                     
 ────────────────────────────────────────────────────────────────────────────────
 ╭ Themes ──────────────────╮╭ Preview: Tokyo Night ────────────────────────────╮
-│ ▍   ● Tokyo …           ││  Tokyo Night (tokyo-night)           [ ACTIVE ]  │
-│     ○ Solari…           ││  by enkia / Folke                                │
-│     ○ Catppu…           ││                                                  │
-│     ○ Rose P…           ││  Desktop & Wallpaper Simulation                  │
-│     ○ Nord  n…          ││    Hayato      main  │   LazyNet   80%      │
-│     ○ Gruvbo…           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
-│     ○ Everfo…           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
-│     ○ Kanaga…           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
+│ ▍   ● Tokyo Night       ││  Tokyo Night (tokyo-night)           [ ACTIVE ]  │
+│     ○ Solarized Dark    ││  by enkia / Folke                                │
+│     ○ Catppuccin Mocha  ││                                                  │
+│     ○ Rose Pine         ││  Desktop & Wallpaper Simulation                  │
+│     ○ Nord              ││    Hayato      main  │   LazyNet   80%      │
+│     ○ Gruvbox Dark      ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
+│     ○ Everforest Dark   ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
+│     ○ Kanagawa          ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
 │     ○ Dracula           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
-│     ○ One Da…           ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
-│     ○ Hacker…           ││  Wallpaper: tokyo-night-sunset-lake.jpg (3 bund  │
-│     ○ Lumon  …          ││                                                  │
-│     ○ Matte …           ││  Terminal Palette (16 ANSI Swatches)             │
+│     ○ One Dark          ││  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  │
+│     ○ Hackerman         ││  Wallpaper: tokyo-night-sunset-lake.jpg (3 pre…  │
+│     ○ Lumon             ││                                                  │
+│     ○ Matte Black       ││  Terminal Palette (16 ANSI Swatches)             │
 │     ○ Omacon            ││   0    1    2    3    4    5    6    7           │
-│     ○ Catppu…           ││   8    9    10   11   12   13   14   15          │
-│     ○ Flexok…           ││                                                  │
+│     ○ Catppuccin Latte  ││   8    9    10   11   12   13   14   15          │
+│     ○ Flexoki Light     ││                                                  │
 │                          ││  Semantic Roles                                  │
 │                          ││  ██ Accent: #7aa2f7  ██ Surface: #1f2335         │
 │                          ││  ██ Border: #7aa2f7  ██ Ok: #9ece6a              │
