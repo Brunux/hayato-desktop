@@ -16,7 +16,7 @@
 //   tray        the StatusNotifier items of running applications
 //   layout      left: next xkb layout (hidden with a single layout)
 //   bluetooth   left: device list  right: bluetoothctl in a floating terminal
-//   network     left: Wi-Fi list   right: nmtui in a floating terminal
+//   network     left: Wi-Fi list   right: Hayato VPN (WireGuard & OpenVPN)
 //   volume      left: audio panel  right: mute  scroll: volume
 //   brightness  left: display panel  scroll: backlight
 //   battery     left: power panel  right: root menu
@@ -265,12 +265,12 @@
         "format-ethernet": "<span font_desc='JetBrains Mono 13'>\uf233</span>",
         "format-linked": "<span font_desc='JetBrains Mono 13'>\uf1e6</span>",
         "format-disconnected": "<span font_desc='JetBrains Mono 13'>\udb81\uddaa</span>",
-        "tooltip-format-wifi": "<span alpha='50%'>╭─</span> <b>NET // WI-FI</b>\n<span alpha='45%'>│</span> <span alpha='60%'>SSID</span>  {essid}\n<span alpha='45%'>│</span> <span alpha='60%'>SIG </span>  {signalStrength}%\n<span alpha='45%'>│</span> <span alpha='60%'>IF  </span>  {ifname}\n<span alpha='45%'>│</span> <span alpha='60%'>IP  </span>  {ipaddr}\n<span alpha='45%'>│</span> <span alpha='60%'>GW  </span>  {gwaddr}\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>",
-        "tooltip-format-ethernet": "<span alpha='50%'>╭─</span> <b>NET // ETHERNET</b>\n<span alpha='45%'>│</span> <span alpha='60%'>IF  </span>  {ifname}\n<span alpha='45%'>│</span> <span alpha='60%'>IP  </span>  {ipaddr}\n<span alpha='45%'>│</span> <span alpha='60%'>GW  </span>  {gwaddr}\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] network · [RMB] nmtui</span>",
-        "tooltip-format-linked": "<span alpha='50%'>╭─</span> <b>NET // LINKED</b>\n<span alpha='45%'>│</span> <span alpha='60%'>IF  </span>  {ifname}\n<span alpha='45%'>│</span> <span alpha='60%'>IP  </span>  no lease\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] network · [RMB] nmtui</span>",
-        "tooltip-format-disconnected": "<span alpha='50%'>╭─</span> <b>NET // OFFLINE</b>\n<span alpha='45%'>│</span> <span alpha='60%'>LINK</span>  disconnected\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>",
+        "tooltip-format-wifi": "<span alpha='50%'>╭─</span> <b>NET // WI-FI</b>\n<span alpha='45%'>│</span> <span alpha='60%'>SSID</span>  {essid}\n<span alpha='45%'>│</span> <span alpha='60%'>SIG </span>  {signalStrength}%\n<span alpha='45%'>│</span> <span alpha='60%'>IF  </span>  {ifname}\n<span alpha='45%'>│</span> <span alpha='60%'>IP  </span>  {ipaddr}\n<span alpha='45%'>│</span> <span alpha='60%'>GW  </span>  {gwaddr}\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] VPN</span>",
+        "tooltip-format-ethernet": "<span alpha='50%'>╭─</span> <b>NET // ETHERNET</b>\n<span alpha='45%'>│</span> <span alpha='60%'>IF  </span>  {ifname}\n<span alpha='45%'>│</span> <span alpha='60%'>IP  </span>  {ipaddr}\n<span alpha='45%'>│</span> <span alpha='60%'>GW  </span>  {gwaddr}\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] network · [RMB] VPN</span>",
+        "tooltip-format-linked": "<span alpha='50%'>╭─</span> <b>NET // LINKED</b>\n<span alpha='45%'>│</span> <span alpha='60%'>IF  </span>  {ifname}\n<span alpha='45%'>│</span> <span alpha='60%'>IP  </span>  no lease\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] network · [RMB] VPN</span>",
+        "tooltip-format-disconnected": "<span alpha='50%'>╭─</span> <b>NET // OFFLINE</b>\n<span alpha='45%'>│</span> <span alpha='60%'>LINK</span>  disconnected\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] VPN</span>",
         "on-click": "~/.config/bin/bar-net",
-        "on-click-right": "foot --app-id=popup nmtui"
+        "on-click-right": "hayato menu vpn"
     },
     "pulseaudio": {
         "format": "<span font_desc='JetBrains Mono 13'>{icon}</span>",

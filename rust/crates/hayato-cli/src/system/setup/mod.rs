@@ -57,7 +57,7 @@ pub enum DelegateAction {
     OpenSwap,
     OpenClean,
     ChangePassword,
-    OpenNmtui,
+    OpenVpn,
     InstallBundles(Vec<&'static str>),
     SystemBackup(PathBuf),
 }
@@ -334,7 +334,7 @@ impl SetupScreen {
                     "Configure VPN (WireGuard / OpenVPN)".to_string(),
                     format!("{} profile(s) configured", self.snap.vpn_count),
                     Glyph::Shield,
-                    RowAction::Delegate(DelegateAction::OpenNmtui),
+                    RowAction::Delegate(DelegateAction::OpenVpn),
                 );
             }
             StepId::Personalization => {
@@ -1281,8 +1281,8 @@ fn run_delegate(
                 screen.status_msg = Some(msg);
             }
         }
-        DelegateAction::OpenNmtui => {
-            run_interactive_cmd(terminal, "nmtui", &[]);
+        DelegateAction::OpenVpn => {
+            let _ = crate::system::vpn::menu(terminal, design);
         }
         DelegateAction::InstallBundles(ids) => {
             if let Some(script) = bundles::build_install_script(&ids) {

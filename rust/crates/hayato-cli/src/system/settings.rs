@@ -47,7 +47,7 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("bt-radio", "Bluetooth radio", "bluetoothctl power"),
         ("bt", "Bluetooth devices", "bar-bt"),
         ("dns", "DNS", "hayato-dns"),
-        ("vpn", "VPN", "nmcli connection"),
+        ("vpn", "VPN", "hayato menu vpn"),
         ("firewall", "Firewall (UFW)", "ufw"),
         ("night", "Night light", "night-light apply"),
         ("notify", "Notifications", "notify.conf"),
@@ -113,7 +113,7 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("onscreen-keyboard", "On-screen keyboard", "wvkbd"),
         ("translate", "Translate", "translate config"),
         ("audio", "Audio output", "bar-audio"),
-        ("mixer", "Volume per application", "pavucontrol"),
+        ("mixer", "Volume per application", "hayato menu audio"),
         ("media", "Media", "hayato-media"),
         ("power", "Battery", "bar-power"),
         ("power-profile", "Power profile", "powerprofilesctl"),
@@ -2507,8 +2507,7 @@ fn dispatch_key(
             let _ = super::audio::menu(terminal, design)?;
         }
         "mixer" => {
-            spawn_subcommand("pavucontrol", &[]);
-            return Ok(KeyOutcome::Exit(0));
+            let _ = super::audio::menu(terminal, design)?;
         }
         "media" => {
             let _ = super::media::menu(terminal, design)?;
@@ -2597,22 +2596,7 @@ fn dispatch_key(
             }
         }
         "vpn" => {
-            let conns = vpn_connections();
-            if conns.is_empty() {
-                crate::system::spawn_detached("exec foot --app-id=popup nmtui");
-                return Ok(KeyOutcome::Exit(0));
-            } else if let Some((active, _)) = conns.iter().find(|(_, on)| *on) {
-                match checked(&["nmcli", "connection", "down", active]) {
-                    Ok(_) => banner = Some(format!("VPN disconnected: {active}")),
-                    Err(e) => banner = Some(format!("Could not disconnect VPN: {e}")),
-                }
-            } else {
-                let name = &conns[0].0;
-                match checked(&["nmcli", "connection", "up", name]) {
-                    Ok(_) => banner = Some(format!("VPN connected: {name}")),
-                    Err(e) => banner = Some(format!("Could not connect VPN: {e}")),
-                }
-            }
+            let _ = super::vpn::menu(terminal, design)?;
         }
         "firewall" => match firewall_enabled() {
             Some(true) => match sudo(&["ufw", "disable"]) {

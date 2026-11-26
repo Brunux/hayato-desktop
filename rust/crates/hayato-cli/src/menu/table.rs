@@ -822,6 +822,17 @@ pub const PALETTE_EXTRA: &[MenuItem] = &[
         },
     ),
     item(
+        "vpn",
+        "VPN",
+        "WireGuard & OpenVPN tunnels: import, connect, autoconnect",
+        Glyph::Shield,
+        System,
+        Action::Run {
+            program: Program::System("hayato"),
+            args: &[Arg::Lit("menu"), Arg::Lit("vpn")],
+        },
+    ),
+    item(
         "greeter-settings",
         "Greeter settings",
         "login defaults, user pills, clock, sessions",

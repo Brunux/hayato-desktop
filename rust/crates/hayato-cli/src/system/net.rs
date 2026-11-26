@@ -132,7 +132,7 @@ fn signal_bars_4(signal: u8) -> &'static str {
 
 fn format_status_json(radio_enabled: bool, active: Option<&WifiAp>) -> String {
     if !radio_enabled {
-        return r#"{"text":"off","tooltip":"<span alpha='50%'>╭─</span> <b>NET // RADIO OFF</b>\n<span alpha='45%'>│</span> <span alpha='60%'>WIFI</span>  disabled\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"disabled","percentage":0}"#
+        return r#"{"text":"off","tooltip":"<span alpha='50%'>╭─</span> <b>NET // RADIO OFF</b>\n<span alpha='45%'>│</span> <span alpha='60%'>WIFI</span>  disabled\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] VPN</span>","class":"disabled","percentage":0}"#
             .to_string();
     }
 
@@ -145,7 +145,7 @@ fn format_status_json(radio_enabled: bool, active: Option<&WifiAp>) -> String {
         };
         let bars = signal_bars_4(active.signal);
         format!(
-            r#"{{"text":"{}","tooltip":"<span alpha='50%'>╭─</span> <b>NET // WI-FI</b>\n<span alpha='45%'>│</span> <span alpha='60%'>SSID</span>  {}\n<span alpha='45%'>│</span> <span alpha='60%'>SIG </span>  {}  {}%\n<span alpha='45%'>│</span> <span alpha='60%'>SEC </span>  {}\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"connected","percentage":{}}}"#,
+            r#"{{"text":"{}","tooltip":"<span alpha='50%'>╭─</span> <b>NET // WI-FI</b>\n<span alpha='45%'>│</span> <span alpha='60%'>SSID</span>  {}\n<span alpha='45%'>│</span> <span alpha='60%'>SIG </span>  {}  {}%\n<span alpha='45%'>│</span> <span alpha='60%'>SEC </span>  {}\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] VPN</span>","class":"connected","percentage":{}}}"#,
             escape_json(&active.ssid),
             escape_json(&ssid_pango),
             bars,
@@ -154,7 +154,7 @@ fn format_status_json(radio_enabled: bool, active: Option<&WifiAp>) -> String {
             active.signal
         )
     } else {
-        r#"{"text":"disconnected","tooltip":"<span alpha='50%'>╭─</span> <b>NET // OFFLINE</b>\n<span alpha='45%'>│</span> <span alpha='60%'>WIFI</span>  disconnected\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] nmtui</span>","class":"disconnected","percentage":0}"#
+        r#"{"text":"disconnected","tooltip":"<span alpha='50%'>╭─</span> <b>NET // OFFLINE</b>\n<span alpha='45%'>│</span> <span alpha='60%'>WIFI</span>  disconnected\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] Wi-Fi · [RMB] VPN</span>","class":"disconnected","percentage":0}"#
             .to_string()
     }
 }
@@ -333,6 +333,7 @@ pub struct NetScreen {
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
+    open_vpn: bool,
 }
 
 impl NetScreen {
@@ -351,6 +352,7 @@ impl NetScreen {
             header: Header::new("Hayato").subtitle("Wi-Fi"),
             keybar: Vec::new(),
             rows_height: Cell::new(16),
+            open_vpn: false,
         };
         screen.rebuild_rows(false);
         if radio_on {
@@ -436,10 +438,10 @@ impl NetScreen {
             if self.aps.iter().any(|a| a.in_use) {
                 actions.push(ActionItem::new("qr", "^Q", "Share QR").glyph(Glyph::Qr));
             }
-            actions.push(ActionItem::new("nmtui", "^N", "nmtui").glyph(Glyph::Gear));
+            actions.push(ActionItem::new("vpn", "^V", "VPN").glyph(Glyph::Shield));
         } else {
             actions.push(ActionItem::new("toggle", "^T", "Turn Wi-Fi on").glyph(Glyph::Wifi));
-            actions.push(ActionItem::new("nmtui", "^N", "nmtui").glyph(Glyph::Gear));
+            actions.push(ActionItem::new("vpn", "^V", "VPN").glyph(Glyph::Shield));
         }
         self.strip.set_items(actions);
 
@@ -674,8 +676,8 @@ impl NetScreen {
                 self.open_inline_qr();
                 Outcome::Consumed
             }
-            "nmtui" => {
-                crate::system::spawn_detached("exec foot --app-id=popup nmtui");
+            "vpn" => {
+                self.open_vpn = true;
                 Outcome::Done(hayato_ui::app::exit::OK)
             }
             _ => Outcome::Consumed,
@@ -1177,8 +1179,8 @@ impl Screen for NetScreen {
                         KeyCode::Char('p') | KeyCode::Char('P') => {
                             return self.run_strip_action("portal");
                         }
-                        KeyCode::Char('n') | KeyCode::Char('N') => {
-                            return self.run_strip_action("nmtui");
+                        KeyCode::Char('v') | KeyCode::Char('V') => {
+                            return self.run_strip_action("vpn");
                         }
                         KeyCode::Char('d') | KeyCode::Char('D') => {
                             self.prompt_forget_selected();
@@ -1300,8 +1302,15 @@ pub fn menu(
             "nmcli is not installed (package network-manager)",
         ));
     }
-    let mut screen = NetScreen::new();
-    crate::run_screen(terminal, design, "Wi-Fi", &mut screen)
+    loop {
+        let mut screen = NetScreen::new();
+        let code = crate::run_screen(terminal, design, "Wi-Fi", &mut screen)?;
+        if screen.open_vpn {
+            let _ = super::vpn::menu(terminal, design)?;
+            continue;
+        }
+        return Ok(code);
+    }
 }
 
 #[cfg(test)]
