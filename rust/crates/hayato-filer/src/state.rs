@@ -99,6 +99,12 @@ impl TabState {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Bookmark {
+    pub path: PathBuf,
+    pub icon: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct AppState {
     pub tabs: Vec<TabState>,
@@ -109,7 +115,7 @@ pub struct AppState {
     pub folders_first: bool,
     pub show_hidden: bool,
     pub sidebar_compact: bool,
-    pub bookmarks: Vec<PathBuf>,
+    pub bookmarks: Vec<Bookmark>,
     /// Session undo history, newest last. Finder-style: Ctrl+Z reverses the
     /// most recent rename, move, trash, copy or folder creation.
     pub undo: Vec<UndoAction>,
@@ -347,7 +353,9 @@ impl AppState {
         if !dir.is_dir() || self.is_bookmarked(&dir) {
             return false;
         }
-        self.bookmarks.push(dir);
+        let used: Vec<&str> = self.bookmarks.iter().map(|b| b.icon.as_str()).collect();
+        let icon = pick_bookmark_icon(&dir, &used).to_string();
+        self.bookmarks.push(Bookmark { path: dir, icon });
         save_bookmarks(&self.bookmarks);
         true
     }
@@ -356,7 +364,7 @@ impl AppState {
     /// bookmark, so a caller never announces an unpin that did not happen.
     pub fn unpin_bookmark(&mut self, dir: &Path) -> bool {
         let before = self.bookmarks.len();
-        self.bookmarks.retain(|b| b != dir);
+        self.bookmarks.retain(|b| b.path != dir);
         if self.bookmarks.len() == before {
             return false;
         }
@@ -365,8 +373,134 @@ impl AppState {
     }
 
     pub fn is_bookmarked(&self, dir: &Path) -> bool {
-        self.bookmarks.iter().any(|b| b == dir)
+        self.bookmarks.iter().any(|b| b.path == dir)
     }
+}
+
+/// Curated fallback pool of distinct Font Awesome glyphs (verified in FA 4.7 & 6),
+/// avoiding the default Places/Devices icons so every pinned folder stands out.
+const BOOKMARK_FALLBACK_ICONS: &[&str] = &[
+    "\u{f005}", // star
+    "\u{f02e}", // bookmark
+    "\u{f02b}", // tag
+    "\u{f0e7}", // bolt
+    "\u{f135}", // rocket
+    "\u{f06c}", // leaf
+    "\u{f1b2}", // cube
+    "\u{f004}", // heart
+    "\u{f06d}", // fire
+    "\u{f0a3}", // certificate
+    "\u{f14e}", // compass
+    "\u{f0c3}", // flask
+    "\u{f02d}", // book
+    "\u{f0b1}", // briefcase
+    "\u{f121}", // code
+    "\u{f030}", // camera
+    "\u{f025}", // headphones
+    "\u{f11b}", // gamepad
+    "\u{f0c2}", // cloud
+    "\u{f187}", // archive
+];
+
+/// Choose a distinct Font Awesome icon for a pinned folder based on its name,
+/// skipping any icon already in `used` and advancing to the next suggestion.
+pub fn pick_bookmark_icon(path: &Path, used: &[&str]) -> &'static str {
+    let name = path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+
+    const RULES: &[(&[&str], &[&str])] = &[
+        (
+            &[
+                "dev",
+                "code",
+                "src",
+                "git",
+                "repo",
+                "proj",
+                "rust",
+                "workspace",
+                "hack",
+                "app",
+            ],
+            &["\u{f121}", "\u{f120}", "\u{f126}", "\u{f013}", "\u{f188}"],
+        ),
+        (
+            &["work", "job", "office", "client", "biz"],
+            &["\u{f0b1}", "\u{f0f2}", "\u{f02d}", "\u{f073}"],
+        ),
+        (
+            &["game", "rom", "steam", "emu", "play"],
+            &["\u{f11b}", "\u{f091}", "\u{f135}", "\u{f0e7}"],
+        ),
+        (
+            &[
+                "book", "read", "epub", "pdf", "doc", "study", "learn", "note", "wiki", "obsidian",
+            ],
+            &["\u{f02d}", "\u{f044}", "\u{f19d}", "\u{f02e}"],
+        ),
+        (
+            &[
+                "photo", "cam", "img", "art", "design", "draw", "wall", "screen", "shot",
+            ],
+            &["\u{f030}", "\u{f1fc}", "\u{f06e}", "\u{f004}"],
+        ),
+        (
+            &["audio", "sound", "pod", "rec", "studio", "mix", "song"],
+            &["\u{f025}", "\u{f130}", "\u{f028}", "\u{f1de}"],
+        ),
+        (
+            &[
+                "share", "drop", "sync", "cloud", "drive", "net", "web", "site", "pub",
+            ],
+            &["\u{f0c2}", "\u{f0ac}", "\u{f1e0}", "\u{f0ee}"],
+        ),
+        (
+            &[
+                "archive", "backup", "bak", "old", "vault", "safe", "sec", "key", "ssh", "gpg",
+            ],
+            &["\u{f187}", "\u{f023}", "\u{f084}", "\u{f132}"],
+        ),
+        (
+            &["tmp", "temp", "scratch", "lab", "test", "exp", "sandbox"],
+            &["\u{f0c3}", "\u{f188}", "\u{f0ad}", "\u{f0e7}"],
+        ),
+        (
+            &["config", "dot", "etc", "bin", "script", "tool", "sys"],
+            &["\u{f013}", "\u{f0ad}", "\u{f120}", "\u{f1de}"],
+        ),
+        (
+            &["mail", "inbox", "msg", "chat"],
+            &["\u{f0e0}", "\u{f01c}", "\u{f075}", "\u{f1d8}"],
+        ),
+        (
+            &["fin", "tax", "bank", "money", "bill", "invoice"],
+            &["\u{f09d}", "\u{f1ec}", "\u{f080}", "\u{f0d6}"],
+        ),
+        (
+            &["travel", "trip", "map", "nav"],
+            &["\u{f072}", "\u{f14e}", "\u{f041}", "\u{f0ac}"],
+        ),
+    ];
+
+    for (keywords, glyphs) in RULES {
+        if keywords.iter().any(|kw| name.contains(kw)) {
+            for &glyph in *glyphs {
+                if !used.contains(&glyph) {
+                    return glyph;
+                }
+            }
+        }
+    }
+
+    for &glyph in BOOKMARK_FALLBACK_ICONS {
+        if !used.contains(&glyph) {
+            return glyph;
+        }
+    }
+
+    BOOKMARK_FALLBACK_ICONS[used.len() % BOOKMARK_FALLBACK_ICONS.len()]
 }
 
 pub fn home_dir() -> PathBuf {
@@ -397,14 +531,31 @@ fn bookmarks_path() -> PathBuf {
     home_dir().join(".config/hayato/filer-bookmarks.json")
 }
 
-fn load_bookmarks() -> Vec<PathBuf> {
+fn parse_bookmarks_json(raw: &str) -> Vec<Bookmark> {
+    if let Ok(bms) = serde_json::from_str::<Vec<Bookmark>>(raw) {
+        return bms;
+    }
+    // Backwards-compatible upgrade from legacy `Vec<PathBuf>` bookmarks file.
+    if let Ok(paths) = serde_json::from_str::<Vec<PathBuf>>(raw) {
+        let mut out: Vec<Bookmark> = Vec::with_capacity(paths.len());
+        for path in paths {
+            let used: Vec<&str> = out.iter().map(|b| b.icon.as_str()).collect();
+            let icon = pick_bookmark_icon(&path, &used).to_string();
+            out.push(Bookmark { path, icon });
+        }
+        return out;
+    }
+    Vec::new()
+}
+
+fn load_bookmarks() -> Vec<Bookmark> {
     let Ok(raw) = std::fs::read_to_string(bookmarks_path()) else {
         return Vec::new();
     };
-    serde_json::from_str::<Vec<PathBuf>>(&raw).unwrap_or_default()
+    parse_bookmarks_json(&raw)
 }
 
-fn save_bookmarks(bookmarks: &[PathBuf]) {
+fn save_bookmarks(bookmarks: &[Bookmark]) {
     let path = bookmarks_path();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -550,5 +701,27 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["alpha_dir", "zeta.txt", "beta.txt", ".secret"]
         );
+    }
+
+    #[test]
+    fn bookmark_icons_match_folder_name_and_avoid_duplicates() {
+        let dev = pick_bookmark_icon(Path::new("/home/u/Dev"), &[]);
+        assert_eq!(dev, "\u{f121}");
+        // Second dev-like folder picks the next suggestion instead of duplicating.
+        let projects = pick_bookmark_icon(Path::new("/home/u/Projects"), &[dev]);
+        assert_eq!(projects, "\u{f120}");
+        assert_ne!(dev, projects);
+
+        let games = pick_bookmark_icon(Path::new("/home/u/Games"), &[dev, projects]);
+        assert_eq!(games, "\u{f11b}");
+
+        // Legacy `Vec<PathBuf>` JSON upgrades seamlessly with distinct icons.
+        let legacy = r#"["/home/u/Dev","/home/u/Projects","/home/u/Misc"]"#;
+        let upgraded = parse_bookmarks_json(legacy);
+        assert_eq!(upgraded.len(), 3);
+        assert_eq!(upgraded[0].icon, "\u{f121}");
+        assert_eq!(upgraded[1].icon, "\u{f120}");
+        assert_ne!(upgraded[2].icon, upgraded[0].icon);
+        assert_ne!(upgraded[2].icon, upgraded[1].icon);
     }
 }

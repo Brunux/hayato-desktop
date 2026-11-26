@@ -43,6 +43,7 @@ pub struct FilerWindow {
     _volume_monitor: gio::VolumeMonitor,
     back_btn: Button,
     fwd_btn: Button,
+    crumbs_scroll: ScrolledWindow,
     crumbs_box: GtkBox,
     path_entry: Entry,
     filter_btn: Button,
@@ -123,8 +124,12 @@ impl FilerWindow {
         nav_group.append(&fwd_btn);
 
         let crumbs_box = GtkBox::new(Orientation::Horizontal, 0);
-        crumbs_box.add_css_class("filer-breadcrumbs");
-        crumbs_box.set_hexpand(true);
+        let crumbs_scroll = ScrolledWindow::new();
+        crumbs_scroll.add_css_class("filer-breadcrumbs");
+        crumbs_scroll.set_policy(gtk4::PolicyType::External, gtk4::PolicyType::Never);
+        crumbs_scroll.set_hexpand(true);
+        crumbs_scroll.set_min_content_width(120);
+        crumbs_scroll.set_child(Some(&crumbs_box));
 
         let path_entry = Entry::new();
         path_entry.add_css_class("filer-path-entry");
@@ -175,7 +180,7 @@ impl FilerWindow {
 
         header.append(&sidebar_toggle_btn);
         header.append(&nav_group);
-        header.append(&crumbs_box);
+        header.append(&crumbs_scroll);
         header.append(&path_entry);
         header.append(&filter_entry);
         header.append(&filter_btn);
@@ -383,6 +388,7 @@ impl FilerWindow {
             _volume_monitor: volume_monitor,
             back_btn,
             fwd_btn,
+            crumbs_scroll,
             crumbs_box,
             path_entry,
             filter_btn,
@@ -1391,7 +1397,7 @@ impl FilerWindow {
 
     fn show_path_entry(&self) {
         let cwd = self.state.borrow().cwd().display().to_string();
-        self.crumbs_box.set_visible(false);
+        self.crumbs_scroll.set_visible(false);
         self.path_entry.set_text(&cwd);
         self.path_entry.set_visible(true);
         self.path_entry.grab_focus();
@@ -1400,7 +1406,7 @@ impl FilerWindow {
 
     fn hide_path_entry(&self) {
         self.path_entry.set_visible(false);
-        self.crumbs_box.set_visible(true);
+        self.crumbs_scroll.set_visible(true);
     }
 
     fn render_breadcrumbs(self: &Rc<Self>, cwd: &Path, in_trash: bool) {
@@ -1470,6 +1476,13 @@ impl FilerWindow {
             );
             self.crumbs_box.append(&btn);
         }
+
+        // Scroll to the rightmost crumb once allocated so the current folder is always in view.
+        let adj = self.crumbs_scroll.hadjustment();
+        glib::idle_add_local_once(move || {
+            let max = (adj.upper() - adj.page_size()).max(0.0);
+            adj.set_value(max);
+        });
     }
 
     fn render_places(self: &Rc<Self>) {
@@ -1514,12 +1527,13 @@ impl FilerWindow {
         let bookmarks = self.state.borrow().bookmarks.clone();
         for bm in bookmarks {
             let name = bm
+                .path
                 .file_name()
                 .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| bm.display().to_string());
-            let active = !cur_trash && cur_cwd == bm;
-            let row = self.make_place_button("\u{f005}", &name, bm.clone(), false, active, None);
-            self.attach_unpin_menu(&row, bm);
+                .unwrap_or_else(|| bm.path.display().to_string());
+            let active = !cur_trash && cur_cwd == bm.path;
+            let row = self.make_place_button(&bm.icon, &name, bm.path.clone(), false, active, None);
+            self.attach_unpin_menu(&row, bm.path);
             self.places_box.append(&row);
         }
     }
@@ -3083,7 +3097,7 @@ impl FilerWindow {
 
     fn prompt_new_folder(self: &Rc<Self>) {
         let pop = Popover::new();
-        pop.set_parent(&self.crumbs_box);
+        pop.set_parent(&self.crumbs_scroll);
         unparent_on_close(&pop);
         let row = GtkBox::new(Orientation::Horizontal, 6);
         let entry = Entry::new();
@@ -3125,7 +3139,7 @@ impl FilerWindow {
 
     fn prompt_rename(self: &Rc<Self>, item: &FileEntry) {
         let pop = Popover::new();
-        pop.set_parent(&self.crumbs_box);
+        pop.set_parent(&self.crumbs_scroll);
         unparent_on_close(&pop);
         let row = GtkBox::new(Orientation::Horizontal, 6);
         let entry = Entry::new();
@@ -3181,7 +3195,7 @@ impl FilerWindow {
 
     fn confirm_permanent_delete(self: &Rc<Self>, paths: Vec<PathBuf>) {
         let pop = Popover::new();
-        pop.set_parent(&self.crumbs_box);
+        pop.set_parent(&self.crumbs_scroll);
         unparent_on_close(&pop);
         let col = GtkBox::new(Orientation::Vertical, 8);
         let lbl = Label::new(Some(&format!(
