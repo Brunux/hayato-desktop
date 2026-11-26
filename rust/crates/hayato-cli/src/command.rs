@@ -651,6 +651,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &[],
     },
     CommandSpec {
+        // `hayato menu vpn`: native WireGuard & OpenVPN client over NetworkManager.
+        path: "menu vpn",
+        summary: "WireGuard & OpenVPN client: import .conf/.ovpn, connect, autoconnect",
+        shape: Shape::Pick,
+        symlinks: &[],
+        installed: &[],
+    },
+    CommandSpec {
         // `hayato menu welcome`: interactive first-boot Mission Briefing.
         // Intentionally has no installed symlink because `~/.config/bin/hayato-welcome`
         // is the wrapper script that handles `--print` and the `/etc/machine-id` marker.

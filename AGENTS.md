@@ -111,11 +111,18 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    `files/find.rs` (`Stage`), `hayato-ui/src/task.rs` (`StopPhase`),
    `system/media.rs` (`PlaybackState`), `hayato-ui/src/widgets.rs` (`RunnerState`),
    `system/dictate.rs` (`DictationPhase`), `installer/worker.rs` (`WorkerPhase`),
-   `installer/ui.rs` (`LocFocus` / `UserFocus` / `DiskFocus`), and
+   `installer/ui.rs` (`LocFocus` / `UserFocus` / `DiskFocus`),
+   `system/vpn.rs` (`VpnPhase`), and
    `greeter/screen.rs` (`UserChoice` / `AuthPrompt`). Screens expose the phase
    through `Screen::phase()`; `HAYATO_DEBUG_STATE=1` appends transitions to
    `$XDG_STATE_HOME/hayato/state.log` (never stderr, which would paint over the
    frame).
+12c. **Native VPN Client (`hayato menu vpn`)**:
+   `system/vpn.rs` manages WireGuard (`.conf`, native NetworkManager kernel backend) and OpenVPN
+   (`.ovpn`, `network-manager-openvpn`) profiles via `nmcli` without spawning `nmtui`, reading
+   live IPv4 and RX/TX counters from NetworkManager and `/sys/class/net/<dev>/statistics/` with
+   zero resident daemons. Profile deletion uses a Cancel-first `Confirm` modal that replaces the
+   screen body.
 13. **A file card opens its folder**: a notification about a written file carries the
    `x-hayato-open-path` hint (`Card::open_path`, `hayato notify --open`, or `BUSY_OPEN` for a
    busy result). A left click on the card body runs `hayato-files <parent>`; grimshot predates the

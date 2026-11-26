@@ -250,6 +250,17 @@ The menu offers Automatic (DHCP), Cloudflare, Google, Quad9, AdGuard, and a cust
 
 The `--status` subcommand returns the current servers and ignore-auto-dns state.
 
+## VPN (WireGuard & OpenVPN)
+
+The native **VPN** client (`hayato menu vpn`, Settings → *Network → VPN*, or the command palette) manages **WireGuard** (`.conf`) and **OpenVPN** (`.ovpn`) tunnels directly through NetworkManager without spawning `nmtui`:
+
+* **Import (`i`)**: scans `~/Downloads`, `~/Documents`, `~/.config/vpn`, and `~` for `.conf` / `.ovpn` files (auto-detecting WireGuard vs. OpenVPN) or accepts any custom file path.
+* **Connect / Disconnect (`Enter` or `c`)**: brings the tunnel up or down and shows its live IPv4 address and `↑` / `↓` transfer counters from `/sys/class/net/<dev>/statistics/`.
+* **Autoconnect (`a`)**: toggles `connection.autoconnect` so a tunnel comes up automatically on boot.
+* **OpenVPN credentials (`u`)**: stores OpenVPN username and password in NetworkManager secrets. If `network-manager-openvpn` is not installed yet, the menu offers an inline **Install OpenVPN support** row.
+* **Delete (`d`)**: removes a saved profile after a Cancel-first confirmation modal.
+* **Status (`hayato menu vpn --status`)**: prints a one-line summary for scripts and settings.
+
 ## Hotel and airport Wi-Fi
 
 A network that wants you to accept its terms before it lets you online is a

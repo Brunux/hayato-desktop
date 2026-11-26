@@ -1,0 +1,24 @@
+Hayato · VPN                                     1 active · WireGuard & OpenVPN 
+────────────────────────────────────────────────────────────────────────────────
+╭ VPN Tunnels ─────────────────────────────────────────────────────────────────╮
+│  WireGuard: native (NM) · OpenVPN: ready                                     │
+│                                                                              │
+│ ▍   ● work-wg [WG]  10.66.0.2/32 · ↑4.2 MB ↓38.1 MB · auto                  │
+│     ○ home-ovpn [OVPN]  disconnected                                        │
+│     Import VPN config (.conf / .ovpn)  WireGuard or OpenVPN profile file    │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  toggle   [i]  import   [a]  auto   [u]  auth   …         [Esc]  close 

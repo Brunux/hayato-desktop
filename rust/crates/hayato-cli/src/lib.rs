@@ -366,6 +366,10 @@ fn query(resolved: &Resolved) -> Option<i32> {
             println!("{}", system::bluetooth::status());
             Some(EXIT_OK)
         }
+        ("menu vpn", ["status"] | ["--status"]) => {
+            println!("{}", system::vpn::status());
+            Some(EXIT_OK)
+        }
         ("menu format" | "menu swap", ["--candidates"]) => {
             let mut out = io::stdout();
             for d in system::disk::candidates_from_machine() {
@@ -613,6 +617,7 @@ fn execute(
         "menu tz" => system::tz::menu(terminal, design),
         "menu dns" => system::dns::menu(terminal, design),
         "menu vnc" => system::vnc::menu(terminal, design),
+        "menu vpn" => system::vpn::menu(terminal, design),
         "menu settings" => system::settings::menu(terminal, design),
         "menu ssh" => system::ssh::menu(terminal, design),
         "menu palette" => session_menu(resolved, terminal, design, menu::Surface::Palette),
