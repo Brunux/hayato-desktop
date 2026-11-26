@@ -97,6 +97,7 @@ tooltip label {
 #custom-keyboard-layout,
 #custom-bluetooth,
 #custom-vnc,
+#custom-vpn,
 #custom-drives,
 #network,
 #pulseaudio,
@@ -205,6 +206,7 @@ tooltip label {
 #custom-cassette.empty,
 #custom-keyboard-layout.empty,
 #custom-vnc.empty,
+#custom-vpn.empty,
 #custom-drives.empty {
     padding: 0;
     margin: 0;

@@ -52,6 +52,7 @@
         "custom/vnc",
         "custom/drives",
         "custom/bluetooth",
+        "custom/vpn",
         "network",
         "pulseaudio",
         "backlight",
@@ -243,6 +244,15 @@
         "tooltip": true,
         "on-click": "~/.config/bin/bar-bt",
         "on-click-right": "foot --app-id=popup bluetoothctl"
+    },
+    "custom/vpn": {
+        "exec": "hayato menu vpn --bar",
+        "return-type": "json",
+        "interval": 10,
+        "signal": 8,
+        "tooltip": true,
+        "on-click": "hayato menu vpn",
+        "on-click-right": "hayato menu vpn --disconnect"
     },
     "network": {
         // Waybar's built-in network module is the one indicator that cannot be

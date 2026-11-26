@@ -1,0 +1,45 @@
+Hayato · VPN                                                                                                                       New WireGuard Tunnel 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+╭ Tunnel Configuration ───────────────────────────────────────────────────────╮ ╭ Live Config Preview ─────────────────────────────────────────────────╮
+│  Protocol     ● WireGuard     OpenVPN                                       │ │  [Interface]                                                         │
+│                                                                             │ │  PrivateKey = <hidden · 44 chars>                                    │
+│  Name        ▍work-wg                                                       │ │  Address = 10.66.0.2/32                                              │
+│                                                                             │ │  DNS = 1.1.1.1                                                       │
+│  Address      10.66.0.2/32                                                  │ │                                                                      │
+│                                                                             │ │  [Peer]                                                              │
+│  Priv Key     ********************************************         GenKey   │ │  PublicKey = <missing>                                               │
+│  Pub Key     xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=            Copy   │ │  Endpoint = vpn.example.com:51820                                    │
+│                                                                             │ │  AllowedIPs = 0.0.0.0/0, ::/0                                        │
+│  Peer Key     server WireGuard public key                                   │ │  PersistentKeepalive = 25                                            │
+│                                                                             │ │                                                                      │
+│  Endpoint     vpn.example.com:51820                                         │ │  VALIDATION                                                          │
+│                                                                             │ │  ✓ Connection name valid                                             │
+│  AllowedIPs   0.0.0.0/0, ::/0                                               │ │  ✓ Local CIDR valid                                                  │
+│                                                                             │ │  ✓ Private key valid (44-char base64)                                │
+│  DNS          1.1.1.1                                                       │ │  ✗ Peer public key required (44-char base64)                         │
+│                                                                             │ │  ✓ Endpoint valid                                                    │
+│  ✗ Peer public key required (44-char base64)                                │ │                                                                      │
+│   Save Tunnel (Ctrl+S)    Cancel (Esc)                                      │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+╰─────────────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────────────────────────────╯
+ [Tab/↑↓]  field   [Ctrl+S]  save   [Ctrl+G]  genkey   [Ctrl+Y]  copy pub   [Ctrl+V]  paste   [Esc]  cancel                                             

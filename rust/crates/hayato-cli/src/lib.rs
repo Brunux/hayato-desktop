@@ -370,6 +370,11 @@ fn query(resolved: &Resolved) -> Option<i32> {
             println!("{}", system::vpn::status());
             Some(EXIT_OK)
         }
+        ("menu vpn", ["bar"] | ["--bar"]) => {
+            println!("{}", system::vpn::bar_json());
+            Some(EXIT_OK)
+        }
+        ("menu vpn", ["disconnect"] | ["--disconnect"]) => Some(system::vpn::disconnect_active()),
         ("menu format" | "menu swap", ["--candidates"]) => {
             let mut out = io::stdout();
             for d in system::disk::candidates_from_machine() {

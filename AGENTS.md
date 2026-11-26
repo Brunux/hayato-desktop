@@ -34,6 +34,18 @@ Rootfs assembly, bootloaders, image creation, and eMMC installers belong in `hay
 
 ## Enforced Architecture & Design-System Invariants
 Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
+0. **UI/UX Design Gate (Required Before Coding New Visual Features)**:
+   Before implementing any new user-facing feature or redesign that adds or modifies a TUI screen,
+   GTK4 surface, Waybar indicator, notification, greeter, or multi-step flow, first determine
+   whether it needs a visual/interaction spec. If it does, delegate the design to a specialized
+   **UI/UX Designer** subagent **before writing implementation code** and pass the full context
+   bundle: this file (`desktop/AGENTS.md`), `hayato-ui` primitives (`widgets.rs`, `design.rs`,
+   `glyphs.rs`), `hayato-theme` 16-theme dark/light contrast rules, the closest existing Hayato
+   exemplars (e.g. `dns.rs`/`display.rs` studios, `vpn.rs`/`installer/ui.rs` multi-field forms,
+   `hayato-filer` GTK4, `waybar/config.jsonc` indicators), and dual-grid/dual-density constraints
+   (`80×24` & `152×45`, normal & tablet). The spec must explicitly evaluate the best UX paradigm
+   (e.g. inline studio/form vs. linear wizard), provide compact & wide wireframes, specify the
+   single `Phase` enum, non-`Alt` keybindings, pointer/touch hit targets, and ranked P0–P2 scope.
 1. **`Color::Rgb` only in `design.rs`**: `hayato-ui/tests/colours.rs` fails on `Color::Rgb` or raw
    hex colors anywhere outside `hayato-ui/src/design.rs`. Widgets consume `ColorRole`.
 2. **Shell owns `Frame`**: `hayato-cli` implements `Screen` rendering into `BodyCtx`. Mentioning

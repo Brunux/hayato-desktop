@@ -1,0 +1,24 @@
+Hayato · VPN                                               New WireGuard Tunnel 
+────────────────────────────────────────────────────────────────────────────────
+╭ Tunnel Configuration ────────────────────────────────────────────────────────╮
+│  Protocol     ● WireGuard     OpenVPN                                        │
+│                                                                              │
+│  Name        ▍work-wg                                                        │
+│  Address      10.66.0.2/32                                                   │
+│  Priv Key     ********************************************          GenKey   │
+│  Pub Key     xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=             Copy   │
+│  Peer Key     server WireGuard public key                                    │
+│  Endpoint     vpn.example.com:51820                                          │
+│  AllowedIPs   0.0.0.0/0, ::/0                                                │
+│  DNS          1.1.1.1                                                        │
+│  ✗ Peer public key required (44-char base64)                                 │
+│   Save Tunnel (Ctrl+S)    Cancel (Esc)                                       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [Tab/↑↓]  field   [Ctrl+S]  save   [Ctrl+G]  genkey   …          [Esc]  cancel 

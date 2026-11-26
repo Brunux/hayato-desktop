@@ -254,12 +254,15 @@ The `--status` subcommand returns the current servers and ignore-auto-dns state.
 
 The native **VPN** client (`hayato menu vpn`, Settings → *Network → VPN*, or the command palette) manages **WireGuard** (`.conf`) and **OpenVPN** (`.ovpn`) tunnels directly through NetworkManager without spawning `nmtui`:
 
-* **Import (`i`)**: scans `~/Downloads`, `~/Documents`, `~/.config/vpn`, and `~` for `.conf` / `.ovpn` files (auto-detecting WireGuard vs. OpenVPN) or accepts any custom file path.
+* **Create & Edit (`n` / `e`)**: single-screen multi-field form with inline `[WireGuard | OpenVPN]` protocol switching, live config preview & validation, instant WireGuard keypair generation (`Ctrl+G`) with copyable derived Public Key (`Ctrl+Y`), secret reveal (`Ctrl+R`), and optional OpenVPN CA file browsing via **Files** (`Ctrl+O`).
+* **Smart Clipboard Paste (`v` or `Ctrl+V`)**: parses a WireGuard `.conf` or OpenVPN `.ovpn` directly from your clipboard into the form for instant review and save (`Ctrl+S`).
+* **Import (`i`)**: opens Hayato's native **Files** browser (with live config preview) to pick any `.conf` (WireGuard) or `.ovpn` (OpenVPN) file from disk.
 * **Connect / Disconnect (`Enter` or `c`)**: brings the tunnel up or down and shows its live IPv4 address and `↑` / `↓` transfer counters from `/sys/class/net/<dev>/statistics/`.
 * **Autoconnect (`a`)**: toggles `connection.autoconnect` so a tunnel comes up automatically on boot.
 * **OpenVPN credentials (`u`)**: stores OpenVPN username and password in NetworkManager secrets. If `network-manager-openvpn` is not installed yet, the menu offers an inline **Install OpenVPN support** row.
 * **Delete (`d`)**: removes a saved profile after a Cancel-first confirmation modal.
 * **Status (`hayato menu vpn --status`)**: prints a one-line summary for scripts and settings.
+* **Waybar indicator (`custom/vpn`)**: collapses to zero width when disconnected; shows a shield icon next to the network indicator whenever a tunnel is active (`[LMB]` opens `hayato menu vpn`, `[RMB]` disconnects immediately via `hayato menu vpn --disconnect`), refreshing immediately via `RTMIN+8`.
 
 ## Hotel and airport Wi-Fi
 

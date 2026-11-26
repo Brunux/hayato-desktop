@@ -1,11 +1,14 @@
 Hayato · VPN                                     1 active · WireGuard & OpenVPN 
 ────────────────────────────────────────────────────────────────────────────────
-╭ VPN Tunnels ─────────────────────────────────────────────────────────────────╮
+╭ Tunnels ─────────────────────────────────────────────────────────────────────╮
 │  WireGuard: native (NM) · OpenVPN: ready                                     │
 │                                                                              │
 │ ▍   ● work-wg [WG]  10.66.0.2/32 · ↑4.2 MB ↓38.1 MB · auto                  │
 │     ○ home-ovpn [OVPN]  disconnected                                        │
-│     Import VPN config (.conf / .ovpn)  WireGuard or OpenVPN profile file    │
+│  Actions  ────────────────────────────────────────────────────────────────   │
+│     New tunnel  WireGuard or OpenVPN form (or Ctrl+V paste)                 │
+│     Import config  browse .conf / .ovpn with live preview                   │
+│     Paste config  parse .conf / .ovpn from clipboard                        │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -15,10 +18,7 @@ Hayato · VPN                                     1 active · WireGuard & OpenVP
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
+│ ──────────────────────────────────────────────────────────────────────────── │
+│  work-wg · wg0 · 203.0.113.10:51820 · autoconnect on                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- [Enter]  toggle   [i]  import   [a]  auto   [u]  auth   …         [Esc]  close 
+ [Enter]  toggle   [n]  new   [e]  edit   [i]  import   [v]  paste [Esc]  close 
