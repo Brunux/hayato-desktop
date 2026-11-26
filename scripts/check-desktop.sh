@@ -1679,6 +1679,18 @@ fi
 	fail "bin/hayato-keys is missing: the key view has no script"
 [ -x "$HOME/.config/bin/hayato-files" ] && ok "file browser (hayato-files) is executable" ||
 	fail "bin/hayato-files is missing: Alt+Ctrl+F and the Files menu entry do nothing"
+# The GTK4 Filer window (Alt+Ctrl+Shift+F) ships beside the TUI list. Its
+# --self-test proves the theme CSS rendered and the pure state / archive logic is
+# intact without needing a display; a stale /usr/local/bin copy shadows it.
+if _filer_bin=$(command -v hayato-filer 2>/dev/null) && [ -x "$_filer_bin" ]; then
+	if _filer_report=$("$_filer_bin" --self-test 2>/dev/null); then
+		ok "Filer window self-test passed ($_filer_report)"
+	else
+		fail "hayato-filer --self-test failed: the Files window would open broken"
+	fi
+else
+	fail "hayato-filer is missing: Alt+Ctrl+Shift+F opens nothing"
+fi
 # The translate key is taught in one place, the shortcuts page, and the Settings
 # row only says what it does - not that it exists.  A manual that lost the row
 # is a key nobody finds.
@@ -2860,30 +2872,26 @@ else
 	warn "$HOME/.config/gtk-4.0/gtk.css is missing or empty: papers keeps libadwaita's own colours"
 fi
 
-# The windowed file manager is favnyr (replaced pcmanfm with Brunux/Favnyr-aarm64 v0.3.6 binary at /usr/bin/favnyr);
-# Alt+Search finds files). What fails here does so silently: the terminal comes
-# from $TERMINAL with a fallback list foot is not in (the check below), a double
-# click on a photo goes through the association, and the icons it draws come from
-# the theme rather than from the binary, so a lost PNG is a hole in the sidebar
-# and the icon view.
-if have favnyr; then
-	# **Never run it to ask its version.** This build parses `--version` as a
-	# startup location ("WARN favnyr: invalid startup location
-	# location=--version"), then opens its Slint event loop and never exits:
-	# the report stopped on this line, and every check after it - the whole
-	# framework section included - never ran. `--help` opens the window too.
-	# Presence and the exec bit are what can be asked without starting one.
-	ok "file manager installed (favnyr is executable)"
+# The windowed file manager is hayato-filer (the native GTK4 browser that
+# replaced the old Slint favnyr): the root menu's Files (window) row and the
+# `--self-test` probe below. What fails here does so silently: the terminal it
+# opens is foot by name, and a double click reaches ~/.config/bin/hayato-view
+# through the opener table, so a missing binary is a key that does nothing.
+if have hayato-filer; then
+	# Never start it to ask its version: `--version` prints and exits, but the
+	# window itself needs a Wayland session. Presence and the exec bit are what
+	# can be asked without starting one; `--self-test` runs headless below.
+	ok "file manager installed (hayato-filer is executable)"
 else
-	fail "favnyr is missing: the Files (window) entry and 'Open containing folder' do nothing"
+	fail "hayato-filer is missing: the Files (window) entry and Alt+Ctrl+Shift+F do nothing"
 fi
 # The window has a key of its own (Alt+Ctrl+Shift+F, the Shift variant of the
 # Files menu's Alt+Ctrl+F): without the binding the window is only reachable
 # from the launcher, which reads as "the shortcut stopped working".
-if grep -rqs 'Ctrl+Shift+f exec .*favnyr' /etc/sway/config.d/; then
-	ok "Alt+Ctrl+Shift+F opens the file manager (favnyr)"
+if grep -rqs 'Ctrl+Shift+f exec .*hayato-filer' /etc/sway/config.d/; then
+	ok "Alt+Ctrl+Shift+F opens the file manager (hayato-filer)"
 else
-	fail "no 'Ctrl+Shift+f exec ...favnyr' binding in /etc/sway/config.d/: Alt+Ctrl+Shift+F does nothing"
+	fail "no 'Ctrl+Shift+f exec ...hayato-filer' binding in /etc/sway/config.d/: Alt+Ctrl+Shift+F does nothing"
 fi
 # Mounting removable media uses udisks2; both the file manager (favnyr) and hayato-places
 # through /usr/bin/udisksctl to udisksd on the system bus. The check is the client
@@ -2999,20 +3007,22 @@ fi
 if have fuser; then
 	ok "fuser is available, so a refused unmount names the process holding the disk"
 else
-	fail "fuser is missing (psmisc): favnyr says 'Removal failed' with no reason when a stick is in use"
+	fail "fuser is missing (psmisc): the window says 'Removal failed' with no reason when a stick is in use"
 fi
 _xdg_dirs=${XDG_CONFIG_DIRS:-/etc/xdg}
-# favnyr has no `terminal=` setting to read: it runs $TERMINAL and then a list of
-# known emulators (kgx, konsole, gnome-terminal, kitty, alacritty, wezterm,
-# xfce4-terminal, lxterminal, tilix, xterm) that does not include foot, so the
-# image exports TERMINAL=foot in /etc/environment - the file pam_env reads in
-# both greetd's and sudo's session stacks, verified on this machine with
-# `sudo -n env`. Without it "Open terminal here" answers
-# "no terminal detected ($TERMINAL or known candidates)" and starts nothing.
-if grep -qx 'TERMINAL=foot' /etc/environment 2>/dev/null; then
-	ok "favnyr opens a terminal with foot (TERMINAL=foot in /etc/environment)"
+# The window opens foot by name (Ctrl+Shift+T, "Open Terminal Here"), so the
+# binary is the requirement; TERMINAL=foot in /etc/environment stays the session
+# default for everything else that reads it (pam_env reads the file in both
+# greetd's and sudo's stacks, verified on this machine with `sudo -n env`).
+if have foot; then
+	ok "the file manager opens a terminal with foot"
 else
-	fail "no TERMINAL=foot in /etc/environment: 'Open terminal here' in favnyr finds no terminal"
+	fail "foot is missing: 'Open Terminal Here' in the file manager starts nothing"
+fi
+if grep -qx 'TERMINAL=foot' /etc/environment 2>/dev/null; then
+	ok "the session default terminal is foot (TERMINAL=foot in /etc/environment)"
+else
+	warn "no TERMINAL=foot in /etc/environment: programs that read \$TERMINAL have no default"
 fi
 # The names it draws with come from the theme, not from the package: Adwaita 51
 # ships no full-colour "folder" at all, so a PNG that did not make it into the
@@ -3083,9 +3093,9 @@ else
 fi
 _dir=$(_mime_default inode/directory)
 if [ "$_dir" = "pcmanfm.desktop" ]; then
-	ok "'Open containing folder' opens favnyr via pcmanfm.desktop shadow entry (inode/directory)"
+	ok "'Open containing folder' opens Hayato Files via the pcmanfm.desktop shadow entry (inode/directory)"
 else
-	warn "inode/directory defaults to '${_dir:-(nothing)}', not pcmanfm.desktop (favnyr shadow): 'Open containing folder' does nothing"
+	warn "inode/directory defaults to '${_dir:-(nothing)}', not pcmanfm.desktop (the Hayato Files shadow): 'Open containing folder' does nothing"
 fi
 
 # Dictation: the shortcut records with parecord and transcribes with whisper-cli.

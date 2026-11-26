@@ -425,48 +425,41 @@ hook should not rearrange the desktop. Nothing is resident, and
 
 ## Files in a window
 
-**Alt+Ctrl+Shift+F** opens **favnyr**: the files **Alt+Search** and **Alt+Ctrl+F**
-list, with a mouse. It is a second entry and not a replacement, because the two
-answer different questions - a list is one keystroke and no window, a window is
-what drag and drop, several files at once, renaming in place and the trash need.
-The launcher (**Alt+D**) has both rows, **Files** and **Files (window)**, the
-root menu (**Alt+Space**) lists them the same way, and the window is a normal
-one: tile it, move it to another workspace, close it with **Alt+Q**.
+**Alt+Ctrl+Shift+F** opens **Hayato Files** (`hayato-filer`): the files
+**Alt+Search** and **Alt+Ctrl+F** list, with a mouse. It is a second entry and
+not a replacement, because the two answer different questions - a list is one
+keystroke and no window, a window is what drag and drop, several files at once,
+renaming in place and the trash need. The launcher (**Alt+D**) has both rows,
+**Files** and **Files (window)**, the root menu (**Alt+Space**) lists them the
+same way, and the window is a normal one: tile it, move it to another workspace,
+close it with **Alt+Q**. `10-files.md` is its manual - the keys, tabs, the
+staging shelf, archives, undo and Quick Properties.
 
-* **A double click opens what the Files menu opens.** `/etc/xdg/mimeapps.list`
-  decides, and it names the same programs the list does: a document (PDF, DjVu, a
-  comic) goes to `papers`, a directory to favnyr, a page or a `.deb` to Firefox,
-  and text, pictures and video to `org.hayato.view.desktop` ->
-  `~/.config/bin/hayato-view` (`hayato open`), the one table the file list follows too (text
-  in `bat`, a picture in `imv` - sixels in a foot window when imv cannot start - a
-  video in `mpv`, an EPUB in Firefox; the list reads an HTML file as text where a
-  double click opens the page). There is no desktop portal in this image, so those
-  entries *are* the "open with" mechanism - for favnyr, for `gio open` and for
-  any application that asks to open something.
-* **A terminal from inside it is foot** (`Shift+F4`, "Open terminal here"): the
-  window runs `$TERMINAL` and then a built-in list of emulators that does not
-  include foot, so the image exports `TERMINAL=foot` in `/etc/environment` -
-  `pam_env` reads that file for a session started by the compositor, where
-  `/etc/profile.d` is never read. Without it the menu item answers *no terminal
-  detected* and starts nothing.
-* **A disk it cannot unmount says why.** The removal action goes through
-  `udisksctl`, and when udisks refuses because something is using the mount, the
-  window asks `fuser` which process it is and names it (*In use by: …*). Both
-  come from packages the image installs (`udisks2`, `psmisc`), so the message
-  arrives with the answer instead of only with the refusal.
-* **The trash works** (`gvfs` provides `gvfsd-trash`), so a deleted file lands in
-  `~/.local/share/Trash` and can be restored. SMB and phone mounts do not,
-  because `gvfs-backends` (31 MB of `samba-libs`) is deliberately not installed
-  and the Network places are off; a USB stick appears in the sidebar once
-  `udisks2` mounts it.
-* **Its colours are the session's, and not through GTK.** favnyr is one Slint
-  binary that draws its own widgets - it links no GTK - so the window follows the
-  palette by itself, and what it takes from the GTK files is the **icon theme**:
-  it reads `gtk-icon-theme-name=` from `~/.config/gtk-3.0/settings.ini` and asks
-  that theme for the folder, trash and drive names it draws, which is why the
-  **Hayato** theme carries them (`desktop/scripts/make-icons.sh`'s fourth table). The
-  `gtk-3.0/gtk.css` next to it paints GTK3 programs instead - the camera window
-  (`guvcview`), waybar, and anything a person installs later.
+* **A double click opens what the Files menu opens.** The window hands the path
+  to `~/.config/bin/hayato-view` (the same `hayato open` the list uses), so text
+  goes to `bat`, a picture to `imv` (sixels in a foot window when imv cannot
+  start), a video to `mpv`, and an EPUB or a page to Firefox; a folder opens in
+  the window. `/etc/xdg/mimeapps.list` stays the table for anything that asks
+  `gio`, and the image runs no desktop portal, so those entries *are* the "open
+  with" mechanism.
+* **It is one GTK4 binary, and the palette comes from the theme.** `hayato theme
+  set` renders `~/.config/hayato/filer.css` from the same palette as every other
+  surface (background window, cyan selection, JetBrains Mono) and signals the
+  open window, which re-reads it in place; the icons are the session's Font
+  Awesome alphabet rather than a PNG set. The window remembers the grid or list,
+  the sort, hidden files, the sidebar and its size in
+  `~/.config/hayato/filer-state.json`.
+* **The terminal it opens is foot** (**Ctrl+Shift+T**, "Open Terminal Here"),
+  started with the current folder as its working directory.
+* **The trash is the FreeDesktop one**, written directly
+  (`~/.local/share/Trash/{files,info}`) instead of through `gvfs`, so a deleted
+  file can be restored with **Ctrl+Z** or from the Trash place. SMB and phone
+  mounts are still not installed, so the Network places are off.
+* **A disk it cannot unmount says why.** Mount, unmount and eject go through
+  `udisksctl`, and when udisks refuses because something still has the mount
+  open, the window asks `fuser` which process it is and names it (*In use by:
+  ...*). Both come from packages the image installs (`udisks2`, `psmisc`), so
+  the message arrives with the answer instead of only with the refusal.
 * **The document reader gets the same palette, from a different pair of files.**
   `papers` is GTK4/libadwaita, which does not read `gtk-3.0/` at all: it asks the
   *settings portal* for the desktop's colour scheme, and this image runs no
@@ -486,8 +479,8 @@ one: tile it, move it to another workspace, close it with **Alt+Q**.
 
 A USB stick **mounts itself when you plug it in**: a notification says *label
 mounted at /run/media/<you>/<label>*, and it is then a row in **Places** (the
-root menu, Alt+Space, and the Places entry in the launcher) and in favnyr's
-sidebar. **Alt+1** on a mounted disk in Places unmounts it; eject before pulling
+root menu, Alt+Space, and the Places entry in the launcher) and in Hayato
+Files' sidebar. **Alt+1** on a mounted disk in Places unmounts it; eject before pulling
 the stick out - a filesystem that is still mounted when it disappears is how one
 gets corrupted. An SD card in the internal slot is a **Mount** row instead; the
 list below says why.
@@ -525,10 +518,10 @@ list below says why.
 * Mounting is **udisks2**'s job, because an ordinary session cannot mount
   anything itself (that is a root operation). It is D-Bus activated: nothing of
   it runs until a mount is asked for, and nothing stays afterwards.
-* The same disks are in favnyr's sidebar (**Alt+Ctrl+Shift+F**), and a stick shows
+* The same disks are in Hayato Files' sidebar (**Alt+Ctrl+Shift+F**), and a stick shows
   up there as soon as it is mounted.
 * **Unmounting from the window goes through `udisksctl`, like the Places menu.**
-  When udisks refuses because something still has the disk open, favnyr runs
+  When udisks refuses because something still has the disk open, the window runs
   `fuser -m` to find out what and says so (*In use by: python3, mousepad*) - so
   `psmisc` is in `uis/sway/packages.list` and the refusal arrives with a reason.
   `eject` is not involved: it was pcmanfm's dependency and no program in this

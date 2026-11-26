@@ -333,19 +333,22 @@ desktop. That is what foot's ctrl+click and the CLI tools that print a URL call.
 It is the same trade as everything else here: 16 MB while open, nothing
 afterwards.
 
-**Alt+Ctrl+Shift+F: the same files in a window.** `favnyr` (the root menu's **Files
-(window)** row, `Files (window)` in the launcher) is a real file manager for the
-things a list cannot do - drag a file onto a folder, select several, rename in
-place, send to the trash - and it opens a file with exactly the rules above: a
-double click reaches `~/.config/bin/hayato-view` through
-`/etc/xdg/mimeapps.list`, so text goes to `bat`, a document to `papers`, a picture
-to `imv` (or `chafa`'s sixels when imv cannot start), a video to `mpv` and an
-HTML page, an EPUB or a `.deb` to Firefox (the list itself reads an HTML file as
-text). Its colours are the session's too (background window, cyan selection,
-JetBrains Mono, the same icons). It is the *only* GTK3 window in
-the image, which is why it has a stylesheet and not a theme of its own, and it
-needs `gvfs` for the trash; SMB and phone mounts are not installed, so its
-Network places are off. `04-software.md` § *Files in a window* has the rest.
+**Alt+Ctrl+Shift+F: the same files in a window.** **Hayato Files**
+(`hayato-filer`, the root menu's **Files (window)** row, `Files (window)` in the
+launcher) is a real file manager for the things a list cannot do - drag a file
+onto a folder, select several, rename in place, send to the trash - and it opens
+a file with exactly the rules above: a double click reaches
+`~/.config/bin/hayato-view`, so text goes to `bat`, a document to `papers`, a
+picture to `imv` (or `chafa`'s sixels when imv cannot start), a video to `mpv`
+and an HTML page, an EPUB or a `.deb` to Firefox (the list itself reads an HTML
+file as text). Its colours are the session's too (background window, cyan
+selection, JetBrains Mono, the same icons), rendered into
+`~/.config/hayato/filer.css` from the active theme and re-read in place when the
+theme changes. It is one GTK4 window, so the palette arrives as CSS rather than
+as a stylesheet of its own, and the trash is the FreeDesktop one it writes
+directly (`gvfs` is not needed); SMB and phone mounts are not installed, so its
+Network places are off. `10-files.md` is its manual and `04-software.md` § *Files
+in a window* has the rest.
 
 ## Screenshot, Studio, Lens & Share
 
@@ -444,7 +447,7 @@ image. An image is listed by what `cliphist` knows about it (`[[ binary data 640
 png 640x480 ]]`) rather than by a thumbnail, because a menu row is one line of
 text. **Save the newest image** decodes it into `~/Pictures/clipboard/` with the
 extension its MIME type implies and hands it to `xdg-open`, which is the same
-`hayato-view` a double click in favnyr uses — so a picture opens in **imv**, not
+`hayato-view` a double click in Hayato Files uses — so a picture opens in **imv**, not
 in a browser tab; the decoded file is what survives, and the entry itself stays
 in the history until deleted or cleared.
 

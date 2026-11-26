@@ -53,7 +53,7 @@ mapped.
 |---|---|
 | Search key | launcher: every application, narrowed by typing (the same menu as Alt+D) |
 | Alt+Search | file search: every file under your home, narrowed by typing (Enter opens it, Enter on a folder browses there) |
-| Alt+Ctrl+Shift+F | the file manager in a window (favnyr): drag and drop, several files at once, rename, the trash |
+| Alt+Ctrl+Shift+F | the file manager in a window (Hayato Files): drag and drop, several files at once, rename, the trash |
 | Alt+D | launcher: applications (the Search key opens the same menu) |
 | Alt+Space | the root menu (the bar's menu button, on the keyboard) |
 | Alt+Tab | window switcher |
@@ -115,7 +115,7 @@ Search+Shift *filters everything*, uncapped, while the walk is still running.
 Both show the file beside the list before you open it.
 Neither stays resident: one process while its window is open.
 
-**Alt+Ctrl+Shift+F opens the file manager in a window** (**favnyr**), the Shift
+**Alt+Ctrl+Shift+F opens the file manager in a window** (**Hayato Files**), the Shift
 variant of the Files key (`Alt+Ctrl+F` above) and the same window the root menu
 (**Alt+Space**) and the launcher call **Files (window)**. It is what a list
 cannot do - drag a file onto a folder, select several, rename in place, send to
@@ -374,7 +374,7 @@ not by reading the mode's state directory, which such a session takes with it.
 | browser | **Alt+Shift+Return** (`firefox-esr`) |
 | screenshot | **Alt+Shift+S**, **Alt+Shift+F**, **Alt+Ctrl+S** |
 | capture menu (screenshot, OCR, QR, recording) | **Alt+Ctrl+C** |
-| files | **Alt+Search**: newest 500 files; **Alt+Ctrl+Shift+F**: `favnyr` window; **Search+Shift**: `hayato-find`; **Alt+Ctrl+F**: browse directory |
+| files | **Alt+Search**: newest 500 files; **Alt+Ctrl+Shift+F**: Hayato Files window; **Search+Shift**: `hayato-find`; **Alt+Ctrl+F**: browse directory |
 | fullscreen | **Alt+F** |
 | volume, brightness, media keys | **XF86 keys** |
 | workspaces | **Alt+1..0** and three-finger swipe |
