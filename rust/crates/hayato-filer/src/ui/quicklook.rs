@@ -2,7 +2,10 @@
 
 use std::fs;
 use std::io::Read;
+use std::sync::mpsc;
+use std::time::Duration;
 
+use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, Picture, ScrolledWindow, TextView};
 use sha2::{Digest, Sha256};
@@ -15,7 +18,7 @@ pub fn build_quicklook_card(entry: &FileEntry, on_close: impl Fn() + 'static) ->
     card.add_css_class("filer-quicklook");
     card.set_halign(Align::Center);
     card.set_valign(Align::Center);
-    card.set_size_request(540, 360);
+    card.set_size_request(460, 320);
 
     // Header: Filename + metadata
     let top = GtkBox::new(Orientation::Horizontal, 8);
@@ -114,19 +117,42 @@ pub fn build_quicklook_card(entry: &FileEntry, on_close: impl Fn() + 'static) ->
             let hl_clone = hash_lbl.clone();
             hash_btn.connect_clicked(move |btn| {
                 btn.set_sensitive(false);
-                if let Ok(mut f) = fs::File::open(&p_clone) {
-                    let mut hasher = Sha256::new();
-                    let mut buf = [0u8; 64 * 1024];
-                    while let Ok(n) = f.read(&mut buf) {
-                        if n == 0 {
-                            break;
-                        }
-                        hasher.update(&buf[..n]);
+                hl_clone.set_text("Computing SHA-256…");
+                let (tx, rx) = mpsc::channel();
+                let path = p_clone.clone();
+                let _ = std::thread::Builder::new()
+                    .name("hayato-filer-ql-sha256".into())
+                    .spawn(move || {
+                        let res =
+                            fs::File::open(&path)
+                                .map_err(|e| e.to_string())
+                                .and_then(|mut f| {
+                                    let mut hasher = Sha256::new();
+                                    let mut buf = [0u8; 64 * 1024];
+                                    loop {
+                                        let n = f.read(&mut buf).map_err(|e| e.to_string())?;
+                                        if n == 0 {
+                                            break;
+                                        }
+                                        hasher.update(&buf[..n]);
+                                    }
+                                    Ok(format!("sha256: {:x}", hasher.finalize()))
+                                });
+                        let _ = tx.send(res);
+                    });
+                let hl_done = hl_clone.clone();
+                glib::timeout_add_local(Duration::from_millis(30), move || match rx.try_recv() {
+                    Ok(Ok(hash)) => {
+                        hl_done.set_text(&hash);
+                        glib::ControlFlow::Break
                     }
-                    hl_clone.set_text(&format!("sha256: {:x}", hasher.finalize()));
-                } else {
-                    hl_clone.set_text("Failed to read file");
-                }
+                    Ok(Err(e)) => {
+                        hl_done.set_text(&format!("Failed: {e}"));
+                        glib::ControlFlow::Break
+                    }
+                    Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                    Err(mpsc::TryRecvError::Disconnected) => glib::ControlFlow::Break,
+                });
             });
             info_box.append(&hash_btn);
             info_box.append(&hash_lbl);
@@ -176,8 +202,13 @@ pub fn build_quicklook_card(entry: &FileEntry, on_close: impl Fn() + 'static) ->
     let copy_btn = Button::with_label("Copy Path");
     copy_btn.add_css_class("filer-tool-btn");
     let p_copy = entry.path.clone();
-    copy_btn.connect_clicked(move |_| {
+    copy_btn.connect_clicked(move |btn| {
         tools::copy_paths_to_clipboard(std::slice::from_ref(&p_copy));
+        btn.set_label("Copied!");
+        let b = btn.clone();
+        glib::timeout_add_local_once(Duration::from_millis(1200), move || {
+            b.set_label("Copy Path");
+        });
     });
     actions.append(&copy_btn);
 

@@ -9,7 +9,7 @@
 //! edits those lines and signals Waybar instead of adding a second copy.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use hayato_ui::Design;
 use ratatui::Terminal;
@@ -373,7 +373,12 @@ fn apply(effects: &Effects) -> Result<(), String> {
     write_atomic(&appearance_path(), &effects_body(effects))?;
     write_atomic(&dropin_path(), &dropin_body(effects))?;
     for command in live_commands(effects) {
-        let _ = Command::new("swaymsg").arg(&command).status();
+        let _ = Command::new("swaymsg")
+            .arg(&command)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
     }
     Ok(())
 }
@@ -500,8 +505,14 @@ fn custom_dropin_body(path: &Path) -> String {
 }
 
 fn live_set_wallpaper(path: &Path) {
+    if std::env::var("WAYLAND_DISPLAY").is_err() {
+        return;
+    }
     let _ = Command::new("swaymsg")
         .arg(format!("output * bg \"{}\" fill", path.display()))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status();
 }
 
@@ -537,15 +548,29 @@ fn theme_wallpaper_path() -> PathBuf {
         .ok()
         .map(|text| text.trim().to_string())
         .filter(|text| !text.is_empty())
+        .or_else(|| {
+            let slug = hayato_theme::store::active(&paths)?;
+            crate::theme::theme(&slug)
+                .ok()
+                .and_then(|t| t.wallpapers.into_iter().next())
+        })
         .unwrap_or_else(|| "hayato.png".to_string());
     paths.home.join("Pictures/Wallpapers").join(name)
 }
 
-pub fn clear_custom_wallpaper() -> Result<String, String> {
+/// Removes the custom wallpaper drop-in and resets `wallpaper=theme` in
+/// `appearance.conf` without running `swaymsg`.
+pub fn clear_custom_wallpaper_files() {
     let mut effects = load();
-    effects.custom_wallpaper = None;
-    write_atomic(&appearance_path(), &effects_body(&effects))?;
+    if effects.custom_wallpaper.is_some() {
+        effects.custom_wallpaper = None;
+        let _ = write_atomic(&appearance_path(), &effects_body(&effects));
+    }
     let _ = std::fs::remove_file(custom_dropin_path());
+}
+
+pub fn clear_custom_wallpaper() -> Result<String, String> {
+    clear_custom_wallpaper_files();
     let preset = theme_wallpaper_path();
     live_set_wallpaper(&preset);
     Ok(format!(
@@ -558,12 +583,7 @@ pub fn clear_custom_wallpaper() -> Result<String, String> {
 }
 
 pub fn cycle_wallpaper() -> Result<String, String> {
-    let mut effects = load();
-    if effects.custom_wallpaper.is_some() {
-        effects.custom_wallpaper = None;
-        write_atomic(&appearance_path(), &effects_body(&effects))?;
-        let _ = std::fs::remove_file(custom_dropin_path());
-    }
+    clear_custom_wallpaper_files();
     let paths = crate::theme::paths();
     let (wallpaper, _) = crate::theme::cycle_wallpaper_for(&paths, None)?;
     Ok(format!("Wallpaper: {wallpaper}"))
@@ -961,6 +981,9 @@ fn bar_body(text: &str, position: BarPosition, density: BarDensity) -> String {
 fn waybar_running() -> bool {
     Command::new("pgrep")
         .args(["-x", "waybar"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status()
         .map(|status| status.success())
         .unwrap_or(false)
@@ -968,7 +991,12 @@ fn waybar_running() -> bool {
 
 fn signal_waybar() {
     let was_running = waybar_running();
-    let _ = Command::new("pkill").args(["-SIGUSR2", "waybar"]).status();
+    let _ = Command::new("pkill")
+        .args(["-SIGUSR2", "waybar"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
     // A reload that leaves no bar is worse than a settings change that did not
     // apply yet. Only restart one that was already up; a session that does not
     // use Waybar is left alone.

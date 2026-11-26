@@ -1,6 +1,7 @@
 //! `hayato-filer` — Minimalistic native Rust GTK4 file browser for Hayato OS.
 
 mod fs;
+mod prefs;
 mod state;
 mod theme;
 mod tools;
@@ -46,6 +47,11 @@ fn main() -> glib::ExitCode {
                 assert!(!css.is_empty(), "filer CSS failed to render");
                 let st = state::AppState::new(state::home_dir());
                 assert!(st.tab().history.len() == 1);
+                // Pure-logic smoke checks for the features that need a window.
+                let prefs = prefs::FilerPrefs::default();
+                assert!(prefs.window_width >= 640 && prefs.window_height >= 420);
+                assert!(fs::archive::is_archive(std::path::Path::new("pack.tar.gz")));
+                assert!(!fs::archive::is_archive(std::path::Path::new("photo.png")));
                 println!("ok\thayato-filer {}\tcss={}B", VERSION.trim(), css.len());
                 return glib::ExitCode::SUCCESS;
             }

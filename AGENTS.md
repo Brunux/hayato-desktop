@@ -306,6 +306,24 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
     `mcp.servers.<name>`, with `disabled` rather than `enabled` - and the shipped file and
     `check-desktop.sh` move together. The release sanitizer strips `service.json` and `auth.json`
     from that directory, never the directory, so the registration reaches the image.
+ 24. **The Files window is one surface with one state file per concern**: `hayato-filer` is the GTK4
+    browser (`Alt+Ctrl+Shift+F`), the windowed companion of the `hayato menu files` TUI; the two
+    share neither code nor state. Its UI choices (view mode, sort field and order, hidden files,
+    compact sidebar, window size) persist in `~/.config/hayato/filer-state.json` (`prefs.rs`, read on
+    launch, written on close) and pinned folders in `~/.config/hayato/filer-bookmarks.json`; a
+    missing or corrupt file falls back to the defaults, never a second copy of the choice. The open
+    folder is watched with `gio::FileMonitor` (inotify) and reloads itself, so **F5** is a fallback
+    and not the mechanism. Undo is a session stack of `ops::UndoAction` (rename, move, trash, copy,
+    new folder) applied by `ops::undo`; a permanent delete is deliberately not undoable. Archive work
+    shells out to the system `tar`/`zip` (`fs/archive.rs`) and reuses the copy progress channel - it
+    links nothing in. A drag that may navigate (spring-loaded tabs and folders) holds the source
+    widget in `FilerWindow::drag_hold`, so a canvas rebuild cannot cancel the drag the person is
+    still holding, and a spring-load timer clears its own stored `SourceId` when it fires, because
+    removing an already-finished glib source panics and aborts the window. A drop moves when it
+    carries its local `GdkDrag` (GDK reports every local drop as `COPY`, so the drag object, not
+    `actions()`, is the signal) and copies when the source is another application or another
+    filesystem; the shelf prunes a reference whose path is gone. `hayato-filer --self-test` proves
+    the CSS and the pure state/archive logic headlessly, and `check-desktop.sh` runs it.
 
 ## Developer Profile Export
 - `hayato-profile export --include-home` streams the whole home through tar. The single

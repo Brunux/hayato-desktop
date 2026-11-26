@@ -43,6 +43,17 @@ pub fn share_paths(paths: &[PathBuf]) {
     spawn_detached("hayato", &args);
 }
 
+pub fn receive_in_folder(dir: &Path) {
+    spawn_detached(
+        "hayato",
+        &[
+            "share".to_string(),
+            "--receive".to_string(),
+            dir.to_string_lossy().into_owned(),
+        ],
+    );
+}
+
 pub fn play_in_cassette(path: &Path) {
     spawn_detached(
         "hayato-cassette",
@@ -97,6 +108,34 @@ pub fn open_format_drive() {
     } else {
         spawn_detached("hayato", &["menu".to_string(), "format".to_string()]);
     }
+}
+
+/// Send a desktop notification through `hayato-notify` (`org.freedesktop.Notifications`).
+pub fn notify(msg: &str, tone: &str) {
+    let (urgency, timeout) = match tone {
+        "danger" => ("critical", "5000"),
+        "warn" => ("normal", "4000"),
+        _ => ("normal", "3000"),
+    };
+    let _ = Command::new("notify-send")
+        .args([
+            "-a",
+            "Hayato Files",
+            "-i",
+            "system-file-manager",
+            "-u",
+            urgency,
+            "-t",
+            timeout,
+            "-h",
+            "string:x-canonical-private-synchronous:hayato-filer",
+            "Files",
+            msg,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
 }
 
 pub fn copy_paths_to_clipboard(paths: &[PathBuf]) {

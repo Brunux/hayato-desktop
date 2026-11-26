@@ -1,5 +1,6 @@
 //! Filesystem model, directory listing, formatting helpers, and submodules.
 
+pub mod archive;
 pub mod devices;
 pub mod ops;
 pub mod thumbs;
@@ -81,10 +82,10 @@ impl FileEntry {
     }
 
     pub fn is_text_previewable(&self) -> bool {
-        if self.is_dir {
+        if self.is_dir || self.is_image() || self.is_audio() {
             return false;
         }
-        matches!(
+        if matches!(
             ext_lower(&self.name).as_deref(),
             Some(
                 "txt"
@@ -101,6 +102,7 @@ impl FileEntry {
                     | "html"
                     | "js"
                     | "ts"
+                    | "go"
                     | "c"
                     | "h"
                     | "cpp"
@@ -111,7 +113,20 @@ impl FileEntry {
                     | "xml"
                     | "desktop"
             )
-        )
+        ) {
+            return true;
+        }
+        // Content sniff (4 KB NUL-byte check) for extensionless text files like
+        // Dockerfile, Makefile, LICENSE, .env, .gitignore, etc.
+        use std::io::Read;
+        let Ok(mut f) = fs::File::open(&self.path) else {
+            return false;
+        };
+        let mut buf = [0u8; 4096];
+        let Ok(n) = f.read(&mut buf) else {
+            return false;
+        };
+        n > 0 && !buf[..n].contains(&0)
     }
 }
 

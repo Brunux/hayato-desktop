@@ -107,10 +107,11 @@ selection {
 }
 
 /* A tooltip is the one surface libadwaita paints with its own hardcoded
-   colours, so it has to be named. */
+   colours, so it has to be named. Use base1 (text), never base2 (strong),
+   so light themes like Catppuccin Latte stay readable. */
 tooltip,
 tooltip.background {
 	background-color: @base02;
-	color: @base2;
-	border: 1px solid @base01;
+	color: @base1;
+	border: 1px solid rgba(248, 248, 242, 0.16);
 }
