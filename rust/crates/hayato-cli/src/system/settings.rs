@@ -58,6 +58,7 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("locale", "Language & region", "localectl"),
         ("hostname", "Hostname", "hostnamectl"),
         ("default-apps", "Default apps", "xdg-mime"),
+        ("setup", "Setup Assistant", "hayato menu setup"),
         ("password", "Change password", "chpasswd"),
         ("clipboard", "Clipboard history", "clipboard.conf"),
         ("touchpad", "Touchpad", "touchpad.conf"),
@@ -702,6 +703,7 @@ fn section_keys(section: Section) -> &'static [&'static str] {
         ],
         Section::PowerIdle => &["power", "power-profile", "battery-limit", "idle"],
         Section::System => &[
+            "setup",
             "tz",
             "locale",
             "hostname",
@@ -949,6 +951,13 @@ fn build_rows(section: Section) -> (Vec<hayato_ui::Row>, Vec<String>) {
             keys.push("idle".to_string());
         }
         Section::System => {
+            rows.push(row(
+                "Setup Assistant",
+                super::setup::status_summary(),
+                Glyph::Sparkle,
+            ));
+            keys.push("setup".to_string());
+
             rows.push(row("Date & time", super::tz::status(), Glyph::Clock));
             keys.push("tz".to_string());
 
@@ -1559,1059 +1568,1068 @@ pub fn menu(
             return Ok(1);
         };
 
-        match key.as_str() {
-            "wifi-radio" => {
-                let on = wifi_on();
-                let action = if on { "off" } else { "on" };
-                if checked(&["nmcli", "radio", "wifi", action]).is_err()
-                    && sudo(&["nmcli", "radio", "wifi", action]).is_err()
-                {
-                    banner = Some(format!("Could not turn Wi-Fi radio {action}"));
-                } else {
-                    banner = Some(format!("Wi-Fi radio turned {action}"));
-                }
+        match dispatch_key(&key, terminal, design)? {
+            KeyOutcome::Continue(msg) => banner = msg,
+            KeyOutcome::Exit(code) => return Ok(code),
+        }
+    }
+}
+
+enum KeyOutcome {
+    Continue(Option<String>),
+    Exit(i32),
+}
+
+/// Run a single Settings sub-dialog (e.g. `"password"`, `"locale"`, `"touchpad"`,
+/// `"default-apps"`, `"notify"`, `"idle"`) in the current terminal and return
+/// its status banner if any. Used by the Personal Setup Assistant so it never
+/// duplicates Settings dialogs.
+pub(crate) fn run_key(
+    key: &str,
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    design: &Design,
+) -> Result<Option<String>, crate::Failure> {
+    match dispatch_key(key, terminal, design)? {
+        KeyOutcome::Continue(msg) => Ok(msg),
+        KeyOutcome::Exit(_) => Ok(None),
+    }
+}
+
+fn dispatch_key(
+    key: &str,
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    design: &Design,
+) -> Result<KeyOutcome, crate::Failure> {
+    let mut banner: Option<String> = None;
+    match key {
+        "setup" => {
+            let _ = super::setup::menu(&[], terminal, design)?;
+        }
+        "wifi-radio" => {
+            let on = wifi_on();
+            let action = if on { "off" } else { "on" };
+            if checked(&["nmcli", "radio", "wifi", action]).is_err()
+                && sudo(&["nmcli", "radio", "wifi", action]).is_err()
+            {
+                banner = Some(format!("Could not turn Wi-Fi radio {action}"));
+            } else {
+                banner = Some(format!("Wi-Fi radio turned {action}"));
             }
-            "bt-radio" => {
-                let on = bt_on();
-                let action = if on { "off" } else { "on" };
-                if checked(&["bluetoothctl", "power", action]).is_err()
-                    && sudo(&["bluetoothctl", "power", action]).is_err()
-                {
-                    banner = Some(format!("Could not power Bluetooth controller {action}"));
-                } else {
-                    super::bluetooth::signal_bar();
-                    banner = Some(format!("Bluetooth controller powered {action}"));
-                }
+        }
+        "bt-radio" => {
+            let on = bt_on();
+            let action = if on { "off" } else { "on" };
+            if checked(&["bluetoothctl", "power", action]).is_err()
+                && sudo(&["bluetoothctl", "power", action]).is_err()
+            {
+                banner = Some(format!("Could not power Bluetooth controller {action}"));
+            } else {
+                super::bluetooth::signal_bar();
+                banner = Some(format!("Bluetooth controller powered {action}"));
             }
-            "wifi" => {
-                let _ = super::net::menu(terminal, design)?;
-            }
-            "portal" => match super::portal::open() {
-                Ok(url) => banner = Some(format!("Opened the sign-in page: {url}")),
-                Err(reason) => banner = Some(reason),
-            },
-            "bt" => {
-                let _ = super::bluetooth::menu(terminal, design)?;
-            }
-            "dns" => {
-                let _ = super::dns::menu(terminal, design)?;
-            }
-            "night" => {
-                use super::night_light::Mode;
-                let current = super::night_light::read();
-                let choices = [
-                    (Mode::Off, 4000, "Off", "no warm tint"),
-                    (Mode::Auto, 3500, "Sunset · 3500 K", "warmer after dark"),
-                    (Mode::Auto, 4000, "Sunset · 4000 K", "default warmth"),
-                    (Mode::Auto, 4500, "Sunset · 4500 K", "milder after dark"),
-                    (Mode::Warm, 3500, "Warm now · 3500 K", "always warm"),
-                    (Mode::Warm, 4000, "Warm now · 4000 K", "always warm"),
-                    (Mode::Warm, 4500, "Warm now · 4500 K", "always mild"),
-                ];
-                let rows: Vec<hayato_ui::Row> = choices
-                    .iter()
-                    .map(|(mode, warmth, label, detail)| {
-                        let state = if current == (*mode, *warmth) {
-                            "current"
-                        } else {
-                            detail
-                        };
-                        row((*label).to_string(), state.to_string(), Glyph::Moon)
-                    })
-                    .collect();
-                let keys: Vec<String> = choices
-                    .iter()
-                    .map(|(mode, warmth, _, _)| format!("{}:{warmth}", mode.as_str()))
-                    .collect();
-                let mut night_picker = Picker::new(
+        }
+        "wifi" => {
+            let _ = super::net::menu(terminal, design)?;
+        }
+        "portal" => match super::portal::open() {
+            Ok(url) => banner = Some(format!("Opened the sign-in page: {url}")),
+            Err(reason) => banner = Some(reason),
+        },
+        "bt" => {
+            let _ = super::bluetooth::menu(terminal, design)?;
+        }
+        "dns" => {
+            let _ = super::dns::menu(terminal, design)?;
+        }
+        "night" => {
+            use super::night_light::Mode;
+            let current = super::night_light::read();
+            let choices = [
+                (Mode::Off, 4000, "Off", "no warm tint"),
+                (Mode::Auto, 3500, "Sunset · 3500 K", "warmer after dark"),
+                (Mode::Auto, 4000, "Sunset · 4000 K", "default warmth"),
+                (Mode::Auto, 4500, "Sunset · 4500 K", "milder after dark"),
+                (Mode::Warm, 3500, "Warm now · 3500 K", "always warm"),
+                (Mode::Warm, 4000, "Warm now · 4000 K", "always warm"),
+                (Mode::Warm, 4500, "Warm now · 4500 K", "always mild"),
+            ];
+            let rows: Vec<hayato_ui::Row> = choices
+                .iter()
+                .map(|(mode, warmth, label, detail)| {
+                    let state = if current == (*mode, *warmth) {
+                        "current"
+                    } else {
+                        detail
+                    };
+                    row((*label).to_string(), state.to_string(), Glyph::Moon)
+                })
+                .collect();
+            let keys: Vec<String> = choices
+                .iter()
+                .map(|(mode, warmth, _, _)| format!("{}:{warmth}", mode.as_str()))
+                .collect();
+            let mut night_picker = Picker::new(
+                "Night light",
+                vec![Question::choose(
                     "Night light",
-                    vec![Question::choose(
-                        "Night light",
-                        "Enter applies · Escape returns to Settings",
-                        rows,
-                        keys,
-                    )],
-                );
-                let code = crate::run_screen(terminal, design, "Night light", &mut night_picker)?;
-                if code == 0
-                    && let Some(answer) = night_picker.answers().first()
-                    && let Some((mode, warmth)) = answer.split_once(':')
-                    && let Some(mode) = Mode::parse(mode)
-                    && let Ok(warmth) = warmth.parse::<u16>()
-                {
-                    if let Err(error) = super::night_light::write(mode, warmth) {
-                        banner = Some(format!("Could not write night-light.conf: {error}"));
-                    } else if let Err(error) = super::night_light::apply() {
-                        banner = Some(format!("Saved, but {error}"));
-                    } else {
-                        banner = Some(format!("Night light: {}", super::night_light::status()));
-                    }
-                }
-            }
-            "dnd" => {
-                let path = dnd_path();
-                if path.exists() {
-                    let _ = std::fs::remove_file(&path);
-                    banner = Some("Do not disturb: off (notifications allowed)".to_string());
+                    "Enter applies · Escape returns to Settings",
+                    rows,
+                    keys,
+                )],
+            );
+            let code = crate::run_screen(terminal, design, "Night light", &mut night_picker)?;
+            if code == 0
+                && let Some(answer) = night_picker.answers().first()
+                && let Some((mode, warmth)) = answer.split_once(':')
+                && let Some(mode) = Mode::parse(mode)
+                && let Ok(warmth) = warmth.parse::<u16>()
+            {
+                if let Err(error) = super::night_light::write(mode, warmth) {
+                    banner = Some(format!("Could not write night-light.conf: {error}"));
+                } else if let Err(error) = super::night_light::apply() {
+                    banner = Some(format!("Saved, but {error}"));
                 } else {
-                    if let Some(parent) = path.parent() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                    let _ = std::fs::write(&path, "1\n");
-                    banner = Some("Do not disturb: on".to_string());
+                    banner = Some(format!("Night light: {}", super::night_light::status()));
                 }
             }
-            "notify" => {
-                let mut note = "Enter opens · Escape returns to Settings".to_string();
-                loop {
-                    let config = super::notify_settings::read();
-                    let timeout = if config.default_timeout == 0 {
-                        "never".to_string()
-                    } else {
-                        format!("{}s", config.default_timeout / 1000)
-                    };
-                    let rows = vec![
-                        row(
-                            "Notification history",
-                            "copy or clear past cards",
-                            Glyph::Bell,
-                        ),
-                        row(
-                            "Do not disturb",
-                            if dnd_on() { "on" } else { "off" },
-                            Glyph::BellOff,
-                        ),
-                        row("Default timeout", timeout, Glyph::Clock),
-                        row(
-                            "Max visible",
-                            format!("{} cards", config.max_visible),
-                            Glyph::Bell,
-                        ),
-                        row(
-                            "Card width",
-                            format!("{} px", config.card_width as u32),
-                            Glyph::Display,
-                        ),
-                        row(
-                            "History limit",
-                            format!("{} entries", config.history_limit),
-                            Glyph::Trash,
-                        ),
-                        row("Clear notification history", "asks first", Glyph::Trash),
-                        row("Back", "Settings sections", Glyph::ArrowLeft),
-                    ];
-                    let keys = [
-                        "history",
-                        "dnd",
-                        "timeout",
-                        "visible",
-                        "width",
-                        "history-limit",
-                        "clear",
-                        "back",
-                    ];
-                    let mut picker = Picker::new(
+        }
+        "dnd" => {
+            let path = dnd_path();
+            if path.exists() {
+                let _ = std::fs::remove_file(&path);
+                banner = Some("Do not disturb: off (notifications allowed)".to_string());
+            } else {
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(&path, "1\n");
+                banner = Some("Do not disturb: on".to_string());
+            }
+        }
+        "notify" => {
+            let mut note = "Enter opens · Escape returns to Settings".to_string();
+            loop {
+                let config = super::notify_settings::read();
+                let timeout = if config.default_timeout == 0 {
+                    "never".to_string()
+                } else {
+                    format!("{}s", config.default_timeout / 1000)
+                };
+                let rows = vec![
+                    row(
+                        "Notification history",
+                        "copy or clear past cards",
+                        Glyph::Bell,
+                    ),
+                    row(
+                        "Do not disturb",
+                        if dnd_on() { "on" } else { "off" },
+                        Glyph::BellOff,
+                    ),
+                    row("Default timeout", timeout, Glyph::Clock),
+                    row(
+                        "Max visible",
+                        format!("{} cards", config.max_visible),
+                        Glyph::Bell,
+                    ),
+                    row(
+                        "Card width",
+                        format!("{} px", config.card_width as u32),
+                        Glyph::Display,
+                    ),
+                    row(
+                        "History limit",
+                        format!("{} entries", config.history_limit),
+                        Glyph::Trash,
+                    ),
+                    row("Clear notification history", "asks first", Glyph::Trash),
+                    row("Back", "Settings sections", Glyph::ArrowLeft),
+                ];
+                let keys = [
+                    "history",
+                    "dnd",
+                    "timeout",
+                    "visible",
+                    "width",
+                    "history-limit",
+                    "clear",
+                    "back",
+                ];
+                let mut picker = Picker::new(
+                    "Notifications",
+                    vec![Question::choose(
                         "Notifications",
-                        vec![Question::choose(
-                            "Notifications",
-                            note.clone(),
-                            rows,
-                            keys.iter().map(|key| (*key).to_string()).collect(),
-                        )],
-                    );
-                    let code = crate::run_screen(terminal, design, "Notifications", &mut picker)?;
-                    if code != 0 {
-                        break;
-                    }
-                    let Some(key) = picker.answers().first().cloned() else {
-                        break;
-                    };
-                    if key == "back" {
-                        break;
-                    }
-                    match key.as_str() {
-                        "history" => {
-                            let _ = super::notify::menu(terminal, design)?;
-                        }
-                        "dnd" => {
-                            let path = dnd_path();
-                            if path.exists() {
-                                let _ = std::fs::remove_file(&path);
-                                note = "Do not disturb: off".to_string();
-                            } else {
-                                if let Some(parent) = path.parent() {
-                                    let _ = std::fs::create_dir_all(parent);
-                                }
-                                let _ = std::fs::write(&path, "1\n");
-                                note = "Do not disturb: on".to_string();
-                            }
-                        }
-                        "timeout" => {
-                            let choices = [
-                                (3000u64, "3 seconds"),
-                                (5000, "5 seconds"),
-                                (10000, "10 seconds"),
-                                (0, "Never"),
-                            ];
-                            let rows: Vec<hayato_ui::Row> = choices
-                                .iter()
-                                .map(|(value, label)| {
-                                    row(
-                                        (*label).to_string(),
-                                        if config.default_timeout == *value {
-                                            "current"
-                                        } else {
-                                            ""
-                                        },
-                                        Glyph::Clock,
-                                    )
-                                })
-                                .collect();
-                            let keys: Vec<String> =
-                                choices.iter().map(|(value, _)| value.to_string()).collect();
-                            let mut picker = Picker::new(
-                                "Default timeout",
-                                vec![Question::choose(
-                                    "Default timeout",
-                                    "Enter applies · Escape returns",
-                                    rows,
-                                    keys,
-                                )],
-                            );
-                            let code = crate::run_screen(
-                                terminal,
-                                design,
-                                "Default timeout",
-                                &mut picker,
-                            )?;
-                            if code == 0
-                                && let Some(value) = picker.answers().first()
-                                && let Ok(value) = value.parse::<u64>()
-                            {
-                                let mut next = config;
-                                next.default_timeout = value;
-                                match save_notify(next) {
-                                    Ok(message) => note = message,
-                                    Err(error) => note = error,
-                                }
-                            }
-                        }
-                        "visible" => {
-                            let choices = [1usize, 3, 5];
-                            let rows: Vec<hayato_ui::Row> = choices
-                                .iter()
-                                .map(|value| {
-                                    row(
-                                        format!(
-                                            "{value} card{}",
-                                            if *value == 1 { "" } else { "s" }
-                                        ),
-                                        if config.max_visible == *value {
-                                            "current"
-                                        } else {
-                                            ""
-                                        },
-                                        Glyph::Bell,
-                                    )
-                                })
-                                .collect();
-                            let keys: Vec<String> =
-                                choices.iter().map(|value| value.to_string()).collect();
-                            let mut picker = Picker::new(
-                                "Max visible",
-                                vec![Question::choose(
-                                    "Max visible",
-                                    "Enter applies · Escape returns",
-                                    rows,
-                                    keys,
-                                )],
-                            );
-                            let code =
-                                crate::run_screen(terminal, design, "Max visible", &mut picker)?;
-                            if code == 0
-                                && let Some(value) = picker.answers().first()
-                                && let Ok(value) = value.parse::<usize>()
-                            {
-                                let mut next = config;
-                                next.max_visible = value;
-                                match save_notify(next) {
-                                    Ok(message) => note = message,
-                                    Err(error) => note = error,
-                                }
-                            }
-                        }
-                        "width" => {
-                            let choices = [300u32, 340, 400];
-                            let rows: Vec<hayato_ui::Row> = choices
-                                .iter()
-                                .map(|value| {
-                                    row(
-                                        format!("{value} px"),
-                                        if config.card_width as u32 == *value {
-                                            "current"
-                                        } else {
-                                            ""
-                                        },
-                                        Glyph::Display,
-                                    )
-                                })
-                                .collect();
-                            let keys: Vec<String> =
-                                choices.iter().map(|value| value.to_string()).collect();
-                            let mut picker = Picker::new(
-                                "Card width",
-                                vec![Question::choose(
-                                    "Card width",
-                                    "Enter applies · Escape returns",
-                                    rows,
-                                    keys,
-                                )],
-                            );
-                            let code =
-                                crate::run_screen(terminal, design, "Card width", &mut picker)?;
-                            if code == 0
-                                && let Some(value) = picker.answers().first()
-                                && let Ok(value) = value.parse::<u32>()
-                            {
-                                let mut next = config;
-                                next.card_width = value as f32;
-                                match save_notify(next) {
-                                    Ok(message) => note = message,
-                                    Err(error) => note = error,
-                                }
-                            }
-                        }
-                        "history-limit" => {
-                            let choices = [100usize, 200, 500];
-                            let rows: Vec<hayato_ui::Row> = choices
-                                .iter()
-                                .map(|value| {
-                                    row(
-                                        format!("{value} entries"),
-                                        if config.history_limit == *value {
-                                            "current"
-                                        } else {
-                                            ""
-                                        },
-                                        Glyph::Trash,
-                                    )
-                                })
-                                .collect();
-                            let keys: Vec<String> =
-                                choices.iter().map(|value| value.to_string()).collect();
-                            let mut picker = Picker::new(
-                                "History limit",
-                                vec![Question::choose(
-                                    "History limit",
-                                    "Enter applies · Escape returns",
-                                    rows,
-                                    keys,
-                                )],
-                            );
-                            let code =
-                                crate::run_screen(terminal, design, "History limit", &mut picker)?;
-                            if code == 0
-                                && let Some(value) = picker.answers().first()
-                                && let Ok(value) = value.parse::<usize>()
-                            {
-                                let mut next = config;
-                                next.history_limit = value;
-                                match save_notify(next) {
-                                    Ok(message) => note = message,
-                                    Err(error) => note = error,
-                                }
-                            }
-                        }
-                        "clear" => {
-                            let mut picker = Picker::new(
-                                "Clear notification history",
-                                vec![Question::ask(
-                                    "Clear notification history?",
-                                    "This removes the stored cards; current cards stay on screen",
-                                    "clear the history",
-                                    "Clear",
-                                    "yes",
-                                )],
-                            );
-                            let code = crate::run_screen(
-                                terminal,
-                                design,
-                                "Clear notification history",
-                                &mut picker,
-                            )?;
-                            if code == 0
-                                && picker.answers().first().map(String::as_str) == Some("yes")
-                            {
-                                match super::notify::clear_history() {
-                                    Ok(()) => note = "Notification history cleared".to_string(),
-                                    Err(error) => {
-                                        note = format!("Could not clear history: {error}")
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                banner = Some(note);
-            }
-            "vnc" => {
-                let _ = super::vnc::menu(terminal, design)?;
-            }
-            "ssh" => {
-                let _ = super::ssh::menu(terminal, design)?;
-            }
-            "tz" => {
-                let _ = super::tz::menu(terminal, design)?;
-            }
-            "locale" => {
-                let current = super::locale::current();
-                let locales = super::locale::list();
-                if locales.is_empty() {
-                    banner =
-                        Some("No locales are available (localectl list-locales is empty)".into());
-                } else {
-                    let rows: Vec<hayato_ui::Row> = locales
-                        .iter()
-                        .map(|locale| {
-                            row(
-                                locale.clone(),
-                                if *locale == current { "current" } else { "" },
-                                Glyph::Globe,
-                            )
-                        })
-                        .collect();
-                    let mut picker = Picker::new(
-                        "Language & region",
-                        vec![Question::choose(
-                            "Language & region",
-                            format!("Current: {current} · Enter sets · Escape returns"),
-                            rows,
-                            locales.clone(),
-                        )],
-                    );
-                    let code =
-                        crate::run_screen(terminal, design, "Language & region", &mut picker)?;
-                    if code == 0
-                        && let Some(locale) = picker.answers().first()
-                    {
-                        match super::locale::set(locale) {
-                            Ok(()) => {
-                                banner = Some(format!(
-                                    "Language & region: {locale} (log out and back in)"
-                                ));
-                            }
-                            Err(error) => banner = Some(format!("Could not set locale: {error}")),
-                        }
-                    }
-                }
-            }
-            "hostname" => {
-                let current = super::hostname::current();
-                let mut picker = Picker::new(
-                    "Hostname",
-                    vec![Question::input(
-                        "Hostname",
-                        format!("Current: {current} · letters, numbers and hyphens"),
-                        "my-chromebook",
-                        false,
-                    )],
-                );
-                let code = crate::run_screen(terminal, design, "Hostname", &mut picker)?;
-                if code == 0
-                    && let Some(name) = picker.answers().first()
-                {
-                    match super::hostname::set(name) {
-                        Ok(()) => banner = Some(format!("Hostname: {name}")),
-                        Err(error) => banner = Some(format!("Could not set hostname: {error}")),
-                    }
-                }
-            }
-            "default-apps" => {
-                let rows: Vec<hayato_ui::Row> = super::default_apps::CATEGORIES
-                    .iter()
-                    .map(|category| {
-                        let current = super::default_apps::current(category)
-                            .map(|id| super::default_apps::desktop_name(&id))
-                            .unwrap_or_else(|| "not set".to_string());
-                        row(category.label, current, Glyph::Desktop)
-                    })
-                    .collect();
-                let keys: Vec<String> = super::default_apps::CATEGORIES
-                    .iter()
-                    .map(|category| category.key.to_string())
-                    .collect();
-                let mut picker = Picker::new(
-                    "Default apps",
-                    vec![Question::choose(
-                        "Default apps",
-                        "Enter opens a category · Escape returns to Settings",
+                        note.clone(),
                         rows,
-                        keys,
+                        keys.iter().map(|key| (*key).to_string()).collect(),
                     )],
                 );
-                let code = crate::run_screen(terminal, design, "Default apps", &mut picker)?;
-                if code == 0
-                    && let Some(key) = picker.answers().first()
-                    && let Some(category) = super::default_apps::category(key)
-                {
-                    let ids = super::default_apps::candidates(category);
-                    if ids.is_empty() {
-                        banner = Some(format!(
-                            "No applications are registered for {}",
-                            category.label
-                        ));
-                    } else {
-                        let current = super::default_apps::current(category);
-                        let rows: Vec<hayato_ui::Row> = ids
+                let code = crate::run_screen(terminal, design, "Notifications", &mut picker)?;
+                if code != 0 {
+                    break;
+                }
+                let Some(key) = picker.answers().first().cloned() else {
+                    break;
+                };
+                if key == "back" {
+                    break;
+                }
+                match key.as_str() {
+                    "history" => {
+                        let _ = super::notify::menu(terminal, design)?;
+                    }
+                    "dnd" => {
+                        let path = dnd_path();
+                        if path.exists() {
+                            let _ = std::fs::remove_file(&path);
+                            note = "Do not disturb: off".to_string();
+                        } else {
+                            if let Some(parent) = path.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+                            let _ = std::fs::write(&path, "1\n");
+                            note = "Do not disturb: on".to_string();
+                        }
+                    }
+                    "timeout" => {
+                        let choices = [
+                            (3000u64, "3 seconds"),
+                            (5000, "5 seconds"),
+                            (10000, "10 seconds"),
+                            (0, "Never"),
+                        ];
+                        let rows: Vec<hayato_ui::Row> = choices
                             .iter()
-                            .map(|id| {
+                            .map(|(value, label)| {
                                 row(
-                                    super::default_apps::desktop_name(id),
-                                    if current.as_deref() == Some(id.as_str()) {
+                                    (*label).to_string(),
+                                    if config.default_timeout == *value {
                                         "current"
                                     } else {
                                         ""
                                     },
-                                    Glyph::Desktop,
+                                    Glyph::Clock,
                                 )
                             })
                             .collect();
+                        let keys: Vec<String> =
+                            choices.iter().map(|(value, _)| value.to_string()).collect();
                         let mut picker = Picker::new(
-                            category.label,
+                            "Default timeout",
                             vec![Question::choose(
-                                category.label,
-                                "Enter sets the default · Escape returns",
+                                "Default timeout",
+                                "Enter applies · Escape returns",
                                 rows,
-                                ids.clone(),
+                                keys,
                             )],
                         );
                         let code =
-                            crate::run_screen(terminal, design, category.label, &mut picker)?;
+                            crate::run_screen(terminal, design, "Default timeout", &mut picker)?;
                         if code == 0
-                            && let Some(id) = picker.answers().first()
+                            && let Some(value) = picker.answers().first()
+                            && let Ok(value) = value.parse::<u64>()
                         {
-                            match super::default_apps::set(category, id) {
-                                Ok(()) => {
-                                    banner = Some(format!(
-                                        "{}: {}",
-                                        category.label,
-                                        super::default_apps::desktop_name(id)
-                                    ));
-                                }
-                                Err(error) => {
-                                    banner = Some(format!("Could not set default: {error}"));
-                                }
+                            let mut next = config;
+                            next.default_timeout = value;
+                            match save_notify(next) {
+                                Ok(message) => note = message,
+                                Err(error) => note = error,
                             }
                         }
                     }
-                }
-            }
-            "password" => {
-                let mut picker = Picker::new(
-                    "Change password",
-                    vec![
-                        Question::input(
-                            "New password",
-                            "at least one character · Escape returns",
-                            "new password",
-                            true,
-                        ),
-                        Question::input(
-                            "Confirm password",
-                            "type it again",
-                            "confirm password",
-                            true,
-                        ),
-                    ],
-                );
-                let code = crate::run_screen(terminal, design, "Change password", &mut picker)?;
-                if code == 0
-                    && let [password, confirm] = picker.answers().as_slice()
-                {
-                    match validate_password(password, confirm) {
-                        Err(error) => banner = Some(error.to_string()),
-                        Ok(()) => match change_password(password) {
-                            Ok(()) => banner = Some("Password changed".to_string()),
-                            Err(error) => {
-                                banner = Some(format!("Could not change password: {error}"))
-                            }
-                        },
-                    }
-                }
-            }
-            "clipboard" => {
-                let mut note = "Enter acts · Escape returns to Settings".to_string();
-                loop {
-                    let enabled = clipboard_enabled();
-                    let rows = vec![
-                        row(
-                            "Keep clipboard history",
-                            if enabled { "on" } else { "off" },
-                            Glyph::Clipboard,
-                        ),
-                        row(
-                            "Open clipboard history",
-                            clipboard_status(),
-                            Glyph::Clipboard,
-                        ),
-                        row("Clear clipboard history", "asks first", Glyph::Trash),
-                        row("Back", "Settings sections", Glyph::ArrowLeft),
-                    ];
-                    let keys = ["toggle", "history", "clear", "back"];
-                    let mut picker = Picker::new(
-                        "Clipboard history",
-                        vec![Question::choose(
-                            "Clipboard history",
-                            note.clone(),
-                            rows,
-                            keys.iter().map(|key| (*key).to_string()).collect(),
-                        )],
-                    );
-                    let code =
-                        crate::run_screen(terminal, design, "Clipboard history", &mut picker)?;
-                    if code != 0 {
-                        break;
-                    }
-                    let Some(key) = picker.answers().first().cloned() else {
-                        break;
-                    };
-                    match key.as_str() {
-                        "back" => break,
-                        "toggle" => {
-                            let next = !enabled;
-                            if let Err(error) = set_clipboard_enabled(next) {
-                                note = format!("Could not save clipboard.conf: {error}");
-                            } else {
-                                let _ = out(&[&bin_script("hayato-clipboard"), "restart"]);
-                                note = format!(
-                                    "Clipboard history: {}",
-                                    if next { "on" } else { "off" }
-                                );
+                    "visible" => {
+                        let choices = [1usize, 3, 5];
+                        let rows: Vec<hayato_ui::Row> = choices
+                            .iter()
+                            .map(|value| {
+                                row(
+                                    format!("{value} card{}", if *value == 1 { "" } else { "s" }),
+                                    if config.max_visible == *value {
+                                        "current"
+                                    } else {
+                                        ""
+                                    },
+                                    Glyph::Bell,
+                                )
+                            })
+                            .collect();
+                        let keys: Vec<String> =
+                            choices.iter().map(|value| value.to_string()).collect();
+                        let mut picker = Picker::new(
+                            "Max visible",
+                            vec![Question::choose(
+                                "Max visible",
+                                "Enter applies · Escape returns",
+                                rows,
+                                keys,
+                            )],
+                        );
+                        let code = crate::run_screen(terminal, design, "Max visible", &mut picker)?;
+                        if code == 0
+                            && let Some(value) = picker.answers().first()
+                            && let Ok(value) = value.parse::<usize>()
+                        {
+                            let mut next = config;
+                            next.max_visible = value;
+                            match save_notify(next) {
+                                Ok(message) => note = message,
+                                Err(error) => note = error,
                             }
                         }
-                        "history" => {
-                            let _ = super::clip::menu(terminal, design)?;
-                        }
-                        "clear" => {
-                            let mut picker = Picker::new(
-                                "Clear clipboard history",
-                                vec![Question::ask(
-                                    "Clear clipboard history?",
-                                    "This removes the stored entries; the current selection stays",
-                                    "wipe the history",
-                                    "Clear",
-                                    "yes",
-                                )],
-                            );
-                            let code = crate::run_screen(
-                                terminal,
-                                design,
-                                "Clear clipboard history",
-                                &mut picker,
-                            )?;
-                            if code == 0
-                                && picker.answers().first().map(String::as_str) == Some("yes")
-                            {
-                                match checked(&["cliphist", "wipe"]) {
-                                    Ok(_) => note = "Clipboard history cleared".to_string(),
-                                    Err(error) => {
-                                        note =
-                                            format!("Could not clear clipboard history: {error}");
-                                    }
-                                }
+                    }
+                    "width" => {
+                        let choices = [300u32, 340, 400];
+                        let rows: Vec<hayato_ui::Row> = choices
+                            .iter()
+                            .map(|value| {
+                                row(
+                                    format!("{value} px"),
+                                    if config.card_width as u32 == *value {
+                                        "current"
+                                    } else {
+                                        ""
+                                    },
+                                    Glyph::Display,
+                                )
+                            })
+                            .collect();
+                        let keys: Vec<String> =
+                            choices.iter().map(|value| value.to_string()).collect();
+                        let mut picker = Picker::new(
+                            "Card width",
+                            vec![Question::choose(
+                                "Card width",
+                                "Enter applies · Escape returns",
+                                rows,
+                                keys,
+                            )],
+                        );
+                        let code = crate::run_screen(terminal, design, "Card width", &mut picker)?;
+                        if code == 0
+                            && let Some(value) = picker.answers().first()
+                            && let Ok(value) = value.parse::<u32>()
+                        {
+                            let mut next = config;
+                            next.card_width = value as f32;
+                            match save_notify(next) {
+                                Ok(message) => note = message,
+                                Err(error) => note = error,
                             }
                         }
-                        _ => {}
                     }
-                }
-                banner = Some(note);
-            }
-            "touchpad" => {
-                let mut note =
-                    "Enter toggles or opens speed · Escape returns to Settings".to_string();
-                loop {
-                    let settings = super::touchpad::read();
-                    let rows = vec![
-                        row(
-                            "Tap to click",
-                            if settings.tap { "on" } else { "off" },
-                            Glyph::Mouse,
-                        ),
-                        row(
-                            "Natural scrolling",
-                            if settings.natural_scroll { "on" } else { "off" },
-                            Glyph::Mouse,
-                        ),
-                        row(
-                            "Disable while typing",
-                            if settings.dwt { "on" } else { "off" },
-                            Glyph::Mouse,
-                        ),
-                        row("Pointer speed", settings.speed_label(), Glyph::Mouse),
-                        row("Back", "Settings sections", Glyph::ArrowLeft),
-                    ];
-                    let keys = ["tap", "natural", "dwt", "speed", "back"];
-                    let mut pad_picker = Picker::new(
-                        "Touchpad",
-                        vec![Question::choose(
-                            "Touchpad",
-                            note.clone(),
-                            rows,
-                            keys.iter().map(|key| (*key).to_string()).collect(),
-                        )],
-                    );
-                    let code = crate::run_screen(terminal, design, "Touchpad", &mut pad_picker)?;
-                    if code != 0 {
-                        break;
-                    }
-                    let Some(key) = pad_picker.answers().first().cloned() else {
-                        break;
-                    };
-                    if key == "back" {
-                        break;
-                    }
-                    let mut next = settings;
-                    match key.as_str() {
-                        "tap" => next.tap = !next.tap,
-                        "natural" => next.natural_scroll = !next.natural_scroll,
-                        "dwt" => next.dwt = !next.dwt,
-                        "speed" => {
-                            let speeds = [
-                                (-0.3f32, "Slow", "less pointer movement"),
-                                (0.0, "Normal", "libinput default"),
-                                (0.3, "Fast", "more pointer movement"),
-                            ];
-                            let s_rows: Vec<hayato_ui::Row> = speeds
-                                .iter()
-                                .map(|(_, label, detail)| {
-                                    row((*label).to_string(), (*detail).to_string(), Glyph::Mouse)
-                                })
-                                .collect();
-                            let s_keys: Vec<String> = speeds
-                                .iter()
-                                .map(|(value, _, _)| format!("{value}"))
-                                .collect();
-                            let mut speed_picker = Picker::new(
-                                "Pointer speed",
-                                vec![Question::choose(
-                                    "Pointer speed",
-                                    "Enter applies · Escape returns to Touchpad",
-                                    s_rows,
-                                    s_keys,
-                                )],
-                            );
-                            let s_code = crate::run_screen(
-                                terminal,
-                                design,
-                                "Pointer speed",
-                                &mut speed_picker,
-                            )?;
-                            if s_code == 0
-                                && let Some(value) = speed_picker.answers().first()
-                                && let Ok(value) = value.parse::<f32>()
-                            {
-                                next.accel = value;
-                            } else {
-                                continue;
+                    "history-limit" => {
+                        let choices = [100usize, 200, 500];
+                        let rows: Vec<hayato_ui::Row> = choices
+                            .iter()
+                            .map(|value| {
+                                row(
+                                    format!("{value} entries"),
+                                    if config.history_limit == *value {
+                                        "current"
+                                    } else {
+                                        ""
+                                    },
+                                    Glyph::Trash,
+                                )
+                            })
+                            .collect();
+                        let keys: Vec<String> =
+                            choices.iter().map(|value| value.to_string()).collect();
+                        let mut picker = Picker::new(
+                            "History limit",
+                            vec![Question::choose(
+                                "History limit",
+                                "Enter applies · Escape returns",
+                                rows,
+                                keys,
+                            )],
+                        );
+                        let code =
+                            crate::run_screen(terminal, design, "History limit", &mut picker)?;
+                        if code == 0
+                            && let Some(value) = picker.answers().first()
+                            && let Ok(value) = value.parse::<usize>()
+                        {
+                            let mut next = config;
+                            next.history_limit = value;
+                            match save_notify(next) {
+                                Ok(message) => note = message,
+                                Err(error) => note = error,
                             }
                         }
-                        _ => continue,
                     }
-                    if let Err(error) = super::touchpad::write(next) {
-                        note = format!("Could not write touchpad.conf: {error}");
-                    } else if let Err(error) = super::touchpad::apply(next) {
-                        note = format!("Saved, but {error}");
-                    } else {
-                        note = format!("Touchpad: {}", super::touchpad::status());
-                    }
-                }
-                banner = Some(note);
-            }
-            "rotation" => {
-                let cur = rotation_name();
-                let choices = [
-                    ("normal", "Normal", "landscape (default)"),
-                    ("90", "90° clockwise", "portrait"),
-                    ("180", "180°", "inverted landscape"),
-                    ("270", "270° clockwise", "portrait"),
-                ];
-                let r_rows: Vec<hayato_ui::Row> = choices
-                    .iter()
-                    .map(|(k, l, d)| {
-                        let detail = if *k == cur { "current" } else { *d };
-                        row((*l).to_string(), detail.to_string(), Glyph::Rotate)
-                    })
-                    .collect();
-                let r_keys: Vec<String> =
-                    choices.iter().map(|(k, _, _)| (*k).to_string()).collect();
-                let mut r_picker = Picker::new(
-                    "Rotation",
-                    vec![Question::choose(
-                        "Rotation",
-                        "Enter applies \u{00b7} Escape returns to Settings",
-                        r_rows,
-                        r_keys,
-                    )],
-                );
-                let r_code = crate::run_screen(terminal, design, "Rotation", &mut r_picker)?;
-                if r_code == 0
-                    && let Some(rot) = r_picker.answers().first()
-                {
-                    let out_name = focused_output();
-                    let _ = out(&["swaymsg", "output", &out_name, "transform", rot]);
-                    banner = Some(format!("Rotation: {out_name} \u{2192} {rot}"));
-                }
-            }
-            "display" => {
-                let _ = super::display::menu(terminal, design)?;
-            }
-            "workspaces" => {
-                if let Some(message) = super::workspaces::choose(terminal, design)? {
-                    banner = Some(message);
-                }
-            }
-            "theme" => {
-                let _ = super::theme_picker::menu(terminal, design)?;
-            }
-            "wallpaper" => {
-                if let Some(message) = super::appearance::pick_wallpaper(terminal, design)? {
-                    banner = Some(message);
-                }
-            }
-            "wallpaper-next" => match super::appearance::cycle_wallpaper() {
-                Ok(message) => banner = Some(message),
-                Err(reason) => banner = Some(reason),
-            },
-            "wallpaper-theme" => match super::appearance::clear_custom_wallpaper() {
-                Ok(message) => banner = Some(message),
-                Err(reason) => banner = Some(reason),
-            },
-            "bar-position" => match super::appearance::toggle_bar_position() {
-                Ok(message) => banner = Some(message),
-                Err(reason) => banner = Some(reason),
-            },
-            "bar-density" => match super::appearance::toggle_bar_density() {
-                Ok(message) => banner = Some(message),
-                Err(reason) => banner = Some(reason),
-            },
-            "bar-modules" => match super::appearance::toggle_bar_modules() {
-                Ok(message) => banner = Some(message),
-                Err(reason) => banner = Some(reason),
-            },
-            "corners" => match super::appearance::cycle_corners() {
-                Ok(message) => banner = Some(message),
-                Err(reason) => banner = Some(reason),
-            },
-            "shadows" => match super::appearance::toggle_shadows() {
-                Ok(message) => banner = Some(message),
-                Err(reason) => banner = Some(reason),
-            },
-            "blur" => match super::appearance::cycle_blur() {
-                Ok(message) => banner = Some(message),
-                Err(reason) => banner = Some(reason),
-            },
-            "animations" => match super::appearance::cycle_animations() {
-                Ok(message) => banner = Some(message),
-                Err(reason) => banner = Some(reason),
-            },
-            "greeter" => {
-                let _ = crate::greeter::settings::menu(terminal, design)?;
-            }
-            "automount" => {
-                let conf = automount_conf();
-                let (value, word) = if automount_on() {
-                    ("no", "off \u{00b7} Places mounts a stick when you pick it")
-                } else {
-                    ("yes", "on \u{00b7} a plugged USB drive mounts itself")
-                };
-                let part = conf.with_extension("part");
-                let conf_display = conf.display().to_string();
-                if std::fs::create_dir_all(conf.parent().unwrap()).is_ok()
-                    && std::fs::write(&part, format!("enabled={value}\n")).is_ok()
-                    && std::fs::rename(&part, &conf).is_ok()
-                {
-                    banner = Some(format!("Auto-mount USB drives: {word}"));
-                } else {
-                    let _ = std::fs::remove_file(&part);
-                    banner = Some(format!("Could not write {conf_display}"));
-                }
-            }
-            "updates" => {
-                let _ = super::pkg::menu(terminal, design)?;
-            }
-            "clean" => {
-                let _ = super::clean::menu(terminal, design)?;
-            }
-            "tablet" => {
-                let _ = out(&[&bin_script("tablet-mode"), "toggle"]);
-                banner = Some(format!("Tablet mode: {}", tablet_mode_detail()));
-            }
-            "onscreen-keyboard" => {
-                if onscreen_keyboard_running() {
-                    banner = Some("The on-screen keyboard is already up".to_string());
-                } else {
-                    let _ = Command::new("wvkbd-mobintl")
-                        .stdin(Stdio::null())
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn();
-                    banner = Some("On-screen keyboard: shown at the bottom".to_string());
-                }
-            }
-            "tablet-calibrate" => {
-                let _ = out(&[&bin_script("tablet-mode"), "calibrate"]);
-                banner = Some("Calibrated rotation sensor".to_string());
-            }
-            "layout" => {
-                let _ = super::layout::menu(terminal, design)?;
-            }
-            "controller" => {
-                let _ = super::pad::menu(terminal, design)?;
-            }
-            "translate" => {
-                let _ = super::translate::menu(&["config".to_string()], terminal, design)?;
-            }
-            "reduced-motion" => {
-                let on = !reduced_motion_on();
-                if let Err(error) = set_reduced_motion(on) {
-                    banner = Some(format!("Could not save reduced motion: {error}"));
-                } else {
-                    banner = Some(format!(
-                        "Reduced motion: {} (new windows)",
-                        if on { "on" } else { "off" }
-                    ));
-                }
-            }
-            "audio" => {
-                let _ = super::audio::menu(terminal, design)?;
-            }
-            "mixer" => {
-                spawn_subcommand("pavucontrol", &[]);
-                return Ok(0);
-            }
-            "media" => {
-                let _ = super::media::menu(terminal, design)?;
-            }
-            "idle" => {
-                let current = super::idle::read();
-                let presets = super::idle::presets();
-                let rows: Vec<hayato_ui::Row> = presets
-                    .iter()
-                    .map(|(screen_off, lock, dpms, label, detail)| {
-                        let state = if current == (*screen_off, *lock, *dpms) {
-                            "current"
-                        } else {
-                            detail
-                        };
-                        row((*label).to_string(), state.to_string(), Glyph::Clock)
-                    })
-                    .collect();
-                let keys: Vec<String> = presets
-                    .iter()
-                    .map(|(screen_off, lock, dpms, _, _)| format!("{screen_off}:{lock}:{dpms}"))
-                    .collect();
-                let mut idle_picker = Picker::new(
-                    "Idle & lock",
-                    vec![Question::choose(
-                        "Idle & lock",
-                        "Enter applies \u{00b7} Escape returns to Settings",
-                        rows,
-                        keys,
-                    )],
-                );
-                let code = crate::run_screen(terminal, design, "Idle & lock", &mut idle_picker)?;
-                if code == 0
-                    && let Some(answer) = idle_picker.answers().first()
-                {
-                    let parts: Vec<u64> = answer
-                        .split(':')
-                        .filter_map(|part| part.parse::<u64>().ok())
-                        .collect();
-                    if let [screen_off, lock, dpms] = parts.as_slice() {
-                        if let Err(error) = super::idle::write(*screen_off, *lock, *dpms) {
-                            banner = Some(format!("Could not write idle.conf: {error}"));
-                        } else if let Err(error) = super::idle::restart() {
-                            banner = Some(format!("Saved, but {error}"));
-                        } else {
-                            banner = Some(format!("Idle & lock: {}", super::idle::status()));
+                    "clear" => {
+                        let mut picker = Picker::new(
+                            "Clear notification history",
+                            vec![Question::ask(
+                                "Clear notification history?",
+                                "This removes the stored cards; current cards stay on screen",
+                                "clear the history",
+                                "Clear",
+                                "yes",
+                            )],
+                        );
+                        let code = crate::run_screen(
+                            terminal,
+                            design,
+                            "Clear notification history",
+                            &mut picker,
+                        )?;
+                        if code == 0 && picker.answers().first().map(String::as_str) == Some("yes")
+                        {
+                            match super::notify::clear_history() {
+                                Ok(()) => note = "Notification history cleared".to_string(),
+                                Err(error) => note = format!("Could not clear history: {error}"),
+                            }
                         }
                     }
+                    _ => {}
                 }
             }
-            "power" => {
-                spawn_subcommand("hayato", &["menu", "power"]);
-                return Ok(0);
-            }
-            "power-profile" => {
-                if !have("powerprofilesctl") {
-                    banner =
-                        Some("Install power-profiles-daemon to switch power profiles".to_string());
-                } else {
-                    let cur = power_profile_detail();
-                    let next = match cur.as_str() {
-                        "power-saver" => "balanced",
-                        "balanced" => "performance",
-                        _ => "power-saver",
-                    };
-                    match checked(&["powerprofilesctl", "set", next]) {
-                        Ok(_) => banner = Some(format!("Power profile: {next}")),
-                        Err(e) => banner = Some(format!("Could not set power profile: {e}")),
-                    }
-                }
-            }
-            "battery-limit" => {
-                if let Some(path) = battery_limit_path() {
-                    let cur = std::fs::read_to_string(&path)
-                        .ok()
-                        .and_then(|s| s.trim().parse::<u8>().ok())
-                        .unwrap_or(100);
-                    let next = if cur <= 85 { "100" } else { "80" };
-                    let p = path.to_string_lossy().to_string();
-                    match sudo(&["sh", "-c", "printf '%s\\n' \"$1\" > \"$2\"", "sh", next, &p]) {
-                        Ok(_) => banner = Some(format!("Battery charge limit set to {next}%")),
-                        Err(e) => banner = Some(format!("Could not set charge limit: {e}")),
-                    }
-                } else {
-                    banner = Some(
-                        "Battery charge threshold is not exposed by this hardware".to_string(),
-                    );
-                }
-            }
-            "vpn" => {
-                let conns = vpn_connections();
-                if conns.is_empty() {
-                    crate::system::spawn_detached("exec foot --app-id=popup nmtui");
-                    return Ok(0);
-                } else if let Some((active, _)) = conns.iter().find(|(_, on)| *on) {
-                    match checked(&["nmcli", "connection", "down", active]) {
-                        Ok(_) => banner = Some(format!("VPN disconnected: {active}")),
-                        Err(e) => banner = Some(format!("Could not disconnect VPN: {e}")),
-                    }
-                } else {
-                    let name = &conns[0].0;
-                    match checked(&["nmcli", "connection", "up", name]) {
-                        Ok(_) => banner = Some(format!("VPN connected: {name}")),
-                        Err(e) => banner = Some(format!("Could not connect VPN: {e}")),
-                    }
-                }
-            }
-            "firewall" => match firewall_enabled() {
-                Some(true) => match sudo(&["ufw", "disable"]) {
-                    Ok(_) => banner = Some("Firewall (UFW) disabled".to_string()),
-                    Err(e) => banner = Some(format!("Could not disable firewall: {e}")),
-                },
-                Some(false) => match sudo(&["ufw", "--force", "enable"]) {
-                    Ok(_) => banner = Some("Firewall (UFW) enabled".to_string()),
-                    Err(e) => banner = Some(format!("Could not enable firewall: {e}")),
-                },
-                None => {
-                    banner = Some("Install ufw to manage the firewall".to_string());
-                }
-            },
-            _ => {}
+            banner = Some(note);
         }
+        "vnc" => {
+            let _ = super::vnc::menu(terminal, design)?;
+        }
+        "ssh" => {
+            let _ = super::ssh::menu(terminal, design)?;
+        }
+        "tz" => {
+            let _ = super::tz::menu(terminal, design)?;
+        }
+        "locale" => {
+            let current = super::locale::current();
+            let locales = super::locale::list();
+            if locales.is_empty() {
+                banner = Some("No locales are available (localectl list-locales is empty)".into());
+            } else {
+                let rows: Vec<hayato_ui::Row> = locales
+                    .iter()
+                    .map(|locale| {
+                        row(
+                            locale.clone(),
+                            if *locale == current { "current" } else { "" },
+                            Glyph::Globe,
+                        )
+                    })
+                    .collect();
+                let mut picker = Picker::new(
+                    "Language & region",
+                    vec![Question::choose(
+                        "Language & region",
+                        format!("Current: {current} · Enter sets · Escape returns"),
+                        rows,
+                        locales.clone(),
+                    )],
+                );
+                let code = crate::run_screen(terminal, design, "Language & region", &mut picker)?;
+                if code == 0
+                    && let Some(locale) = picker.answers().first()
+                {
+                    match super::locale::set(locale) {
+                        Ok(()) => {
+                            banner =
+                                Some(format!("Language & region: {locale} (log out and back in)"));
+                        }
+                        Err(error) => banner = Some(format!("Could not set locale: {error}")),
+                    }
+                }
+            }
+        }
+        "hostname" => {
+            let current = super::hostname::current();
+            let mut picker = Picker::new(
+                "Hostname",
+                vec![Question::input(
+                    "Hostname",
+                    format!("Current: {current} · letters, numbers and hyphens"),
+                    "my-chromebook",
+                    false,
+                )],
+            );
+            let code = crate::run_screen(terminal, design, "Hostname", &mut picker)?;
+            if code == 0
+                && let Some(name) = picker.answers().first()
+            {
+                match super::hostname::set(name) {
+                    Ok(()) => banner = Some(format!("Hostname: {name}")),
+                    Err(error) => banner = Some(format!("Could not set hostname: {error}")),
+                }
+            }
+        }
+        "default-apps" => {
+            let rows: Vec<hayato_ui::Row> = super::default_apps::CATEGORIES
+                .iter()
+                .map(|category| {
+                    let current = super::default_apps::current(category)
+                        .map(|id| super::default_apps::desktop_name(&id))
+                        .unwrap_or_else(|| "not set".to_string());
+                    row(category.label, current, Glyph::Desktop)
+                })
+                .collect();
+            let keys: Vec<String> = super::default_apps::CATEGORIES
+                .iter()
+                .map(|category| category.key.to_string())
+                .collect();
+            let mut picker = Picker::new(
+                "Default apps",
+                vec![Question::choose(
+                    "Default apps",
+                    "Enter opens a category · Escape returns to Settings",
+                    rows,
+                    keys,
+                )],
+            );
+            let code = crate::run_screen(terminal, design, "Default apps", &mut picker)?;
+            if code == 0
+                && let Some(key) = picker.answers().first()
+                && let Some(category) = super::default_apps::category(key)
+            {
+                let ids = super::default_apps::candidates(category);
+                if ids.is_empty() {
+                    banner = Some(format!(
+                        "No applications are registered for {}",
+                        category.label
+                    ));
+                } else {
+                    let current = super::default_apps::current(category);
+                    let rows: Vec<hayato_ui::Row> = ids
+                        .iter()
+                        .map(|id| {
+                            row(
+                                super::default_apps::desktop_name(id),
+                                if current.as_deref() == Some(id.as_str()) {
+                                    "current"
+                                } else {
+                                    ""
+                                },
+                                Glyph::Desktop,
+                            )
+                        })
+                        .collect();
+                    let mut picker = Picker::new(
+                        category.label,
+                        vec![Question::choose(
+                            category.label,
+                            "Enter sets the default · Escape returns",
+                            rows,
+                            ids.clone(),
+                        )],
+                    );
+                    let code = crate::run_screen(terminal, design, category.label, &mut picker)?;
+                    if code == 0
+                        && let Some(id) = picker.answers().first()
+                    {
+                        match super::default_apps::set(category, id) {
+                            Ok(()) => {
+                                banner = Some(format!(
+                                    "{}: {}",
+                                    category.label,
+                                    super::default_apps::desktop_name(id)
+                                ));
+                            }
+                            Err(error) => {
+                                banner = Some(format!("Could not set default: {error}"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        "password" => {
+            let mut picker = Picker::new(
+                "Change password",
+                vec![
+                    Question::input(
+                        "New password",
+                        "at least one character · Escape returns",
+                        "new password",
+                        true,
+                    ),
+                    Question::input(
+                        "Confirm password",
+                        "type it again",
+                        "confirm password",
+                        true,
+                    ),
+                ],
+            );
+            let code = crate::run_screen(terminal, design, "Change password", &mut picker)?;
+            if code == 0
+                && let [password, confirm] = picker.answers().as_slice()
+            {
+                match validate_password(password, confirm) {
+                    Err(error) => banner = Some(error.to_string()),
+                    Ok(()) => match change_password(password) {
+                        Ok(()) => banner = Some("Password changed".to_string()),
+                        Err(error) => banner = Some(format!("Could not change password: {error}")),
+                    },
+                }
+            }
+        }
+        "clipboard" => {
+            let mut note = "Enter acts · Escape returns to Settings".to_string();
+            loop {
+                let enabled = clipboard_enabled();
+                let rows = vec![
+                    row(
+                        "Keep clipboard history",
+                        if enabled { "on" } else { "off" },
+                        Glyph::Clipboard,
+                    ),
+                    row(
+                        "Open clipboard history",
+                        clipboard_status(),
+                        Glyph::Clipboard,
+                    ),
+                    row("Clear clipboard history", "asks first", Glyph::Trash),
+                    row("Back", "Settings sections", Glyph::ArrowLeft),
+                ];
+                let keys = ["toggle", "history", "clear", "back"];
+                let mut picker = Picker::new(
+                    "Clipboard history",
+                    vec![Question::choose(
+                        "Clipboard history",
+                        note.clone(),
+                        rows,
+                        keys.iter().map(|key| (*key).to_string()).collect(),
+                    )],
+                );
+                let code = crate::run_screen(terminal, design, "Clipboard history", &mut picker)?;
+                if code != 0 {
+                    break;
+                }
+                let Some(key) = picker.answers().first().cloned() else {
+                    break;
+                };
+                match key.as_str() {
+                    "back" => break,
+                    "toggle" => {
+                        let next = !enabled;
+                        if let Err(error) = set_clipboard_enabled(next) {
+                            note = format!("Could not save clipboard.conf: {error}");
+                        } else {
+                            let _ = out(&[&bin_script("hayato-clipboard"), "restart"]);
+                            note =
+                                format!("Clipboard history: {}", if next { "on" } else { "off" });
+                        }
+                    }
+                    "history" => {
+                        let _ = super::clip::menu(terminal, design)?;
+                    }
+                    "clear" => {
+                        let mut picker = Picker::new(
+                            "Clear clipboard history",
+                            vec![Question::ask(
+                                "Clear clipboard history?",
+                                "This removes the stored entries; the current selection stays",
+                                "wipe the history",
+                                "Clear",
+                                "yes",
+                            )],
+                        );
+                        let code = crate::run_screen(
+                            terminal,
+                            design,
+                            "Clear clipboard history",
+                            &mut picker,
+                        )?;
+                        if code == 0 && picker.answers().first().map(String::as_str) == Some("yes")
+                        {
+                            match checked(&["cliphist", "wipe"]) {
+                                Ok(_) => note = "Clipboard history cleared".to_string(),
+                                Err(error) => {
+                                    note = format!("Could not clear clipboard history: {error}");
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            banner = Some(note);
+        }
+        "touchpad" => {
+            let mut note = "Enter toggles or opens speed · Escape returns to Settings".to_string();
+            loop {
+                let settings = super::touchpad::read();
+                let rows = vec![
+                    row(
+                        "Tap to click",
+                        if settings.tap { "on" } else { "off" },
+                        Glyph::Mouse,
+                    ),
+                    row(
+                        "Natural scrolling",
+                        if settings.natural_scroll { "on" } else { "off" },
+                        Glyph::Mouse,
+                    ),
+                    row(
+                        "Disable while typing",
+                        if settings.dwt { "on" } else { "off" },
+                        Glyph::Mouse,
+                    ),
+                    row("Pointer speed", settings.speed_label(), Glyph::Mouse),
+                    row("Back", "Settings sections", Glyph::ArrowLeft),
+                ];
+                let keys = ["tap", "natural", "dwt", "speed", "back"];
+                let mut pad_picker = Picker::new(
+                    "Touchpad",
+                    vec![Question::choose(
+                        "Touchpad",
+                        note.clone(),
+                        rows,
+                        keys.iter().map(|key| (*key).to_string()).collect(),
+                    )],
+                );
+                let code = crate::run_screen(terminal, design, "Touchpad", &mut pad_picker)?;
+                if code != 0 {
+                    break;
+                }
+                let Some(key) = pad_picker.answers().first().cloned() else {
+                    break;
+                };
+                if key == "back" {
+                    break;
+                }
+                let mut next = settings;
+                match key.as_str() {
+                    "tap" => next.tap = !next.tap,
+                    "natural" => next.natural_scroll = !next.natural_scroll,
+                    "dwt" => next.dwt = !next.dwt,
+                    "speed" => {
+                        let speeds = [
+                            (-0.3f32, "Slow", "less pointer movement"),
+                            (0.0, "Normal", "libinput default"),
+                            (0.3, "Fast", "more pointer movement"),
+                        ];
+                        let s_rows: Vec<hayato_ui::Row> = speeds
+                            .iter()
+                            .map(|(_, label, detail)| {
+                                row((*label).to_string(), (*detail).to_string(), Glyph::Mouse)
+                            })
+                            .collect();
+                        let s_keys: Vec<String> = speeds
+                            .iter()
+                            .map(|(value, _, _)| format!("{value}"))
+                            .collect();
+                        let mut speed_picker = Picker::new(
+                            "Pointer speed",
+                            vec![Question::choose(
+                                "Pointer speed",
+                                "Enter applies · Escape returns to Touchpad",
+                                s_rows,
+                                s_keys,
+                            )],
+                        );
+                        let s_code = crate::run_screen(
+                            terminal,
+                            design,
+                            "Pointer speed",
+                            &mut speed_picker,
+                        )?;
+                        if s_code == 0
+                            && let Some(value) = speed_picker.answers().first()
+                            && let Ok(value) = value.parse::<f32>()
+                        {
+                            next.accel = value;
+                        } else {
+                            continue;
+                        }
+                    }
+                    _ => continue,
+                }
+                if let Err(error) = super::touchpad::write(next) {
+                    note = format!("Could not write touchpad.conf: {error}");
+                } else if let Err(error) = super::touchpad::apply(next) {
+                    note = format!("Saved, but {error}");
+                } else {
+                    note = format!("Touchpad: {}", super::touchpad::status());
+                }
+            }
+            banner = Some(note);
+        }
+        "rotation" => {
+            let cur = rotation_name();
+            let choices = [
+                ("normal", "Normal", "landscape (default)"),
+                ("90", "90° clockwise", "portrait"),
+                ("180", "180°", "inverted landscape"),
+                ("270", "270° clockwise", "portrait"),
+            ];
+            let r_rows: Vec<hayato_ui::Row> = choices
+                .iter()
+                .map(|(k, l, d)| {
+                    let detail = if *k == cur { "current" } else { *d };
+                    row((*l).to_string(), detail.to_string(), Glyph::Rotate)
+                })
+                .collect();
+            let r_keys: Vec<String> = choices.iter().map(|(k, _, _)| (*k).to_string()).collect();
+            let mut r_picker = Picker::new(
+                "Rotation",
+                vec![Question::choose(
+                    "Rotation",
+                    "Enter applies \u{00b7} Escape returns to Settings",
+                    r_rows,
+                    r_keys,
+                )],
+            );
+            let r_code = crate::run_screen(terminal, design, "Rotation", &mut r_picker)?;
+            if r_code == 0
+                && let Some(rot) = r_picker.answers().first()
+            {
+                let out_name = focused_output();
+                let _ = out(&["swaymsg", "output", &out_name, "transform", rot]);
+                banner = Some(format!("Rotation: {out_name} \u{2192} {rot}"));
+            }
+        }
+        "display" => {
+            let _ = super::display::menu(terminal, design)?;
+        }
+        "workspaces" => {
+            if let Some(message) = super::workspaces::choose(terminal, design)? {
+                banner = Some(message);
+            }
+        }
+        "theme" => {
+            let _ = super::theme_picker::menu(terminal, design)?;
+        }
+        "wallpaper" => {
+            if let Some(message) = super::appearance::pick_wallpaper(terminal, design)? {
+                banner = Some(message);
+            }
+        }
+        "wallpaper-next" => match super::appearance::cycle_wallpaper() {
+            Ok(message) => banner = Some(message),
+            Err(reason) => banner = Some(reason),
+        },
+        "wallpaper-theme" => match super::appearance::clear_custom_wallpaper() {
+            Ok(message) => banner = Some(message),
+            Err(reason) => banner = Some(reason),
+        },
+        "bar-position" => match super::appearance::toggle_bar_position() {
+            Ok(message) => banner = Some(message),
+            Err(reason) => banner = Some(reason),
+        },
+        "bar-density" => match super::appearance::toggle_bar_density() {
+            Ok(message) => banner = Some(message),
+            Err(reason) => banner = Some(reason),
+        },
+        "bar-modules" => match super::appearance::toggle_bar_modules() {
+            Ok(message) => banner = Some(message),
+            Err(reason) => banner = Some(reason),
+        },
+        "corners" => match super::appearance::cycle_corners() {
+            Ok(message) => banner = Some(message),
+            Err(reason) => banner = Some(reason),
+        },
+        "shadows" => match super::appearance::toggle_shadows() {
+            Ok(message) => banner = Some(message),
+            Err(reason) => banner = Some(reason),
+        },
+        "blur" => match super::appearance::cycle_blur() {
+            Ok(message) => banner = Some(message),
+            Err(reason) => banner = Some(reason),
+        },
+        "animations" => match super::appearance::cycle_animations() {
+            Ok(message) => banner = Some(message),
+            Err(reason) => banner = Some(reason),
+        },
+        "greeter" => {
+            let _ = crate::greeter::settings::menu(terminal, design)?;
+        }
+        "automount" => {
+            let conf = automount_conf();
+            let (value, word) = if automount_on() {
+                ("no", "off \u{00b7} Places mounts a stick when you pick it")
+            } else {
+                ("yes", "on \u{00b7} a plugged USB drive mounts itself")
+            };
+            let part = conf.with_extension("part");
+            let conf_display = conf.display().to_string();
+            if std::fs::create_dir_all(conf.parent().unwrap()).is_ok()
+                && std::fs::write(&part, format!("enabled={value}\n")).is_ok()
+                && std::fs::rename(&part, &conf).is_ok()
+            {
+                banner = Some(format!("Auto-mount USB drives: {word}"));
+            } else {
+                let _ = std::fs::remove_file(&part);
+                banner = Some(format!("Could not write {conf_display}"));
+            }
+        }
+        "updates" => {
+            let _ = super::pkg::menu(terminal, design)?;
+        }
+        "clean" => {
+            let _ = super::clean::menu(terminal, design)?;
+        }
+        "tablet" => {
+            let _ = out(&[&bin_script("tablet-mode"), "toggle"]);
+            banner = Some(format!("Tablet mode: {}", tablet_mode_detail()));
+        }
+        "onscreen-keyboard" => {
+            if onscreen_keyboard_running() {
+                banner = Some("The on-screen keyboard is already up".to_string());
+            } else {
+                let _ = Command::new("wvkbd-mobintl")
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn();
+                banner = Some("On-screen keyboard: shown at the bottom".to_string());
+            }
+        }
+        "tablet-calibrate" => {
+            let _ = out(&[&bin_script("tablet-mode"), "calibrate"]);
+            banner = Some("Calibrated rotation sensor".to_string());
+        }
+        "layout" => {
+            let _ = super::layout::menu(terminal, design)?;
+        }
+        "controller" => {
+            let _ = super::pad::menu(terminal, design)?;
+        }
+        "translate" => {
+            let _ = super::translate::menu(&["config".to_string()], terminal, design)?;
+        }
+        "reduced-motion" => {
+            let on = !reduced_motion_on();
+            if let Err(error) = set_reduced_motion(on) {
+                banner = Some(format!("Could not save reduced motion: {error}"));
+            } else {
+                banner = Some(format!(
+                    "Reduced motion: {} (new windows)",
+                    if on { "on" } else { "off" }
+                ));
+            }
+        }
+        "audio" => {
+            let _ = super::audio::menu(terminal, design)?;
+        }
+        "mixer" => {
+            spawn_subcommand("pavucontrol", &[]);
+            return Ok(KeyOutcome::Exit(0));
+        }
+        "media" => {
+            let _ = super::media::menu(terminal, design)?;
+        }
+        "idle" => {
+            let current = super::idle::read();
+            let presets = super::idle::presets();
+            let rows: Vec<hayato_ui::Row> = presets
+                .iter()
+                .map(|(screen_off, lock, dpms, label, detail)| {
+                    let state = if current == (*screen_off, *lock, *dpms) {
+                        "current"
+                    } else {
+                        detail
+                    };
+                    row((*label).to_string(), state.to_string(), Glyph::Clock)
+                })
+                .collect();
+            let keys: Vec<String> = presets
+                .iter()
+                .map(|(screen_off, lock, dpms, _, _)| format!("{screen_off}:{lock}:{dpms}"))
+                .collect();
+            let mut idle_picker = Picker::new(
+                "Idle & lock",
+                vec![Question::choose(
+                    "Idle & lock",
+                    "Enter applies \u{00b7} Escape returns to Settings",
+                    rows,
+                    keys,
+                )],
+            );
+            let code = crate::run_screen(terminal, design, "Idle & lock", &mut idle_picker)?;
+            if code == 0
+                && let Some(answer) = idle_picker.answers().first()
+            {
+                let parts: Vec<u64> = answer
+                    .split(':')
+                    .filter_map(|part| part.parse::<u64>().ok())
+                    .collect();
+                if let [screen_off, lock, dpms] = parts.as_slice() {
+                    if let Err(error) = super::idle::write(*screen_off, *lock, *dpms) {
+                        banner = Some(format!("Could not write idle.conf: {error}"));
+                    } else if let Err(error) = super::idle::restart() {
+                        banner = Some(format!("Saved, but {error}"));
+                    } else {
+                        banner = Some(format!("Idle & lock: {}", super::idle::status()));
+                    }
+                }
+            }
+        }
+        "power" => {
+            spawn_subcommand("hayato", &["menu", "power"]);
+            return Ok(KeyOutcome::Exit(0));
+        }
+        "power-profile" => {
+            if !have("powerprofilesctl") {
+                banner = Some("Install power-profiles-daemon to switch power profiles".to_string());
+            } else {
+                let cur = power_profile_detail();
+                let next = match cur.as_str() {
+                    "power-saver" => "balanced",
+                    "balanced" => "performance",
+                    _ => "power-saver",
+                };
+                match checked(&["powerprofilesctl", "set", next]) {
+                    Ok(_) => banner = Some(format!("Power profile: {next}")),
+                    Err(e) => banner = Some(format!("Could not set power profile: {e}")),
+                }
+            }
+        }
+        "battery-limit" => {
+            if let Some(path) = battery_limit_path() {
+                let cur = std::fs::read_to_string(&path)
+                    .ok()
+                    .and_then(|s| s.trim().parse::<u8>().ok())
+                    .unwrap_or(100);
+                let next = if cur <= 85 { "100" } else { "80" };
+                let p = path.to_string_lossy().to_string();
+                match sudo(&["sh", "-c", "printf '%s\\n' \"$1\" > \"$2\"", "sh", next, &p]) {
+                    Ok(_) => banner = Some(format!("Battery charge limit set to {next}%")),
+                    Err(e) => banner = Some(format!("Could not set charge limit: {e}")),
+                }
+            } else {
+                banner =
+                    Some("Battery charge threshold is not exposed by this hardware".to_string());
+            }
+        }
+        "vpn" => {
+            let conns = vpn_connections();
+            if conns.is_empty() {
+                crate::system::spawn_detached("exec foot --app-id=popup nmtui");
+                return Ok(KeyOutcome::Exit(0));
+            } else if let Some((active, _)) = conns.iter().find(|(_, on)| *on) {
+                match checked(&["nmcli", "connection", "down", active]) {
+                    Ok(_) => banner = Some(format!("VPN disconnected: {active}")),
+                    Err(e) => banner = Some(format!("Could not disconnect VPN: {e}")),
+                }
+            } else {
+                let name = &conns[0].0;
+                match checked(&["nmcli", "connection", "up", name]) {
+                    Ok(_) => banner = Some(format!("VPN connected: {name}")),
+                    Err(e) => banner = Some(format!("Could not connect VPN: {e}")),
+                }
+            }
+        }
+        "firewall" => match firewall_enabled() {
+            Some(true) => match sudo(&["ufw", "disable"]) {
+                Ok(_) => banner = Some("Firewall (UFW) disabled".to_string()),
+                Err(e) => banner = Some(format!("Could not disable firewall: {e}")),
+            },
+            Some(false) => match sudo(&["ufw", "--force", "enable"]) {
+                Ok(_) => banner = Some("Firewall (UFW) enabled".to_string()),
+                Err(e) => banner = Some(format!("Could not enable firewall: {e}")),
+            },
+            None => {
+                banner = Some("Install ufw to manage the firewall".to_string());
+            }
+        },
+        _ => {}
     }
+    Ok(KeyOutcome::Continue(banner))
 }
 
 fn save_notify(config: super::notify_settings::Config) -> Result<String, String> {

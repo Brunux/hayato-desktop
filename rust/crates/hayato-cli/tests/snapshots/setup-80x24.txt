@@ -1,0 +1,24 @@
+Hayato · Personal Setup Assistant                                               
+────────────────────────────────────────────────────────────────────────────────
+╭ Steps · 0/8 ready ───╮╭ Step 1/8: Welcome ───────────────────────────────────╮
+│ ▎ ○ 1 Welcome        ││  Identify this machine & see what needs attention    │
+│   ! 2 Security       ││  Lenovo IdeaPad Duet 3 (google-asurada) (hayato) ·…  │
+│   ● 3 Connectivity   ││  Provisioning: Pre-built Release Image · Boot: dep…  │
+│   ○ 4 Personalizati… ││  Every step is optional & resumable. Press Tab for…  │
+│   ○ 5 Hardware       ││                                                      │
+│   ○ 6 Software       ││  ▍   Continue to Security (Step 2)  recommended f…  │
+│   ○ 7 Privacy        ││      Open Interactive Learn Manual  shortcuts, ge…  │
+│   ○ 8 Protection     ││      Finish & Enter Desktop  dismiss first-run (r…  │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+│                      ││                                                      │
+╰──────────────────────╯╰──────────────────────────────────────────────────────╯
+ [Enter]  run   [Tab]  next step   [d]  done   [s]  skip   …       [Esc]  pause 

@@ -1,0 +1,45 @@
+Hayato · Personal Setup Assistant                                                                                                                       
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+╭ Steps · 0/8 ready ─────────╮╭ Step 1/8: Welcome ─────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ▎ ○ 1 Welcome              ││  Identify this machine & see what needs attention                                                                      │
+│   ! 2 Security             ││  Lenovo IdeaPad Duet 3 (google-asurada) (hayato) · Linux 6.12.0-arm64 · 3.8 GiB RAM                                    │
+│   ● 3 Connectivity         ││  Provisioning: Pre-built Release Image · Boot: depthcharge · Hayato 0.6.1                                              │
+│   ○ 4 Personalization      ││  Every step is optional & resumable. Press Tab for next, or Enter to run an action.                                    │
+│   ○ 5 Hardware             ││                                                                                                                        │
+│   ○ 6 Software             ││  ▍   Continue to Security (Step 2)  recommended first step                                                            │
+│   ○ 7 Privacy              ││      Open Interactive Learn Manual  shortcuts, gestures & Hayato tools                                                │
+│   ○ 8 Protection           ││      Finish & Enter Desktop  dismiss first-run (reopen anytime in Settings)                                           │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+│                            ││                                                                                                                        │
+╰────────────────────────────╯╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  run   [Tab]  next step   [d]  done   [s]  skip   [f]  finish   [Esc]  pause                                                                   
