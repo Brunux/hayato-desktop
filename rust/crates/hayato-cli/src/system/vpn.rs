@@ -289,6 +289,111 @@ pub fn status() -> String {
     }
 }
 
+fn json_escape(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+}
+
+fn pango_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Signal Waybar (`RTMIN+8`) so `custom/vpn` updates immediately on toggle.
+pub fn signal_bar() {
+    let _ = out(&["pkill", "-RTMIN+8", "waybar"]);
+}
+
+/// Render the Waybar JSON payload for `custom/vpn` (`hayato menu vpn --bar`).
+/// Collapses to zero width (`class: "empty"`) when no VPN tunnel is active.
+pub fn bar_json_for(profiles: &[VpnProfile]) -> String {
+    let active: Vec<&VpnProfile> = profiles.iter().filter(|p| p.active).collect();
+    if active.is_empty() {
+        return r#"{"text":"","class":"empty","tooltip":""}"#.to_string();
+    }
+    let text = if active.len() == 1 {
+        "<span font_desc='JetBrains Mono 13'>\u{f132}</span>".to_string()
+    } else {
+        format!(
+            "<span font_desc='JetBrains Mono 13'>\u{f132}</span> {}",
+            active.len()
+        )
+    };
+    let first = active[0];
+    let proto = first.kind.label().to_uppercase();
+    let mut lines = vec![format!(
+        "<span alpha='50%'>╭─</span> <b>VPN // {}</b>",
+        pango_escape(&proto)
+    )];
+    for p in &active {
+        let dev_suffix = p
+            .device
+            .as_deref()
+            .map(|d| format!(" ({d})"))
+            .unwrap_or_default();
+        lines.push(format!(
+            "<span alpha='45%'>│</span> <span alpha='60%'>TUN</span>  {}{}",
+            pango_escape(&p.name),
+            pango_escape(&dev_suffix)
+        ));
+        if let Some(ip) = &p.ipv4 {
+            lines.push(format!(
+                "<span alpha='45%'>│</span> <span alpha='60%'>IP </span>  {}",
+                pango_escape(ip)
+            ));
+        }
+        if p.rx_bytes > 0 || p.tx_bytes > 0 {
+            lines.push(format!(
+                "<span alpha='45%'>│</span> <span alpha='60%'>IO </span>  \u{2191}{} \u{2193}{}",
+                format_bytes(p.tx_bytes),
+                format_bytes(p.rx_bytes)
+            ));
+        }
+    }
+    lines.push(
+        "<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] VPN · [RMB] disconnect</span>"
+            .to_string(),
+    );
+    let tooltip = lines.join("\n");
+    format!(
+        r#"{{"text":"{}","class":"connected","tooltip":"{}"}}"#,
+        json_escape(&text),
+        json_escape(&tooltip)
+    )
+}
+
+/// Live Waybar JSON payload (`hayato menu vpn --bar`).
+pub fn bar_json() -> String {
+    bar_json_for(&list_profiles())
+}
+
+/// Headless disconnect for Waybar right-click (`hayato menu vpn --disconnect`).
+pub fn disconnect_active() -> i32 {
+    let active: Vec<VpnProfile> = list_profiles().into_iter().filter(|p| p.active).collect();
+    if active.is_empty() {
+        signal_bar();
+        return hayato_ui::app::exit::OK;
+    }
+    let mut disconnected = Vec::new();
+    for p in &active {
+        if nmcli_run(&["connection", "down", "uuid", &p.uuid]).is_ok() {
+            disconnected.push(p.name.clone());
+        }
+    }
+    signal_bar();
+    if !disconnected.is_empty() {
+        super::say(
+            "VPN",
+            format!("Disconnected: {}", disconnected.join(", ")),
+            hayato_ui::Urgency::Normal,
+            Glyph::Shield,
+        );
+    }
+    hayato_ui::app::exit::OK
+}
+
 /// Scan common user directories for `.conf` (WireGuard) and `.ovpn` (OpenVPN) files.
 pub fn scan_config_files() -> Vec<(PathBuf, VpnKind)> {
     let home = std::env::var("HOME")
@@ -371,9 +476,11 @@ pub fn import_profile(path: &Path) -> Result<String, String> {
 pub fn toggle_connection(p: &VpnProfile) -> Result<String, String> {
     if p.active {
         nmcli_run(&["connection", "down", "uuid", &p.uuid])?;
+        signal_bar();
         Ok(format!("Disconnected: {}", p.name))
     } else {
         nmcli_run(&["connection", "up", "uuid", &p.uuid])?;
+        signal_bar();
         Ok(format!("Connected: {}", p.name))
     }
 }
@@ -422,6 +529,7 @@ pub fn set_openvpn_credentials(
 
 pub fn delete_profile(name: &str, uuid: &str) -> Result<String, String> {
     nmcli_run(&["connection", "delete", "uuid", uuid])?;
+    signal_bar();
     Ok(format!("Deleted VPN profile: {name}"))
 }
 
@@ -1116,5 +1224,31 @@ lo:3333:loopback:lo:no
         assert_eq!(format_bytes(2048), "2.0 KB");
         assert_eq!(format_bytes(39_950_745), "38.1 MB");
         assert_eq!(format_bytes(1_610_612_736), "1.5 GB");
+    }
+
+    #[test]
+    fn bar_json_collapses_when_idle_and_shows_shield_when_connected() {
+        assert_eq!(
+            bar_json_for(&[]),
+            r#"{"text":"","class":"empty","tooltip":""}"#
+        );
+        let active = vec![VpnProfile {
+            name: "work-wg".to_string(),
+            uuid: "1111".to_string(),
+            kind: VpnKind::WireGuard,
+            active: true,
+            device: Some("wg0".to_string()),
+            autoconnect: true,
+            ipv4: Some("10.66.0.2/32".to_string()),
+            rx_bytes: 39_950_745,
+            tx_bytes: 4_404_019,
+            endpoint: None,
+        }];
+        let json = bar_json_for(&active);
+        assert!(json.contains(r#""class":"connected""#), "{json}");
+        assert!(json.contains("VPN // WIREGUARD"), "{json}");
+        assert!(json.contains("work-wg (wg0)"), "{json}");
+        assert!(json.contains("10.66.0.2/32"), "{json}");
+        assert!(json.contains("[LMB] VPN · [RMB] disconnect"), "{json}");
     }
 }

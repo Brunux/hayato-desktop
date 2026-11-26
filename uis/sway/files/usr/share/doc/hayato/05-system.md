@@ -260,6 +260,7 @@ The native **VPN** client (`hayato menu vpn`, Settings → *Network → VPN*, or
 * **OpenVPN credentials (`u`)**: stores OpenVPN username and password in NetworkManager secrets. If `network-manager-openvpn` is not installed yet, the menu offers an inline **Install OpenVPN support** row.
 * **Delete (`d`)**: removes a saved profile after a Cancel-first confirmation modal.
 * **Status (`hayato menu vpn --status`)**: prints a one-line summary for scripts and settings.
+* **Waybar indicator (`custom/vpn`)**: collapses to zero width when disconnected; shows a shield icon next to the network indicator whenever a tunnel is active (`[LMB]` opens `hayato menu vpn`, `[RMB]` disconnects immediately via `hayato menu vpn --disconnect`), refreshing immediately via `RTMIN+8`.
 
 ## Hotel and airport Wi-Fi
 
