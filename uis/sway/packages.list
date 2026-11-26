@@ -267,8 +267,9 @@ xdg-user-dirs
 # so elevation prompts and saved credentials work for apps, Git, and VPNs.
 lxpolkit
 gnome-keyring
-# Networking & system controls exposed in Settings (VPN, Firewall, Power profiles)
+# Networking & system controls exposed in Settings & VPN Studio (WireGuard, OpenVPN, Firewall, Power profiles)
 wireguard-tools
+network-manager-openvpn
 ufw
 power-profiles-daemon
 # The games library and the HTML games (hayato-games, from rust/): WebKitGTK
