@@ -9,7 +9,10 @@ use std::fs;
 use std::io::Read;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::Path;
+use std::sync::mpsc;
+use std::time::Duration;
 
+use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{Align, Box as GtkBox, Button, Label, Orientation, Separator};
 use sha2::{Digest, Sha256};
@@ -46,7 +49,11 @@ pub fn build_properties_card(entry: &FileEntry, on_close: impl Fn() + 'static) -
     grid.append(&row("Kind", &entry.kind));
 
     let size_val = if entry.is_dir {
-        format!("{} ({} items)", format_size(entry.size), count_children(&entry.path))
+        format!(
+            "{} ({} items)",
+            format_size(entry.size),
+            count_children(&entry.path)
+        )
     } else {
         format!("{} ({} bytes)", format_size(entry.size), entry.size)
     };
@@ -79,7 +86,11 @@ pub fn build_properties_card(entry: &FileEntry, on_close: impl Fn() + 'static) -
     // its right to be entered; a symlink would chmod the target).
     if !entry.is_dir && !entry.is_symlink {
         let executable = entry.mode & 0o111 != 0;
-        let toggle = Button::with_label(if executable { "Remove executable" } else { "Make executable" });
+        let toggle = Button::with_label(if executable {
+            "Remove executable"
+        } else {
+            "Make executable"
+        });
         toggle.add_css_class("filer-tool-btn");
         let p = entry.path.clone();
         let pv = perm_val.clone();
@@ -95,7 +106,11 @@ pub fn build_properties_card(entry: &FileEntry, on_close: impl Fn() + 'static) -
                 mode | 0o111
             };
             if fs::set_permissions(&p, fs::Permissions::from_mode(new_mode)).is_ok() {
-                pv.set_text(&format!("{}  {:04o}", format_mode(new_mode), new_mode & 0o7777));
+                pv.set_text(&format!(
+                    "{}  {:04o}",
+                    format_mode(new_mode),
+                    new_mode & 0o7777
+                ));
                 tv.set_label(if new_mode & 0o111 != 0 {
                     "Remove executable"
                 } else {
@@ -144,10 +159,27 @@ pub fn build_properties_card(entry: &FileEntry, on_close: impl Fn() + 'static) -
         let hl = hash_lbl.clone();
         hash_btn.connect_clicked(move |btn| {
             btn.set_sensitive(false);
-            match sha256_of(&p) {
-                Ok(hash) => hl.set_text(&hash),
-                Err(e) => hl.set_text(&format!("Failed: {e}")),
-            }
+            hl.set_text("Computing SHA-256…");
+            let (tx, rx) = mpsc::channel();
+            let path = p.clone();
+            let _ = std::thread::Builder::new()
+                .name("hayato-filer-sha256".into())
+                .spawn(move || {
+                    let _ = tx.send(sha256_of(&path));
+                });
+            let hl_done = hl.clone();
+            glib::timeout_add_local(Duration::from_millis(30), move || match rx.try_recv() {
+                Ok(Ok(hash)) => {
+                    hl_done.set_text(&hash);
+                    glib::ControlFlow::Break
+                }
+                Ok(Err(e)) => {
+                    hl_done.set_text(&format!("Failed: {e}"));
+                    glib::ControlFlow::Break
+                }
+                Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                Err(mpsc::TryRecvError::Disconnected) => glib::ControlFlow::Break,
+            });
         });
         actions.append(&hash_btn);
     }
@@ -155,7 +187,8 @@ pub fn build_properties_card(entry: &FileEntry, on_close: impl Fn() + 'static) -
     let copy_btn = Button::with_label("Copy Path");
     copy_btn.add_css_class("filer-tool-btn");
     let p_copy = entry.path.clone();
-    copy_btn.connect_clicked(move |_| tools::copy_paths_to_clipboard(std::slice::from_ref(&p_copy)));
+    copy_btn
+        .connect_clicked(move |_| tools::copy_paths_to_clipboard(std::slice::from_ref(&p_copy)));
     actions.append(&copy_btn);
 
     card.append(&hash_lbl);
@@ -185,7 +218,9 @@ fn row_label(text: &str) -> Label {
 }
 
 fn count_children(dir: &Path) -> usize {
-    fs::read_dir(dir).map(|rd| rd.flatten().count()).unwrap_or(0)
+    fs::read_dir(dir)
+        .map(|rd| rd.flatten().count())
+        .unwrap_or(0)
 }
 
 fn sha256_of(path: &Path) -> Result<String, String> {

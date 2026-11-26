@@ -428,7 +428,8 @@ impl FilerWindow {
         this.wire_pin_drop_target();
         this.set_sidebar_compact(prefs.sidebar_compact);
         this.update_view_buttons(prefs.view_mode);
-        this.list_header.set_visible(prefs.view_mode == ViewMode::List);
+        this.list_header
+            .set_visible(prefs.view_mode == ViewMode::List);
         this.rebuild_list_header();
         this.render_tabs();
         this.refresh_devices();
@@ -1249,7 +1250,9 @@ impl FilerWindow {
         }
         let paths = self.shelf.borrow().clone();
         if paths.is_empty() {
-            let hint = Label::new(Some("Drop files here to collect them, then drag the batch out"));
+            let hint = Label::new(Some(
+                "Drop files here to collect them, then drag the batch out",
+            ));
             hint.add_css_class("filer-shelf-hint");
             self.shelf_chips.append(&hint);
             return;
@@ -1636,10 +1639,16 @@ impl FilerWindow {
         let w = Rc::clone(self);
         let d_tab = dir.to_path_buf();
         let p1 = pop.clone();
-        col.append(&make_menu_item("\u{f067}", "Open in New Tab", None, false, move || {
-            p1.popdown();
-            w.open_new_tab(d_tab.clone());
-        }));
+        col.append(&make_menu_item(
+            "\u{f067}",
+            "Open in New Tab",
+            None,
+            false,
+            move || {
+                p1.popdown();
+                w.open_new_tab(d_tab.clone());
+            },
+        ));
 
         let w = Rc::clone(self);
         let d_un = dir.to_path_buf();
@@ -2488,41 +2497,43 @@ impl FilerWindow {
         self.progress_label.set_text("Working…");
 
         let w = Rc::clone(self);
-        glib::timeout_add_local(Duration::from_millis(30), move || loop {
-            match rx.try_recv() {
-                Ok(OpProgress::Update { label, fraction }) => {
-                    w.progress_label.set_text(&label);
-                    w.progress_bar.set_fraction(fraction);
-                }
-                Ok(OpProgress::Done { summary, undo }) => {
-                    w.progress_box.set_visible(false);
-                    *w.active_cancel.borrow_mut() = None;
-                    let reversible = undo.is_some();
-                    if let Some(action) = undo {
-                        w.state.borrow_mut().push_undo(action);
+        glib::timeout_add_local(Duration::from_millis(30), move || {
+            loop {
+                match rx.try_recv() {
+                    Ok(OpProgress::Update { label, fraction }) => {
+                        w.progress_label.set_text(&label);
+                        w.progress_bar.set_fraction(fraction);
                     }
-                    let msg = if reversible {
-                        format!("{summary} · Ctrl+Z to undo")
-                    } else {
-                        summary
-                    };
-                    w.show_banner(&msg, "ok");
-                    w.reload_dir();
-                    w.render_shelf();
-                    return glib::ControlFlow::Break;
-                }
-                Ok(OpProgress::Error { message }) => {
-                    w.progress_box.set_visible(false);
-                    *w.active_cancel.borrow_mut() = None;
-                    w.show_banner(&message, "danger");
-                    w.reload_dir();
-                    w.render_shelf();
-                    return glib::ControlFlow::Break;
-                }
-                Err(mpsc::TryRecvError::Empty) => return glib::ControlFlow::Continue,
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    w.progress_box.set_visible(false);
-                    return glib::ControlFlow::Break;
+                    Ok(OpProgress::Done { summary, undo }) => {
+                        w.progress_box.set_visible(false);
+                        *w.active_cancel.borrow_mut() = None;
+                        let reversible = undo.is_some();
+                        if let Some(action) = undo {
+                            w.state.borrow_mut().push_undo(action);
+                        }
+                        let msg = if reversible {
+                            format!("{summary} · Ctrl+Z to undo")
+                        } else {
+                            summary
+                        };
+                        w.show_banner(&msg, "ok");
+                        w.reload_dir();
+                        w.render_shelf();
+                        return glib::ControlFlow::Break;
+                    }
+                    Ok(OpProgress::Error { message }) => {
+                        w.progress_box.set_visible(false);
+                        *w.active_cancel.borrow_mut() = None;
+                        w.show_banner(&message, "danger");
+                        w.reload_dir();
+                        w.render_shelf();
+                        return glib::ControlFlow::Break;
+                    }
+                    Err(mpsc::TryRecvError::Empty) => return glib::ControlFlow::Continue,
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        w.progress_box.set_visible(false);
+                        return glib::ControlFlow::Break;
+                    }
                 }
             }
         });

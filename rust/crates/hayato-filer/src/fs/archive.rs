@@ -71,8 +71,8 @@ pub fn archive_stem(sources: &[PathBuf]) -> String {
 
 /// Extract an archive beside itself, never overwriting what is already there.
 pub fn extract_here(archive: &Path) -> Result<String, String> {
-    let format = format_of(archive)
-        .ok_or_else(|| format!("{} is not an archive", display(archive)))?;
+    let format =
+        format_of(archive).ok_or_else(|| format!("{} is not an archive", display(archive)))?;
     let dir = archive
         .parent()
         .ok_or_else(|| "Archive has no folder".to_string())?;
@@ -84,12 +84,24 @@ pub fn extract_here(archive: &Path) -> Result<String, String> {
         }
         ArchiveFormat::TarGz => {
             let mut c = Command::new("tar");
-            c.arg("-x").arg("--skip-old-files").arg("-z").arg("-f").arg(archive).arg("-C").arg(dir);
+            c.arg("-x")
+                .arg("--skip-old-files")
+                .arg("-z")
+                .arg("-f")
+                .arg(archive)
+                .arg("-C")
+                .arg(dir);
             c
         }
         ArchiveFormat::TarXz => {
             let mut c = Command::new("tar");
-            c.arg("-x").arg("--skip-old-files").arg("-J").arg("-f").arg(archive).arg("-C").arg(dir);
+            c.arg("-x")
+                .arg("--skip-old-files")
+                .arg("-J")
+                .arg("-f")
+                .arg(archive)
+                .arg("-C")
+                .arg(dir);
             c
         }
     };
@@ -136,7 +148,7 @@ pub fn compress(
             c
         }
     };
-    cmd.args(&names).current_dir(base);
+    cmd.arg("--").args(&names).current_dir(base);
     if let Err(e) = run(&mut cmd) {
         // A half-written archive is worse than none.
         let _ = std::fs::remove_file(&dest);
@@ -146,10 +158,12 @@ pub fn compress(
 }
 
 fn run(cmd: &mut Command) -> Result<(), String> {
-    let out = cmd
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|e| format!("{} could not start: {e}", cmd.get_program().to_string_lossy()))?;
+    let out = cmd.stdin(Stdio::null()).output().map_err(|e| {
+        format!(
+            "{} could not start: {e}",
+            cmd.get_program().to_string_lossy()
+        )
+    })?;
     if out.status.success() {
         return Ok(());
     }
@@ -246,12 +260,30 @@ mod tests {
 
     #[test]
     fn detects_formats_by_extension_case_insensitively() {
-        assert_eq!(format_of(Path::new("/a/notes.zip")), Some(ArchiveFormat::Zip));
-        assert_eq!(format_of(Path::new("/a/NOTES.ZIP")), Some(ArchiveFormat::Zip));
-        assert_eq!(format_of(Path::new("/a/pack.tar.gz")), Some(ArchiveFormat::TarGz));
-        assert_eq!(format_of(Path::new("/a/pack.tgz")), Some(ArchiveFormat::TarGz));
-        assert_eq!(format_of(Path::new("/a/pack.tar.xz")), Some(ArchiveFormat::TarXz));
-        assert_eq!(format_of(Path::new("/a/pack.txz")), Some(ArchiveFormat::TarXz));
+        assert_eq!(
+            format_of(Path::new("/a/notes.zip")),
+            Some(ArchiveFormat::Zip)
+        );
+        assert_eq!(
+            format_of(Path::new("/a/NOTES.ZIP")),
+            Some(ArchiveFormat::Zip)
+        );
+        assert_eq!(
+            format_of(Path::new("/a/pack.tar.gz")),
+            Some(ArchiveFormat::TarGz)
+        );
+        assert_eq!(
+            format_of(Path::new("/a/pack.tgz")),
+            Some(ArchiveFormat::TarGz)
+        );
+        assert_eq!(
+            format_of(Path::new("/a/pack.tar.xz")),
+            Some(ArchiveFormat::TarXz)
+        );
+        assert_eq!(
+            format_of(Path::new("/a/pack.txz")),
+            Some(ArchiveFormat::TarXz)
+        );
         assert_eq!(format_of(Path::new("/a/photo.png")), None);
         assert_eq!(format_of(Path::new("/a/plain")), None);
     }
@@ -281,12 +313,8 @@ mod tests {
 
         let dest_dir = dir.path().join("out");
         std::fs::create_dir_all(&dest_dir).unwrap();
-        let archive = compress(
-            std::slice::from_ref(&src),
-            ArchiveFormat::TarGz,
-            &dest_dir,
-        )
-        .unwrap();
+        let archive =
+            compress(std::slice::from_ref(&src), ArchiveFormat::TarGz, &dest_dir).unwrap();
         assert_eq!(archive.file_name().unwrap(), "project.tar.gz");
         assert!(archive.exists());
 
