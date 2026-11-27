@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Connect
+GenericName=Phone & Device Hub
+Comment=Encrypted phone-to-computer workspace (KDE Connect & Web App) for files, clipboard, media, webcam, alerts, and sync
+Exec=hayato connect
+Icon=phone
+Terminal=false
+Categories=Network;Utility;
+Keywords=connect;phone;kdeconnect;iphone;android;qr;share;clipboard;webcam;mic;sync;

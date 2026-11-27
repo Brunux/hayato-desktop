@@ -97,6 +97,7 @@ pub mod capture;
 pub mod clean;
 pub mod clip;
 pub mod colour;
+pub mod connect;
 pub mod default_apps;
 pub mod dev;
 pub mod dictate;
@@ -145,6 +146,7 @@ pub mod ssh;
 pub mod step;
 pub mod studio;
 pub mod swap;
+pub mod sysmon;
 pub mod theme_picker;
 pub mod touchpad;
 pub mod translate;
@@ -376,6 +378,15 @@ pub fn split_panes(
             area.height,
         )),
     )
+}
+
+/// Deterministic 11×11 placeholder QR pattern for headless/CI tests when `qrencode` is absent.
+pub(crate) fn fallback_qr() -> hayato_ui::QrCode {
+    hayato_ui::QrCode {
+        width: 11,
+        height: 11,
+        modules: (0..121).map(|i| i % 2 == 0).collect(),
+    }
 }
 
 /// Draw `qr` into `area` when the terminal cells fit cleanly, or show `fallback`.

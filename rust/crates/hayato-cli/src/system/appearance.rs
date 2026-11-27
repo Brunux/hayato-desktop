@@ -671,6 +671,13 @@ impl BarModules {
         }
     }
 
+    fn center_modules(self) -> &'static [&'static str] {
+        match self {
+            Self::Full => &["clock", "custom/sysmon"],
+            Self::Compact | Self::Minimal => &["clock"],
+        }
+    }
+
     fn modules(self) -> &'static [&'static str] {
         match self {
             Self::Full => &[
@@ -683,6 +690,7 @@ impl BarModules {
                 "custom/drives",
                 "custom/bluetooth",
                 "custom/vpn",
+                "custom/connect",
                 "network",
                 "pulseaudio",
                 "backlight",
@@ -700,6 +708,7 @@ impl BarModules {
                 "custom/vnc",
                 "custom/drives",
                 "custom/vpn",
+                "custom/connect",
                 "network",
                 "pulseaudio",
                 "battery",
@@ -787,12 +796,12 @@ pub fn bar_modules_label() -> String {
         .unwrap_or_else(|| "custom".to_string())
 }
 
-fn modules_right(text: &str) -> Vec<String> {
+fn modules_in_section(text: &str, key: &str) -> Vec<String> {
     let mut inside = false;
     let mut modules = Vec::new();
     for line in text.lines() {
         if !inside {
-            if line.contains("\"modules-right\":") {
+            if line.contains(key) {
                 inside = true;
             }
             continue;
@@ -810,19 +819,22 @@ fn modules_right(text: &str) -> Vec<String> {
 }
 
 fn bar_modules_from(text: &str) -> Option<BarModules> {
-    let current = modules_right(text);
-    let current: Vec<&str> = current.iter().map(String::as_str).collect();
+    let right = modules_in_section(text, "\"modules-right\":");
+    let right: Vec<&str> = right.iter().map(String::as_str).collect();
+    let center = modules_in_section(text, "\"modules-center\":");
+    let center: Vec<&str> = center.iter().map(String::as_str).collect();
     [BarModules::Full, BarModules::Compact, BarModules::Minimal]
         .into_iter()
-        .find(|modules| modules.modules() == current.as_slice())
+        .find(|modules| {
+            modules.modules() == right.as_slice()
+                && (modules.center_modules() == center.as_slice()
+                    || (*modules == BarModules::Full && center.as_slice() == ["clock"]))
+        })
 }
 
-fn bar_modules_body(text: &str, modules: BarModules) -> String {
+fn replace_module_section(text: &str, key: &str, modules: &[&str]) -> String {
     let lines: Vec<&str> = text.lines().collect();
-    let Some(start) = lines
-        .iter()
-        .position(|line| line.contains("\"modules-right\":"))
-    else {
+    let Some(start) = lines.iter().position(|line| line.contains(key)) else {
         return text.to_string();
     };
     let Some(end) = lines
@@ -842,8 +854,8 @@ fn bar_modules_body(text: &str, modules: BarModules) -> String {
         ""
     };
     let mut out: Vec<String> = lines[..start].iter().map(|line| line.to_string()).collect();
-    out.push(format!("{indent}\"modules-right\": ["));
-    for module in modules.modules() {
+    out.push(format!("{indent}{key} ["));
+    for module in modules {
         out.push(format!("{item_indent}\"{module}\","));
     }
     out.push(format!("{indent}]{comma}"));
@@ -853,6 +865,11 @@ fn bar_modules_body(text: &str, modules: BarModules) -> String {
         body.push('\n');
     }
     body
+}
+
+fn bar_modules_body(text: &str, modules: BarModules) -> String {
+    let with_center = replace_module_section(text, "\"modules-center\":", modules.center_modules());
+    replace_module_section(&with_center, "\"modules-right\":", modules.modules())
 }
 
 pub fn toggle_bar_modules() -> Result<String, String> {
@@ -1185,5 +1202,14 @@ mod tests {
         assert_eq!(bar_modules_from(&compact), Some(BarModules::Compact));
         assert!(compact.contains("\"modules-left\""));
         assert!(compact.contains("\"tray\""));
+        assert!(
+            !modules_in_section(&compact, "\"modules-center\":")
+                .contains(&"custom/sysmon".to_string())
+        );
+        let full = bar_modules_body(&compact, BarModules::Full);
+        assert_eq!(bar_modules_from(&full), Some(BarModules::Full));
+        assert!(
+            modules_in_section(&full, "\"modules-center\":").contains(&"custom/sysmon".to_string())
+        );
     }
 }

@@ -460,6 +460,18 @@ flowboxchild:selected .filer-grid-item {
     color: #d3c6aa;
 }
 
+.filer-col-resizer {
+    background-color: transparent;
+    border-left: 1px solid rgba(211, 198, 170, 0.14);
+    margin: 2px 0px 2px 4px;
+    min-width: 5px;
+}
+
+.filer-col-resizer:hover,
+.filer-col-resizer.dragging {
+    border-left: 2px solid #a7c080;
+}
+
 list > row {
     background: transparent;
     padding: 0;

@@ -91,6 +91,7 @@ tooltip label {
 #custom-busy,
 #custom-rec,
 #custom-cassette,
+#custom-sysmon,
 #privacy,
 #custom-updates,
 #tray,
@@ -152,6 +153,16 @@ tooltip label {
     color: {{ accent }};
 }
 
+/* System monitor icon beside the clock: muted `dim` at rest (matching the
+   coffee cup when auto-sleep is enabled) and `accent` on pointer hover. */
+#custom-sysmon {
+    color: {{ dim }};
+}
+
+#custom-sysmon:hover {
+    color: {{ accent }};
+}
+
 /* The battery icon stays in the reading colour above 5% and switches to the
    readable warning colour when discharging at <= 5%. */
 #battery.critical:not(.charging) {
@@ -207,7 +218,8 @@ tooltip label {
 #custom-keyboard-layout.empty,
 #custom-vnc.empty,
 #custom-vpn.empty,
-#custom-drives.empty {
+#custom-drives.empty,
+#custom-sysmon.empty {
     padding: 0;
     margin: 0;
     border: none;
@@ -241,6 +253,18 @@ tooltip label {
     padding: 0 7px;
     color: {{ danger }};
     font-weight: 700;
+}
+
+/* System monitor attention states (>= 90% CPU/RAM/disk): 2px indicator bar
+   matching #custom-vnc.control, paired with an explicit status word in the tooltip. */
+#custom-sysmon.warn {
+    color: {{ warn_text }};
+    box-shadow: inset 0 -2px 0 {{ warn }};
+}
+
+#custom-sysmon.critical {
+    color: {{ danger_text }};
+    box-shadow: inset 0 -2px 0 {{ danger }};
 }
 
 /* Remote control is the explicit second start (`--disable-input` absent), and

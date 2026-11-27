@@ -306,6 +306,17 @@ pub const ROOT: &[MenuItem] = &[
             args: &[Arg::Lit("share")],
         },
     ),
+    item(
+        "connect",
+        "Connect",
+        "encrypted phone workspace: QR pairing, clipboard, files, links",
+        Glyph::Wifi,
+        Capture,
+        Action::Run {
+            program: Program::System("hayato"),
+            args: &[Arg::Lit("connect")],
+        },
+    ),
     // ── Utilities ──────────────────────────────────────────────────────────
     item(
         "clip",

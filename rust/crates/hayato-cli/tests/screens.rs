@@ -26,12 +26,12 @@ use hayato_cli::padmap::Bindings;
 use hayato_cli::system::{
     about::AboutScreen, apps::AppsScreen, audio::AudioScreen, bluetooth::BluetoothScreen,
     calc::CalcScreen, capture::CaptureScreen, clean::CleanScreen, clip::ClipScreen,
-    colour::ColourScreen, dev::DevScreen, display::DisplayScreen, display::Output as DisplayOutput,
-    emoji::EmojiScreen, games::GamesScreen, keys::KeysScreen, kill::KillScreen, learn::LearnScreen,
-    media::MediaScreen, net::NetScreen, notify::NotifyScreen, pad::ControllerScreen,
-    pkg::PkgScreen, qr::QrScreen, remind::RemindScreen, run::RunScreen, settings::SettingsScreen,
-    setup::SetupScreen, software::SoftwareScreen, theme_picker::ThemePickerScreen, vpn::VpnScreen,
-    window::WindowScreen,
+    colour::ColourScreen, connect::ConnectScreen, dev::DevScreen, display::DisplayScreen,
+    display::Output as DisplayOutput, emoji::EmojiScreen, games::GamesScreen, keys::KeysScreen,
+    kill::KillScreen, learn::LearnScreen, media::MediaScreen, net::NetScreen, notify::NotifyScreen,
+    pad::ControllerScreen, pkg::PkgScreen, qr::QrScreen, remind::RemindScreen, run::RunScreen,
+    settings::SettingsScreen, setup::SetupScreen, software::SoftwareScreen,
+    theme_picker::ThemePickerScreen, vpn::VpnScreen, window::WindowScreen,
 };
 use hayato_ui::{App, Density, Design, Header, Screen};
 use ratatui::Terminal;
@@ -224,6 +224,11 @@ fn free_space_while_calculating_still_renders() {
 }
 
 #[test]
+fn connect_workspace_renders_at_both_grids() {
+    smoke("connect", || Box::new(ConnectScreen::for_test()));
+}
+
+#[test]
 fn audio_with_no_sink_still_renders() {
     smoke("audio", || Box::new(AudioScreen::new()));
 }
@@ -380,6 +385,7 @@ fn display_studio_draws_dual_monitor_topology_at_both_grids() {
                     mode_height: 768,
                     mode_refresh: 60000,
                     active: true,
+                    ..Default::default()
                 },
                 DisplayOutput {
                     name: "DP-1".into(),
@@ -392,6 +398,7 @@ fn display_studio_draws_dual_monitor_topology_at_both_grids() {
                     mode_height: 1080,
                     mode_refresh: 60000,
                     active: true,
+                    ..Default::default()
                 },
             ],
             vec!["1920x1080@60Hz".into(), "2560x1440@60Hz".into()],

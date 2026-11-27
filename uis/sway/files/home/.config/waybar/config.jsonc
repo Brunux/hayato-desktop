@@ -12,6 +12,7 @@
 //   busy        left: stop the task the spinner names   (see bar-busy)
 //   menu        left: root menu   right: terminal
 //   clock       left: switch format (time/seconds)   scroll: calendar months
+//   sysmon      hover: CPU/RAM/disk HUD   left: ncdu ~   right: btop
 //   updates     left: open the updater (only visible when something is pending)
 //   tray        the StatusNotifier items of running applications
 //   layout      left: next xkb layout (hidden with a single layout)
@@ -41,7 +42,8 @@
         "sway/mode"
     ],
     "modules-center": [
-        "clock"
+        "clock",
+        "custom/sysmon"
     ],
     "modules-right": [
         "privacy",
@@ -53,6 +55,7 @@
         "custom/drives",
         "custom/bluetooth",
         "custom/vpn",
+        "custom/connect",
         "network",
         "pulseaudio",
         "backlight",
@@ -125,6 +128,15 @@
             "on-scroll-down": "shift_down"
         },
         "interval": 30
+    },
+    "custom/sysmon": {
+        "exec": "hayato sysmon --bar",
+        "return-type": "json",
+        "interval": 5,
+        "signal": 8,
+        "tooltip": true,
+        "on-click": "foot --app-id=popup --window-size-pixels=940x620 -e ncdu ~",
+        "on-click-right": "foot --app-id=hayato-wide --window-size-pixels=1220x800 -e btop"
     },
     // What busy is doing, as a spinner: only there while an action runs
     // (nmcli scanning or joining, bluetoothctl scanning, du measuring), so the
@@ -255,6 +267,15 @@
         "on-click": "hayato menu vpn",
         "on-click-right": "hayato menu vpn --disconnect"
     },
+    "custom/connect": {
+        "exec": "hayato connect --bar",
+        "return-type": "json",
+        "interval": 5,
+        "signal": 8,
+        "tooltip": true,
+        "on-click": "hayato connect",
+        "on-click-right": "hayato connect --stop"
+    },
     "network": {
         // Waybar's built-in network module is the one indicator that cannot be
         // signalled: only `custom/*` modules listen for RTMIN+8, and this one
@@ -329,8 +350,9 @@
     // mpv asks for its own inhibitor.
     "idle_inhibitor": {
         "format": "<span font_desc='JetBrains Mono 13'>\uf0f4</span>",
-        "tooltip-format-activated": "<span alpha='50%'>╭─</span> <b>IDLE // INHIBITED</b>\n<span alpha='45%'>│</span> ● AWAKE · screen sleep inhibited\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] allow sleep</span>",
-        "tooltip-format-deactivated": "<span alpha='50%'>╭─</span> <b>IDLE // AUTO</b>\n<span alpha='45%'>│</span> ○ AUTO · normal idle &amp; lock\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] keep screen awake</span>",
+        "tooltip-format-activated": "<span alpha='50%'>╭─</span> <b>IDLE // INHIBITED</b>\n<span alpha='45%'>│</span> ● AWAKE · screen sleep inhibited\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] allow sleep · [RMB] idle &amp; lock</span>",
+        "tooltip-format-deactivated": "<span alpha='50%'>╭─</span> <b>IDLE // AUTO</b>\n<span alpha='45%'>│</span> ○ AUTO · normal idle &amp; lock\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] keep screen awake · [RMB] idle &amp; lock</span>",
+        "on-click-right": "~/.config/bin/hayato-settings --idle",
         "start-activated": false
     },
     "battery": {

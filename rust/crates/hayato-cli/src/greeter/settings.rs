@@ -597,6 +597,10 @@ impl GreeterSettingsScreen {
 }
 
 impl Screen for GreeterSettingsScreen {
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        Some((940, 620))
+    }
+
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }

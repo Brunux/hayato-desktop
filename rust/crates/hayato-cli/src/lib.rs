@@ -314,6 +314,19 @@ fn query(resolved: &Resolved) -> Option<i32> {
                 Some(EXIT_FAILED)
             }
         },
+        ("menu display", ["--hotplug-check"]) => {
+            println!("{}", system::display::hotplug_check());
+            Some(EXIT_OK)
+        }
+        ("menu display", ["--apply-mirror"]) => {
+            match system::display::apply_mirror_and_remember() {
+                Ok(()) => Some(EXIT_OK),
+                Err(err) => {
+                    eprintln!("{err}");
+                    Some(EXIT_FAILED)
+                }
+            }
+        }
         ("menu display", ["--rows"]) => {
             let mut out = io::stdout();
             for (key, label, detail) in system::display::rows() {
@@ -483,6 +496,11 @@ fn query(resolved: &Resolved) -> Option<i32> {
         ("menu lens", ["--detach"]) => Some(system::lens::detach_capture()),
         ("menu lens", ["--after-menu"]) => Some(system::lens::capture_and_launch(true)),
         ("share", _) => system::share::try_capture_stdin(&resolved.args),
+        ("connect", _) => system::connect::try_query(&resolved.args),
+        ("sysmon", ["--bar"] | ["bar"]) => {
+            println!("{}", system::sysmon::bar_json());
+            Some(EXIT_OK)
+        }
         ("menu studio", _) => system::studio::try_query(&resolved.args),
         ("menu notes", ["--rows"] | ["rows"]) => {
             let mut out = io::stdout();
@@ -589,6 +607,7 @@ fn run_direct(resolved: &Resolved) -> i32 {
         "task stop" => task_cmd::stop(resolved),
         "open" => open_path(resolved),
         "menu dictate" => system::dictate::run(&resolved.args),
+        "sysmon" => system::sysmon::run(&resolved.args),
         other => {
             eprintln!("hayato {other}: this command has no direct handler");
             EXIT_USAGE
@@ -642,12 +661,13 @@ fn execute(
         "menu power" => session_menu(resolved, terminal, design, menu::Surface::Root),
         "menu format" => system::format::menu(terminal, design),
         "menu swap" => system::swap::menu(terminal, design),
-        "menu display" => system::display::menu(terminal, design),
+        "menu display" => system::display::menu_with_args(&resolved.args, terminal, design),
+        "menu open" => files::open_ui::menu(&resolved.args, terminal, design),
         "menu tz" => system::tz::menu(terminal, design),
         "menu dns" => system::dns::menu(terminal, design),
         "menu vnc" => system::vnc::menu(terminal, design),
         "menu vpn" => system::vpn::menu(terminal, design),
-        "menu settings" => system::settings::menu(terminal, design),
+        "menu settings" => system::settings::menu_with_args(&resolved.args, terminal, design),
         "menu ssh" => system::ssh::menu(terminal, design),
         "menu palette" => session_menu(resolved, terminal, design, menu::Surface::Palette),
         "ask" => session_menu(resolved, terminal, design, menu::Surface::Root),
@@ -666,6 +686,7 @@ fn execute(
         "menu lens" => system::lens::menu(&resolved.args, terminal, design),
         "menu drop" => system::drop::menu(&resolved.args, terminal, design),
         "share" => system::share::menu(&resolved.args, terminal, design),
+        "connect" => system::connect::menu(&resolved.args, terminal, design),
         "menu remind" => system::remind::menu(terminal, design),
         "menu calc" => system::calc::menu(terminal, design),
         "menu colour" => system::colour::menu(terminal, design),
@@ -775,18 +796,7 @@ fn session_menu(
             Some(menu::screen::Picked::Run { key, argv }) => {
                 if !argv.is_empty()
                     && let Ok(sub_resolved) = command::resolve(&argv[0], &argv[1..])
-                    && sub_resolved.spec.shape != command::Shape::Direct
-                    && !matches!(
-                        sub_resolved.spec.path,
-                        "menu"
-                            | "menu palette"
-                            | "ask"
-                            | "menu capture"
-                            | "menu studio"
-                            | "menu lens"
-                            | "menu translate"
-                            | "menu dictate"
-                    )
+                    && should_run_inline_from_menu(&sub_resolved)
                 {
                     menu::remember(&state, &key);
                     match execute(&sub_resolved, terminal, design) {
@@ -803,6 +813,25 @@ fn session_menu(
             Some(picked) => return act(picked, &state, &home),
         }
     }
+}
+
+/// Only `Pick` and `Task` surfaces match the `900×600` menu host cleanly;
+/// `Wide` (`connect`) and `Full` surfaces must spawn their own sized window.
+fn should_run_inline_from_menu(resolved: &Resolved) -> bool {
+    matches!(
+        resolved.spec.shape,
+        command::Shape::Pick | command::Shape::Task
+    ) && !matches!(
+        resolved.spec.path,
+        "menu"
+            | "menu palette"
+            | "ask"
+            | "menu capture"
+            | "menu studio"
+            | "menu lens"
+            | "menu translate"
+            | "menu dictate"
+    )
 }
 
 type PowerOpen = Option<Option<menu::SessionAction>>;
@@ -916,8 +945,8 @@ fn open_path(resolved: &Resolved) -> i32 {
         return usage();
     };
     let tools = files::open::System::from_env();
-    match files::open::plan(&path, files::open::is_text(&path), &tools) {
-        Ok(plan) => {
+    match files::open::resolve(&path, files::open::is_text(&path), &tools) {
+        Ok(files::open::Resolve::Launch(plan)) => {
             let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
             if plan.image_hint {
                 files::image_hint(&home);
@@ -929,6 +958,16 @@ fn open_path(resolved: &Resolved) -> i32 {
             }
             let error = command.args(&plan.argv[1..]).exec();
             files::refuse(&path, &format!("Could not start {}: {error}", plan.argv[0]));
+            EXIT_FAILED
+        }
+        Ok(files::open::Resolve::Router(_)) => {
+            let exe = files::self_exe();
+            let shown = path.display().to_string();
+            use std::os::unix::process::CommandExt;
+            let error = std::process::Command::new(&exe)
+                .args(["menu", "open", "--", &shown])
+                .exec();
+            files::refuse(&path, &format!("Could not start {exe}: {error}"));
             EXIT_FAILED
         }
         Err(refusal) => {
@@ -1115,4 +1154,23 @@ fn show_failure(
         .keybar(vec![KeyHint::new("any key", "close")])
         .screen(&mut screen);
     let _ = app.run_until(terminal, Some(Duration::from_secs(30)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn menu_spawns_wide_commands_in_their_own_window() {
+        let s = |words: &[&str]| words.iter().map(|w| (*w).to_string()).collect::<Vec<_>>();
+        let connect = command::resolve("hayato", &s(&["connect"])).unwrap();
+        assert!(
+            !should_run_inline_from_menu(&connect),
+            "connect (Shape::Wide) must exit bar-menu so host::plan opens hayato-wide"
+        );
+        let installer = command::resolve("hayato", &s(&["installer"])).unwrap();
+        assert!(!should_run_inline_from_menu(&installer));
+        let files = command::resolve("hayato", &s(&["menu", "files"])).unwrap();
+        assert!(should_run_inline_from_menu(&files));
+    }
 }

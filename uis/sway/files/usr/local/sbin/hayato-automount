@@ -178,8 +178,12 @@ LABEL=$(lsblk -no LABEL "$DEV" 2>/dev/null | head -1)
 
 if [ -z "$MOUNTED" ]; then
 	echo "could not mount $DEV: $OUT" >&2
-	as_user notify-send -a Hayato -i dialog-error -u critical -- 'USB drive' \
-		"$LABEL did not mount: $OUT" 2>/dev/null || true
+	as_user hayato notify send "Couldn't open USB drive" \
+		--body "$LABEL couldn't be read — try unplugging and plugging back in" \
+		--icon dialog-error --urgency critical --group usb-mount 2>/dev/null ||
+		as_user notify-send -a "Hayato Files" -i dialog-error -u critical -- \
+			"Couldn't open USB drive" \
+			"$LABEL couldn't be read — try unplugging and plugging back in" 2>/dev/null || true
 	exit 1
 fi
 
@@ -193,11 +197,21 @@ MP=${MP%.}
 # option list is the test: `errors=remount-ro` contains "ro" without being it.
 OPTS=$(findmnt -rn -S "$DEV" -o OPTIONS 2>/dev/null || true)
 NOTE=
+TITLE='USB drive ready'
+BODY="$LABEL · Click to browse files"
 case ",$OPTS," in
-*,ro,*) NOTE=' (read-only)' ;;
+*,ro,*)
+	NOTE=' (read-only)'
+	TITLE='USB drive ready (read-only)'
+	BODY="$LABEL can be viewed, not edited · Click to open"
+	;;
 esac
 
 echo "mounted $DEV ($LABEL) at $MP$NOTE"
 as_user pkill -RTMIN+8 waybar 2>/dev/null || true
-as_user notify-send -a Hayato -i drive-harddisk -- 'USB drive' \
-	"$LABEL mounted at $MP$NOTE" 2>/dev/null || true
+as_user hayato notify send "$TITLE" --body "$BODY" \
+	--icon drive-harddisk --open "$MP" --group usb-mount 2>/dev/null ||
+	as_user notify-send -a "Hayato Files" -i drive-harddisk \
+		-h "string:x-hayato-open-path:$MP" \
+		-h "string:x-canonical-private-synchronous:usb-mount" -- \
+		"$TITLE" "$BODY" 2>/dev/null || true

@@ -1,0 +1,90 @@
+#!/bin/sh
+# One-shot external display hotplug notifier, invoked by
+# hayato-display-hotplug.service via 91-hayato-display-hotplug.rules.
+#
+# Debounces duplicate DRM hotplug events and skips S3 resume retraining via
+# `hayato menu display --hotplug-check`, then presents a quiet known-layout toast
+# or a 2-chip [Arrange…] / [Mirror] card on first-time monitors.
+set -eu
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+USER_NAME=
+for _u in $(loginctl list-users --no-legend 2>/dev/null | awk '{ print $2 }'); do
+	if [ "$_u" != root ] && id -u "$_u" >/dev/null 2>&1; then
+		_uid=$(id -u "$_u")
+		for _sock in "/run/user/$_uid"/sway-ipc.*.sock; do
+			if [ -S "$_sock" ]; then
+				USER_NAME=$_u
+				break 2
+			fi
+		done
+	fi
+done
+[ -n "$USER_NAME" ] || exit 0
+
+USER_UID=$(id -u "$USER_NAME")
+USER_GID=$(id -g "$USER_NAME")
+USER_HOME=$(getent passwd "$USER_NAME" | cut -d: -f6)
+[ -n "${USER_HOME:-}" ] || exit 0
+RUNTIME_DIR=/run/user/$USER_UID
+SWAY_SOCK=
+for _s in "$RUNTIME_DIR"/sway-ipc.*.sock; do
+	[ -S "$_s" ] && { SWAY_SOCK=$_s; break; }
+done
+[ -n "$SWAY_SOCK" ] || exit 0
+
+WAYLAND_SOCK=wayland-1
+for _w in "$RUNTIME_DIR"/wayland-*; do
+	case ${_w##*/} in
+	wayland-[0-9]) [ -S "$_w" ] && { WAYLAND_SOCK=${_w##*/}; break; } ;;
+	esac
+done
+
+as_user() {
+	setpriv --reuid="$USER_UID" --regid="$USER_GID" --init-groups -- \
+		env HOME="$USER_HOME" USER="$USER_NAME" LOGNAME="$USER_NAME" \
+		XDG_RUNTIME_DIR="$RUNTIME_DIR" \
+		DBUS_SESSION_BUS_ADDRESS="unix:path=$RUNTIME_DIR/bus" \
+		WAYLAND_DISPLAY="$WAYLAND_SOCK" \
+		SWAYSOCK="$SWAY_SOCK" \
+		PATH="$PATH" "$@"
+}
+
+# Allow 90-hayato-dp-mux and Sway output initialization to settle first.
+sleep 0.7
+
+RESULT=$(as_user /usr/bin/hayato menu display --hotplug-check 2>/dev/null || true)
+case $RESULT in
+known:*)
+	LABEL=${RESULT#known:}
+	as_user hayato notify send "Display connected" \
+		--body "$LABEL · Using saved layout" \
+		--icon video-display --group display-hotplug --timeout 4000 2>/dev/null || true
+	;;
+first:*)
+	REST=${RESULT#first:}
+	LABEL=${REST%%|*}
+	RES=${REST#*|}
+	CHOICE=$(as_user notify-send -a "Hayato Display" -i video-display \
+		-h "string:x-canonical-private-synchronous:display-hotplug" \
+		-t 10000 --wait \
+		--action=arrange="Arrange…" \
+		--action=mirror="Mirror" \
+		"External display connected" \
+		"$LABEL ($RES) · Placed to the right" 2>/dev/null || true)
+	case $CHOICE in
+	mirror)
+		as_user /usr/bin/hayato menu display --apply-mirror >/dev/null 2>&1 || true
+		as_user hayato notify send "Displays mirrored" \
+			--body "Saved layout for $LABEL" \
+			--icon video-display --group display-hotplug --timeout 3500 2>/dev/null || true
+		;;
+	arrange)
+		as_user setsid foot --app-id=hayato-pick --title="Display Quick Setup" \
+			-e /usr/bin/hayato menu display --hotplug >/dev/null 2>&1 &
+		;;
+	esac
+	;;
+esac

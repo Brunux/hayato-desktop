@@ -364,10 +364,16 @@ and not a login hook: the Type-C event arrives about a second before the
 connector's hotplug. Nothing is resident - one process while the plug is handled.
 
 **A monitor can be plugged in at any time and into either port.** That is sway's
-own output handling: the new connector gets a workspace and windows go there
-with `Alt+Shift+<arrow>`; unplugging takes its workspaces back to the internal
-panel. The chip drives one DisplayPort stream, so two monitors are one monitor
-followed by the other, not two at once.
+own output handling (`90-hayato-dp-mux.rules` sets the crosspoint, and
+`91-hayato-display-hotplug.rules` runs `/usr/local/sbin/hayato-display-hotplug`
+once and exits): a first-time monitor pops a quiet card offering **Arrange…**
+(opening **Display Quick Setup** with `1`–`4` presets and workspace split) or
+one-click **Mirror**, while previously configured monitors silently apply your
+saved `40-display.conf` layout and resume wakes stay quiet. The new connector
+gets a workspace and windows go there with `Alt+Shift+<arrow>`; unplugging
+takes its workspaces back to the internal panel. The chip drives one
+DisplayPort stream, so two monitors are one monitor followed by the other, not
+two at once.
 
 **Where it sits is Settings → Display arrangement** (`Alt+Ctrl+O`,
 `~/.config/bin/hayato-display`): monitor on the right, on the left, above, below,
@@ -448,12 +454,15 @@ close it with **Alt+Q**. `10-files.md` is its manual - the keys, tabs, the
 staging shelf, archives, undo and Quick Properties.
 
 * **A double click opens what the Files menu opens.** The window hands the path
-  to `~/.config/bin/hayato-view` (the same `hayato open` the list uses), so text
-  goes to `bat`, a picture to `imv` (sixels in a foot window when imv cannot
-  start), a video to `mpv`, and an EPUB or a page to Firefox; a folder opens in
-  the window. `/etc/xdg/mimeapps.list` stays the table for anything that asks
-  `gio`, and the image runs no desktop portal, so those entries *are* the "open
-  with" mechanism.
+  to `~/.config/bin/hayato-view` (`hayato open`), so text goes to `bat`, a
+  picture to `imv`, a video to `mpv`, a PDF to `papers`, and an EPUB to
+  `foliate`. Unhandled files—including **`.deb` packages**, **archives**
+  (`.zip`, `.tar.*`, `.7z`, `.rar`), **disk images** (`.iso`/`.img`), files whose
+  app isn't installed yet (like `.docx`/`.xlsx`), and Windows/Mac installers
+  (`.exe`/`.dmg`)—open the **File Intent Router** (`hayato menu open`) instead of
+  falling through to the browser, offering guarded installation, safe extraction,
+  or curated Software alternatives. `/etc/xdg/mimeapps.list` stays the table for
+  anything that asks `gio`.
 * **It is one GTK4 binary, and the palette comes from the theme.** `hayato theme
   set` renders `~/.config/hayato/filer.css` from the same palette as every other
   surface (background window, cyan selection, JetBrains Mono) and signals the
@@ -489,13 +498,12 @@ staging shelf, archives, undo and Quick Properties.
 
 ## USB sticks and SD cards
 
-A USB stick **mounts itself when you plug it in**: a notification says *label
-mounted at /run/media/<you>/<label>*, and it is then a row in **Places** (the
-root menu, Alt+Space, and the Places entry in the launcher) and in Hayato
-Files' sidebar. **Alt+1** on a mounted disk in Places unmounts it; eject before pulling
-the stick out - a filesystem that is still mounted when it disappears is how one
-gets corrupted. An SD card in the internal slot is a **Mount** row instead; the
-list below says why.
+A USB stick **mounts itself when you plug it in**: a clickable notification says
+*USB drive ready — Click to browse files* (clicking the card or pressing `Alt+,`
+opens the stick straight in Files), and it is also listed in **Places**
+(`Alt+Space`) and in Hayato Files' **DEVICES** sidebar. **Alt+1** on a mounted
+disk in Places unmounts it; eject before pulling the stick out. An SD card in the
+internal slot waits as a **Mount** row instead.
 
 * **Auto-mount is one udev event, not a daemon.** Plugging in a stick makes udev
   start `hayato-automount@<partition>.service`, which runs
@@ -587,7 +595,7 @@ The **Settings** menu (Alt+Ctrl+O, and the root menu) is grouped into seven sect
 
 Each row shows the real state from the same probe as today and delegates to the existing pickers/panels (bar-net, bar-bt, bar-audio, bar-power, hayato-display, hayato-vnc, hayato-dns, hayato-ssh, hayato-tz, hayato-pkg, hayato-clean) instead of duplicating them. Escape inside a section returns to the section list; Escape there closes Settings.
 
-**Appearance → Theme** opens the existing theme picker. **Wallpaper** opens the Files list at `~/Pictures` so you can choose any PNG, JPEG, WebP, GIF, BMP or TIFF; the image is copied to `~/.local/share/hayato/wallpapers/` and a `36-custom-wallpaper.conf` drop-in points Sway at it. **Next preset** cycles the active theme's bundled wallpapers (and clears a custom one), while **Use theme wallpaper** appears when a custom image is set and returns to the preset. **Bar position** and **Bar density** edit `~/.config/waybar/config.jsonc` and signal Waybar, so the bar moves or tightens without a logout. **Bar modules** cycles Full → Compact → Minimal, rewriting only the `modules-right` list so the tray, updates, layout, Bluetooth and VNC indicators can be hidden without losing the rest of the bar. **Window corners**, **Window shadows**, **Window blur** and **Animations** write `~/.config/hayato/appearance.conf`, render it into `~/.config/sway/config.d/41-appearance.conf` for the next login, and apply the same SwayFX commands through `swaymsg` now. **Accessibility → Reduced motion** stays the separate switch for the TUI windows; the compositor's animation duration is its own setting. **On-screen keyboard** starts `wvkbd-mobintl` at the bottom of the screen, or says it is already up.
+**Appearance → Theme** opens the existing theme picker. **Wallpaper** opens the Files list at `~/Pictures` so you can choose any PNG, JPEG, WebP, GIF, BMP or TIFF; the image is copied to `~/.local/share/hayato/wallpapers/` and a `36-custom-wallpaper.conf` drop-in points Sway at it. **Next preset** cycles the active theme's bundled wallpapers (and clears a custom one), while **Use theme wallpaper** appears when a custom image is set and returns to the preset. **Bar position** and **Bar density** edit `~/.config/waybar/config.jsonc` and signal Waybar, so the bar moves or tightens without a logout. **Bar modules** cycles Full → Compact → Minimal, rewriting `modules-right` (tray, updates, layout, Bluetooth, VNC, drives, VPN, Connect) and toggling the center **System monitor** icon (`custom/sysmon`) beside the clock: in **Full** mode, hovering `custom/sysmon` shows live CPU (cores, load, thermal), RAM, active swap, disk (`/` and `~`), and uptime, while **left-click** opens `ncdu ~` in a floating terminal (`popup`) and **right-click** opens `btop` (`hayato-wide`); **Compact** and **Minimal** hide it. **Window corners**, **Window shadows**, **Window blur** and **Animations** write `~/.config/hayato/appearance.conf`, render it into `~/.config/sway/config.d/41-appearance.conf` for the next login, and apply the same SwayFX commands through `swaymsg` now. **Accessibility → Reduced motion** stays the separate switch for the TUI windows; the compositor's animation duration is its own setting. **On-screen keyboard** starts `wvkbd-mobintl` at the bottom of the screen, or says it is already up.
 
 **Input → Touchpad** writes `~/.config/sway/config.d/36-touchpad.conf` and applies the same values with `swaymsg input type:touchpad` immediately. It covers tap-to-click, natural scrolling, disable-while-typing and pointer speed; the file is the user override read after `/etc/sway/config`, so it wins over the system tap/natural-scroll defaults at the next login.
 

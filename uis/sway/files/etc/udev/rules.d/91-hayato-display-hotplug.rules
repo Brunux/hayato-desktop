@@ -1,0 +1,6 @@
+# Notify the active session when an external display is plugged in.
+#
+# Starts a short-lived oneshot unit (never a resident daemon) so udev's worker
+# does not block while Sway/hayato-dp-mux settle or while a notification card
+# waits for a click.
+SUBSYSTEM=="drm", ACTION=="change", ENV{HOTPLUG}=="1", TAG+="systemd", ENV{SYSTEMD_WANTS}+="hayato-display-hotplug.service"

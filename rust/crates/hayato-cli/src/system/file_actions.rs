@@ -505,7 +505,7 @@ pub fn menu_for_path(
     }
 }
 
-fn archive_stem(base: &str) -> &str {
+pub fn archive_stem(base: &str) -> &str {
     for suffix in [
         ".tar.gz", ".tar.xz", ".tar.bz2", ".tar.zst", ".tgz", ".txz", ".tbz2", ".tbz", ".tzst",
         ".zip", ".tar",

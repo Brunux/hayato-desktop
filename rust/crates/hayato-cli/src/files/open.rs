@@ -330,6 +330,240 @@ pub fn is_text(path: &Path) -> bool {
 
 const MPRIS: &str = "/etc/mpv/scripts/mpris.so";
 
+/// Recommended app candidate from the curated Software Catalog for a file
+/// whose opener is not installed yet.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AppCandidate {
+    pub package: &'static str,
+    pub label: &'static str,
+}
+
+/// Interactive intent returned when a double-clicked file should not jump
+/// straight into a raw viewer or web browser.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FileIntent {
+    DebPackage,
+    Archive {
+        ext: String,
+    },
+    DiskImage,
+    MissingApp {
+        kind_label: &'static str,
+        ext: String,
+        candidates: Vec<AppCandidate>,
+    },
+    ForeignInstaller {
+        platform: &'static str,
+    },
+    UnknownOrBinary {
+        is_executable: bool,
+    },
+}
+
+/// Resolution of `hayato open`: either immediate `exec()` launch or interactive
+/// beginner-friendly router.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Resolve {
+    Launch(Plan),
+    Router(FileIntent),
+}
+
+const ARCHIVE_EXTS: &[&str] = &[
+    "zip", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz", "zst", "zstd", "7z", "rar",
+];
+
+fn archive_extension(name: &str) -> Option<String> {
+    let lower = name.to_ascii_lowercase();
+    for compound in ["tar.gz", "tar.xz", "tar.bz2", "tar.zst"] {
+        if lower.ends_with(&format!(".{compound}")) {
+            return Some(compound.to_string());
+        }
+    }
+    let ext = extension(name)?;
+    if ARCHIVE_EXTS.contains(&ext.as_str()) {
+        Some(ext)
+    } else {
+        None
+    }
+}
+
+pub fn recommended_apps_for(name: &str, family: Family) -> Vec<AppCandidate> {
+    let ext = extension(name).unwrap_or_default();
+    match family {
+        Family::Office => match ext.as_str() {
+            "xls" | "xlsx" | "ods" => vec![
+                AppCandidate {
+                    package: "gnumeric",
+                    label: "Gnumeric",
+                },
+                AppCandidate {
+                    package: "libreoffice-calc",
+                    label: "LibreOffice Calc",
+                },
+            ],
+            "ppt" | "pptx" | "odp" => vec![AppCandidate {
+                package: "libreoffice-impress",
+                label: "LibreOffice Impress",
+            }],
+            _ => vec![AppCandidate {
+                package: "libreoffice-writer",
+                label: "LibreOffice Writer",
+            }],
+        },
+        Family::Ebook => vec![AppCandidate {
+            package: "foliate",
+            label: "Foliate",
+        }],
+        Family::Ink => vec![AppCandidate {
+            package: "xournalpp",
+            label: "Xournal++",
+        }],
+        Family::Pdf | Family::Paper => vec![AppCandidate {
+            package: "papers",
+            label: "Papers",
+        }],
+        Family::Picture | Family::Vector => vec![AppCandidate {
+            package: "imv",
+            label: "imv",
+        }],
+        Family::Video | Family::Audio => vec![AppCandidate {
+            package: "mpv",
+            label: "mpv",
+        }],
+        _ => Vec::new(),
+    }
+}
+
+fn find_office_plan(path_str: &str, name: &str, tools: &dyn Tools) -> Option<Plan> {
+    let ext = extension(name).unwrap_or_default();
+    let run = |argv: &[&str]| Plan {
+        argv: argv.iter().map(|s| s.to_string()).collect(),
+        image_hint: false,
+    };
+    if matches!(ext.as_str(), "xls" | "xlsx" | "ods") && tools.has("gnumeric") {
+        return Some(run(&["gnumeric", path_str]));
+    }
+    if tools.has("libreoffice") {
+        return Some(run(&["libreoffice", path_str]));
+    }
+    if tools.has("soffice") {
+        return Some(run(&["soffice", path_str]));
+    }
+    None
+}
+
+/// Resolve `path` with the smart intent router for `.deb`, archives, disk
+/// images, missing-app formats, foreign installers, and unknown binaries.
+pub fn resolve(path: &Path, text: bool, tools: &dyn Tools) -> Result<Resolve, Refusal> {
+    let shown = path.display().to_string();
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| shown.clone());
+    let meta = std::fs::metadata(path).map_err(|_| Refusal::Missing)?;
+    if meta.is_dir() {
+        let exe = tools.exe();
+        return Ok(Resolve::Launch(Plan {
+            argv: vec![exe, "menu".into(), "files".into(), "--".into(), shown],
+            image_hint: false,
+        }));
+    }
+    if !tools.readable(path) || File::open(path).is_err() {
+        return Err(Refusal::Unreadable);
+    }
+
+    use std::os::unix::fs::PermissionsExt;
+    let executable = meta.permissions().mode() & 0o111 != 0;
+    let ext = extension(&name).unwrap_or_default();
+
+    if ext == "deb" {
+        return Ok(Resolve::Router(FileIntent::DebPackage));
+    }
+    if matches!(ext.as_str(), "iso" | "img") {
+        return Ok(Resolve::Router(FileIntent::DiskImage));
+    }
+    if let Some(arch_ext) = archive_extension(&name) {
+        return Ok(Resolve::Router(FileIntent::Archive { ext: arch_ext }));
+    }
+    match ext.as_str() {
+        "exe" | "msi" => {
+            return Ok(Resolve::Router(FileIntent::ForeignInstaller {
+                platform: "Windows",
+            }));
+        }
+        "dmg" | "pkg" => {
+            return Ok(Resolve::Router(FileIntent::ForeignInstaller {
+                platform: "Mac",
+            }));
+        }
+        "apk" => {
+            return Ok(Resolve::Router(FileIntent::ForeignInstaller {
+                platform: "Android",
+            }));
+        }
+        _ => {}
+    }
+
+    let fam = family(&name, executable);
+    match fam {
+        Family::Office => {
+            if let Some(p) = find_office_plan(&shown, &name, tools) {
+                return Ok(Resolve::Launch(p));
+            }
+            return Ok(Resolve::Router(FileIntent::MissingApp {
+                kind_label: fam.label(),
+                ext,
+                candidates: recommended_apps_for(&name, fam),
+            }));
+        }
+        Family::Ebook if !tools.has("foliate") => {
+            return Ok(Resolve::Router(FileIntent::MissingApp {
+                kind_label: fam.label(),
+                ext,
+                candidates: recommended_apps_for(&name, fam),
+            }));
+        }
+        Family::Ink if !tools.has("xournalpp") => {
+            return Ok(Resolve::Router(FileIntent::MissingApp {
+                kind_label: fam.label(),
+                ext,
+                candidates: recommended_apps_for(&name, fam),
+            }));
+        }
+        Family::Picture | Family::Vector
+            if !tools.has("imv") && !(tools.has("chafa") && tools.has("foot")) =>
+        {
+            return Ok(Resolve::Router(FileIntent::MissingApp {
+                kind_label: fam.label(),
+                ext,
+                candidates: recommended_apps_for(&name, fam),
+            }));
+        }
+        Family::Video if !tools.has("mpv") => {
+            return Ok(Resolve::Router(FileIntent::MissingApp {
+                kind_label: fam.label(),
+                ext,
+                candidates: recommended_apps_for(&name, fam),
+            }));
+        }
+        Family::Audio if !tools.has("hayato-cassette") && !tools.has("mpv") => {
+            return Ok(Resolve::Router(FileIntent::MissingApp {
+                kind_label: fam.label(),
+                ext,
+                candidates: recommended_apps_for(&name, fam),
+            }));
+        }
+        Family::Program | Family::Unknown if !text => {
+            return Ok(Resolve::Router(FileIntent::UnknownOrBinary {
+                is_executable: executable,
+            }));
+        }
+        _ => {}
+    }
+
+    plan(path, text, tools).map(Resolve::Launch)
+}
+
 /// Decide how `path` opens. `text` is the NUL test's answer for it (passed in,
 /// so the decision stays pure).
 pub fn plan(path: &Path, text: bool, tools: &dyn Tools) -> Result<Plan, Refusal> {
@@ -721,5 +955,68 @@ mod tests {
         );
         assert_eq!(path_from_arg("file:///bad%zz", cwd), None);
         assert_eq!(path_from_arg("", cwd), None);
+    }
+
+    #[test]
+    fn resolve_routes_installers_archives_missing_apps_and_foreign_files() {
+        let dir = tree("resolve");
+        let deb = dir.join("app.deb");
+        std::fs::write(&deb, b"!<arch>\n\0").unwrap();
+        assert_eq!(
+            resolve(&deb, false, &every()),
+            Ok(Resolve::Router(FileIntent::DebPackage))
+        );
+
+        let zip = dir.join("pack.zip");
+        std::fs::write(&zip, b"PK\x03\x04\0").unwrap();
+        assert_eq!(
+            resolve(&zip, false, &every()),
+            Ok(Resolve::Router(FileIntent::Archive { ext: "zip".into() }))
+        );
+
+        let iso = dir.join("live.iso");
+        std::fs::write(&iso, b"\x00\x01").unwrap();
+        assert_eq!(
+            resolve(&iso, false, &every()),
+            Ok(Resolve::Router(FileIntent::DiskImage))
+        );
+
+        let exe = dir.join("Setup.exe");
+        std::fs::write(&exe, b"MZ\0").unwrap();
+        assert_eq!(
+            resolve(&exe, false, &every()),
+            Ok(Resolve::Router(FileIntent::ForeignInstaller {
+                platform: "Windows"
+            }))
+        );
+
+        let docx = dir.join("report.docx");
+        std::fs::write(&docx, b"PK\x03\x04\0").unwrap();
+        assert!(matches!(
+            resolve(&docx, false, &every()),
+            Ok(Resolve::Router(FileIntent::MissingApp { .. }))
+        ));
+
+        let xlsx = dir.join("budget.xlsx");
+        std::fs::write(&xlsx, b"PK\x03\x04\0").unwrap();
+        let with_gnumeric = Fake {
+            programs: vec!["gnumeric"],
+        };
+        assert_eq!(
+            resolve(&xlsx, false, &with_gnumeric).unwrap(),
+            Resolve::Launch(Plan {
+                argv: vec!["gnumeric".into(), xlsx.display().to_string()],
+                image_hint: false,
+            })
+        );
+
+        let blob = dir.join("unknown.bin");
+        std::fs::write(&blob, b"\0").unwrap();
+        assert_eq!(
+            resolve(&blob, false, &every()),
+            Ok(Resolve::Router(FileIntent::UnknownOrBinary {
+                is_executable: false
+            }))
+        );
     }
 }

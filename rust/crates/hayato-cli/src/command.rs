@@ -25,6 +25,8 @@ pub enum Shape {
     Pick,
     /// A floating, centred window sized for a task (log, gauge, progress).
     Task,
+    /// A larger floating, centred workspace window (live QR deck, multi-pane studio).
+    Wide,
     /// Fullscreen (the installer, the greeter).
     Full,
     /// No window at all: a command whose whole job is to write a file and
@@ -40,6 +42,7 @@ impl Shape {
         match self {
             Shape::Pick => "pick",
             Shape::Task => "task",
+            Shape::Wide => "wide",
             Shape::Full => "full",
             Shape::Direct => "direct",
         }
@@ -58,6 +61,7 @@ impl Shape {
         match self {
             Shape::Pick => Some((900, 600)),
             Shape::Task => Some((940, 620)),
+            Shape::Wide => Some((1220, 800)),
             Shape::Full | Shape::Direct => None,
         }
     }
@@ -291,12 +295,19 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         // The opener table applied to one path: what a double click in favnyr
         // (org.hayato.view.desktop), xdg-open and every list run. It starts
-        // the viewer and opens no window of its own.
+        // the viewer directly when ready, or launches `menu open` for intents.
         path: "open",
         summary: "open a file with the program that fits it (spec 009)",
         shape: Shape::Direct,
         symlinks: &["hayato-view"],
         installed: &["hayato-view"],
+    },
+    CommandSpec {
+        path: "menu open",
+        summary: "smart intent router for installers, archives, and unhandled files",
+        shape: Shape::Pick,
+        symlinks: &[],
+        installed: &[],
     },
     CommandSpec {
         // The desktop as MCP tools for an agent (spec 008): a stdio server an
@@ -412,7 +423,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         // Drop: ephemeral LAN nearby share via in-TUI QR code.
         path: "menu drop",
         summary: "share or receive files over Wi-Fi via a scannable QR code",
-        shape: Shape::Pick,
+        shape: Shape::Wide,
         symlinks: &["hayato-drop"],
         installed: &["hayato-drop"],
     },
@@ -420,9 +431,17 @@ pub const COMMANDS: &[CommandSpec] = &[
         // Share: OS-wide Share Sheet (Phone QR, LocalSend v2, offline QR, clipboard, notes).
         path: "share",
         summary: "system share sheet: Phone QR, LocalSend, offline QR, clipboard, notes",
-        shape: Shape::Pick,
+        shape: Shape::Wide,
         symlinks: &["hayato-share"],
         installed: &["hayato-share"],
+    },
+    CommandSpec {
+        // Connect: opt-in zero-daemon encrypted phone-to-computer workspace (TLS + WSS).
+        path: "connect",
+        summary: "encrypted LAN phone-to-computer hub: pairing QR, clipboard, files, links",
+        shape: Shape::Wide,
+        symlinks: &["hayato-connect"],
+        installed: &["hayato-connect"],
     },
     CommandSpec {
         // Remind: title → note → when flow (spec 011).
@@ -688,6 +707,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         symlinks: &[],
         installed: &[],
     },
+    CommandSpec {
+        // `hayato sysmon --bar`: one-shot Waybar JSON telemetry for custom/sysmon.
+        path: "sysmon",
+        summary: "system telemetry JSON for Waybar custom/sysmon",
+        shape: Shape::Direct,
+        symlinks: &[],
+        installed: &[],
+    },
 ];
 
 /// A command the table resolved, with the arguments that belong to it.
@@ -882,7 +909,9 @@ mod tests {
     fn shapes_carry_their_own_app_id_and_size() {
         assert_eq!(Shape::Pick.app_id(), "hayato-pick");
         assert_eq!(Shape::Task.app_id(), "hayato-task");
+        assert_eq!(Shape::Wide.app_id(), "hayato-wide");
         assert_eq!(Shape::Full.app_id(), "hayato-full");
+        assert_eq!(Shape::Wide.size(), Some((1220, 800)));
         // The size is what the sway drop-in repeats for the same app-id; a
         // shape without one owns the whole screen.
         assert_eq!(Shape::Task.size(), Some((940, 620)));

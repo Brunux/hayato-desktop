@@ -1,4 +1,4 @@
-Hayato · Menu                                                       39 commands
+Hayato · Menu                                                       40 commands
 ────────────────────────────────────────────────────────────────────────────────
 ╭ Commands ────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                          │
@@ -18,7 +18,7 @@ Hayato · Menu                                                       39 commands
 │     Studio  screen record, webcam video & photo snap              capture │ │
 │     Lens  read text (OCR), scan QR/link or translate              capture │ │
 │     Share  send/receive files, links, clipboard & Wi-Fi QR        capture │ │
+│     Connect  encrypted phone workspace: QR pairing, clipboard, fi…        │ │
 │  Utilities  ────────────────────────────────────────────────────────────── │ │
-│     Clipboard  paste history & saved images                     utilities │ │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close

@@ -1,0 +1,11 @@
+[Unit]
+Description=Notify session on external display hotplug
+Documentation=file:/usr/share/doc/hayato/04-software.md
+
+# Runs once per DRM hotplug event and exits immediately after the notification
+# or action resolves (no RemainAfterExit, zero resident daemons).
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hayato-display-hotplug
+TimeoutStartSec=25

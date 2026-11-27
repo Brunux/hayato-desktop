@@ -110,8 +110,21 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
     (`Alt+S`), `hayato-notes` (`Ctrl+S`), `hayato-capture` (`Ctrl+S`), `hayato-studio` (`Ctrl+S`), and CLI
     stdin/paths (`system/drop.rs` is a thin compatibility facade). Its ephemeral LAN HTTP server uses a
     128-bit `/dev/urandom` token, constant-time comparison, active-theme CSS injection, HTML escaping,
-    multi-file/folder ZIP streaming, two-way phone upload/clipboard push, and 5-min auto-expiry, alongside
+    Multi-file/folder ZIP streaming, two-way phone upload/clipboard push, and 5-min auto-expiry, alongside
     zero-daemon on-demand LocalSend v2 UDP multicast (`224.0.0.167:53317`) peer discovery.
+10c. **Hayato Connect (`hayato connect` / `hayato-connect`)**: `system/connect/` extends Hayato Share/Drop
+    into an opt-in, zero-daemon encrypted (`openssl` ECDSA P-256 TLS 1.3 + `tungstenite` WSS, plus an
+    optional pure-Rust KDE Connect v7/v8 UDP `1716` + TLS adapter in `kdeconnect.rs`) workspace that
+    lives and dies with its TUI window (`AlertWatcher`, TLS/WSS + KDE loops, `CamSink` viewfinder/`v4l2`,
+    and clipboard polling tear down on `Drop`). Pairing binds URL-fragment `#fp=` pinning + WebCrypto
+    SHA-256 6-digit SAS verification (`crypto::derive_sas`), one-time QR `pair_token` rotation, nonce
+    replay guard, or KDE Connect RSA-2048 mutual cert pinning via `AuthorizePeer` confirmation before saving
+    device tokens (`0600`, `trust.rs`). Built-in backup Web App mirrors Hayato landing page (`site/`)
+    terminal-card aesthetic & multi-theme switcher while KDE Connect handles background notifications/battery/ring/Share Sheet.
+    Clipboard sync hashes payloads (`last_clip_hash`) and skips `x-kde-passwordManagerHint`/binary MIME;
+    `Remote` provides `playerctl`/`wpctl` MPRIS2 media control + phone `getUserMedia` camera & 24 kHz PCM mic (`hayato_phone_mic` PipeWire sink) streaming;
+    `Alerts` relays session notifications via `system::say` (pausing during recording); `Transfer` validates on-demand
+    folder sync paths strictly inside `sync_root` via `sync::safe_rel_path`. `org.hayato.connect.desktop` registers the launcher entry and Waybar `custom/connect` (`hayato connect --bar`) collapses cleanly when idle.
 11. **A modal replaces the body; it never floats over a live list**: a `Confirm` or a
    `centered` card is drawn on its own screen (like the Ask strip and the kill screen), or the
    screen first clears the card area. At 80×24 a 56-wide card cuts list rows in half
@@ -356,9 +369,13 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
  24. **The Files window is one surface with one state file per concern**: `hayato-filer` is the GTK4
     browser (`Alt+Ctrl+Shift+F`), the windowed companion of the `hayato menu files` TUI; the two
     share neither code nor state. Its UI choices (view mode, sort field and order, hidden files,
-    compact sidebar, window size) persist in `~/.config/hayato/filer-state.json` (`prefs.rs`, read on
-    launch, written on close) and pinned folders in `~/.config/hayato/filer-bookmarks.json`; a
-    missing or corrupt file falls back to the defaults, never a second copy of the choice. The open
+    compact sidebar, window size, and resizable list column widths `col_size_width`,
+    `col_mtime_width`, `col_kind_width`) persist in `~/.config/hayato/filer-state.json`
+    (`prefs.rs`, read on launch, written on close) and pinned folders in
+    `~/.config/hayato/filer-bookmarks.json`; a missing or corrupt file falls back to the
+    defaults, never a second copy of the choice. In Quick Look (`quicklook.rs`),
+    `Up`/`Down`/`PgUp`/`PgDn`/`Home`/`End` scroll text previews via `vadjustment` while
+    `Left`/`Right` step folder items. The open
     folder is watched with `gio::FileMonitor` (inotify) and reloads itself, so **F5** is a fallback
     and not the mechanism. Undo is a session stack of `ops::UndoAction` (rename, move, trash, copy,
     new folder) applied by `ops::undo`; a permanent delete is deliberately not undoable. Archive work
@@ -371,6 +388,16 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
     `actions()`, is the signal) and copies when the source is another application or another
     filesystem; the shelf prunes a reference whose path is gone. `hayato-filer --self-test` proves
     the CSS and the pure state/archive logic headlessly, and `check-desktop.sh` runs it.
+ 25. **Smart File Intent Router & Plug-and-Play Seams**:
+    - `files::open::resolve()` keeps zero-latency direct `exec()` for ready local viewers, while
+      routing `.deb` packages, archives, disk images (`.iso`/`.img`), missing-app files (matched to
+      `software::catalog::Catalog`), foreign installers (`.exe`/`.dmg`/`.apk`), and unknown
+      binaries to `FileOpenScreen` (`hayato menu open`, single `FileOpenPhase` enum) guarded by
+      `pkg_guard`. `mimeapps.list` maps `.deb`/archives/`.iso`/Office MIME types to `org.hayato.view.desktop`.
+    - `hayato-automount` sends click-to-open `--open "$MP"` notifications; `91-hayato-display-hotplug.rules`
+      fires the one-shot `/usr/local/sbin/hayato-display-hotplug` (`hayato menu display --hotplug-check`),
+      ignoring S3 wake via `$XDG_RUNTIME_DIR/hayato/dp-resume.stamp` (written in `23-hayato-screensaver.conf`)
+      and remembering monitors in `$XDG_STATE_HOME/hayato/known-monitors.json`.
 
 ## Developer Profile Export
 - `hayato-profile export --include-home` streams the whole home through tar. The single
@@ -482,4 +509,5 @@ Every user-facing change ships with:
 - The procedural wallpaper scripts are imported by `scripts/tests/test_*.py`; keep generation behind
   `main()` so importing them does not write files or run `ffmpeg`. Run them with
   `python3 -m unittest discover -s scripts/tests -p 'test_*.py'`.
-- `.github/workflows/rust.yml` runs both `cargo test --workspace --all-targets` and the Python suite.
+- **`custom/sysmon` (`hayato sysmon --bar`)**: Stateless one-shot telemetry next to `clock` (no daemon), caching only `/proc/stat` delta jiffies + high-CPU streak in `$XDG_RUNTIME_DIR/hayato/sysmon.stat`, gated to `BarModules::Full` in `appearance.rs`.
+- **`.github/workflows/rust.yml`** runs both `cargo test --workspace --all-targets` and the Python suite.

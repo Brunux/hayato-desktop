@@ -1775,12 +1775,14 @@ dependencies = [
  "hayato-ui",
  "image",
  "libc",
+ "openssl",
  "ratatui",
  "ratatui-image",
  "serde",
  "serde_json",
  "tachyonfx",
  "tempfile",
+ "tungstenite",
  "unicode-width",
 ]
 
