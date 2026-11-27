@@ -2483,11 +2483,7 @@ fn dispatch_key(
             if onscreen_keyboard_running() {
                 banner = Some("The on-screen keyboard is already up".to_string());
             } else {
-                let _ = Command::new("wvkbd-mobintl")
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn();
+                super::spawn_detached_argv("wvkbd-mobintl", &[]);
                 banner = Some("On-screen keyboard: shown at the bottom".to_string());
             }
         }

@@ -27,7 +27,7 @@ use ratatui::layout::Rect;
 use crate::menu::frecency::Frecency;
 use crate::menu::table::{Action, Arg, PALETTE_EXTRA, Program, ROOT};
 use crate::paths::Paths;
-use crate::system::{missing, print};
+use crate::system::{missing, spawn_detached};
 
 fn desktop_dirs() -> Vec<PathBuf> {
     let mut dirs = vec![
@@ -130,6 +130,10 @@ impl AppsScreen {
         let home = std::env::var("HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("/"));
+        let exe = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.into_os_string().into_string().ok())
+            .unwrap_or_else(|| "hayato".to_string());
         for item in ROOT.iter().chain(PALETTE_EXTRA.iter()) {
             if item.key == "apps" {
                 continue;
@@ -137,7 +141,7 @@ impl AppsScreen {
             if !seen.insert(item.label.to_lowercase()) {
                 continue;
             }
-            let Some(exec) = Self::action_to_exec(item.action, &home) else {
+            let Some(exec) = Self::action_to_exec(item.action, &home, &exe) else {
                 continue;
             };
             entries.push(DesktopEntry {
@@ -155,7 +159,7 @@ impl AppsScreen {
         entries
     }
 
-    fn action_to_exec(action: Action, home: &Path) -> Option<String> {
+    fn action_to_exec(action: Action, home: &Path, exe: &str) -> Option<String> {
         match action {
             Action::Run { program, args } => {
                 let mut parts = Vec::with_capacity(args.len() + 1);
@@ -168,8 +172,8 @@ impl AppsScreen {
                             name.to_string()
                         }
                     }
+                    Program::System("hayato") | Program::Hayato => exe.to_string(),
                     Program::System(name) => name.to_string(),
-                    Program::Hayato => "hayato".to_string(),
                 };
                 parts.push(shell_quote(&prog));
                 for arg in args {
@@ -180,9 +184,9 @@ impl AppsScreen {
                 }
                 Some(parts.join(" "))
             }
-            Action::Power | Action::Session(_) => Some("hayato menu power".to_string()),
-            Action::Password => Some("hayato menu password".to_string()),
-            Action::Ask => Some("hayato menu ask".to_string()),
+            Action::Power | Action::Session(_) => Some(format!("{} menu power", shell_quote(exe))),
+            Action::Password => Some(format!("{} menu password", shell_quote(exe))),
+            Action::Ask => Some(format!("{} menu ask", shell_quote(exe))),
         }
     }
 
@@ -406,23 +410,15 @@ impl AppsScreen {
         self.frecency.record(&entry.name, now);
         let _ = self.frecency.save();
 
-        // Build the command
+        // Build the command and detach synchronously via `pre_exec(|| setsid())`
+        // so the closing `foot` launcher window never SIGHUPs the target process.
         let exec_cmd = if in_foot && !entry.terminal || entry.terminal {
             format!("exec foot -e {}", entry.exec)
         } else {
             entry.exec.clone()
         };
 
-        // Spawn detached
-        let _ = std::process::Command::new("setsid")
-            .args(["sh", "-c", &exec_cmd])
-            .env_remove("HAYATO_UI")
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
-
-        print(&format!("Launched: {}", entry.name));
+        spawn_detached(&exec_cmd);
     }
 }
 
@@ -544,10 +540,10 @@ pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
-    if let Some(said) = missing(&["setsid", "foot"]) {
+    if let Some(said) = missing(&["foot"]) {
         return Err(crate::Failure::new(
             "Applications",
-            format!("{said} (util-linux, foot)"),
+            format!("{said} (foot)"),
         ));
     }
     let mut screen = AppsScreen::new();
@@ -602,5 +598,24 @@ Categories=Utility;
         assert!(!entry.no_display);
         assert_eq!(entry.comment, Some("A test application".to_string()));
         assert_eq!(entry.categories, vec!["Utility"]);
+    }
+
+    #[test]
+    fn launcher_finds_and_resolves_dns_from_palette_extra() {
+        let mut screen = AppsScreen::new();
+        for ch in "dns".chars() {
+            let _ = screen.key(
+                KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE),
+                &Design::solarized(),
+            );
+        }
+        let sel = screen.list.selected_index().expect("dns row selected");
+        let entry = &screen.filtered[sel];
+        assert_eq!(entry.name, "DNS");
+        assert!(
+            entry.exec.contains("menu dns"),
+            "unexpected exec for DNS: {}",
+            entry.exec
+        );
     }
 }

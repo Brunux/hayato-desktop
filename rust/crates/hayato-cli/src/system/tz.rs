@@ -17,7 +17,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 
-use super::{out, sudo};
+use super::{out, spawn_detached_argv, sudo};
 
 /// What the menu needs before it offers anything.
 pub const NEEDED: &[&str] = &["timedatectl"];
@@ -335,7 +335,7 @@ pub fn menu(
                 }
                 if out(&["pgrep", "-x", "waybar"]).is_some() {
                     let _ = out(&["pkill", "-x", "waybar"]);
-                    let _ = std::process::Command::new("setsid").arg("waybar").spawn();
+                    spawn_detached_argv("waybar", &[]);
                 }
                 let now =
                     out(&["env", &format!("TZ={zone}"), "date", "+%H:%M"]).unwrap_or_default();
