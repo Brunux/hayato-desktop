@@ -53,6 +53,7 @@
         "custom/drives",
         "custom/bluetooth",
         "custom/vpn",
+        "custom/connect",
         "network",
         "pulseaudio",
         "backlight",
@@ -254,6 +255,15 @@
         "tooltip": true,
         "on-click": "hayato menu vpn",
         "on-click-right": "hayato menu vpn --disconnect"
+    },
+    "custom/connect": {
+        "exec": "hayato connect --bar",
+        "return-type": "json",
+        "interval": 5,
+        "signal": 8,
+        "tooltip": true,
+        "on-click": "hayato connect",
+        "on-click-right": "hayato connect --stop"
     },
     "network": {
         // Waybar's built-in network module is the one indicator that cannot be

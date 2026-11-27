@@ -13,11 +13,15 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 const MAX_FRAME_BYTES: usize = 2 * 1024 * 1024;
+const MAX_AUDIO_CHUNK: usize = 65_536;
+const PHONE_MIC_SINK: &str = "hayato_phone_mic";
 
 #[derive(Clone, Debug, Default)]
 pub struct CamTelemetry {
     pub active: bool,
     pub viewfinder_running: bool,
+    pub mic_enabled: bool,
+    pub mic_active: bool,
     pub v4l2_device: Option<String>,
     pub resolution: String,
     pub facing: String,
@@ -32,9 +36,16 @@ struct ActiveFeed {
     label: String,
 }
 
+struct AudioFeed {
+    child: Child,
+    stdin: ChildStdin,
+    mod_id: Option<u32>,
+}
+
 struct InnerCam {
     latest_jpeg: Option<Vec<u8>>,
     feed: Option<ActiveFeed>,
+    audio: Option<AudioFeed>,
     telemetry: CamTelemetry,
     window_start: Instant,
     window_frames: u32,
@@ -64,8 +75,10 @@ impl CamSink {
             inner: Arc::new(Mutex::new(InnerCam {
                 latest_jpeg: None,
                 feed: None,
+                audio: None,
                 telemetry: CamTelemetry {
                     v4l2_device: v4l2,
+                    mic_enabled: true,
                     facing: "environment".to_string(),
                     ..CamTelemetry::default()
                 },
@@ -73,6 +86,46 @@ impl CamSink {
                 window_frames: 0,
                 window_bytes: 0,
             })),
+        }
+    }
+
+    pub fn set_mic_enabled(&self, enabled: bool) {
+        let Ok(mut g) = self.inner.lock() else {
+            return;
+        };
+        g.telemetry.mic_enabled = enabled;
+        if !enabled {
+            stop_audio_locked(&mut g);
+        }
+    }
+
+    pub fn mic_enabled(&self) -> bool {
+        self.inner
+            .lock()
+            .map(|g| g.telemetry.mic_enabled)
+            .unwrap_or(false)
+    }
+
+    /// Feed raw 24 kHz mono signed 16-bit LE PCM samples into an ephemeral
+    /// PipeWire virtual sink (`hayato_phone_mic`), auto-created on first packet
+    /// and torn down cleanly on toggle or `Drop`.
+    pub fn push_pcm_audio(&self, pcm: &[u8]) {
+        if pcm.is_empty() || pcm.len() > MAX_AUDIO_CHUNK || !pcm.len().is_multiple_of(2) {
+            return;
+        }
+        let Ok(mut g) = self.inner.lock() else {
+            return;
+        };
+        if !g.telemetry.mic_enabled {
+            return;
+        }
+        if g.audio.is_none() && start_audio_locked(&mut g).is_err() {
+            return;
+        }
+        if let Some(aud) = &mut g.audio
+            && (aud.stdin.write_all(pcm).is_err() || aud.stdin.flush().is_err())
+        {
+            stop_audio_locked(&mut g);
         }
     }
 
@@ -212,9 +265,106 @@ impl CamSink {
     pub fn stop_all(&self) {
         if let Ok(mut g) = self.inner.lock() {
             stop_feed_locked(&mut g);
+            stop_audio_locked(&mut g);
             g.telemetry.active = false;
             g.telemetry.fps = 0;
             g.telemetry.kbps = 0;
+        }
+    }
+}
+
+fn start_audio_locked(g: &mut InnerCam) -> Result<(), String> {
+    cleanup_phone_mic_orphans();
+    let out = Command::new("pactl")
+        .args([
+            "load-module",
+            "module-null-sink",
+            &format!("sink_name={PHONE_MIC_SINK}"),
+            "sink_properties=device.description=Hayato_Phone_Mic node.dont-fallback=true",
+        ])
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| format!("pactl load-module: {e}"))?;
+    let mod_id = if out.status.success() {
+        String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .parse::<u32>()
+            .ok()
+    } else {
+        None
+    };
+
+    let mut child = Command::new("pw-cat")
+        .args([
+            "--playback",
+            "--format=s16",
+            "--rate=24000",
+            "--channels=1",
+            &format!("--target={PHONE_MIC_SINK}"),
+            "-",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| {
+            if let Some(id) = mod_id {
+                unload_pactl_module(id);
+            }
+            format!("spawn pw-cat mic sink: {e}")
+        })?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "pw-cat stdin missing".to_string())?;
+    g.telemetry.mic_active = true;
+    g.audio = Some(AudioFeed {
+        child,
+        stdin,
+        mod_id,
+    });
+    Ok(())
+}
+
+fn stop_audio_locked(g: &mut InnerCam) {
+    if let Some(mut aud) = g.audio.take() {
+        drop(aud.stdin);
+        let _ = aud.child.kill();
+        let _ = aud.child.wait();
+        if let Some(id) = aud.mod_id {
+            unload_pactl_module(id);
+        }
+        cleanup_phone_mic_orphans();
+    }
+    g.telemetry.mic_active = false;
+}
+
+fn unload_pactl_module(id: u32) {
+    let _ = Command::new("pactl")
+        .args(["unload-module", &id.to_string()])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+fn cleanup_phone_mic_orphans() {
+    let Ok(out) = Command::new("pactl")
+        .args(["list", "short", "modules"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return;
+    };
+    if !out.status.success() {
+        return;
+    }
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        if line.contains(PHONE_MIC_SINK)
+            && let Some(id) = line.split_whitespace().next().and_then(|s| s.parse().ok())
+        {
+            unload_pactl_module(id);
         }
     }
 }

@@ -137,22 +137,21 @@ pub fn should_forward_app(app: &str) -> bool {
         && !low.contains("keepass")
 }
 
-/// Forward an authenticated phone alert safely onto the Hayato desktop via
-/// `notify-send` (`--` isolates body text from flags; zero shell expansion).
+/// Forward an authenticated phone alert onto the Hayato desktop via Hayato's
+/// native notification card helper (`crate::system::say`).
 pub fn send_desktop_alert(from: &str, title: &str, body: &str) -> bool {
     let clean_title = if title.trim().is_empty() {
         format!("Alert from {from}")
     } else {
         format!("{from}: {}", title.trim())
     };
-    Command::new("notify-send")
-        .args(["-a", "Hayato Connect", "--", &clean_title, body.trim()])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    crate::system::say(
+        &clean_title,
+        body.trim(),
+        hayato_ui::Urgency::Normal,
+        hayato_ui::Glyph::Bell,
+    );
+    true
 }
 
 #[cfg(test)]

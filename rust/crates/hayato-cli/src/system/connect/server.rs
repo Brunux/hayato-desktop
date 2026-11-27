@@ -200,6 +200,7 @@ enum OutboundWsMsg {
     CamControl {
         active: bool,
         facing: String,
+        mic: bool,
     },
     SyncDiff {
         push: Vec<FileEntry>,
@@ -278,6 +279,7 @@ impl Drop for ConnectServer {
         if let Some(path) = self.runtime_session_file.take() {
             let _ = fs::remove_file(path);
         }
+        super::signal_bar();
     }
 }
 
@@ -350,7 +352,9 @@ impl ConnectServer {
         )
         .ok();
 
-        let runtime_session_file = write_runtime_marker(&ip, port);
+        let runtime_session_file =
+            write_runtime_marker(&ip, port, kde.as_ref().map(|k| k.tcp_port).unwrap_or(0));
+        super::signal_bar();
 
         // TLS accept loop (dies when `stop` becomes true)
         let stop_bg = Arc::clone(&stop);
@@ -521,12 +525,21 @@ impl ConnectServer {
         Ok(path)
     }
 
-    pub fn request_phone_cam(&self, active: bool, facing: &str) -> usize {
+    pub fn set_phone_mic(&self, enabled: bool) {
+        self.shared.cam.set_mic_enabled(enabled);
+        if let Ok(mut tel) = self.shared.telemetry.lock() {
+            tel.cam = self.shared.cam.telemetry();
+            tel.seq += 1;
+        }
+    }
+
+    pub fn request_phone_cam(&self, active: bool, facing: &str, mic: bool) -> usize {
         broadcast_ws(
             &self.shared,
             &OutboundWsMsg::CamControl {
                 active,
                 facing: facing.to_string(),
+                mic,
             },
         )
     }
@@ -1061,7 +1074,11 @@ fn handle_websocket(
                 }
             }
             Ok(Message::Binary(bin)) => {
-                shared.cam.push_jpeg_frame(&bin);
+                if bin.starts_with(b"HAUD") {
+                    shared.cam.push_pcm_audio(&bin[4..]);
+                } else {
+                    shared.cam.push_jpeg_frame(&bin);
+                }
                 if let Ok(mut tel) = shared.telemetry.lock() {
                     tel.cam = shared.cam.telemetry();
                     tel.seq += 1;
@@ -1916,7 +1933,7 @@ fn refresh_peers_telemetry(shared: &Arc<SharedState>) {
     }
 }
 
-fn write_runtime_marker(ip: &str, port: u16) -> Option<PathBuf> {
+fn write_runtime_marker(ip: &str, port: u16, kde_port: u16) -> Option<PathBuf> {
     let base = std::env::var("XDG_RUNTIME_DIR")
         .ok()
         .filter(|s| !s.is_empty())
@@ -1927,6 +1944,7 @@ fn write_runtime_marker(ip: &str, port: u16) -> Option<PathBuf> {
     let body = serde_json::json!({
         "ip": ip,
         "port": port,
+        "kde_port": kde_port,
         "pid": std::process::id(),
     })
     .to_string();
@@ -2094,6 +2112,7 @@ fn render_connect_web_app(css: &ThemeCss, spki_fp: &str, pair_token: &str) -> St
                <div class='row'>\
                  <button class='btn btn-primary' id='cambtn' onclick='toggleCam()'>Start Webcam Stream</button>\
                  <button class='btn' onclick='flipCam()'>Flip Lens</button>\
+                 <label style='display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text);cursor:pointer'><input id='cammic' type='checkbox' checked />Mic \u{2192} PipeWire</label>\
                </div>\
                <video id='cvid' autoplay playsinline muted style='display:none;width:100%;border-radius:6px;margin-top:10px;border:1px solid var(--border)'></video>\
              </div>\
@@ -2138,7 +2157,7 @@ fn render_connect_web_app(css: &ThemeCss, spki_fp: &str, pair_token: &str) -> St
          function addTextFeed(txt){{if(feed.querySelector('.hint'))feed.innerHTML='';const d=document.createElement('div');d.className='item';d.textContent=txt;feed.prepend(d);}}\
          function randHex(n){{const a=new Uint8Array(n);crypto.getRandomValues(a);return Array.from(a,b=>b.toString(16).padStart(2,'0')).join('');}}\
          const peerNonce=randHex(12);\
-         let camStream=null,camTimer=null,camFacing='environment',syncFiles={{}};\
+         let camStream=null,camTimer=null,camCtx=null,camProc=null,camFacing='environment',syncFiles={{}};\
          async function localSas(){{if(!crypto.subtle)return '';const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(FP+'\\x00'+PAIR+'\\x00'+peerNonce));const n=new DataView(b).getUint32(0,false)%1000000;const s=String(n).padStart(6,'0');return s.slice(0,3)+'-'+s.slice(3);}}\
          if(hashFp&&hashFp!==FP){{st.textContent='FP mismatch';}}else{{\
          const wsUrl=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws';\
@@ -2151,7 +2170,7 @@ fn render_connect_web_app(css: &ThemeCss, spki_fp: &str, pair_token: &str) -> St
            else if(m.type==='clipboard'){{document.getElementById('txt').value=m.text;if(navigator.clipboard)navigator.clipboard.writeText(m.text).catch(()=>{{}});addTextFeed('Clipboard synced from desktop');}}\
            else if(m.type==='media'){{const md=m.media||{{}};document.getElementById('mst').textContent=(md.status||'idle')+' · '+(md.volume_pct||0)+'%'+(md.muted?' [MUTE]':'');document.getElementById('mtrack').textContent=md.title?((md.artist?md.artist+' \u{2014} ':'')+md.title):'No active media player';}}\
            else if(m.type==='alert'){{addTextFeed('['+m.app+'] '+m.summary+(m.body?': '+m.body:''));if(window.Notification&&Notification.permission==='granted'){{new Notification(m.app+': '+m.summary,{{body:m.body}});}}}}\
-           else if(m.type==='cam_control'){{if(m.facing)camFacing=m.facing;if(m.active&&!camStream)startCam();else if(!m.active&&camStream)stopCam();}}\
+           else if(m.type==='cam_control'){{if(m.facing)camFacing=m.facing;const mc=document.getElementById('cammic');if(mc&&typeof m.mic==='boolean')mc.checked=m.mic;if(m.active&&!camStream)startCam();else if(!m.active&&camStream)stopCam();}}\
            else if(m.type==='sync_diff'){{handleSyncDiff(m);}}\
            else if(m.type==='link'){{if(!safeHttp(m.url))return;const a=document.createElement('a');a.href=m.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=m.title||m.url;const d=document.createElement('div');d.className='item';d.appendChild(a);if(feed.querySelector('.hint'))feed.innerHTML='';feed.prepend(d);}}\
            else if(m.type==='offer'){{if(m.kind==='file'){{const u='/api/download/'+encodeURIComponent(m.id)+'?device='+encodeURIComponent(dev.id||'')+'&secret='+encodeURIComponent(dev.secret||'');\
@@ -2174,11 +2193,13 @@ fn render_connect_web_app(css: &ThemeCss, spki_fp: &str, pair_token: &str) -> St
            sst.textContent='\u{2191}'+pushed+' \u{2193}'+((d.push||[]).length)+' ('+(d.up_to_date||0)+' ok)';}}\
          function mCmd(c){{if(window._hws)window._hws.send(JSON.stringify({{type:'media_cmd',cmd:c}}));}}\
          async function startCam(){{if(!navigator.mediaDevices||!window._hws)return;\
-           try{{camStream=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:camFacing,width:{{ideal:960}},height:{{ideal:540}}}},audio:false}});const v=document.getElementById('cvid');v.srcObject=camStream;v.style.display='block';await v.play();\
-           const cv=document.createElement('canvas');const ctx=cv.getContext('2d');document.getElementById('camst').textContent='LIVE ('+camFacing+')';document.getElementById('cambtn').textContent='Stop Camera';\
+           const wantMic=!!document.getElementById('cammic')?.checked;\
+           try{{camStream=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:camFacing,width:{{ideal:960}},height:{{ideal:540}}}},audio:wantMic}});const v=document.getElementById('cvid');v.srcObject=camStream;v.style.display='block';await v.play();\
+           const cv=document.createElement('canvas');const ctx=cv.getContext('2d');document.getElementById('camst').textContent='LIVE ('+camFacing+(wantMic?'+mic':'')+')';document.getElementById('cambtn').textContent='Stop Camera';\
            window._hws.send(JSON.stringify({{type:'cam_meta',active:true,facing:camFacing,width:v.videoWidth||960,height:v.videoHeight||540}}));\
+           if(wantMic&&camStream.getAudioTracks().length){{try{{const AC=window.AudioContext||window.webkitAudioContext;camCtx=new AC({{sampleRate:24000}});const src=camCtx.createMediaStreamSource(camStream);camProc=camCtx.createScriptProcessor(2048,1,1);camProc.onaudioprocess=(ev)=>{{if(!camStream||window._hws.readyState!==1)return;const inp=ev.inputBuffer.getChannelData(0);const out=new Uint8Array(4+inp.length*2);out[0]=72;out[1]=65;out[2]=85;out[3]=68;const dv=new DataView(out.buffer);for(let i=0;i<inp.length;i++){{const s=Math.max(-1,Math.min(1,inp[i]));dv.setInt16(4+i*2,s<0?s*0x8000:s*0x7fff,true);}}window._hws.send(out.buffer);}};src.connect(camProc);camProc.connect(camCtx.destination);}}catch(_e){{}}}}\
            camTimer=setInterval(()=>{{if(!camStream||window._hws.readyState!==1||v.videoWidth===0)return;cv.width=v.videoWidth;cv.height=v.videoHeight;ctx.drawImage(v,0,0);cv.toBlob(b=>{{if(b&&window._hws.readyState===1)window._hws.send(b);}},'image/jpeg',0.72);}},66);}}catch(e){{document.getElementById('camst').textContent='denied';}}}}\
-         function stopCam(){{if(camTimer){{clearInterval(camTimer);camTimer=null;}}if(camStream){{camStream.getTracks().forEach(t=>t.stop());camStream=null;}}const v=document.getElementById('cvid');if(v){{v.srcObject=null;v.style.display='none';}}document.getElementById('camst').textContent='off';document.getElementById('cambtn').textContent='Start Webcam Stream';if(window._hws&&window._hws.readyState===1)window._hws.send(JSON.stringify({{type:'cam_meta',active:false,facing:camFacing,width:0,height:0}}));}}\
+         function stopCam(){{if(camTimer){{clearInterval(camTimer);camTimer=null;}}if(camProc){{camProc.disconnect();camProc=null;}}if(camCtx){{camCtx.close().catch(()=>{{}});camCtx=null;}}if(camStream){{camStream.getTracks().forEach(t=>t.stop());camStream=null;}}const v=document.getElementById('cvid');if(v){{v.srcObject=null;v.style.display='none';}}document.getElementById('camst').textContent='off';document.getElementById('cambtn').textContent='Start Webcam Stream';if(window._hws&&window._hws.readyState===1)window._hws.send(JSON.stringify({{type:'cam_meta',active:false,facing:camFacing,width:0,height:0}}));}}\
          function toggleCam(){{if(camStream)stopCam();else startCam();}}\
          function flipCam(){{camFacing=camFacing==='environment'?'user':'environment';if(camStream){{stopCam();startCam();}}}}\
          function sendClip(){{const t=document.getElementById('txt').value;if(!t||!window._hws)return;window._hws.send(JSON.stringify({{type:'clipboard',text:t}}));document.getElementById('cst').textContent='clipboard synced';}}\

@@ -73,6 +73,7 @@ tooltip label {
 #custom-bluetooth,
 #custom-vnc,
 #custom-vpn,
+#custom-connect,
 #network,
 #pulseaudio,
 #backlight,
@@ -170,7 +171,8 @@ tooltip label {
 #custom-busy.empty,
 #custom-keyboard-layout.empty,
 #custom-vnc.empty,
-#custom-vpn.empty {
+#custom-vpn.empty,
+#custom-connect.empty {
     padding: 0;
     margin: 0;
     border: none;

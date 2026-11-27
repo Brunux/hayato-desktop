@@ -27,6 +27,13 @@ use crate::Failure;
 
 /// Handle non-interactive CLI query subcommands before host `foot` spawning.
 pub fn try_query(args: &[String]) -> Option<i32> {
+    if args.iter().any(|a| a == "--bar" || a == "bar") {
+        println!("{}", bar_json());
+        return Some(0);
+    }
+    if args.iter().any(|a| a == "--stop" || a == "stop") {
+        return Some(stop_active_session());
+    }
     if args.iter().any(|a| a == "--status" || a == "status") {
         let store = TrustStore::load_default();
         println!(
@@ -44,6 +51,83 @@ pub fn try_query(args: &[String]) -> Option<i32> {
         return Some(0);
     }
     None
+}
+
+pub fn signal_bar() {
+    let _ = crate::system::out(&["pkill", "-RTMIN+8", "waybar"]);
+}
+
+pub fn runtime_session_path() -> Option<PathBuf> {
+    std::env::var("XDG_RUNTIME_DIR")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(|base| PathBuf::from(base).join("hayato-connect/session.json"))
+}
+
+#[derive(serde::Deserialize)]
+struct RuntimeSession {
+    ip: String,
+    port: u16,
+    pid: u32,
+    #[serde(default)]
+    kde_port: u16,
+}
+
+fn live_session() -> Option<(PathBuf, RuntimeSession)> {
+    let path = runtime_session_path()?;
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let sess: RuntimeSession = serde_json::from_str(&raw).ok()?;
+    let comm = std::fs::read_to_string(format!("/proc/{}/comm", sess.pid)).ok()?;
+    if !comm.trim().contains("hayato") {
+        let _ = std::fs::remove_file(&path);
+        return None;
+    }
+    Some((path, sess))
+}
+
+pub fn bar_json() -> String {
+    let Some((_, sess)) = live_session() else {
+        return r#"{"text":"","class":"empty","tooltip":""}"#.to_string();
+    };
+    let paired = TrustStore::load_default().devices().len();
+    let badge = if paired > 0 {
+        format!("<span font_desc='JetBrains Mono 13'>\u{f10b}</span> {paired}")
+    } else {
+        "<span font_desc='JetBrains Mono 13'>\u{f10b}</span>".to_string()
+    };
+    let kde_line = if sess.kde_port > 0 {
+        format!(
+            "\n<span alpha='45%'>│</span> <span alpha='60%'>KDE </span>  UDP/TLS {}",
+            sess.kde_port
+        )
+    } else {
+        String::new()
+    };
+    let tooltip = format!(
+        "<span alpha='50%'>╭─</span> <b>CONNECT // LIVE</b>\n\
+         <span alpha='45%'>│</span> <span alpha='60%'>URL </span>  https://{}:{}\
+         {kde_line}\n\
+         <span alpha='45%'>│</span> <span alpha='60%'>DEV </span>  {paired} paired\n\
+         <span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] open · [RMB] close</span>",
+        sess.ip, sess.port
+    );
+    serde_json::json!({
+        "text": badge,
+        "class": "active",
+        "tooltip": tooltip,
+    })
+    .to_string()
+}
+
+pub fn stop_active_session() -> i32 {
+    if let Some((path, sess)) = live_session() {
+        let _ = std::process::Command::new("kill")
+            .args(["-TERM", &sess.pid.to_string()])
+            .status();
+        let _ = std::fs::remove_file(path);
+    }
+    signal_bar();
+    0
 }
 
 /// Entrypoint for `hayato connect` (`hayato-connect`).
@@ -128,5 +212,16 @@ fn pick_path_to_send(
                 Ok(None)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bar_json_collapses_when_no_session_running() {
+        let out = bar_json();
+        assert!(out.contains("text"));
     }
 }

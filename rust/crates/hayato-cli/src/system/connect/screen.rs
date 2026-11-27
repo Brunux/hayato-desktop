@@ -108,6 +108,7 @@ enum RowAction {
     TogglePhoneCam,
     FlipCamLens,
     ToggleCamViewfinder,
+    TogglePhoneMic,
     SnapCamPhoto,
     ToggleAlertsMirror,
     SendTestAlert,
@@ -783,6 +784,19 @@ impl ConnectScreen {
                 );
                 actions.push(Some(RowAction::ToggleCamViewfinder));
                 rows.push(
+                    Row::new("Include Phone Mic -> PipeWire")
+                        .glyph(Glyph::Mic)
+                        .detail("streams 24 kHz phone mic to Hayato_Phone_Mic sink")
+                        .value(if cam.mic_active {
+                            "LIVE"
+                        } else if cam.mic_enabled {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }),
+                );
+                actions.push(Some(RowAction::TogglePhoneMic));
+                rows.push(
                     Row::new("Save Phone Camera Snapshot")
                         .glyph(Glyph::Image)
                         .detail("~/Pictures/Camera/hayato-phone-*.jpg")
@@ -1052,7 +1066,11 @@ impl ConnectScreen {
             RowAction::TogglePhoneCam => {
                 let next = !self.telemetry.cam.active;
                 if let Some(srv) = &self.server {
-                    let count = srv.request_phone_cam(next, &self.cam_facing);
+                    let count = srv.request_phone_cam(
+                        next,
+                        &self.cam_facing,
+                        self.telemetry.cam.mic_enabled,
+                    );
                     self.status_line = if count > 0 {
                         format!(
                             "Requested phone camera {} ({})",
@@ -1073,7 +1091,7 @@ impl ConnectScreen {
                 if let Some(srv) = &self.server
                     && self.telemetry.cam.active
                 {
-                    srv.request_phone_cam(true, &self.cam_facing);
+                    srv.request_phone_cam(true, &self.cam_facing, self.telemetry.cam.mic_enabled);
                 }
                 self.status_line = format!(
                     "Camera lens preference: {}",
@@ -1096,6 +1114,21 @@ impl ConnectScreen {
                         Err(e) => self.status_line = e,
                     }
                 }
+            }
+            RowAction::TogglePhoneMic => {
+                let next = !self.telemetry.cam.mic_enabled;
+                if let Some(srv) = &self.server {
+                    srv.set_phone_mic(next);
+                    if self.telemetry.cam.active {
+                        srv.request_phone_cam(true, &self.cam_facing, next);
+                    }
+                    self.telemetry = srv.snapshot();
+                } else {
+                    self.telemetry.cam.mic_enabled = next;
+                }
+                self.status_line =
+                    format!("Phone Mic -> PipeWire {}", if next { "ON" } else { "OFF" });
+                self.rebuild_rows();
             }
             RowAction::SnapCamPhoto => {
                 if let Some(srv) = &self.server {
@@ -1421,9 +1454,10 @@ impl Screen for ConnectScreen {
                     Some("Hayato Connect · Pairing QR (TLS)"),
                     true,
                 );
-                if inner.height >= 5 {
+                if inner.height >= 6 {
                     let status_y = inner.bottom().saturating_sub(1);
-                    let footer_y = status_y.saturating_sub(1);
+                    let cert_hint_y = status_y.saturating_sub(1);
+                    let footer_y = cert_hint_y.saturating_sub(1);
                     let qr_area = Rect::new(
                         inner.x,
                         inner.y,
@@ -1444,6 +1478,14 @@ impl Screen for ConnectScreen {
                         url,
                         inner.width,
                         ctx.design.style(TextStyle::Code),
+                    );
+                    put_trunc(
+                        ctx.buf,
+                        inner.x,
+                        cert_hint_y,
+                        "Safari/Chrome first tap: Show Details \u{2192} Visit Website (verified via #fp)",
+                        inner.width,
+                        ctx.design.style(TextStyle::Dim),
                     );
                     put_trunc(
                         ctx.buf,

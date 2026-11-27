@@ -3765,6 +3765,16 @@ if have hayato; then
 	else
 		fail "hayato connect --status failed"
 	fi
+	if hayato connect --bar 2>/dev/null | grep -q '"class":"empty"'; then
+		ok "hayato connect --bar collapses cleanly when idle"
+	else
+		fail "hayato connect --bar failed or did not collapse when idle"
+	fi
+	if [ -f /usr/share/applications/org.hayato.connect.desktop ] || [ -f "$DESKTOP_REPO/uis/sway/files/usr/share/applications/org.hayato.connect.desktop" ]; then
+		ok "org.hayato.connect.desktop application entry present"
+	else
+		fail "org.hayato.connect.desktop application entry missing"
+	fi
 
 	# Spec 020: frictionless, self-contained in-window UX & live window sizing.
 	# Interactive TUI modules in hayato-cli must never call Card::send() or

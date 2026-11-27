@@ -122,9 +122,9 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
     device tokens (`0600`, `trust.rs`). Built-in backup Web App mirrors Hayato landing page (`site/`)
     terminal-card aesthetic & multi-theme switcher while KDE Connect handles background notifications/battery/ring/Share Sheet.
     Clipboard sync hashes payloads (`last_clip_hash`) and skips `x-kde-passwordManagerHint`/binary MIME;
-    `Remote` provides `playerctl`/`wpctl` MPRIS2 media control + phone `getUserMedia` camera streaming;
-    `Alerts` relays session notifications (pausing during recording); `Transfer` validates on-demand
-    folder sync paths strictly inside `sync_root` via `sync::safe_rel_path`.
+    `Remote` provides `playerctl`/`wpctl` MPRIS2 media control + phone `getUserMedia` camera & 24 kHz PCM mic (`hayato_phone_mic` PipeWire sink) streaming;
+    `Alerts` relays session notifications via `system::say` (pausing during recording); `Transfer` validates on-demand
+    folder sync paths strictly inside `sync_root` via `sync::safe_rel_path`. `org.hayato.connect.desktop` registers the launcher entry and Waybar `custom/connect` (`hayato connect --bar`) collapses cleanly when idle.
 11. **A modal replaces the body; it never floats over a live list**: a `Confirm` or a
    `centered` card is drawn on its own screen (like the Ask strip and the kill screen), or the
    screen first clears the card area. At 80×24 a 56-wide card cuts list rows in half
