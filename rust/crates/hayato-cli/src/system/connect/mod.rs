@@ -7,6 +7,7 @@
 pub mod alerts;
 pub mod camera;
 pub mod crypto;
+pub mod kdeconnect;
 pub mod media;
 pub mod screen;
 pub mod server;

@@ -501,13 +501,20 @@ pub(crate) fn prepare_serve_kind(
 
 #[derive(Clone)]
 pub(crate) struct ThemeCss {
+    pub(crate) slug: String,
     pub(crate) bg: String,
+    pub(crate) bg_deep: String,
     pub(crate) surface: String,
+    pub(crate) surface_hi: String,
     pub(crate) border: String,
     pub(crate) text: String,
+    pub(crate) body: String,
     pub(crate) muted: String,
     pub(crate) accent: String,
+    pub(crate) cursor: String,
+    pub(crate) gold: String,
     pub(crate) ok: String,
+    pub(crate) danger: String,
 }
 
 pub(crate) fn active_theme_css() -> ThemeCss {
@@ -519,23 +526,37 @@ pub(crate) fn active_theme_css() -> ThemeCss {
         .map(|t| {
             let r = t.roles();
             ThemeCss {
+                slug: slug.clone(),
                 bg: t.colors.background.hashed(),
+                bg_deep: r.faint.hashed(),
                 surface: r.surface.hashed(),
-                border: r.surface_alt.hashed(),
-                text: r.text.hashed(),
+                surface_hi: r.surface_alt.hashed(),
+                border: r.border.hashed(),
+                text: r.strong.hashed(),
+                body: r.text.hashed(),
                 muted: r.dim.hashed(),
                 accent: r.accent.hashed(),
+                cursor: r.accent_alt.hashed(),
+                gold: r.warn.hashed(),
                 ok: r.ok.hashed(),
+                danger: r.danger.hashed(),
             }
         })
         .unwrap_or(ThemeCss {
+            slug: "tokyo-night".to_string(),
             bg: "#1a1b26".to_string(),
+            bg_deep: "#16161e".to_string(),
             surface: "#24283b".to_string(),
+            surface_hi: "#292e42".to_string(),
             border: "#3b4261".to_string(),
             text: "#c0caf5".to_string(),
+            body: "#a9b1d6".to_string(),
             muted: "#565f89".to_string(),
-            accent: "#7aa2f7".to_string(),
+            accent: "#7dcfff".to_string(),
+            cursor: "#ff9e64".to_string(),
+            gold: "#e0af68".to_string(),
             ok: "#9ece6a".to_string(),
+            danger: "#f7768e".to_string(),
         })
 }
 

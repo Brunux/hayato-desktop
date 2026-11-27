@@ -43,10 +43,18 @@ pub struct TrustedDevice {
     pub name: String,
     pub user_agent: String,
     pub secret_hash: String,
+    #[serde(default = "default_protocol")]
+    pub protocol: String,
+    #[serde(default)]
+    pub cert_fp: String,
     pub paired_at: u64,
     pub last_seen: u64,
     #[serde(default)]
     pub capabilities: DeviceCapabilities,
+}
+
+fn default_protocol() -> String {
+    "webapp".to_string()
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -148,6 +156,8 @@ impl TrustStore {
             name: name.trim().to_string(),
             user_agent: user_agent.trim().to_string(),
             secret_hash: sha256_hex(secret.as_bytes()),
+            protocol: "webapp".to_string(),
+            cert_fp: String::new(),
             paired_at: now,
             last_seen: now,
             capabilities: DeviceCapabilities::default(),
@@ -155,6 +165,42 @@ impl TrustStore {
         self.devices.push(dev.clone());
         self.save()?;
         Ok((dev, secret))
+    }
+
+    /// Persist a KDE Connect peer keyed by `device_id` and its pinned TLS certificate SHA-256 hex.
+    pub fn pair_kde_device(
+        &mut self,
+        device_id: &str,
+        name: &str,
+        device_type: &str,
+        cert_fp: &str,
+    ) -> Result<TrustedDevice, String> {
+        let now = now_epoch();
+        self.devices.retain(|d| d.id != device_id);
+        let dev = TrustedDevice {
+            id: device_id.to_string(),
+            name: name.trim().to_string(),
+            user_agent: format!("KDE Connect ({})", device_type.trim()),
+            secret_hash: String::new(),
+            protocol: "kdeconnect".to_string(),
+            cert_fp: cert_fp.to_ascii_lowercase(),
+            paired_at: now,
+            last_seen: now,
+            capabilities: DeviceCapabilities::default(),
+        };
+        self.devices.push(dev.clone());
+        self.save()?;
+        Ok(dev)
+    }
+
+    pub fn verify_kde(&self, id: &str, cert_fp: &str) -> Option<&TrustedDevice> {
+        let low = cert_fp.to_ascii_lowercase();
+        self.devices.iter().find(|d| {
+            d.protocol == "kdeconnect"
+                && d.id == id
+                && !d.cert_fp.is_empty()
+                && constant_time_eq(d.cert_fp.as_bytes(), low.as_bytes())
+        })
     }
 
     pub fn verify(&self, id: &str, raw_secret: &str) -> Option<&TrustedDevice> {

@@ -111,6 +111,7 @@ enum RowAction {
     SnapCamPhoto,
     ToggleAlertsMirror,
     SendTestAlert,
+    RingPhone,
 }
 
 enum ConnectPhase {
@@ -255,6 +256,8 @@ impl ConnectScreen {
             name: "Pixel 8".into(),
             user_agent: "Android 15 · Chrome".into(),
             secret_hash: "0".repeat(64),
+            protocol: "webapp".into(),
+            cert_fp: String::new(),
             paired_at: 100,
             last_seen: 200,
             capabilities: Default::default(),
@@ -547,23 +550,49 @@ impl ConnectScreen {
                 );
                 actions.push(Some(RowAction::ShowPairQr));
 
+                rows.push(
+                    Row::new("Ring Paired Phone (KDE Connect)")
+                        .glyph(Glyph::Bell)
+                        .detail("chime a misplaced phone via KDE Connect")
+                        .value("Ring"),
+                );
+                actions.push(Some(RowAction::RingPhone));
+
                 rows.push(Row::heading("Paired & Nearby Devices"));
                 actions.push(None);
-                if self.trusted.is_empty() && self.peers.is_empty() {
+                if self.trusted.is_empty()
+                    && self.peers.is_empty()
+                    && self.telemetry.kde_peers.is_empty()
+                {
                     rows.push(
                         Row::new("No devices paired yet")
                             .glyph(Glyph::Info)
-                            .detail("Scan the QR code on your phone to pair"),
+                            .detail("Pair via KDE Connect app or scan the QR for Web App"),
                     );
                     actions.push(None);
                 } else {
                     for dev in &self.trusted {
-                        let online = self
+                        let ws_online = self
                             .telemetry
                             .connected_peers
                             .iter()
                             .any(|p| p.device_id == dev.id);
-                        let state = if online { "Live" } else { "Saved" };
+                        let kde_live = self
+                            .telemetry
+                            .kde_peers
+                            .iter()
+                            .find(|p| p.device_id == dev.id);
+                        let state = if let Some(kp) = kde_live {
+                            match kp.battery_pct {
+                                Some(pct) if kp.charging => format!("Live · {pct}% \u{26a1}"),
+                                Some(pct) => format!("Live · {pct}%"),
+                                None => "Live (KDE)".to_string(),
+                            }
+                        } else if ws_online {
+                            "Live (Web)".to_string()
+                        } else {
+                            "Saved".to_string()
+                        };
                         rows.push(
                             Row::new(&dev.name)
                                 .glyph(Glyph::Display)
@@ -760,6 +789,27 @@ impl ConnectScreen {
                         .value("Snap"),
                 );
                 actions.push(Some(RowAction::SnapCamPhoto));
+
+                rows.push(Row::heading("KDE Connect iOS / Android Input & Commands"));
+                actions.push(None);
+                rows.push(
+                    Row::new("Virtual Touchpad, Keyboard & Presenter")
+                        .glyph(Glyph::Mouse)
+                        .detail("Sway cursor/clicks + wtype keys + gyro presenter active")
+                        .value(if self.telemetry.kde_peers.is_empty() {
+                            "Standby"
+                        } else {
+                            "Ready"
+                        }),
+                );
+                actions.push(None);
+                rows.push(
+                    Row::new("Curated Run Commands (Lock, Media, Shot, Mute)")
+                        .glyph(Glyph::Terminal)
+                        .detail("advertised over TLS to paired KDE Connect iPhone/Android apps")
+                        .value("6 cmds"),
+                );
+                actions.push(None);
             }
             ConnectSection::Alerts => {
                 rows.push(Row::heading("Scoped Notification Bridge"));
@@ -820,6 +870,8 @@ impl ConnectScreen {
     fn sync_chrome(&mut self) {
         self.deck_title = if let Some(p) = self.telemetry.connected_peers.first() {
             format!("{} · Live Deck", p.name)
+        } else if let Some(k) = self.telemetry.kde_peers.first() {
+            format!("{} · KDE Live", k.name)
         } else if let Some(d) = self.trusted.first() {
             format!("{} · Saved Deck", d.name)
         } else {
@@ -840,7 +892,7 @@ impl ConnectScreen {
         } else {
             String::new()
         };
-        let connected = self.telemetry.connected_peers.len();
+        let connected = self.telemetry.connected_peers.len() + self.telemetry.kde_peers.len();
         let peer_note = if connected > 0 {
             format!("{connected} live")
         } else {
@@ -922,7 +974,11 @@ impl ConnectScreen {
             RowAction::ShowPairQr => self.open_pair_qr(),
             RowAction::RescanPeers => {
                 self.scanner = Some(PeerScanner::start());
-                self.status_line = "Rescanning LocalSend LAN peers\u{2026}".to_string();
+                if let Some(srv) = &self.server {
+                    srv.announce_kde();
+                }
+                self.status_line =
+                    "Rescanning LocalSend & KDE Connect LAN peers\u{2026}".to_string();
             }
             RowAction::PushClipToPeer(peer) => {
                 if let Some(text) = read_clip_text() {
@@ -1078,6 +1134,16 @@ impl ConnectScreen {
                     };
                 }
             }
+            RowAction::RingPhone => {
+                if let Some(srv) = &self.server {
+                    let count = srv.ring_phone();
+                    self.status_line = if count > 0 {
+                        format!("Ringing {count} KDE Connect phone(s)")
+                    } else {
+                        "No paired KDE Connect phone connected right now".to_string()
+                    };
+                }
+            }
         }
         Outcome::Consumed
     }
@@ -1221,12 +1287,18 @@ impl ConnectScreen {
             .add_modifier(Modifier::BOLD);
 
         let mut y = inner.y;
-        let (badge_txt, badge_role, desc) = if !self.telemetry.connected_peers.is_empty() {
+        let (badge_txt, badge_role, desc) = if !self.telemetry.kde_peers.is_empty() {
+            ("● KDE LIVE", ColorRole::Ok, "KDE Connect TLS + Web App")
+        } else if !self.telemetry.connected_peers.is_empty() {
             ("● PAIRED", ColorRole::Ok, "TLS 1.3 + WSS live")
         } else if !self.trusted.is_empty() {
-            ("○ STANDBY", ColorRole::AccentAlt, "Scan QR or reconnect")
+            (
+                "○ STANDBY",
+                ColorRole::AccentAlt,
+                "KDE Connect or QR reconnect",
+            )
         } else {
-            ("○ UNPAIRED", ColorRole::Warn, "Scan QR on phone")
+            ("○ UNPAIRED", ColorRole::Warn, "KDE Connect app or scan QR")
         };
         let bx = draw_badge(buf, inner.x, y, design, badge_txt, badge_role);
         put_trunc(

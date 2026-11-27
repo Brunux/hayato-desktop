@@ -113,11 +113,14 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
     Multi-file/folder ZIP streaming, two-way phone upload/clipboard push, and 5-min auto-expiry, alongside
     zero-daemon on-demand LocalSend v2 UDP multicast (`224.0.0.167:53317`) peer discovery.
 10c. **Hayato Connect (`hayato connect` / `hayato-connect`)**: `system/connect/` extends Hayato Share/Drop
-    into an opt-in, zero-daemon encrypted (`openssl` ECDSA P-256 TLS 1.3 + `tungstenite` WSS) workspace
-    that lives and dies with its TUI window (`AlertWatcher`, TLS/WSS loops, `CamSink` viewfinder/`v4l2`,
-    and clipboard polling all tear down on `Drop`). Pairing binds URL-fragment `#fp=` pinning + WebCrypto
+    into an opt-in, zero-daemon encrypted (`openssl` ECDSA P-256 TLS 1.3 + `tungstenite` WSS, plus an
+    optional pure-Rust KDE Connect v7/v8 UDP `1716` + TLS adapter in `kdeconnect.rs`) workspace that
+    lives and dies with its TUI window (`AlertWatcher`, TLS/WSS + KDE loops, `CamSink` viewfinder/`v4l2`,
+    and clipboard polling tear down on `Drop`). Pairing binds URL-fragment `#fp=` pinning + WebCrypto
     SHA-256 6-digit SAS verification (`crypto::derive_sas`), one-time QR `pair_token` rotation, nonce
-    replay guard, and `AuthorizePeer` confirmation before saving device tokens (`0600`, `trust.rs`).
+    replay guard, or KDE Connect RSA-2048 mutual cert pinning via `AuthorizePeer` confirmation before saving
+    device tokens (`0600`, `trust.rs`). Built-in backup Web App mirrors Hayato landing page (`site/`)
+    terminal-card aesthetic & multi-theme switcher while KDE Connect handles background notifications/battery/ring/Share Sheet.
     Clipboard sync hashes payloads (`last_clip_hash`) and skips `x-kde-passwordManagerHint`/binary MIME;
     `Remote` provides `playerctl`/`wpctl` MPRIS2 media control + phone `getUserMedia` camera streaming;
     `Alerts` relays session notifications (pausing during recording); `Transfer` validates on-demand

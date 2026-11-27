@@ -23,6 +23,7 @@ use tungstenite::Message;
 use super::alerts::{AlertWatcher, send_desktop_alert};
 use super::camera::{CamSink, CamTelemetry};
 use super::crypto::{ConnectIdentity, derive_sas, sha256_hex};
+use super::kdeconnect::{KdeConnectBridge, KdePeerInfo};
 use super::media::{MediaSnapshot, exec_media_cmd, poll_media};
 use super::sync::{
     FileEntry, build_manifest, compute_diff_plan, default_sync_config_path, load_sync_folder,
@@ -66,6 +67,7 @@ pub struct ConnectTelemetry {
     pub active_label: String,
     pub last_event: String,
     pub connected_peers: Vec<ConnectedPeer>,
+    pub kde_peers: Vec<KdePeerInfo>,
     pub last_clip_preview: String,
     pub media: MediaSnapshot,
     pub cam: CamTelemetry,
@@ -232,7 +234,7 @@ struct SharedState {
     downloads_dir: PathBuf,
     sync_root: Mutex<PathBuf>,
     theme: ThemeCss,
-    trust: Mutex<TrustStore>,
+    trust: Arc<Mutex<TrustStore>>,
     offers: Mutex<HashMap<String, OfferedItem>>,
     pending_auth: Mutex<HashMap<String, Sender<bool>>>,
     clients: Mutex<Vec<(ConnectedPeer, OutboxTx)>>,
@@ -251,6 +253,7 @@ pub struct ConnectServer {
     pub spki_fp: String,
     stop: Arc<AtomicBool>,
     shared: Arc<SharedState>,
+    kde: Option<KdeConnectBridge>,
     alert_watcher: AlertWatcher,
     runtime_session_file: Option<PathBuf>,
 }
@@ -258,6 +261,7 @@ pub struct ConnectServer {
 impl Drop for ConnectServer {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+        self.kde.take();
         self.shared.cam.stop_all();
         if let Ok(mut pending) = self.shared.pending_auth.lock() {
             for (_, tx) in pending.drain() {
@@ -308,21 +312,22 @@ impl ConnectServer {
         let stop = Arc::new(AtomicBool::new(false));
         let sync_folder = load_sync_folder(&default_sync_config_path());
         let cam = Arc::new(CamSink::new());
+        let shared_trust = Arc::new(Mutex::new(trust));
         let shared = Arc::new(SharedState {
             ip: ip.clone(),
             port,
             pair_token: Mutex::new(pair_token),
             used_nonces: Mutex::new(HashSet::new()),
             spki_fp: identity.spki_fp.clone(),
-            downloads_dir,
+            downloads_dir: downloads_dir.clone(),
             sync_root: Mutex::new(sync_folder),
             theme: active_theme_css(),
-            trust: Mutex::new(trust),
+            trust: Arc::clone(&shared_trust),
             offers: Mutex::new(HashMap::new()),
             pending_auth: Mutex::new(HashMap::new()),
             clients: Mutex::new(Vec::new()),
             telemetry: Mutex::new(ConnectTelemetry {
-                last_event: "TLS/WSS ready · scan QR or wait for paired phone".to_string(),
+                last_event: "TLS/WSS + KDE Connect ready · scan QR or pair mobile app".to_string(),
                 cam: cam.telemetry(),
                 ..ConnectTelemetry::default()
             }),
@@ -330,8 +335,20 @@ impl ConnectServer {
             auto_clip_sync: AtomicBool::new(true),
             media_mirror: AtomicBool::new(true),
             cam,
-            ev_tx,
+            ev_tx: ev_tx.clone(),
         });
+
+        let shared_kde_cb = Arc::clone(&shared);
+        let kde = KdeConnectBridge::start(
+            shared_trust,
+            identity_dir,
+            downloads_dir,
+            ev_tx,
+            Arc::new(move |text, from| {
+                apply_inbound_clipboard(text, from, &shared_kde_cb);
+            }),
+        )
+        .ok();
 
         let runtime_session_file = write_runtime_marker(&ip, port);
 
@@ -401,11 +418,26 @@ impl ConnectServer {
                 spki_fp: identity.spki_fp,
                 stop,
                 shared,
+                kde,
                 alert_watcher,
                 runtime_session_file,
             },
             ev_rx,
         ))
+    }
+
+    pub fn announce_kde(&self) {
+        if let Some(k) = &self.kde {
+            k.announce_now();
+        }
+    }
+
+    pub fn ring_phone(&self) -> usize {
+        self.kde.as_ref().map(|k| k.send_ring()).unwrap_or(0)
+    }
+
+    pub fn kde_port(&self) -> u16 {
+        self.kde.as_ref().map(|k| k.tcp_port).unwrap_or(0)
     }
 
     pub fn set_media_mirror(&self, enabled: bool) {
@@ -457,6 +489,9 @@ impl ConnectServer {
                     media: snap.clone(),
                 },
             );
+            if let Some(k) = &self.kde {
+                k.send_mpris(&snap);
+            }
         }
         snap
     }
@@ -519,6 +554,11 @@ impl ConnectServer {
     }
 
     pub fn respond_auth(&self, req_id: &str, approved: bool) {
+        if let Some(k) = &self.kde
+            && k.respond_auth(req_id, approved)
+        {
+            return;
+        }
         if let Ok(mut pending) = self.shared.pending_auth.lock()
             && let Some(tx) = pending.remove(req_id)
         {
@@ -539,13 +579,19 @@ impl ConnectServer {
             tel.last_event = format!("Pushed clipboard ({})", human_size(text.len() as u64));
             tel.seq += 1;
         }
-        broadcast_ws(
+        let ws_cnt = broadcast_ws(
             &self.shared,
             &OutboundWsMsg::Clipboard {
                 text: text.to_string(),
                 sha256: hash,
             },
-        )
+        );
+        let kde_cnt = self
+            .kde
+            .as_ref()
+            .map(|k| k.send_clipboard(text))
+            .unwrap_or(0);
+        ws_cnt + kde_cnt
     }
 
     pub fn broadcast_link(&self, url: &str, title: Option<&str>) -> usize {
@@ -561,13 +607,19 @@ impl ConnectServer {
             tel.last_event = format!("Sent link: {}", preview_one_line(trimmed));
             tel.seq += 1;
         }
-        broadcast_ws(
+        let ws_cnt = broadcast_ws(
             &self.shared,
             &OutboundWsMsg::Link {
                 url: trimmed.to_string(),
                 title: label,
             },
-        )
+        );
+        let kde_cnt = self
+            .kde
+            .as_ref()
+            .map(|k| k.send_share_url(trimmed))
+            .unwrap_or(0);
+        ws_cnt + kde_cnt
     }
 
     pub fn offer_payload(&self, payload: &SharePayload) -> Result<OfferedItem, String> {
@@ -596,13 +648,18 @@ impl ConnectServer {
         };
         let item = OfferedItem {
             id: id.clone(),
-            kind,
+            kind: kind.clone(),
             title: title.clone(),
             size,
             ephemeral_path,
         };
         if let Ok(mut offers) = self.shared.offers.lock() {
             offers.insert(id.clone(), item.clone());
+        }
+        if let ServeKind::File { path, .. } = &kind
+            && let Some(k) = &self.kde
+        {
+            let _ = k.send_share_file(path);
         }
         broadcast_ws(
             &self.shared,
@@ -623,11 +680,16 @@ impl ConnectServer {
     }
 
     pub fn snapshot(&self) -> ConnectTelemetry {
-        self.shared
+        let mut snap = self
+            .shared
             .telemetry
             .lock()
             .map(|t| t.clone())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if let Some(k) = &self.kde {
+            snap.kde_peers = k.live_peers();
+        }
+        snap
     }
 
     pub fn trust_devices(&self) -> Vec<super::trust::TrustedDevice> {
@@ -639,6 +701,12 @@ impl ConnectServer {
     }
 
     pub fn unpair_device(&self, id: &str) -> Result<bool, String> {
+        if let Some(k) = &self.kde
+            && k.unpair_device(id)?
+        {
+            refresh_peers_telemetry(&self.shared);
+            return Ok(true);
+        }
         let ok = self
             .shared
             .trust
@@ -1923,87 +1991,146 @@ fn preview_one_line(raw: &str) -> String {
 fn render_connect_web_app(css: &ThemeCss, spki_fp: &str, pair_token: &str) -> String {
     let safe_fp = html_escape(spki_fp);
     let safe_pair = html_escape(pair_token);
+    let safe_slug = html_escape(&css.slug);
     format!(
-        "<!doctype html><html><head><meta charset='utf-8'>\
+        "<!doctype html><html lang='en' data-theme='active'><head><meta charset='utf-8'>\
          <meta name='viewport' content='width=device-width,initial-scale=1'>\
-         <title>Hayato Connect</title><style>\
-         :root{{--bg:{bg};--surface:{surface};--border:{border};--text:{text};--muted:{muted};--accent:{accent};--ok:{ok}}}\
-         *{{box-sizing:border-box}}body{{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);\
-         margin:0;padding:1rem;min-height:100vh;display:flex;justify-content:center}}\
-         .wrap{{width:100%;max-width:480px;display:flex;flex-direction:column;gap:.85rem}}\
-         .card{{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--accent);\
-         border-radius:14px;padding:1.1rem;box-shadow:0 8px 24px rgba(0,0,0,.3)}}\
-         .row{{display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap}}\
-         .badge{{font:700 .75rem monospace;padding:.2rem .55rem;border-radius:6px;background:var(--accent);color:var(--bg)}}\
-         .sas{{font:700 1.4rem monospace;letter-spacing:.12em;color:var(--ok);margin:.4rem 0}}\
-         textarea,input[type=text]{{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);\
-         border-radius:8px;padding:.65rem;font-family:monospace;font-size:.85rem}}\
-         .btn{{display:inline-block;padding:.65rem 1rem;border-radius:10px;font-weight:700;border:1px solid var(--border);\
-         background:var(--bg);color:var(--text);cursor:pointer;text-decoration:none}}\
-         .btn.primary{{background:var(--accent);color:var(--bg);border-color:transparent}}\
-         .hint{{color:var(--muted);font-size:.82rem;margin:.35rem 0 0}}\
-         progress{{width:100%;height:8px;accent-color:var(--ok)}}\
-         .feed{{display:flex;flex-direction:column;gap:.5rem;margin-top:.5rem}}\
-         .item{{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.6rem;font-size:.85rem;word-break:break-word}}\
-         </style></head><body><div class='wrap'>\
-         <div class='card'>\
-           <div class='row'><span class='badge'>HAYATO CONNECT · TLS</span><span id='st' class='hint'>Connecting\u{2026}</span></div>\
-           <div id='sasbox' style='display:none'><p class='hint'>Verify code on desktop:</p><div id='sas' class='sas'></div></div>\
-           <input id='name' type='text' placeholder='Device label (optional)' style='margin-top:.6rem'>\
-         </div>\
-         <div class='card'>\
-           <strong>Files \u{2192} ~/Downloads</strong>\
-           <input id='uf' type='file' multiple style='margin:.5rem 0;width:100%'>\
-           <button class='btn primary' onclick='uploadFiles()'>Send Selected Files</button>\
-           <progress id='up' value='0' max='100' style='display:none;margin-top:.5rem'></progress>\
-           <p id='ust' class='hint'></p>\
-         </div>\
-         <div class='card'>\
-           <div class='row'><strong>Folder Sync (1-Shot)</strong><span id='sst' class='hint'>Idle</span></div>\
-           <input id='sf' type='file' webkitdirectory multiple style='margin:.5rem 0;width:100%'>\
-           <button class='btn' onclick='runFolderSync()'>Diff & Sync Selected Folder</button>\
-         </div>\
-         <div class='card'>\
-           <div class='row'><strong>Remote Media</strong><span id='mst' class='hint'>No player</span></div>\
-           <p id='mtrack' class='hint' style='margin:.35rem 0 .6rem'>\u{2014}</p>\
-           <div class='row'>\
-             <button class='btn' onclick='mCmd(\"prev\")'>\u{23ee}</button>\
-             <button class='btn' onclick='mCmd(\"seek_back\")'>-10s</button>\
-             <button class='btn primary' onclick='mCmd(\"play_pause\")'>\u{23ef}</button>\
-             <button class='btn' onclick='mCmd(\"seek_fwd\")'>+10s</button>\
-             <button class='btn' onclick='mCmd(\"next\")'>\u{23ed}</button>\
-             <button class='btn' onclick='mCmd(\"vol_down\")'>Vol-</button>\
-             <button class='btn' onclick='mCmd(\"mute\")'>Mute</button>\
-             <button class='btn' onclick='mCmd(\"vol_up\")'>Vol+</button>\
+         <meta name='theme-color' content='{bg_deep}'>\
+         <title>Hayato_ Connect · Encrypted Phone Hub</title><style>\
+         :root,[data-theme='active']{{\
+           --bg:{bg};--bg-deep:{bg_deep};--surface:{surface};--surface-hi:{surface_hi};\
+           --border:{border};--border-dim:{surface_hi};--text:{text};--body:{body};--muted:{muted};\
+           --accent:{accent};--accent-hi:{accent};--cursor:{cursor};--gold:{gold};--ok:{ok};--danger:{danger};\
+           --shadow:rgba(0,0,0,.45);--nav-bg:rgba(22,22,30,.90);\
+           --mono:ui-monospace,'JetBrains Mono',SFMono-Regular,Menlo,Consolas,monospace}}\
+         [data-theme='tokyo-night']{{--bg:#1a1b26;--bg-deep:#16161e;--surface:#24283b;--surface-hi:#292e42;--border:#3b4261;--text:#c0caf5;--body:#a9b1d6;--muted:#565f89;--accent:#7dcfff;--accent-hi:#a4daff;--cursor:#ff9e64;--gold:#e0af68;--ok:#9ece6a;--danger:#f7768e;--nav-bg:rgba(22,22,30,.90)}}\
+         [data-theme='hackerman']{{--bg:#0b0f10;--bg-deep:#070a0b;--surface:#12191c;--surface-hi:#182328;--border:#22443a;--text:#d4f5e9;--body:#9ad8c1;--muted:#4c7a6b;--accent:#00ff9c;--accent-hi:#66ffc2;--cursor:#00d4ff;--gold:#a6ff00;--ok:#00ff9c;--danger:#ff4d6d;--nav-bg:rgba(7,10,11,.92)}}\
+         [data-theme='solarized']{{--bg:#002b36;--bg-deep:#001f27;--surface:#073642;--surface-hi:#0d4554;--border:#1e4a55;--text:#eee8d5;--body:#93a1a1;--muted:#657b83;--accent:#2aa198;--accent-hi:#48c9bf;--cursor:#e8743b;--gold:#b58900;--ok:#859900;--danger:#dc322f;--nav-bg:rgba(0,31,39,.92)}}\
+         [data-theme='gruvbox']{{--bg:#282828;--bg-deep:#1d2021;--surface:#32302f;--surface-hi:#3c3836;--border:#504945;--text:#ebdbb2;--body:#d5c4a1;--muted:#928374;--accent:#83a598;--accent-hi:#a3c4b7;--cursor:#fe8019;--gold:#fabd2f;--ok:#b8bb26;--danger:#fb4934;--nav-bg:rgba(29,32,33,.92)}}\
+         [data-theme='nord']{{--bg:#2e3440;--bg-deep:#242933;--surface:#3b4252;--surface-hi:#434c5e;--border:#4c566a;--text:#eceff4;--body:#d8dee9;--muted:#7b88a1;--accent:#88c0d0;--accent-hi:#8fbcbb;--cursor:#d08770;--gold:#ebcb8b;--ok:#a3be8c;--danger:#bf616a;--nav-bg:rgba(36,41,51,.92)}}\
+         [data-theme='catppuccin-latte']{{--bg:#eff1f5;--bg-deep:#e6e9ef;--surface:#ffffff;--surface-hi:#dce0e8;--border:#bcc0cc;--text:#4c4f69;--body:#5c5f77;--muted:#7c7f93;--accent:#1e66f5;--accent-hi:#04a5e5;--cursor:#fe640b;--gold:#df8e1d;--ok:#40a02b;--danger:#d20f39;--shadow:rgba(76,79,105,.14);--nav-bg:rgba(230,233,239,.92)}}\
+         *{{box-sizing:border-box}}\
+         body{{margin:0;background:var(--bg);color:var(--body);font-family:var(--mono);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;padding-bottom:2rem}}\
+         .bar-nav{{position:sticky;top:0;z-index:20;background:var(--nav-bg);backdrop-filter:blur(10px);border-bottom:1px solid var(--surface-hi)}}\
+         .bar-in{{max-width:560px;margin:0 auto;padding:8px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}}\
+         .brand{{display:inline-flex;align-items:center;gap:8px;color:var(--text);font-weight:800;font-size:15px;letter-spacing:-.03em}}\
+         .mark{{padding:2px 7px;border:1px solid var(--border);background:var(--surface);border-radius:4px;font-size:13px}}\
+         .cur{{color:var(--cursor)}}.gold{{color:var(--gold)}}.ok{{color:var(--ok)}}\
+         .blink{{animation:blink 1.05s steps(1) infinite}}@keyframes blink{{50%{{opacity:0}}}}\
+         .bar-right{{margin-left:auto;display:flex;align-items:center;gap:8px}}\
+         .theme-btn{{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;font-family:var(--mono);font-size:11.5px;cursor:pointer}}\
+         .theme-btn:hover{{border-color:var(--accent)}}\
+         .sw{{width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,var(--gold),var(--accent))}}\
+         .ver-pill{{font-size:11.5px;color:var(--ok);padding:3px 8px;border:1px solid var(--surface-hi);background:var(--bg-deep);border-radius:4px}}\
+         .wrap{{max-width:560px;margin:0 auto;padding:14px;display:flex;flex-direction:column;gap:14px}}\
+         .hero-strip{{display:flex;flex-direction:column;gap:8px}}\
+         .status-line{{display:inline-flex;align-items:center;gap:8px;width:fit-content;font-size:12px;color:var(--accent);background:var(--surface);border:1px solid var(--surface-hi);padding:4px 10px;border-radius:4px}}\
+         .pulse{{width:7px;height:7px;border-radius:50%;background:var(--ok)}}\
+         .chips{{display:flex;flex-wrap:wrap;gap:6px}}\
+         .t-chip{{padding:2px 7px;background:var(--bg-deep);border:1px solid var(--surface-hi);border-radius:4px;font-size:11.5px;color:var(--muted)}}\
+         .t-chip b{{color:var(--text)}}\
+         .term{{background:var(--bg-deep);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 12px 32px var(--shadow)}}\
+         .term-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 13px;background:var(--surface);border-bottom:1px solid var(--surface-hi);font-size:12.5px}}\
+         .term-title{{display:inline-flex;align-items:center;gap:8px;color:var(--text);font-weight:700}}\
+         .dot{{width:8px;height:8px;border-radius:50%;background:var(--cursor);display:inline-block}}\
+         .term-meta{{font-size:11.5px;color:var(--muted)}}\
+         .term-body{{padding:13px}}\
+         .row{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}\
+         .sas{{font:800 1.45rem var(--mono);letter-spacing:.14em;color:var(--gold);margin:6px 0;padding:8px 10px;background:var(--surface);border:1px dashed var(--border);border-radius:6px;text-align:center}}\
+         textarea,input[type=text],input[type=file]{{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:8px 10px;font-family:var(--mono);font-size:12.5px}}\
+         .btn{{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:5px;font-family:var(--mono);font-size:12.5px;font-weight:700;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;text-decoration:none;transition:transform .1s ease,border-color .15s ease}}\
+         .btn:hover{{transform:translateY(-1px);border-color:var(--accent)}}\
+         .btn-primary{{background:var(--accent);border-color:var(--accent);color:var(--bg-deep)}}\
+         .hint{{color:var(--muted);font-size:12px;margin:6px 0 0}}\
+         progress{{width:100%;height:7px;accent-color:var(--ok)}}\
+         .feed{{display:flex;flex-direction:column;gap:8px}}\
+         .item{{background:var(--surface);border:1px solid var(--surface-hi);border-left:3px solid var(--accent);border-radius:6px;padding:8px 10px;font-size:12.5px;color:var(--text);word-break:break-word}}\
+         </style></head><body>\
+         <header class='bar-nav'><div class='bar-in'>\
+           <span class='brand'><span class='mark'>H<span class='cur'>_</span></span>Hayato<span class='cur blink'>_</span></span>\
+           <span class='ver-pill' id='st'>Connecting\u{2026}</span>\
+           <div class='bar-right'>\
+             <button class='theme-btn' onclick='cycleTheme()' type='button'><span class='sw'></span><span class='cur'>^T</span> <span id='tname'>{safe_slug}</span></button>\
            </div>\
-         </div>\
-         <div class='card'>\
-           <div class='row'><strong>Phone Camera</strong><span id='camst' class='hint'>Off</span></div>\
-           <div class='row' style='margin-top:.5rem'>\
-             <button class='btn primary' id='cambtn' onclick='toggleCam()'>Start Webcam Stream</button>\
-             <button class='btn' onclick='flipCam()'>Flip Lens</button>\
-           </div>\
-           <video id='cvid' autoplay playsinline muted style='display:none;width:100%;border-radius:8px;margin-top:.5rem'></video>\
-         </div>\
-         <div class='card'>\
-           <strong>Clipboard, Links, Notes & Alerts</strong>\
-           <textarea id='txt' rows='3' placeholder='Paste text, URL, note, or desktop alert\u{2026}' style='margin:.5rem 0'></textarea>\
-           <div class='row'>\
-             <button class='btn primary' onclick='sendClip()'>Sync Clipboard</button>\
-             <button class='btn' onclick='sendLink()'>Open Link</button>\
-             <button class='btn' onclick='sendNote()'>Save Note</button>\
-             <button class='btn' onclick='sendAlert()'>Send Alert</button>\
-             <button class='btn' onclick='enableWebNotif()'>Browser Alerts</button>\
-           </div>\
-           <p id='cst' class='hint'></p>\
-         </div>\
-         <div class='card'>\
-           <strong>From Desktop</strong>\
-           <div id='feed' class='feed'><p class='hint'>Waiting for desktop shares\u{2026}</p></div>\
-         </div>\
-         </div>\
+         </div></header>\
+         <main class='wrap'>\
+           <section class='hero-strip'>\
+             <div class='status-line'><span class='pulse'></span><span>HAYATO CONNECT · zero daemon · TLS 1.3</span></div>\
+             <div class='chips'>\
+               <span class='t-chip'><b>Web App</b> zero-install</span>\
+               <span class='t-chip'><b>KDE Connect</b> app optional</span>\
+               <span class='t-chip'><b>E2EE</b> #fp pinned</span>\
+             </div>\
+             <div id='sasbox' style='display:none'><p class='hint'>Verify 6-digit SAS on Hayato desktop:</p><div id='sas' class='sas'></div></div>\
+             <input id='name' type='text' placeholder='Optional device label (e.g. Pixel 8)' />\
+           </section>\
+           <section class='term'>\
+             <div class='term-head'><span class='term-title'><span class='dot'></span>files \u{2192} ~/Downloads</span><span class='term-meta' id='ust'>ready</span></div>\
+             <div class='term-body'>\
+               <input id='uf' type='file' multiple style='margin-bottom:9px'>\
+               <button class='btn btn-primary' onclick='uploadFiles()'>Send Selected Files</button>\
+               <progress id='up' value='0' max='100' style='display:none;margin-top:9px'></progress>\
+             </div>\
+           </section>\
+           <section class='term'>\
+             <div class='term-head'><span class='term-title'><span class='dot'></span>mpris · remote media</span><span class='term-meta' id='mst'>idle</span></div>\
+             <div class='term-body'>\
+               <p id='mtrack' style='margin:0 0 10px;color:var(--text);font-weight:700'>\u{2014}</p>\
+               <div class='row'>\
+                 <button class='btn' onclick='mCmd(\"prev\")'>\u{23ee}</button>\
+                 <button class='btn' onclick='mCmd(\"seek_back\")'>-10s</button>\
+                 <button class='btn btn-primary' onclick='mCmd(\"play_pause\")'>\u{23ef}</button>\
+                 <button class='btn' onclick='mCmd(\"seek_fwd\")'>+10s</button>\
+                 <button class='btn' onclick='mCmd(\"next\")'>\u{23ed}</button>\
+                 <button class='btn' onclick='mCmd(\"vol_down\")'>Vol-</button>\
+                 <button class='btn' onclick='mCmd(\"mute\")'>Mute</button>\
+                 <button class='btn' onclick='mCmd(\"vol_up\")'>Vol+</button>\
+               </div>\
+             </div>\
+           </section>\
+           <section class='term'>\
+             <div class='term-head'><span class='term-title'><span class='dot'></span>phone camera \u{2192} webcam</span><span class='term-meta' id='camst'>off</span></div>\
+             <div class='term-body'>\
+               <div class='row'>\
+                 <button class='btn btn-primary' id='cambtn' onclick='toggleCam()'>Start Webcam Stream</button>\
+                 <button class='btn' onclick='flipCam()'>Flip Lens</button>\
+               </div>\
+               <video id='cvid' autoplay playsinline muted style='display:none;width:100%;border-radius:6px;margin-top:10px;border:1px solid var(--border)'></video>\
+             </div>\
+           </section>\
+           <section class='term'>\
+             <div class='term-head'><span class='term-title'><span class='dot'></span>clipboard · links · notes · alerts</span><span class='term-meta' id='cst'>ready</span></div>\
+             <div class='term-body'>\
+               <textarea id='txt' rows='3' placeholder='Paste text, URL, markdown note, or alert\u{2026}' style='margin-bottom:9px'></textarea>\
+               <div class='row'>\
+                 <button class='btn btn-primary' onclick='sendClip()'>Sync Clipboard</button>\
+                 <button class='btn' onclick='sendLink()'>Open Link</button>\
+                 <button class='btn' onclick='sendNote()'>Save Note</button>\
+                 <button class='btn' onclick='sendAlert()'>Send Alert</button>\
+                 <button class='btn' onclick='enableWebNotif()'>Browser Alerts</button>\
+               </div>\
+             </div>\
+           </section>\
+           <section class='term'>\
+             <div class='term-head'><span class='term-title'><span class='dot'></span>folder diff sync (1-shot)</span><span class='term-meta' id='sst'>idle</span></div>\
+             <div class='term-body'>\
+               <input id='sf' type='file' webkitdirectory multiple style='margin-bottom:9px'>\
+               <button class='btn' onclick='runFolderSync()'>Diff &amp; Sync Folder</button>\
+             </div>\
+           </section>\
+           <section class='term'>\
+             <div class='term-head'><span class='term-title'><span class='dot'></span>inbox from hayato</span><span class='term-meta'>live feed</span></div>\
+             <div class='term-body'>\
+               <div id='feed' class='feed'><p class='hint'>Waiting for desktop shares\u{2026}</p></div>\
+             </div>\
+           </section>\
+         </main>\
          <script>\
          const FP='{safe_fp}';const PAIR='{safe_pair}';const STORE='hayato_connect_device';\
+         const THEMES=['active','tokyo-night','hackerman','solarized','gruvbox','nord','catppuccin-latte'];\
+         let tIdx=Math.max(0,THEMES.indexOf(localStorage.getItem('hayato_theme')||'active'));\
+         function applyTheme(){{const n=THEMES[tIdx];document.documentElement.setAttribute('data-theme',n);document.getElementById('tname').textContent=(n==='active'?'{safe_slug}':n);localStorage.setItem('hayato_theme',n);}}\
+         function cycleTheme(){{tIdx=(tIdx+1)%THEMES.length;applyTheme();}}applyTheme();\
          let dev=JSON.parse(localStorage.getItem(STORE)||'null')||{{}};\
          const st=document.getElementById('st');const feed=document.getElementById('feed');\
          const hashFp=(location.hash.match(/fp=([A-Za-z0-9_-]+)/)||[])[1]||'';\
@@ -2013,22 +2140,22 @@ fn render_connect_web_app(css: &ThemeCss, spki_fp: &str, pair_token: &str) -> St
          const peerNonce=randHex(12);\
          let camStream=null,camTimer=null,camFacing='environment',syncFiles={{}};\
          async function localSas(){{if(!crypto.subtle)return '';const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(FP+'\\x00'+PAIR+'\\x00'+peerNonce));const n=new DataView(b).getUint32(0,false)%1000000;const s=String(n).padStart(6,'0');return s.slice(0,3)+'-'+s.slice(3);}}\
-         if(hashFp&&hashFp!==FP){{st.textContent='Certificate fingerprint mismatch — re-scan QR';}}else{{\
+         if(hashFp&&hashFp!==FP){{st.textContent='FP mismatch';}}else{{\
          const wsUrl=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws';\
          const ws=new WebSocket(wsUrl);window._hws=ws;\
          ws.onopen=()=>{{ws.send(JSON.stringify({{type:'hello',pair_token:PAIR,peer_nonce:peerNonce,device_id:dev.id||'',device_secret:dev.secret||'',device_name:document.getElementById('name').value||''}}));}};\
          ws.onmessage=async (ev)=>{{const m=JSON.parse(ev.data);\
-           if(m.type==='awaiting_approval'){{const exp=await localSas();if(exp&&m.sas!==exp){{st.textContent='SAS mismatch — aborting';ws.close();return;}}st.textContent='Approve on desktop';document.getElementById('sasbox').style.display='block';document.getElementById('sas').textContent=exp||m.sas;}}\
-           else if(m.type==='paired'){{document.getElementById('sasbox').style.display='none';if(m.device_secret){{dev={{id:m.device_id,secret:m.device_secret,name:m.name}};localStorage.setItem(STORE,JSON.stringify(dev));}}st.textContent='Paired ('+m.name+')';}}\
+           if(m.type==='awaiting_approval'){{const exp=await localSas();if(exp&&m.sas!==exp){{st.textContent='SAS mismatch';ws.close();return;}}st.textContent='Approve on PC';document.getElementById('sasbox').style.display='block';document.getElementById('sas').textContent=exp||m.sas;}}\
+           else if(m.type==='paired'){{document.getElementById('sasbox').style.display='none';if(m.device_secret){{dev={{id:m.device_id,secret:m.device_secret,name:m.name}};localStorage.setItem(STORE,JSON.stringify(dev));}}st.textContent='\u{25cf} '+m.name;}}\
            else if(m.type==='denied'){{st.textContent=m.reason||'Denied';}}\
-           else if(m.type==='clipboard'){{document.getElementById('txt').value=m.text;if(navigator.clipboard)navigator.clipboard.writeText(m.text).catch(()=>{{}});addTextFeed('Clipboard updated');}}\
-           else if(m.type==='media'){{const md=m.media||{{}};document.getElementById('mst').textContent=(md.status||'Idle')+' · '+(md.volume_pct||0)+'%'+(md.muted?' [MUTE]':'');document.getElementById('mtrack').textContent=md.title?((md.artist?md.artist+' \u{2014} ':'')+md.title):'No active media player';}}\
+           else if(m.type==='clipboard'){{document.getElementById('txt').value=m.text;if(navigator.clipboard)navigator.clipboard.writeText(m.text).catch(()=>{{}});addTextFeed('Clipboard synced from desktop');}}\
+           else if(m.type==='media'){{const md=m.media||{{}};document.getElementById('mst').textContent=(md.status||'idle')+' · '+(md.volume_pct||0)+'%'+(md.muted?' [MUTE]':'');document.getElementById('mtrack').textContent=md.title?((md.artist?md.artist+' \u{2014} ':'')+md.title):'No active media player';}}\
            else if(m.type==='alert'){{addTextFeed('['+m.app+'] '+m.summary+(m.body?': '+m.body:''));if(window.Notification&&Notification.permission==='granted'){{new Notification(m.app+': '+m.summary,{{body:m.body}});}}}}\
            else if(m.type==='cam_control'){{if(m.facing)camFacing=m.facing;if(m.active&&!camStream)startCam();else if(!m.active&&camStream)stopCam();}}\
            else if(m.type==='sync_diff'){{handleSyncDiff(m);}}\
            else if(m.type==='link'){{if(!safeHttp(m.url))return;const a=document.createElement('a');a.href=m.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=m.title||m.url;const d=document.createElement('div');d.className='item';d.appendChild(a);if(feed.querySelector('.hint'))feed.innerHTML='';feed.prepend(d);}}\
            else if(m.type==='offer'){{if(m.kind==='file'){{const u='/api/download/'+encodeURIComponent(m.id)+'?device='+encodeURIComponent(dev.id||'')+'&secret='+encodeURIComponent(dev.secret||'');\
-             const a=document.createElement('a');a.href=u;a.className='btn primary';a.textContent='Download '+m.title+' ('+m.size+')';const d=document.createElement('div');d.className='item';d.appendChild(a);if(feed.querySelector('.hint'))feed.innerHTML='';feed.prepend(d);}}else if(m.url&&safeHttp(m.url)){{const a=document.createElement('a');a.href=m.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=m.title||m.url;const d=document.createElement('div');d.className='item';d.appendChild(a);if(feed.querySelector('.hint'))feed.innerHTML='';feed.prepend(d);}}else if(m.text){{document.getElementById('txt').value=m.text;addTextFeed('Text snippet ready above');}}}}\
+             const a=document.createElement('a');a.href=u;a.className='btn btn-primary';a.textContent='Download '+m.title+' ('+m.size+')';const d=document.createElement('div');d.className='item';d.appendChild(a);if(feed.querySelector('.hint'))feed.innerHTML='';feed.prepend(d);}}else if(m.url&&safeHttp(m.url)){{const a=document.createElement('a');a.href=m.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=m.title||m.url;const d=document.createElement('div');d.className='item';d.appendChild(a);if(feed.querySelector('.hint'))feed.innerHTML='';feed.prepend(d);}}else if(m.text){{document.getElementById('txt').value=m.text;addTextFeed('Text snippet ready above');}}}}\
          }};\
          ws.onclose=()=>{{stopCam();st.textContent='Disconnected';}};}}\
          function uploadFiles(){{const inp=document.getElementById('uf');if(!inp.files.length||!dev.id)return;\
@@ -2039,34 +2166,40 @@ fn render_connect_web_app(css: &ThemeCss, spki_fp: &str, pair_token: &str) -> St
            x.upload.onprogress=e=>{{if(e.lengthComputable)bar.value=Math.round(e.loaded/e.total*100);}};x.onload=()=>next();x.send(f);}}next();}}\
          function runFolderSync(){{const inp=document.getElementById('sf');if(!inp.files.length||!window._hws)return;\
            syncFiles={{}};const manifest=[];for(const f of inp.files){{const rel=f.webkitRelativePath||f.name;const clean=rel.indexOf('/')>0?rel.slice(rel.indexOf('/')+1):rel;syncFiles[clean]=f;manifest.push({{rel_path:clean,size:f.size,mtime_s:Math.floor(f.lastModified/1000)}});}}\
-           document.getElementById('sst').textContent='Computing diff ('+manifest.length+' files)\u{2026}';\
+           document.getElementById('sst').textContent='diff ('+manifest.length+')\u{2026}';\
            window._hws.send(JSON.stringify({{type:'sync_manifest',files:manifest}}));}}\
          async function handleSyncDiff(d){{const sst=document.getElementById('sst');let pushed=0;\
            for(const rel of (d.pull||[])){{const f=syncFiles[rel];if(!f)continue;await fetch('/api/sync/upload',{{method:'POST',headers:{{'X-Rel-Path':rel,'X-Device-Id':dev.id,'X-Device-Secret':dev.secret}},body:f}});pushed++;}}\
-           for(const entry of (d.push||[])){{const u='/api/sync/download?rel='+encodeURIComponent(entry.rel_path)+'&device='+encodeURIComponent(dev.id||'')+'&secret='+encodeURIComponent(dev.secret||'');const a=document.createElement('a');a.href=u;a.className='btn';a.textContent='Pull updated: '+entry.rel_path;const item=document.createElement('div');item.className='item';item.appendChild(a);feed.prepend(item);}}\
-           sst.textContent='Uploaded '+pushed+', ready to pull '+((d.push||[]).length)+' ('+(d.up_to_date||0)+' ok)';}}\
+           for(const entry of (d.push||[])){{const u='/api/sync/download?rel='+encodeURIComponent(entry.rel_path)+'&device='+encodeURIComponent(dev.id||'')+'&secret='+encodeURIComponent(dev.secret||'');const a=document.createElement('a');a.href=u;a.className='btn';a.textContent='Pull: '+entry.rel_path;const item=document.createElement('div');item.className='item';item.appendChild(a);feed.prepend(item);}}\
+           sst.textContent='\u{2191}'+pushed+' \u{2193}'+((d.push||[]).length)+' ('+(d.up_to_date||0)+' ok)';}}\
          function mCmd(c){{if(window._hws)window._hws.send(JSON.stringify({{type:'media_cmd',cmd:c}}));}}\
          async function startCam(){{if(!navigator.mediaDevices||!window._hws)return;\
            try{{camStream=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:camFacing,width:{{ideal:960}},height:{{ideal:540}}}},audio:false}});const v=document.getElementById('cvid');v.srcObject=camStream;v.style.display='block';await v.play();\
            const cv=document.createElement('canvas');const ctx=cv.getContext('2d');document.getElementById('camst').textContent='LIVE ('+camFacing+')';document.getElementById('cambtn').textContent='Stop Camera';\
            window._hws.send(JSON.stringify({{type:'cam_meta',active:true,facing:camFacing,width:v.videoWidth||960,height:v.videoHeight||540}}));\
-           camTimer=setInterval(()=>{{if(!camStream||window._hws.readyState!==1||v.videoWidth===0)return;cv.width=v.videoWidth;cv.height=v.videoHeight;ctx.drawImage(v,0,0);cv.toBlob(b=>{{if(b&&window._hws.readyState===1)window._hws.send(b);}},'image/jpeg',0.72);}},66);}}catch(e){{document.getElementById('camst').textContent='Camera denied';}}}}\
-         function stopCam(){{if(camTimer){{clearInterval(camTimer);camTimer=null;}}if(camStream){{camStream.getTracks().forEach(t=>t.stop());camStream=null;}}const v=document.getElementById('cvid');if(v){{v.srcObject=null;v.style.display='none';}}document.getElementById('camst').textContent='Off';document.getElementById('cambtn').textContent='Start Webcam Stream';if(window._hws&&window._hws.readyState===1)window._hws.send(JSON.stringify({{type:'cam_meta',active:false,facing:camFacing,width:0,height:0}}));}}\
+           camTimer=setInterval(()=>{{if(!camStream||window._hws.readyState!==1||v.videoWidth===0)return;cv.width=v.videoWidth;cv.height=v.videoHeight;ctx.drawImage(v,0,0);cv.toBlob(b=>{{if(b&&window._hws.readyState===1)window._hws.send(b);}},'image/jpeg',0.72);}},66);}}catch(e){{document.getElementById('camst').textContent='denied';}}}}\
+         function stopCam(){{if(camTimer){{clearInterval(camTimer);camTimer=null;}}if(camStream){{camStream.getTracks().forEach(t=>t.stop());camStream=null;}}const v=document.getElementById('cvid');if(v){{v.srcObject=null;v.style.display='none';}}document.getElementById('camst').textContent='off';document.getElementById('cambtn').textContent='Start Webcam Stream';if(window._hws&&window._hws.readyState===1)window._hws.send(JSON.stringify({{type:'cam_meta',active:false,facing:camFacing,width:0,height:0}}));}}\
          function toggleCam(){{if(camStream)stopCam();else startCam();}}\
          function flipCam(){{camFacing=camFacing==='environment'?'user':'environment';if(camStream){{stopCam();startCam();}}}}\
-         function sendClip(){{const t=document.getElementById('txt').value;if(!t||!window._hws)return;window._hws.send(JSON.stringify({{type:'clipboard',text:t}}));document.getElementById('cst').textContent='Sent clipboard';}}\
-         function sendLink(){{const t=document.getElementById('txt').value.trim();if(!t||!window._hws)return;window._hws.send(JSON.stringify({{type:'link',url:t}}));document.getElementById('cst').textContent='Sent link to browser';}}\
-         function sendNote(){{const t=document.getElementById('txt').value;if(!t||!window._hws)return;window._hws.send(JSON.stringify({{type:'note',title:'',text:t}}));document.getElementById('cst').textContent='Saved to Notes Inbox';}}\
-         function sendAlert(){{const t=document.getElementById('txt').value.trim();if(!t||!window._hws)return;window._hws.send(JSON.stringify({{type:'alert',title:'Phone Alert',body:t}}));document.getElementById('cst').textContent='Sent alert to desktop';}}\
-         function enableWebNotif(){{if(window.Notification)Notification.requestPermission().then(p=>{{document.getElementById('cst').textContent='Browser alerts: '+p;}});}}\
+         function sendClip(){{const t=document.getElementById('txt').value;if(!t||!window._hws)return;window._hws.send(JSON.stringify({{type:'clipboard',text:t}}));document.getElementById('cst').textContent='clipboard synced';}}\
+         function sendLink(){{const t=document.getElementById('txt').value.trim();if(!t||!window._hws)return;window._hws.send(JSON.stringify({{type:'link',url:t}}));document.getElementById('cst').textContent='opened on desktop';}}\
+         function sendNote(){{const t=document.getElementById('txt').value;if(!t||!window._hws)return;window._hws.send(JSON.stringify({{type:'note',title:'',text:t}}));document.getElementById('cst').textContent='saved to Inbox.md';}}\
+         function sendAlert(){{const t=document.getElementById('txt').value.trim();if(!t||!window._hws)return;window._hws.send(JSON.stringify({{type:'alert',title:'Phone Alert',body:t}}));document.getElementById('cst').textContent='alert sent';}}\
+         function enableWebNotif(){{if(window.Notification)Notification.requestPermission().then(p=>{{document.getElementById('cst').textContent='alerts: '+p;}});}}\
          </script></body></html>",
         bg = css.bg,
+        bg_deep = css.bg_deep,
         surface = css.surface,
+        surface_hi = css.surface_hi,
         border = css.border,
         text = css.text,
+        body = css.body,
         muted = css.muted,
         accent = css.accent,
-        ok = css.ok
+        cursor = css.cursor,
+        gold = css.gold,
+        ok = css.ok,
+        danger = css.danger
     )
 }
 
