@@ -497,6 +497,10 @@ fn query(resolved: &Resolved) -> Option<i32> {
         ("menu lens", ["--after-menu"]) => Some(system::lens::capture_and_launch(true)),
         ("share", _) => system::share::try_capture_stdin(&resolved.args),
         ("connect", _) => system::connect::try_query(&resolved.args),
+        ("sysmon", ["--bar"] | ["bar"]) => {
+            println!("{}", system::sysmon::bar_json());
+            Some(EXIT_OK)
+        }
         ("menu studio", _) => system::studio::try_query(&resolved.args),
         ("menu notes", ["--rows"] | ["rows"]) => {
             let mut out = io::stdout();
@@ -603,6 +607,7 @@ fn run_direct(resolved: &Resolved) -> i32 {
         "task stop" => task_cmd::stop(resolved),
         "open" => open_path(resolved),
         "menu dictate" => system::dictate::run(&resolved.args),
+        "sysmon" => system::sysmon::run(&resolved.args),
         other => {
             eprintln!("hayato {other}: this command has no direct handler");
             EXIT_USAGE

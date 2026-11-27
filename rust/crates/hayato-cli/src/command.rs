@@ -707,6 +707,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         symlinks: &[],
         installed: &[],
     },
+    CommandSpec {
+        // `hayato sysmon --bar`: one-shot Waybar JSON telemetry for custom/sysmon.
+        path: "sysmon",
+        summary: "system telemetry JSON for Waybar custom/sysmon",
+        shape: Shape::Direct,
+        symlinks: &[],
+        installed: &[],
+    },
 ];
 
 /// A command the table resolved, with the arguments that belong to it.

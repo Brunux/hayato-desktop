@@ -48,16 +48,39 @@ window#waybar {
     margin-right: 4px;
 }
 
-tooltip {
-    background: #1f2335;
+/* Terminal micro-HUD tooltips matching hayato-notify's 3px left accent rail,
+   3px corners, and monospace telemetry grammar across all 16 themes. */
+tooltip,
+tooltip.background {
+    background: rgba(31, 35, 53, 0.97);
     color: #c0caf5;
-    border: 1px solid rgba(122, 162, 247, 0.55);
-    border-radius: 0;
-    padding: 6px 9px;
+    border: 1px solid rgba(122, 162, 247, 0.92);
+    border-left: 3px solid #7aa2f7;
+    border-radius: 3px;
+    padding: 9px 13px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+}
+
+tooltip decoration {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+tooltip > box {
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
 }
 
 tooltip label {
     color: #c0caf5;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 0;
+    margin: 0;
 }
 
 /* A segment: no card, no outline, the same padding for a built-in module and
@@ -67,13 +90,17 @@ tooltip label {
    theme (Catppuccin Latte) is the colour of the background. Emphasis is
    weight. */
 #custom-busy,
+#custom-rec,
+#custom-cassette,
+#custom-sysmon,
+#privacy,
 #custom-updates,
 #tray,
 #custom-keyboard-layout,
 #custom-bluetooth,
 #custom-vnc,
 #custom-vpn,
-#custom-connect,
+#custom-drives,
 #network,
 #pulseaudio,
 #backlight,
@@ -127,6 +154,16 @@ tooltip label {
     color: #7aa2f7;
 }
 
+/* System monitor icon beside the clock: muted `dim` at rest (matching the
+   coffee cup when auto-sleep is enabled) and `accent` on pointer hover. */
+#custom-sysmon {
+    color: #7a819e;
+}
+
+#custom-sysmon:hover {
+    color: #7aa2f7;
+}
+
 /* The battery icon stays in the reading colour above 5% and switches to the
    readable warning colour when discharging at <= 5%. */
 #battery.critical:not(.charging) {
@@ -167,16 +204,68 @@ tooltip label {
 /* A module whose script reports nothing (no upgrades, a single keyboard
    layout) collapses to zero width instead of leaving an empty segment on the
    bar.  The class comes from the JSON the script prints. */
+#privacy-item.screenshare {
+    color: #f7768e;
+}
+
+#privacy-item.audio-in {
+    color: #e0af68;
+}
+
 #custom-updates.empty,
 #custom-busy.empty,
+#custom-rec.empty,
+#custom-cassette.empty,
 #custom-keyboard-layout.empty,
 #custom-vnc.empty,
 #custom-vpn.empty,
-#custom-connect.empty {
+#custom-drives.empty,
+#custom-sysmon.empty {
     padding: 0;
     margin: 0;
     border: none;
     background: transparent;
+}
+
+#custom-cassette.playing {
+    color: #7aa2f7;
+    font-weight: 600;
+}
+
+#custom-cassette.paused {
+    color: #7a819e;
+}
+
+/* Studio recording icon: 0px when idle (.empty), pulsing danger glyph when live. */
+@keyframes hayato-rec-pulse {
+    0% { color: #f7768e; }
+    50% { color: rgba(247, 118, 142, 0.35); }
+    100% { color: #f7768e; }
+}
+
+#custom-rec.recording {
+    padding: 0 7px;
+    color: #f7768e;
+    font-weight: 700;
+    animation: hayato-rec-pulse 1.6s ease-in-out infinite;
+}
+
+#custom-rec.recording-static {
+    padding: 0 7px;
+    color: #f7768e;
+    font-weight: 700;
+}
+
+/* System monitor attention states (>= 90% CPU/RAM/disk): 2px indicator bar
+   matching #custom-vnc.control, paired with an explicit status word in the tooltip. */
+#custom-sysmon.warn {
+    color: #e0af68;
+    box-shadow: inset 0 -2px 0 #e0af68;
+}
+
+#custom-sysmon.critical {
+    color: #f7768e;
+    box-shadow: inset 0 -2px 0 #f7768e;
 }
 
 /* Remote control is the explicit second start (`--disable-input` absent), and

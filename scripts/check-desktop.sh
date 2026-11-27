@@ -2196,6 +2196,25 @@ if [ -r "$HOME/.config/waybar/style.css" ]; then
 		ok "the bar distinguishes remote control from read-only sharing" ||
 		warn "style.css has no #custom-vnc.control: remote control looks like a read-only view"
 fi
+if [ -r "$HOME/.config/waybar/config.jsonc" ]; then
+	grep -qs '"custom/sysmon"' "$HOME/.config/waybar/config.jsonc" &&
+		ok "the bar carries the system monitor indicator (custom/sysmon)" ||
+		warn "waybar config.jsonc has no custom/sysmon indicator beside the clock"
+fi
+if [ -r "$HOME/.config/waybar/style.css" ]; then
+	grep -qs '#custom-sysmon.warn' "$HOME/.config/waybar/style.css" &&
+		grep -qs '#custom-sysmon.critical' "$HOME/.config/waybar/style.css" &&
+		ok "style.css styles custom/sysmon warning and critical pressure states" ||
+		warn "style.css lacks #custom-sysmon.warn/.critical (run \`hayato theme set\`)"
+fi
+if command -v hayato >/dev/null 2>&1; then
+	_sysmon_json=$(hayato sysmon --bar 2>/dev/null || true)
+	if python3 -c 'import json, sys; d = json.loads(sys.argv[1]); assert "text" in d and "tooltip" in d' "$_sysmon_json" 2>/dev/null; then
+		ok "hayato sysmon --bar emits valid JSON telemetry for waybar"
+	else
+		fail "hayato sysmon --bar did not return valid Waybar JSON"
+	fi
+fi
 # Nothing starts it by itself.  A wayvnc in the session's startup - or one left
 # behind by a script - is a screen served to whoever asks, and the menu would
 # then offer to start a second one on a port already taken.  `status` is the

@@ -509,4 +509,5 @@ Every user-facing change ships with:
 - The procedural wallpaper scripts are imported by `scripts/tests/test_*.py`; keep generation behind
   `main()` so importing them does not write files or run `ffmpeg`. Run them with
   `python3 -m unittest discover -s scripts/tests -p 'test_*.py'`.
-- `.github/workflows/rust.yml` runs both `cargo test --workspace --all-targets` and the Python suite.
+- **`custom/sysmon` (`hayato sysmon --bar`)**: Stateless one-shot telemetry next to `clock` (no daemon), caching only `/proc/stat` delta jiffies + high-CPU streak in `$XDG_RUNTIME_DIR/hayato/sysmon.stat`, gated to `BarModules::Full` in `appearance.rs`.
+- **`.github/workflows/rust.yml`** runs both `cargo test --workspace --all-targets` and the Python suite.

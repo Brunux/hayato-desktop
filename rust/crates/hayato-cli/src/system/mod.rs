@@ -146,6 +146,7 @@ pub mod ssh;
 pub mod step;
 pub mod studio;
 pub mod swap;
+pub mod sysmon;
 pub mod theme_picker;
 pub mod touchpad;
 pub mod translate;
