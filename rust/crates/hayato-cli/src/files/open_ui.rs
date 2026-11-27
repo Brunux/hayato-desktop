@@ -1621,7 +1621,7 @@ mod tests {
         let deb = DebMeta {
             package: "hayato-notes".into(),
             version: "0.4.2".into(),
-            arch: "arm64".into(),
+            arch: host_dpkg_arch().to_string(),
             installed_size_kb: Some(14_200),
             summary: "Fast offline markdown notebook".into(),
         };

@@ -1815,6 +1815,10 @@ impl SoftwareScreen {
 }
 
 impl Screen for SoftwareScreen {
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        Some((940, 620))
+    }
+
     fn header(&self) -> Option<&Header> {
         if let Phase::Running { task, .. } = &self.phase {
             return task.header();

@@ -264,7 +264,7 @@ impl ConnectScreen {
             capabilities: Default::default(),
         }];
         let pair_url = "https://192.168.1.42:51420/?pair=demo123#fp=demo_fp".to_string();
-        let qr = QrCode::encode(&pair_url);
+        let qr = QrCode::encode(&pair_url).or_else(|| Some(crate::system::fallback_qr()));
         let telemetry = ConnectTelemetry {
             last_clip_preview: "cargo test -p hayato-cli".to_string(),
             ..ConnectTelemetry::default()
@@ -1353,13 +1353,28 @@ impl ConnectScreen {
                 inner.width,
                 design.style(TextStyle::Code),
             );
-            y += 2;
+            y += 1;
         }
 
         let footer_y = inner.bottom().saturating_sub(1);
         let btns_y = footer_y.saturating_sub(1);
         let progress_reserve = if self.telemetry.bytes_total > 0 { 4 } else { 0 };
-        let qr_bottom = btns_y.saturating_sub(1 + progress_reserve);
+        let padded_top = (y + 1).min(btns_y);
+        let padded_bottom = btns_y.saturating_sub(1 + progress_reserve);
+        let (qr_top, qr_bottom) = match &self.qr {
+            Some(qr) => {
+                let (_, need_h) = qr.cell_size();
+                if padded_bottom.saturating_sub(padded_top) >= need_h {
+                    (padded_top, padded_bottom)
+                } else if btns_y.saturating_sub(progress_reserve + y) >= need_h {
+                    (y, btns_y.saturating_sub(progress_reserve))
+                } else {
+                    (padded_top, padded_bottom)
+                }
+            }
+            None => (padded_top, padded_bottom),
+        };
+        y = qr_top;
         if let Some(qr) = &self.qr
             && qr_bottom > y + 2
         {
@@ -1431,6 +1446,10 @@ impl ConnectScreen {
 }
 
 impl Screen for ConnectScreen {
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        Some((1220, 800))
+    }
+
     fn draw(&mut self, ctx: &mut BodyCtx) {
         self.confirm_area.set(Rect::default());
         self.strip_area.set(Rect::default());
@@ -2140,5 +2159,27 @@ mod tests {
         let auth_view = render(&mut screen, 94, 30);
         assert!(auth_view.contains("482-910"));
         assert!(auth_view.contains("Trust & Pair"));
+    }
+
+    #[test]
+    fn wide_window_renders_qr_deck_on_start() {
+        let mut screen = ConnectScreen::for_test();
+        assert_eq!(screen.desired_size(), Some((1220, 800)));
+        // Representative 41x41 QR matrix (v5 + 2-module quiet zone): needs 41x21 cells.
+        screen.qr = Some(QrCode {
+            width: 41,
+            height: 41,
+            modules: (0..41 * 41).map(|i| i % 2 == 0).collect(),
+        });
+        // Body size inside a 1220x800 (`hayato-wide`) foot window (~134x39 minus 4 chrome rows).
+        let view = render(&mut screen, 134, 35);
+        assert!(
+            !view.contains("Press Ctrl+Q for full pairing QR"),
+            "QR should render inline on opening at Shape::Wide size:\n{view}"
+        );
+        assert!(
+            view.contains('\u{2580}') || view.contains('\u{2588}'),
+            "Expected QR half/full blocks in right deck:\n{view}"
+        );
     }
 }

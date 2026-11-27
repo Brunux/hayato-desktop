@@ -61,7 +61,7 @@ impl Shape {
         match self {
             Shape::Pick => Some((900, 600)),
             Shape::Task => Some((940, 620)),
-            Shape::Wide => Some((1120, 780)),
+            Shape::Wide => Some((1220, 800)),
             Shape::Full | Shape::Direct => None,
         }
     }
@@ -423,7 +423,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         // Drop: ephemeral LAN nearby share via in-TUI QR code.
         path: "menu drop",
         summary: "share or receive files over Wi-Fi via a scannable QR code",
-        shape: Shape::Pick,
+        shape: Shape::Wide,
         symlinks: &["hayato-drop"],
         installed: &["hayato-drop"],
     },
@@ -431,7 +431,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         // Share: OS-wide Share Sheet (Phone QR, LocalSend v2, offline QR, clipboard, notes).
         path: "share",
         summary: "system share sheet: Phone QR, LocalSend, offline QR, clipboard, notes",
-        shape: Shape::Pick,
+        shape: Shape::Wide,
         symlinks: &["hayato-share"],
         installed: &["hayato-share"],
     },
@@ -903,7 +903,7 @@ mod tests {
         assert_eq!(Shape::Task.app_id(), "hayato-task");
         assert_eq!(Shape::Wide.app_id(), "hayato-wide");
         assert_eq!(Shape::Full.app_id(), "hayato-full");
-        assert_eq!(Shape::Wide.size(), Some((1120, 780)));
+        assert_eq!(Shape::Wide.size(), Some((1220, 800)));
         // The size is what the sway drop-in repeats for the same app-id; a
         // shape without one owns the whole screen.
         assert_eq!(Shape::Task.size(), Some((940, 620)));

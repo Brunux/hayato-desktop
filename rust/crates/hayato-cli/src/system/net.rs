@@ -18,7 +18,7 @@ use hayato_ui::{
     ActionItem, ActionRunner, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Confirm,
     ConfirmAction, Design, Glyph, Header, Input, InputAction, KeyHint, ListAction, ListState,
     Outcome, QrCode, Row, Screen, TextStyle, draw_badge, draw_card, draw_empty, draw_filter_bar,
-    draw_qr, draw_signal_bars, signal_bars,
+    draw_signal_bars, signal_bars,
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -979,7 +979,13 @@ impl Screen for NetScreen {
                     width: ctx.area.width.saturating_sub(4),
                     height: ctx.area.height.saturating_sub(3),
                 };
-                draw_qr(ctx.buf, inner, ctx.design, qr);
+                super::draw_qr_fit(
+                    ctx.buf,
+                    inner,
+                    ctx.design,
+                    qr,
+                    "Window too small for Wi-Fi QR · Esc back",
+                );
             }
             NetMode::ConfirmForget { confirm, .. } => {
                 confirm.render(ctx.area, ctx.buf, ctx.design);

@@ -379,6 +379,15 @@ pub fn split_panes(
     )
 }
 
+/// Deterministic 11×11 placeholder QR pattern for headless/CI tests when `qrencode` is absent.
+pub(crate) fn fallback_qr() -> hayato_ui::QrCode {
+    hayato_ui::QrCode {
+        width: 11,
+        height: 11,
+        modules: (0..121).map(|i| i % 2 == 0).collect(),
+    }
+}
+
 /// Draw `qr` into `area` when the terminal cells fit cleanly, or show `fallback`.
 pub fn draw_qr_fit(
     buf: &mut ratatui::buffer::Buffer,

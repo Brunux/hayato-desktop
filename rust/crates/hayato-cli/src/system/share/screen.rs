@@ -150,7 +150,8 @@ impl ShareScreen {
             payload,
             phase: SharePhase::Sheet,
             server: None,
-            qr: QrCode::encode("http://192.168.1.42:49152/test/"),
+            qr: QrCode::encode("http://192.168.1.42:49152/test/")
+                .or_else(|| Some(crate::system::fallback_qr())),
             scanner: None,
             peers: Vec::new(),
             list: ListState::new(),
@@ -656,7 +657,13 @@ impl ShareScreen {
 
 impl Screen for ShareScreen {
     fn desired_size(&self) -> Option<(u16, u16)> {
-        Some((1060, 620))
+        match &self.phase {
+            SharePhase::DirectQr { qr, .. } => {
+                let (w, h) = qr.recommended_window_size();
+                Some((w.max(760), h.max(720)))
+            }
+            _ => Some((1160, 740)),
+        }
     }
 
     fn phase(&self) -> Option<&'static str> {
@@ -1094,6 +1101,12 @@ mod tests {
             let rendered = hayato_ui::screen(term.backend().buffer());
             assert!(rendered.contains("Share Targets"), "{w}x{h}");
             assert!(rendered.contains("Hayato Docs"), "{w}x{h}");
+            if w >= 120 {
+                assert!(
+                    rendered.contains('\u{2580}') || rendered.contains('\u{2588}'),
+                    "Phone QR should render on wide grid:\n{rendered}"
+                );
+            }
         }
     }
 }

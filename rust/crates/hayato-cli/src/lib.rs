@@ -791,18 +791,7 @@ fn session_menu(
             Some(menu::screen::Picked::Run { key, argv }) => {
                 if !argv.is_empty()
                     && let Ok(sub_resolved) = command::resolve(&argv[0], &argv[1..])
-                    && sub_resolved.spec.shape != command::Shape::Direct
-                    && !matches!(
-                        sub_resolved.spec.path,
-                        "menu"
-                            | "menu palette"
-                            | "ask"
-                            | "menu capture"
-                            | "menu studio"
-                            | "menu lens"
-                            | "menu translate"
-                            | "menu dictate"
-                    )
+                    && should_run_inline_from_menu(&sub_resolved)
                 {
                     menu::remember(&state, &key);
                     match execute(&sub_resolved, terminal, design) {
@@ -819,6 +808,25 @@ fn session_menu(
             Some(picked) => return act(picked, &state, &home),
         }
     }
+}
+
+/// Only `Pick` and `Task` surfaces match the `900×600` menu host cleanly;
+/// `Wide` (`connect`) and `Full` surfaces must spawn their own sized window.
+fn should_run_inline_from_menu(resolved: &Resolved) -> bool {
+    matches!(
+        resolved.spec.shape,
+        command::Shape::Pick | command::Shape::Task
+    ) && !matches!(
+        resolved.spec.path,
+        "menu"
+            | "menu palette"
+            | "ask"
+            | "menu capture"
+            | "menu studio"
+            | "menu lens"
+            | "menu translate"
+            | "menu dictate"
+    )
 }
 
 type PowerOpen = Option<Option<menu::SessionAction>>;
@@ -1141,4 +1149,23 @@ fn show_failure(
         .keybar(vec![KeyHint::new("any key", "close")])
         .screen(&mut screen);
     let _ = app.run_until(terminal, Some(Duration::from_secs(30)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn menu_spawns_wide_commands_in_their_own_window() {
+        let s = |words: &[&str]| words.iter().map(|w| (*w).to_string()).collect::<Vec<_>>();
+        let connect = command::resolve("hayato", &s(&["connect"])).unwrap();
+        assert!(
+            !should_run_inline_from_menu(&connect),
+            "connect (Shape::Wide) must exit bar-menu so host::plan opens hayato-wide"
+        );
+        let installer = command::resolve("hayato", &s(&["installer"])).unwrap();
+        assert!(!should_run_inline_from_menu(&installer));
+        let files = command::resolve("hayato", &s(&["menu", "files"])).unwrap();
+        assert!(should_run_inline_from_menu(&files));
+    }
 }
