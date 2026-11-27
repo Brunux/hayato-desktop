@@ -134,29 +134,40 @@ pub fn probe_all(
         .collect()
 }
 
+/// Collect unique APT package names from the selected bundles.
+pub fn apt_packages(selected_ids: &[&str]) -> Vec<&'static str> {
+    let mut apt_pkgs: Vec<&str> = Vec::new();
+    for id in selected_ids {
+        let Some(bundle) = BUNDLES.iter().find(|b| b.id == *id) else {
+            continue;
+        };
+        if let BundleAction::Apt(pkgs) = bundle.action {
+            for p in pkgs {
+                if !apt_pkgs.contains(p) {
+                    apt_pkgs.push(p);
+                }
+            }
+        }
+    }
+    apt_pkgs
+}
+
 /// Build the shell command lines to install a batch of selected bundle IDs.
 pub fn build_install_script(selected_ids: &[&str]) -> Option<String> {
-    let mut apt_pkgs: Vec<&str> = Vec::new();
+    let apt_pkgs = apt_packages(selected_ids);
     let mut fetch_models = false;
     for id in selected_ids {
         let Some(bundle) = BUNDLES.iter().find(|b| b.id == *id) else {
             continue;
         };
-        match bundle.action {
-            BundleAction::Apt(pkgs) => {
-                for p in pkgs {
-                    if !apt_pkgs.contains(p) {
-                        apt_pkgs.push(p);
-                    }
-                }
-            }
-            BundleAction::LocalAiModels => fetch_models = true,
+        if matches!(bundle.action, BundleAction::LocalAiModels) {
+            fetch_models = true;
         }
     }
     let mut parts = Vec::new();
     if !apt_pkgs.is_empty() {
         parts.push(format!(
-            "sudo -n apt-get update && sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y {}",
+            "sudo -n apt-get update && sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends {}",
             apt_pkgs.join(" ")
         ));
     }
@@ -194,7 +205,7 @@ mod tests {
     #[test]
     fn builds_batched_install_script() {
         let script = build_install_script(&["games", "local-ai"]).unwrap();
-        assert!(script.contains("apt-get install -y retroarch"));
+        assert!(script.contains("apt-get install -y --no-install-recommends retroarch"));
         assert!(script.contains("hayato-model"));
     }
 }

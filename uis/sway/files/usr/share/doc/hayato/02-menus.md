@@ -508,10 +508,13 @@ Five more lists in the root menu, each one screen of answers about the machine:
   up again, which is why it shows a busy card and then reads back the servers in
   use instead of repeating what was asked for. It does not touch IPv6 DNS.
 * **Packages** (`hayato-pkg`) searches the archive with `apt-cache search` and
-  installs what is chosen with `apt-get -y` (noninteractive, keeping existing
-  configuration files), reporting through the busy card; installed packages are
-  marked before they are picked. The last row updates the package lists, which is
-  what to run when a search finds nothing.
+  simulates every install, removal, or `full-upgrade` with `apt-get -s` before
+  running `sudo`. Installs always pass `--no-install-recommends` (preventing
+  unrelated kernel or bootloader packages from entering via *Recommends*);
+  transactions affecting `linux-image-*`, `linux-modules-*`, bootloaders, or
+  `hayato*`/`sway*` removals are blocked in the UI, and broad removals ask for a
+  Cancel-first confirmation. Installed packages are marked before they are
+  picked; the quick rows update the package lists or upgrade installed packages.
 * **Reminders** (`hayato-remind`) writes nothing to disk: it starts a transient
   `systemd-run --user --collect` timer that fires a `notify-send` and is
   collected, and the list is read back from systemd, so choosing a reminder
