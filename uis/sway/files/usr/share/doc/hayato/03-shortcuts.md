@@ -1,9 +1,10 @@
 # Shortcuts
 
-`$mod` is **Alt** on Hayato. System panels use **Alt+Ctrl+<letter>**, while
-window and launcher actions use **Alt+<key>**.
+`$mod` is **Alt** on Hayato. Window and launcher actions use **Alt+<key>** (or **Alt+Shift+<key>**),
+system panels and capture tools use **Alt+Ctrl+<letter>**, and zero `Alt` shortcuts are bound
+inside applications (`Tab`, `Ctrl+<key>`, and gamepad `F21`–`F23` stay completely collision-free).
 
-The live list is **Alt+Ctrl+K** (`hayato menu keys`, also linked as `hayato-keys`): it is parsed from the
+The live list is **Alt+/** (`hayato menu keys`, also linked as `hayato-keys`): it is parsed from the
 configuration files, so it is never stale, it can be searched, and Enter copies
 the command. Every row carries a glyph as well, so the list is scanned by shape before it is
 read. This page is the tour.
@@ -26,11 +27,11 @@ replacement for the keyboard.
 `hayato gamepad` starts at login and reads the pad from `/dev/input`; it types
 the arrows, Enter and Escape into the focused `hayato-*` window with `wtype`.
 The game library is one of those windows, so its tabs are **← / →**, its list
-is **↑ / ↓**, and the manual it opens with **m** (or **Y**) scrolls with the
-same arrows. X, Y and L1 are sent as Alt+O, Alt+M and Alt+R: a bare letter would
-type into another screen's filter, and those three combinations are unbound
-everywhere else.
-Every button can be reassigned in **Settings → Input → Controller** (or **`o` →
+is **↑ / ↓**, and the manual it opens with **Ctrl+M** (or **Y**) scrolls with the
+same arrows. X, Y and L1 are sent as **F21**, **F22** and **F23** (matching **Ctrl+O**,
+**Ctrl+M** and **Ctrl+R** inside Games): bare letters type into filters, and `Alt` belongs
+to Sway.
+Every button can be reassigned in **Settings → Input → Controller** (or **`Ctrl+O` →
 Controller** in the game library). The screen shows the pad it found, or
 **No controller connected** — the table is still editable with ←/→, so a pad can
 be configured before it is paired. Changes are written to
@@ -53,32 +54,35 @@ mapped.
 |---|---|
 | Search key | launcher: every application, narrowed by typing (the same menu as Alt+D) |
 | Alt+Search | file search: every file under your home, narrowed by typing (Enter opens it, Enter on a folder browses there) |
-| Alt+Ctrl+Shift+F | the file manager in a window (Hayato Files): drag and drop, several files at once, rename, the trash |
+| Alt+Shift+F | the file manager in a window (Hayato Files): drag and drop, several files at once, rename, the trash |
 | Alt+D | launcher: applications (the Search key opens the same menu) |
 | Alt+Space | the root menu (the bar's menu button, on the keyboard) |
 | Alt+Tab | window switcher |
 | Alt+Shift+D | command palette (`$PATH`; Shift+Enter runs it in foot) |
-| Alt+Ctrl+K | every key binding, searchable, Enter copies the command |
+| Alt+/ | every key binding, searchable, Enter copies the command |
+| Alt+Shift+/ | Learn: interactive OS manual rendered with glow (`01`–`10`) |
 | Alt+Ctrl+F | files: browse a directory with a preview, Enter opens the file, Tab acts on the row |
 | Search+Shift | every file under your home (`hayato-find`): filtered while it is found, a preview on the right, Enter opens the file |
 | Alt+Ctrl+G | search inside the files: ripgrep over your home, Enter shows the file at the matching line |
 | Alt+Ctrl+D | developer: export your profile (keys, configs, packages) encrypted to a disk, restore one, or save a diagnostics bundle |
 | Alt+Ctrl+T | translate the selected text (or the clipboard): the answer is copied, and the card names the direction |
-| Alt+Ctrl+O | settings: the radio switches, night light, touchpad, rotation, display arrangement |
+| Alt+O | settings: the radio switches, night light, touchpad, rotation, display arrangement |
 | Alt+Ctrl+Shift+D | bring the internal panel back when the screen is black (no menu needed: it works with nothing on screen) |
 | Alt+Ctrl+N | notifications: the history, do-not-disturb, copy one |
-| Alt+C (or Alt+Ctrl+Q) | calculator: type it, Enter copies the result |
-| Alt+Ctrl+V | clipboard history: Enter puts an entry back, Alt+1 deletes it, Alt+S shares it via Hayato Share |
+| Alt+Shift+N | notes: quick Markdown (`editxr`), `xournalpp` ink notes, PDF signing |
+| Alt+Shift+P | software catalog (`hayato menu software`) |
+| Alt+Shift+V | VPN status & profiles (`hayato menu vpn`) |
+| Alt+C | calculator: type it, Enter copies the result (`Ctrl+Y` copies directly too) |
+| Alt+Ctrl+V | clipboard history: Enter puts an entry back, `Del` deletes it, `Ctrl+S` shares it via Hayato Share, `Ctrl+W` saves images |
 | Alt+Ctrl+R | **Hayato Studio**: screen recording, webcam video, photo snap, and Live Recording HUD (also reachable by clicking the pulsing REC icon on Waybar) |
 | Alt+M | **Hayato Cassette**: toggle the floating scratchpad music player (local library & Spotify; `09-music.md`) |
-| Alt+Ctrl+E | emoji: type a name, Enter inserts the glyph at the cursor |
+| Alt+Ctrl+E | emoji: type a name, Enter inserts the glyph at the cursor, `Ctrl+Y` copies it |
 | Alt+Return | terminal (foot) |
-| Alt+Shift+Return | the browser (firefox-esr) |
-| Alt+Q (or Alt+Shift+Q) | close the focused window |
-| Alt+Shift+C | reload the configuration |
+| Alt+Shift+Return | the browser (default via `hayato-browser`, `firefox-esr` fallback) |
+| Alt+Q | close the focused window |
+| Alt+Shift+C | reload the Sway configuration |
 | Alt+Shift+E | exit the session (asks first) |
 | Alt+grave | agent console: the default coding agent in a drop-down terminal (the same key hides it) |
-| Alt+Ctrl+grave / Alt+Shift+grave | scratchpad: show the hidden window / send the focused one there |
 | Alt+R | resize mode (arrows, Return or Escape to leave) |
 
 The **Search key** and **Alt+D** open the same launcher: every application, one
@@ -115,7 +119,7 @@ Search+Shift *filters everything*, uncapped, while the walk is still running.
 Both show the file beside the list before you open it.
 Neither stays resident: one process while its window is open.
 
-**Alt+Ctrl+Shift+F opens the file manager in a window** (**Hayato Files**), the Shift
+**Alt+Shift+F opens the file manager in a window** (**Hayato Files**), the Shift
 variant of the Files key (`Alt+Ctrl+F` above) and the same window the root menu
 (**Alt+Space**) and the launcher call **Files (window)**. It is what a list
 cannot do - drag a file onto a folder, select several, rename in place, send to
@@ -166,22 +170,24 @@ These are the bar's panels and session controls on the keyboard:
 | Alt+Ctrl+A | audio output (sinks, volume per application, and the two mutes) |
 | Alt+Ctrl+B | Bluetooth (scan, connect, disconnect) |
 | Alt+Ctrl+W | network (Wi-Fi list, strongest first) |
-| Alt+Ctrl+P | power menu: lock, suspend, hibernate, log out, reboot, shut down |
-| Alt+Escape | the same power menu |
+| Alt+Escape | power menu: lock, suspend, hibernate, log out, reboot, shut down |
 | Alt+Ctrl+L | lock the screen (the Lock key does the same and then suspends) |
 | Alt+Ctrl+X | dictation on/off (the notification stays while it records; press again to stop) |
 | Alt+Ctrl+M | the local model: Qwen3.5-0.8B on this machine, offline (see `04-software.md` § A local model) |
-| Alt+Ctrl+Shift+A | agents (launch, accounts, install) |
+| Alt+Shift+A | agents (launch, accounts, install) |
 | Alt+grave | the agent console: the default agent in a drop-down terminal, hidden again by the same key |
-| Alt+Ctrl+O | settings: Wi-Fi and Bluetooth radios, night light, do-not-disturb, touchpad, tablet mode, rotation, display arrangement |
+| Alt+O | settings: Wi-Fi and Bluetooth radios, night light, do-not-disturb, touchpad, tablet mode, rotation, display arrangement |
 | Alt+Ctrl+Shift+D | the internal panel back on, with nothing on screen: the way out of a black screen (it runs a sway command, not a menu) |
 | Alt+Ctrl+N | notifications: history, do-not-disturb, copy |
+| Alt+Shift+N | notes: quick Markdown, ink notes, and PDF signing |
+| Alt+Shift+P | software catalog |
+| Alt+Shift+V | VPN status and profiles |
 | Alt+Comma | act on the newest notification: its default action, its file's folder, or dismiss |
 | Alt+Shift+Comma | dismiss the newest notification |
 | Alt+Ctrl+Comma | clear the visible notification stack |
-| Alt+C / Alt+Ctrl+Q | calculator |
-| Alt+Ctrl+V | clipboard history (Enter copies back, Alt+1 deletes the entry) |
-| Alt+Ctrl+E | emoji picker (Enter inserts, Alt+1 copies only) |
+| Alt+C | calculator |
+| Alt+Ctrl+V | clipboard history (`Enter` copies back, `Del` deletes, `Ctrl+S` shares, `Ctrl+W` saves images) |
+| Alt+Ctrl+E | emoji picker (`Enter` inserts, `Ctrl+Y` copies only) |
 | Alt+Shift+Escape / Alt+Ctrl+Escape | lock then suspend / suspend |
 
 **An idle screen is three steps, not one.** After 2½ minutes the Hayato wordmark
@@ -213,8 +219,7 @@ nothing.
 | Alt+B / Alt+V | split horizontally / vertically |
 | Alt+S / Alt+W / Alt+E | stacking / tabbed / toggle split |
 | Alt+F | fullscreen |
-| Alt+T | float the window |
-| Alt+Shift+Space | toggle floating (the sway default) |
+| Alt+Shift+Space | toggle floating |
 | Alt+A | focus the parent container |
 | three-finger swipe left/right | previous / next workspace (touchpad) |
 | three-finger swipe up/down | next / previous tab in Firefox: Ctrl+Tab and Ctrl+Shift+Tab |
@@ -249,7 +254,7 @@ swipes work.
 | the volume keys (or F1/F2 with the Search key) | volume -5% / +5% |
 | Mute | mute · **Shift+Mute**: switch the audio output |
 | the brightness keys (or F3/F4 with Search) | brightness -5% / +5% |
-| Alt+Shift+S / Alt+Shift+F / Alt+Ctrl+S | screenshot area / full screen / copy area (each one says so in a notification: the file, or the clipboard) |
+| Alt+Shift+S / Alt+Ctrl+Shift+S / Alt+Ctrl+S | screenshot area / full screen / copy area (each one says so in a notification: the file, or the clipboard) |
 | Alt+Ctrl+C | capture menu: screenshot, annotate, OCR, QR code, record the screen |
 
 **The volume and brightness keys draw an overlay** - a notification card with the
@@ -260,10 +265,9 @@ where the bar's own number is covered. The card is the session's own notificatio
 system - no extra program runs - and pressing a key while an overlay is up only
 updates it.
 
-**Volume per application** is the audio panel's third row (`Alt+Ctrl+A`): it opens
-`pavucontrol`, one slider per application and per input, for the case the sink
-list cannot answer ("which window is that sound coming from"). It is a window,
-not a mixer in the bar, and nothing starts it until the row is picked.
+**Volume per application** lives inside the audio panel itself (`Alt+Ctrl+A`), with
+native sliders per playback stream and recording input alongside the output sinks
+and mute toggles, so switching where an app plays stays in one window.
 
 A saved screenshot goes to **`~/Pictures/Screenshots/<today>/`**, under the name
 grimshot generates (`2026-10-21T18-04-11.png`), which is the name the
@@ -355,26 +359,28 @@ not by reading the mode's state directory, which such a session takes with it.
 | apps | **Alt+D** or the **Search key** |
 | root menu | **Alt+Space** |
 | window switcher | **Alt+Tab** |
-| keybindings | **Alt+Ctrl+K** (Alt+K is vim focus up, Alt+Shift+K moves the window) |
-| settings / control centre | **Alt+Ctrl+O** |
-| calculator | **Alt+C** or **Alt+Ctrl+Q** |
+| keybindings | **Alt+/** (`Alt+K` is vim focus up, `Alt+Shift+K` moves the window) |
+| learn / manual | **Alt+Shift+/** |
+| settings / control centre | **Alt+O** |
+| software / VPN / notes | **Alt+Shift+P** / **Alt+Shift+V** / **Alt+Shift+N** |
+| calculator | **Alt+C** |
 | notifications | **Alt+Ctrl+N** |
 | clipboard history | **Alt+Ctrl+V** |
 | emoji picker | **Alt+Ctrl+E** |
 | dictation | **Alt+Ctrl+X** |
-| agents | **Alt+Ctrl+Shift+A** |
+| agents | **Alt+Shift+A** |
 | agent console (drop-down terminal) | **Alt+grave** |
-| theme picker | **Alt+Ctrl+Shift+T** |
-| floating | **Alt+T** |
-| close window | **Alt+Q** (Alt+W is sway's tabbed layout) |
-| scratchpad | **Alt+Ctrl+grave** / **Alt+Shift+grave** |
+| theme picker / next theme / next wallpaper | **Alt+Shift+T** / **Alt+Ctrl+Shift+T** / **Alt+Shift+W** |
+| close window | **Alt+Q** |
+| floating | **Alt+Shift+Space** |
 | lock | **Alt+Ctrl+L** (and the Lock key) |
-| power menu | **Alt+Escape** or **Alt+Ctrl+P** |
+| power menu | **Alt+Escape** |
 | audio / Bluetooth / network panels | **Alt+Ctrl+A** / **Alt+Ctrl+B** / **Alt+Ctrl+W** |
-| browser | **Alt+Shift+Return** (`firefox-esr`) |
-| screenshot | **Alt+Shift+S**, **Alt+Shift+F**, **Alt+Ctrl+S** |
+| browser | **Alt+Shift+Return** (`hayato-browser` / `firefox-esr`) |
+| screenshot | **Alt+Shift+S**, **Alt+Ctrl+Shift+S**, **Alt+Ctrl+S** |
 | capture menu (screenshot, OCR, QR, recording) | **Alt+Ctrl+C** |
-| files | **Alt+Search**: newest 500 files; **Alt+Ctrl+Shift+F**: Hayato Files window; **Search+Shift**: `hayato-find`; **Alt+Ctrl+F**: browse directory |
+| studio / cassette / lens / share | **Alt+Ctrl+R** / **Alt+M** / **Alt+I** / **Alt+Ctrl+U** |
+| files | **Alt+Search**: newest 500 files; **Alt+Shift+F**: Hayato Files window; **Search+Shift**: `hayato-find`; **Alt+Ctrl+F**: browse directory |
 | fullscreen | **Alt+F** |
 | volume, brightness, media keys | **XF86 keys** |
 | workspaces | **Alt+1..0** and three-finger swipe |

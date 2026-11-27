@@ -897,6 +897,13 @@ impl ListState {
         }
     }
 
+    /// Move the cursor to the visible row matching unfiltered `index`, if visible.
+    pub fn select_index(&mut self, index: usize) {
+        if let Some(pos) = self.visible.iter().position(|&i| i == index) {
+            self.set_cursor(pos);
+        }
+    }
+
     pub fn selected(&self) -> Option<&Row> {
         if !self.selectable(self.cursor) {
             return None;
@@ -988,6 +995,7 @@ impl ListState {
         }
         let capacity = self.capacity(height, design).max(1);
         let len = self.visible.len();
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
                 if len == 0 {
@@ -999,7 +1007,27 @@ impl ListState {
                 }
                 ListAction::Moved
             }
+            KeyCode::Char('p') if ctrl => {
+                if len == 0 {
+                    return ListAction::Ignored;
+                }
+                if let Some(position) = self.snap(self.cursor.saturating_sub(1), -1) {
+                    self.cursor = position;
+                    self.scroll_into_view(capacity);
+                }
+                ListAction::Moved
+            }
             KeyCode::Down | KeyCode::Char('j') => {
+                if len == 0 {
+                    return ListAction::Ignored;
+                }
+                if let Some(position) = self.snap((self.cursor + 1).min(len - 1), 1) {
+                    self.cursor = position;
+                    self.scroll_into_view(capacity);
+                }
+                ListAction::Moved
+            }
+            KeyCode::Char('n') if ctrl => {
                 if len == 0 {
                     return ListAction::Ignored;
                 }
@@ -1999,7 +2027,10 @@ impl Confirm {
             // Typing the first letter of an answer is how a person says "no"
             // quickly; it never activates the destructive row by accident,
             // because Cancel starts with C and is the first answer.
-            KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char(ch)
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT) =>
+            {
                 let wanted = ch.to_lowercase().to_string();
                 match self
                     .options

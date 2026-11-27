@@ -21,4 +21,4 @@ Hayato · Notes
 │   An ink note. Enter opens it in xournalpp; export the PDF from the list.    │
 │   16 B · edited 2026-11-18 11:10                                             │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- [Enter]  open   [Ctrl+P]  read   [Del]  trash   [Esc]  close
+ [Enter]  open   [^P]  read   [^S]  share   [Del]  trash   [Esc]  close

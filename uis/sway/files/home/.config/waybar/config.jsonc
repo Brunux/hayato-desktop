@@ -107,8 +107,8 @@
         "tooltip": false
     },
     "clock": {
-        "format": "<span font_desc='JetBrains Mono 13'>\uf073</span>  {:%a, %d %b  %H:%M}",
-        "format-alt": "<span font_desc='JetBrains Mono 13'>\uf073</span>  {:%H:%M:%S}",
+        "format": "{:%a, %d %b  %H:%M}",
+        "format-alt": "{:%H:%M:%S}",
         "tooltip-format": "<span alpha='50%'>╭─</span> <b>CLK // {:%A, %d %B %Y}</b>\n<tt><small>{calendar}</small></tt>\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] sec · [RMB] yr · [SCR] mo</span>",
         "calendar": {
             "mode": "month",

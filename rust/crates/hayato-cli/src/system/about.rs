@@ -90,7 +90,7 @@ impl AboutScreen {
         let mut list = ListState::new().with_empty("no facts available").ranked();
         list.set_rows(facts.iter().map(Self::fact_row).collect());
         let strip = ActionStrip::new(vec![
-            ActionItem::new("copy", "^C", "Copy summary").glyph(Glyph::Clipboard),
+            ActionItem::new("copy", "^Y", "Copy summary").glyph(Glyph::Clipboard),
             ActionItem::new("errors", "^E", "Errors").glyph(Glyph::Bug),
             ActionItem::new("boot", "^B", "Boot time").glyph(Glyph::Clock),
             ActionItem::new("devices", "^D", "Devices").glyph(Glyph::Chip),
@@ -104,7 +104,7 @@ impl AboutScreen {
             header: Header::new("Hayato").subtitle("About"),
             keybar: vec![
                 KeyHint::new("Enter", "inspect / copy"),
-                KeyHint::new("^C", "copy summary"),
+                KeyHint::new("^Y", "copy summary"),
                 KeyHint::new("Tab", "actions"),
                 KeyHint::new("type", "filter"),
                 KeyHint::new("Esc", "close"),
@@ -733,7 +733,7 @@ impl Screen for AboutScreen {
                 }
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     match key.code {
-                        KeyCode::Char('c') | KeyCode::Char('C') => {
+                        KeyCode::Char('y') | KeyCode::Char('Y') => {
                             self.trigger_strip_action("copy");
                             return Outcome::Consumed;
                         }
@@ -793,11 +793,21 @@ impl Screen for AboutScreen {
                 Outcome::Continue
             }
             AboutMode::Detail => match key.code {
-                KeyCode::Esc | KeyCode::Char('q') => {
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') | KeyCode::Left => {
                     self.view_mode = AboutMode::List;
                     Outcome::Consumed
                 }
                 KeyCode::Char('c') => {
+                    let _ = std::process::Command::new("wl-copy")
+                        .arg(&self.content)
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status();
+                    self.status_note = Some(format!("Copied {} to clipboard", self.detail_title));
+                    Outcome::Consumed
+                }
+                KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     let _ = std::process::Command::new("wl-copy")
                         .arg(&self.content)
                         .stdin(std::process::Stdio::null())
@@ -814,33 +824,38 @@ impl Screen for AboutScreen {
                     }
                     Outcome::Consumed
                 }
+                KeyCode::PageDown | KeyCode::Char(' ') => {
+                    let scroll = self.content_scroll.get() as usize;
+                    let max = self.content_lines.len().saturating_sub(1);
+                    let next = (scroll + 15).min(max).min(u16::MAX as usize);
+                    self.content_scroll.set(next as u16);
+                    Outcome::Consumed
+                }
+                KeyCode::PageUp | KeyCode::Char('b') => {
+                    self.content_scroll
+                        .set(self.content_scroll.get().saturating_sub(15));
+                    Outcome::Consumed
+                }
+                KeyCode::Home | KeyCode::Char('g') => {
+                    self.content_scroll.set(0);
+                    Outcome::Consumed
+                }
+                KeyCode::End | KeyCode::Char('G') => {
+                    let max = self
+                        .content_lines
+                        .len()
+                        .saturating_sub(1)
+                        .min(u16::MAX as usize);
+                    self.content_scroll.set(max as u16);
+                    Outcome::Consumed
+                }
                 KeyCode::Down | KeyCode::Char('j') => {
                     let scroll = self.content_scroll.get() as usize;
                     let total = self.content_lines.len();
                     if scroll + 1 < total {
-                        self.content_scroll.set((scroll + 1) as u16);
+                        self.content_scroll
+                            .set((scroll + 1).min(u16::MAX as usize) as u16);
                     }
-                    Outcome::Consumed
-                }
-                KeyCode::PageUp => {
-                    let scroll = self.content_scroll.get();
-                    self.content_scroll.set(scroll.saturating_sub(15));
-                    Outcome::Consumed
-                }
-                KeyCode::PageDown => {
-                    let scroll = self.content_scroll.get() as usize;
-                    let total = self.content_lines.len();
-                    let next = (scroll + 15).min(total.saturating_sub(1));
-                    self.content_scroll.set(next as u16);
-                    Outcome::Consumed
-                }
-                KeyCode::Home => {
-                    self.content_scroll.set(0);
-                    Outcome::Consumed
-                }
-                KeyCode::End => {
-                    let total = self.content_lines.len();
-                    self.content_scroll.set(total.saturating_sub(1) as u16);
                     Outcome::Consumed
                 }
                 _ => Outcome::Continue,

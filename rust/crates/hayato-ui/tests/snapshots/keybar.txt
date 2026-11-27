@@ -22,7 +22,7 @@
 
 
 
- [Enter]  open   [Alt+1]  actions   [type]  filter   [Esc]  close
+ [Enter]  open   [Tab]  actions   [type]  filter   [Esc]  close
 ===== 152x45 =====
 
 
@@ -68,4 +68,4 @@
 
 
 
- [Enter]  open   [Alt+1]  actions   [type]  filter   [Esc]  close
+ [Enter]  open   [Tab]  actions   [type]  filter   [Esc]  close

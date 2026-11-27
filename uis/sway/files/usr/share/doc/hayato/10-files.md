@@ -1,7 +1,7 @@
 # The Files window
 
 **Hayato Files** (`hayato-filer`) is the native GTK4 file browser of the session,
-bound to **`Alt+Ctrl+Shift+F`**. It is the windowed companion of the terminal
+bound to **`Alt+Shift+F`**. It is the windowed companion of the terminal
 list (`hayato menu files`, the old `hayato-files`): the list is one folder with a
 preview beside it, and this is a Finder / elementary OS window with a sidebar,
 tabs, a grid or a list, and drag-and-drop.
@@ -31,7 +31,8 @@ Hayato surface (`hayato theme set` re-themes it in place over SIGUSR1).
 | Key | Action |
 |---|---|
 | `Enter` | open the selection (a folder, or the file's program) |
-| `Alt+Enter` / `Ctrl+I` | Quick Properties (see below) |
+| `Ctrl+Left` / `Ctrl+Right` / `Ctrl+Up` | back / forward / parent folder (`Backspace` also goes up) |
+| `Ctrl+I` | Quick Properties (see below) |
 | `Space` | Quick Look preview |
 | `Ctrl+Z` | undo the last rename, move, trash, copy or folder creation |
 | `F2` | rename |
@@ -39,7 +40,7 @@ Hayato surface (`hayato theme set` re-themes it in place over SIGUSR1).
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | copy / cut / paste files |
 | `Ctrl+H` | show hidden files |
 | `Ctrl+A` | select all |
-| `Ctrl+T` / `Ctrl+W` | new tab / close tab (`Ctrl+Tab` cycles, `Alt+1…9` jumps) |
+| `Ctrl+T` / `Ctrl+W` | new tab / close tab (`Ctrl+Tab` / `Ctrl+PgUp` / `Ctrl+PgDn` cycle) |
 | `Ctrl+F` | filter the folder as you type |
 | `Ctrl+L` | type a path |
 | `Ctrl+B` / `F9` | show or hide the sidebar |
@@ -96,7 +97,7 @@ reversed.
 
 ## Quick Properties
 
-**Alt+Enter** or **Ctrl+I** opens a compact inspector for the selection: its
+**Ctrl+I** opens a compact inspector for the selection: its
 kind, exact size (bytes and a human figure, plus a folder's item count), where
 it lives, when it changed, its permissions in `rwx` and octal, its owner and
 group, its MIME type, a symlink's target, and a **Compute SHA-256** button for a

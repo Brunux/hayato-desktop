@@ -21,4 +21,4 @@ Hayato · Theme & Appearance
 │                          ││  ██ Accent: #7aa2f7  ██ Surface: #1f2335         │
 │                          ││  ██ Border: #7aa2f7  ██ Ok: #9ece6a              │
 ╰──────────────────────────╯╰──────────────────────────────────────────────────╯
- [Enter]  apply   [↑↓]  preview   [w]  wallpaper   …               [Esc]  close 
+ [Enter]  apply   [↑↓]  preview   [^W]  wallpaper   …              [Esc]  close 

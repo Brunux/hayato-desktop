@@ -132,7 +132,7 @@ impl StudioScreen {
                 KeyHint::new("1-3", "mode"),
                 KeyHint::new("Enter", "record"),
                 KeyHint::new("t", "target"),
-                KeyHint::new("q", "quality"),
+                KeyHint::new("r", "quality"),
                 KeyHint::new("a", "audio"),
                 KeyHint::new("w", "cam"),
                 KeyHint::new("c/z", "corner/size"),
@@ -143,7 +143,7 @@ impl StudioScreen {
             StudioMode::Webcam => vec![
                 KeyHint::new("1-3", "mode"),
                 KeyHint::new("Enter", "record"),
-                KeyHint::new("q", "quality"),
+                KeyHint::new("r", "quality"),
                 KeyHint::new("a", "audio"),
                 KeyHint::new("m", "mirror"),
                 KeyHint::new("^S", "share"),
@@ -368,7 +368,7 @@ impl Screen for StudioScreen {
                     ctx.buf,
                     inner.x,
                     y,
-                    &format!("[q] Quality : {}", self.options.quality.label()),
+                    &format!("[r] Quality : {}", self.options.quality.label()),
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
@@ -504,7 +504,7 @@ impl Screen for StudioScreen {
                     ctx.buf,
                     inner.x,
                     y,
-                    &format!("[q] Quality : {}", self.options.quality.label()),
+                    &format!("[r] Quality : {}", self.options.quality.label()),
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
@@ -753,7 +753,7 @@ impl Screen for StudioScreen {
                 self.sync_chrome();
                 return Outcome::Consumed;
             }
-            KeyCode::Char('q') => {
+            KeyCode::Char('r') => {
                 self.options.quality = self.options.quality.cycle();
                 self.save_opts();
                 return Outcome::Consumed;

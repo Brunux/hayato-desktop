@@ -352,18 +352,6 @@ fn a_typed_path_opens_when_no_row_matches_and_tab_asks_for_the_actions() {
         screen.chosen,
         Some(Chosen::Actions(tree.home.join("film.mkv")))
     );
-    // Alt+1, where it reaches the window, is the same key.
-    let mut screen = tree.files();
-    let mut keys = typed("film");
-    keys.push(Event::Key(KeyEvent::new(
-        KeyCode::Char('1'),
-        KeyModifiers::ALT,
-    )));
-    drive(&mut screen, keys);
-    assert_eq!(
-        screen.chosen,
-        Some(Chosen::Actions(tree.home.join("film.mkv")))
-    );
 }
 
 #[test]

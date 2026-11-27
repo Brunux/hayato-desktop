@@ -1096,6 +1096,7 @@ const HIT_SECTION_BASE: usize = 20_000;
 pub struct SettingsScreen {
     active_section: usize,
     focus_rail: bool,
+    global_search: bool,
     dual_pane: Cell<bool>,
     cache: Vec<Option<(Vec<hayato_ui::Row>, Vec<String>)>>,
     keys: Vec<String>,
@@ -1105,8 +1106,16 @@ pub struct SettingsScreen {
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
-    section_hits: RefCell<Vec<Rect>>,
+    section_hits: RefCell<Vec<(usize, Rect)>>,
     static_mode: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+struct SettingsResume {
+    section_idx: usize,
+    selected_key: Option<String>,
+    filter: String,
+    focus_rail: bool,
 }
 
 impl Default for SettingsScreen {
@@ -1123,10 +1132,21 @@ impl SettingsScreen {
 
     /// Open on a specific section with an optional post-action status banner.
     pub fn with_state(section_idx: usize, banner: Option<String>) -> Self {
-        let idx = section_idx.min(Section::ALL.len().saturating_sub(1));
+        Self::with_resume(
+            SettingsResume {
+                section_idx,
+                ..SettingsResume::default()
+            },
+            banner,
+        )
+    }
+
+    fn with_resume(resume: SettingsResume, banner: Option<String>) -> Self {
+        let idx = resume.section_idx.min(Section::ALL.len().saturating_sub(1));
         let mut screen = Self {
             active_section: idx,
-            focus_rail: false,
+            focus_rail: resume.focus_rail,
+            global_search: false,
             dual_pane: Cell::new(true),
             cache: vec![None; Section::ALL.len()],
             keys: Vec::new(),
@@ -1134,17 +1154,20 @@ impl SettingsScreen {
             banner,
             selected_key: None,
             header: Header::new("Hayato").subtitle("Settings"),
-            keybar: vec![
-                KeyHint::new("Tab", "sections"),
-                KeyHint::new("Enter", "open / toggle"),
-                KeyHint::new("type", "filter"),
-                KeyHint::new("Esc", "close"),
-            ],
+            keybar: Vec::new(),
             rows_height: Cell::new(18),
             section_hits: RefCell::new(Vec::new()),
             static_mode: false,
         };
-        screen.load_section(idx);
+        if resume.filter.is_empty() {
+            screen.load_section(idx);
+        } else {
+            screen.enter_global_search(&resume.filter);
+        }
+        if let Some(key) = &resume.selected_key {
+            screen.restore_selection(key);
+        }
+        screen.sync_keybar();
         screen
     }
 
@@ -1174,6 +1197,7 @@ impl SettingsScreen {
         let mut screen = Self {
             active_section: 0,
             focus_rail: false,
+            global_search: false,
             dual_pane: Cell::new(true),
             cache,
             keys: Vec::new(),
@@ -1181,17 +1205,13 @@ impl SettingsScreen {
             banner: None,
             selected_key: None,
             header: Header::new("Hayato").subtitle("Settings"),
-            keybar: vec![
-                KeyHint::new("Tab", "sections"),
-                KeyHint::new("Enter", "open / toggle"),
-                KeyHint::new("type", "filter"),
-                KeyHint::new("Esc", "close"),
-            ],
+            keybar: Vec::new(),
             rows_height: Cell::new(18),
             section_hits: RefCell::new(Vec::new()),
             static_mode: true,
         };
         screen.load_section(0);
+        screen.sync_keybar();
         screen
     }
 
@@ -1199,9 +1219,22 @@ impl SettingsScreen {
         self.active_section
     }
 
-    fn load_section(&mut self, idx: usize) {
+    fn current_selected_key(&self) -> Option<String> {
+        self.list
+            .selected_index()
+            .and_then(|idx| self.keys.get(idx))
+            .filter(|k| !k.is_empty())
+            .cloned()
+    }
+
+    fn restore_selection(&mut self, key: &str) {
+        if let Some(idx) = self.keys.iter().position(|k| k == key) {
+            self.list.select_index(idx);
+        }
+    }
+
+    fn ensure_section_cached(&mut self, idx: usize) {
         let idx = idx.min(Section::ALL.len().saturating_sub(1));
-        self.active_section = idx;
         if self.cache[idx].is_none() {
             let section = Section::ALL[idx];
             if self.static_mode {
@@ -1216,10 +1249,18 @@ impl SettingsScreen {
                 self.cache[idx] = Some(build_rows(section));
             }
         }
+    }
+
+    fn load_section(&mut self, idx: usize) {
+        let idx = idx.min(Section::ALL.len().saturating_sub(1));
+        self.active_section = idx;
+        self.global_search = false;
+        self.ensure_section_cached(idx);
         if let Some((rows, keys)) = self.cache[idx].clone() {
             self.keys = keys;
             self.list.set_filter("");
             self.list.set_rows(rows);
+            self.list.set_cursor(0);
         }
         let sec = Section::ALL[idx];
         self.header = Header::new("Hayato").subtitle("Settings").status(format!(
@@ -1227,6 +1268,57 @@ impl SettingsScreen {
             sec.label(),
             sec.detail()
         ));
+        self.sync_keybar();
+    }
+
+    fn enter_global_search(&mut self, filter: &str) {
+        if !self.global_search {
+            let mut all_rows = Vec::new();
+            let mut all_keys = Vec::new();
+            for idx in 0..Section::ALL.len() {
+                self.ensure_section_cached(idx);
+                if let Some((rows, keys)) = &self.cache[idx] {
+                    all_rows.push(hayato_ui::Row::heading(Section::ALL[idx].label()));
+                    all_keys.push(String::new());
+                    all_rows.extend(rows.iter().cloned());
+                    all_keys.extend(keys.iter().cloned());
+                }
+            }
+            self.keys = all_keys;
+            self.list.set_rows(all_rows);
+            self.global_search = true;
+            self.header = Header::new("Hayato")
+                .subtitle("Settings")
+                .status("All sections");
+        }
+        self.list.set_filter(filter);
+        self.sync_keybar();
+    }
+
+    fn sync_keybar(&mut self) {
+        self.keybar = if !self.dual_pane.get() {
+            vec![
+                KeyHint::new("←→/[]", "sections"),
+                KeyHint::new("Enter", "act"),
+                KeyHint::new("type", "search all"),
+                KeyHint::new("Esc", if self.global_search { "clear" } else { "close" }),
+            ]
+        } else if self.focus_rail {
+            vec![
+                KeyHint::new("↑↓", "section"),
+                KeyHint::new("→/Enter", "items"),
+                KeyHint::new("type", "search all"),
+                KeyHint::new("Esc", "close"),
+            ]
+        } else {
+            vec![
+                KeyHint::new("←/Tab", "rail"),
+                KeyHint::new("[]", "section"),
+                KeyHint::new("Enter/Space", "act"),
+                KeyHint::new("type", "search all"),
+                KeyHint::new("Esc", if self.global_search { "clear" } else { "close" }),
+            ]
+        };
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
@@ -1297,14 +1389,22 @@ impl SettingsScreen {
 }
 
 impl Screen for SettingsScreen {
+    fn desired_size(&self) -> Option<(u16, u16)> {
+        Some((960, 620))
+    }
+
     fn draw(&mut self, ctx: &mut BodyCtx) {
         let (left, right) = Self::split_panes(ctx.area);
-        self.dual_pane.set(right.is_some());
+        let was_dual = self.dual_pane.replace(right.is_some());
         if right.is_none() {
             self.focus_rail = false;
         }
+        if was_dual != right.is_some() {
+            self.sync_keybar();
+        }
         let mut hits = self.section_hits.borrow_mut();
         hits.clear();
+        let total_items = self.keys.iter().filter(|k| !k.is_empty()).count();
 
         if let Some(right_area) = right {
             // Wide Master-Detail: persistent left section rail + right live settings pane.
@@ -1316,12 +1416,13 @@ impl Screen for SettingsScreen {
                 left.height.saturating_sub(2),
             );
             let show_details = inner.height >= (Section::ALL.len() as u16) * 3;
+            let stride = if show_details { 3 } else { 2 };
             let mut y = inner.y;
             for (idx, sec) in Section::ALL.iter().enumerate() {
                 if y >= inner.bottom() {
                     break;
                 }
-                let active = idx == self.active_section;
+                let active = idx == self.active_section && !self.global_search;
                 let marker = if active { "▍" } else { " " };
                 let marker_style = if active {
                     Style::default()
@@ -1347,37 +1448,38 @@ impl Screen for SettingsScreen {
                     inner.width.saturating_sub(2),
                     label_style,
                 );
-                let hit_h = if show_details { 2 } else { 1 }.min(inner.bottom().saturating_sub(y));
-                hits.push(Rect::new(inner.x, y, inner.width, hit_h));
-                y += 1;
-                if y < inner.bottom() && show_details {
+                let hit_h = stride.min(inner.bottom().saturating_sub(y));
+                hits.push((idx, Rect::new(inner.x, y, inner.width, hit_h)));
+                if y + 1 < inner.bottom() && show_details {
                     put_trunc(
                         ctx.buf,
                         inner.x + 5,
-                        y,
+                        y + 1,
                         sec.detail(),
                         inner.width.saturating_sub(5),
                         ctx.design.style(TextStyle::Dim),
                     );
-                    y += 2;
-                } else {
-                    y += 1;
                 }
+                y += stride;
             }
 
-            let sec = Section::ALL[self.active_section];
+            let right_title = if self.global_search {
+                "All Settings"
+            } else {
+                Section::ALL[self.active_section].label()
+            };
             draw_card(
                 ctx.buf,
                 right_area,
                 ctx.design,
-                Some(sec.label()),
+                Some(right_title),
                 !self.focus_rail,
             );
             let (_, filter, rows) = Self::right_layout(right_area, false);
             let msg = self
                 .banner
                 .as_deref()
-                .unwrap_or("Type to filter · Enter opens or toggles · Tab switches pane");
+                .unwrap_or("Type to search all · Enter/Space acts · ← rail · [] section");
             draw_filter_bar(
                 ctx.buf,
                 filter,
@@ -1385,20 +1487,45 @@ impl Screen for SettingsScreen {
                 self.list.filter(),
                 msg,
                 self.list.visible_len(),
-                self.keys.len(),
+                total_items,
             );
             self.rows_height.set(rows.height);
             self.list
                 .render(rows, ctx.buf, ctx.design, !self.focus_rail);
         } else {
-            // Compact (< 100 cols): horizontal section tab bar + live settings list.
-            let sec = Section::ALL[self.active_section];
-            draw_card(ctx.buf, left, ctx.design, Some(sec.label()), true);
+            // Compact (< 84 cols): horizontal scrolling section tab bar + live settings list.
+            let card_title = if self.global_search {
+                "All Settings"
+            } else {
+                Section::ALL[self.active_section].label()
+            };
+            draw_card(ctx.buf, left, ctx.design, Some(card_title), true);
             let (tabs, filter, rows) = Self::right_layout(left, true);
             if let Some(tab_area) = tabs {
+                // Keep active tab in view when horizontal width is very tight.
+                let mut tab_start = 0usize;
+                loop {
+                    let mut x = tab_area.x;
+                    let mut active_fits = false;
+                    for (idx, s) in Section::ALL.iter().enumerate().skip(tab_start) {
+                        let w = s.short_label().chars().count() as u16 + 2;
+                        if x + w > tab_area.right() {
+                            break;
+                        }
+                        if idx == self.active_section {
+                            active_fits = true;
+                        }
+                        x += w + 1;
+                    }
+                    if active_fits || tab_start >= self.active_section {
+                        break;
+                    }
+                    tab_start += 1;
+                }
+
                 let mut x = tab_area.x;
-                for (idx, s) in Section::ALL.iter().enumerate() {
-                    let active = idx == self.active_section;
+                for (idx, s) in Section::ALL.iter().enumerate().skip(tab_start) {
+                    let active = idx == self.active_section && !self.global_search;
                     let text = if active {
                         format!("[{}]", s.short_label())
                     } else {
@@ -1416,14 +1543,14 @@ impl Screen for SettingsScreen {
                         ctx.design.style(TextStyle::Dim)
                     };
                     put_trunc(ctx.buf, x, tab_area.y, &text, w, st);
-                    hits.push(Rect::new(x, tab_area.y, w, 1));
+                    hits.push((idx, Rect::new(x, tab_area.y, w, 1)));
                     x += w + 1;
                 }
             }
             let msg = self
                 .banner
                 .as_deref()
-                .unwrap_or("Tab/←→ switches section · type to filter · Enter acts");
+                .unwrap_or("←→/[] section · type to search all · Enter acts");
             draw_filter_bar(
                 ctx.buf,
                 filter,
@@ -1431,7 +1558,7 @@ impl Screen for SettingsScreen {
                 self.list.filter(),
                 msg,
                 self.list.visible_len(),
-                self.keys.len(),
+                total_items,
             );
             self.rows_height.set(rows.height);
             self.list.render(rows, ctx.buf, ctx.design, true);
@@ -1442,40 +1569,89 @@ impl Screen for SettingsScreen {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
         }
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
+        let dual = self.dual_pane.get();
+        let n = Section::ALL.len();
+
+        // Direct section switching (`Ctrl+1..7`, `Ctrl+Tab`/`Ctrl+BackTab`, `[` / `]` when not filtering)
+        if ctrl
+            && let KeyCode::Char(c) = key.code
+            && let Some(num) = c.to_digit(10)
+            && (1..=n as u32).contains(&num)
+        {
+            self.load_section(num as usize - 1);
+            return Outcome::Consumed;
+        }
+        if ctrl && key.code == KeyCode::Tab {
+            let next = (self.active_section + 1) % n;
+            self.load_section(next);
+            return Outcome::Consumed;
+        }
+        if ctrl && key.code == KeyCode::BackTab {
+            let prev = (self.active_section + n - 1) % n;
+            self.load_section(prev);
+            return Outcome::Consumed;
+        }
+
         match key.code {
             KeyCode::Tab => {
-                if self.dual_pane.get() {
+                if dual {
                     self.focus_rail = !self.focus_rail;
+                    self.sync_keybar();
                 } else {
-                    let next = (self.active_section + 1) % Section::ALL.len();
-                    self.load_section(next);
+                    self.load_section((self.active_section + 1) % n);
                 }
                 return Outcome::Consumed;
             }
             KeyCode::BackTab => {
-                let n = Section::ALL.len();
-                let prev = (self.active_section + n - 1) % n;
-                self.load_section(prev);
+                if dual {
+                    if !self.focus_rail {
+                        self.focus_rail = true;
+                        self.sync_keybar();
+                    } else {
+                        self.load_section((self.active_section + n - 1) % n);
+                    }
+                } else {
+                    self.load_section((self.active_section + n - 1) % n);
+                }
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('[')
+                if !ctrl && !alt && (self.focus_rail || self.list.filter().is_empty()) =>
+            {
+                self.load_section((self.active_section + n - 1) % n);
+                return Outcome::Consumed;
+            }
+            KeyCode::Char(']')
+                if !ctrl && !alt && (self.focus_rail || self.list.filter().is_empty()) =>
+            {
+                self.load_section((self.active_section + 1) % n);
                 return Outcome::Consumed;
             }
             KeyCode::Left if !self.focus_rail && self.list.filter().is_empty() => {
-                let n = Section::ALL.len();
-                let prev = (self.active_section + n - 1) % n;
-                self.load_section(prev);
+                if dual {
+                    self.focus_rail = true;
+                    self.sync_keybar();
+                } else {
+                    self.load_section((self.active_section + n - 1) % n);
+                }
                 return Outcome::Consumed;
             }
             KeyCode::Right if self.focus_rail => {
                 self.focus_rail = false;
+                self.sync_keybar();
                 return Outcome::Consumed;
             }
             KeyCode::Right if !self.focus_rail && self.list.filter().is_empty() => {
-                let next = (self.active_section + 1) % Section::ALL.len();
-                self.load_section(next);
+                if !dual {
+                    self.load_section((self.active_section + 1) % n);
+                }
                 return Outcome::Consumed;
             }
             KeyCode::Esc => {
-                if !self.list.filter().is_empty() {
-                    self.list.set_filter("");
+                if !self.list.filter().is_empty() || self.global_search {
+                    self.load_section(self.active_section);
                     return Outcome::Consumed;
                 }
                 return Outcome::Done(hayato_ui::app::exit::ESCAPE);
@@ -1483,33 +1659,61 @@ impl Screen for SettingsScreen {
             _ => {}
         }
 
+        // Typing any filter character (even from the left rail) enters global search across all 54 settings.
+        if !ctrl && !alt {
+            match key.code {
+                KeyCode::Char(' ') if self.list.filter().is_empty() && !self.focus_rail => {
+                    return self.activate_selected();
+                }
+                KeyCode::Char(c) if !(self.focus_rail && matches!(c, 'j' | 'k')) => {
+                    let mut next = self.list.filter().to_string();
+                    next.push(c);
+                    self.focus_rail = false;
+                    self.banner = None;
+                    self.enter_global_search(&next);
+                    return Outcome::Consumed;
+                }
+                KeyCode::Backspace if !self.list.filter().is_empty() => {
+                    let mut next = self.list.filter().to_string();
+                    next.pop();
+                    self.focus_rail = false;
+                    self.banner = None;
+                    if next.is_empty() {
+                        self.load_section(self.active_section);
+                    } else {
+                        self.enter_global_search(&next);
+                    }
+                    return Outcome::Consumed;
+                }
+                _ => {}
+            }
+        }
+
         if self.focus_rail {
             match key.code {
                 KeyCode::Up | KeyCode::Char('k') => {
-                    let prev = self.active_section.saturating_sub(1);
-                    self.load_section(prev);
+                    self.load_section(self.active_section.saturating_sub(1));
                     return Outcome::Consumed;
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    let next = (self.active_section + 1).min(Section::ALL.len() - 1);
-                    self.load_section(next);
+                    self.load_section((self.active_section + 1).min(n - 1));
+                    return Outcome::Consumed;
+                }
+                KeyCode::Home => {
+                    self.load_section(0);
+                    return Outcome::Consumed;
+                }
+                KeyCode::End => {
+                    self.load_section(n - 1);
                     return Outcome::Consumed;
                 }
                 KeyCode::Enter => {
                     self.focus_rail = false;
+                    self.sync_keybar();
                     return Outcome::Consumed;
                 }
                 _ => return Outcome::Continue,
             }
-        }
-
-        if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-            && !key.modifiers.contains(KeyModifiers::CONTROL)
-            && !key.modifiers.contains(KeyModifiers::ALT)
-            && self.list.type_filter(key)
-        {
-            self.banner = None;
-            return Outcome::Consumed;
         }
 
         if key.code == KeyCode::Enter {
@@ -1525,9 +1729,9 @@ impl Screen for SettingsScreen {
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
         let hits = self.section_hits.borrow();
-        for (idx, r) in hits.iter().enumerate() {
+        for (idx, r) in hits.iter() {
             if x >= r.x && x < r.right() && y >= r.y && y < r.bottom() {
-                return Some(HIT_SECTION_BASE + idx);
+                return Some(HIT_SECTION_BASE + *idx);
             }
         }
         let (left, right) = Self::split_panes(area);
@@ -1547,10 +1751,12 @@ impl Screen for SettingsScreen {
             if idx < Section::ALL.len() {
                 self.load_section(idx);
                 self.focus_rail = false;
+                self.sync_keybar();
             }
             return Outcome::Consumed;
         }
         self.focus_rail = false;
+        self.sync_keybar();
         self.list.set_cursor(r);
         self.activate_selected()
     }
@@ -1564,7 +1770,11 @@ impl Screen for SettingsScreen {
     }
 
     fn phase(&self) -> Option<&'static str> {
-        Some(Section::ALL[self.active_section].key())
+        if self.global_search {
+            Some("search")
+        } else {
+            Some(Section::ALL[self.active_section].key())
+        }
     }
 }
 
@@ -1593,12 +1803,17 @@ pub fn menu_with_args(
     }
 
     let mut banner: Option<String> = None;
-    let mut active_section: usize = 0;
+    let mut resume = SettingsResume::default();
 
     loop {
-        let mut screen = SettingsScreen::with_state(active_section, banner.take());
+        let mut screen = SettingsScreen::with_resume(resume.clone(), banner.take());
         let code = crate::run_screen(terminal, design, "Settings", &mut screen)?;
-        active_section = screen.active_section_index();
+        resume = SettingsResume {
+            section_idx: screen.active_section_index(),
+            selected_key: screen.current_selected_key(),
+            filter: screen.list.filter().to_string(),
+            focus_rail: screen.focus_rail,
+        };
         if code != 0 {
             return Ok(code);
         }
@@ -1606,6 +1821,7 @@ pub fn menu_with_args(
         let Some(key) = screen.selected_key.take() else {
             return Ok(1);
         };
+        resume.selected_key = Some(key.clone());
 
         match dispatch_key(&key, terminal, design)? {
             KeyOutcome::Continue(msg) => banner = msg,
@@ -2791,17 +3007,51 @@ mod tests {
         let mut screen = SettingsScreen::new_for_test();
         assert_eq!(screen.phase(), Some("network"));
         assert_eq!(screen.active_section_index(), 0);
+        assert!(!screen.focus_rail);
 
-        // Right arrow cycles to Display & Sound.
-        let _ = screen.key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE), &design);
+        // `]` cycles to Display & Sound in wide mode; `[` returns to Network.
+        let _ = screen.key(
+            KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE),
+            &design,
+        );
         assert_eq!(screen.active_section_index(), 1);
         assert_eq!(screen.phase(), Some("display-sound"));
 
-        // Left arrow cycles back to Network.
-        let _ = screen.key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE), &design);
+        let _ = screen.key(
+            KeyEvent::new(KeyCode::Char('['), KeyModifiers::NONE),
+            &design,
+        );
         assert_eq!(screen.active_section_index(), 0);
 
-        // Enter activates the first row ("wifi-radio").
+        // Left moves focus spatially to the left section rail; Right moves back to the list.
+        let _ = screen.key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE), &design);
+        assert!(screen.focus_rail);
+        let _ = screen.key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), &design);
+        assert_eq!(screen.active_section_index(), 1);
+        let _ = screen.key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE), &design);
+        assert!(!screen.focus_rail);
+
+        // Global search finds settings across all sections regardless of active section.
+        for ch in "touchpad".chars() {
+            let _ = screen.key(
+                KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE),
+                &design,
+            );
+        }
+        assert_eq!(screen.phase(), Some("search"));
+        assert!(screen.list.visible_len() >= 1);
+
+        // Esc clears filter and restores active section view cleanly.
+        let esc_clear = screen.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), &design);
+        assert!(matches!(esc_clear, Outcome::Consumed));
+        assert_eq!(screen.phase(), Some("display-sound"));
+
+        // Jump back to section 1 (Network) with Ctrl+1 and activate first row.
+        let _ = screen.key(
+            KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL),
+            &design,
+        );
+        assert_eq!(screen.active_section_index(), 0);
         let outcome = screen.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &design);
         assert!(matches!(outcome, Outcome::Done(0)));
         assert_eq!(screen.selected_key.as_deref(), Some("wifi-radio"));

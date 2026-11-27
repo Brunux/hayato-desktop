@@ -1794,6 +1794,25 @@ impl Screen for ConnectScreen {
                 self.set_section(ConnectSection::Alerts);
                 return Outcome::Consumed;
             }
+            KeyCode::Char('[' | ']') => {
+                let all = [
+                    ConnectSection::Overview,
+                    ConnectSection::Transfer,
+                    ConnectSection::Remote,
+                    ConnectSection::Alerts,
+                ];
+                let cur = match &self.phase {
+                    ConnectPhase::Workspace { section, .. } => section.index(),
+                    _ => 0,
+                };
+                let next = if key.code == KeyCode::Char(']') {
+                    (cur + 1) % all.len()
+                } else {
+                    (cur + all.len() - 1) % all.len()
+                };
+                self.set_section(all[next]);
+                return Outcome::Consumed;
+            }
             KeyCode::Char('c') => {
                 self.copy_pair_url();
                 return Outcome::Consumed;

@@ -26,7 +26,7 @@ pub const OMACON: &str = include_str!("omacon.toml");
 pub const CATPPUCCIN_LATTE: &str = include_str!("catppuccin-latte.toml");
 pub const FLEXOKI_LIGHT: &str = include_str!("flexoki-light.toml");
 
-/// Every built-in, in the order `Alt+Shift+T` cycles them: tokyo-night first,
+/// Every built-in, in the order `Alt+Ctrl+Shift+T` cycles them: tokyo-night first,
 /// because that is where a fresh install starts and the cycle should return to
 /// it in one direction.
 pub const ALL: [(&str, &str); 16] = [

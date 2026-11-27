@@ -7,10 +7,9 @@
 //! injects exactly those keys with `wtype` when one of those windows has focus.
 //!
 //! Three buttons carry the Games library's own actions — X opens the options,
-//! Y the manual, L1 the game's folder in Files — as **Alt+letter**. A bare
-//! letter would type into another screen's filter (the root menu types to
-//! filter, the files list too), while Alt+O, Alt+M and Alt+R are unbound in
-//! every other framework window, so a press still cannot move two things.
+//! Y the manual, L1 the game's folder in Files — as unbound **`F21`–`F23`** keysyms.
+//! A bare letter would type into another screen's filter, and `Alt+<letter>`
+//! would collide with Sway's global `$mod` bindings.
 //!
 //! The button table is not in this file: it is [`crate::padmap`], the same one
 //! the Controller screen (`hayato menu controller`) edits and saves to
@@ -201,11 +200,11 @@ pub fn run() -> i32 {
     }
 }
 
-/// What a table action becomes on the keyboard: a key every framework window
-/// reads, or an Alt+letter for the three actions that are the library's own.
+/// What a table action becomes on the keyboard: a standard navigation key or an
+/// unbound `F21`–`F23` keysym for the Games library's extra buttons.
 fn send_action(action: Action) {
-    if let Some(letter) = action.alt() {
-        send_alt(letter);
+    if let Some(keysym) = action.pad_keysym() {
+        send_key(keysym);
         return;
     }
     let key = match action {
@@ -216,7 +215,7 @@ fn send_action(action: Action) {
         Action::Right => "Right",
         Action::Enter => "Return",
         Action::Escape => "Escape",
-        // `alt()` handled these three above.
+        // `pad_keysym()` handled these three above.
         Action::Options | Action::Manual | Action::Folder => return,
     };
     send_key(key);
@@ -228,15 +227,6 @@ fn send_action(action: Action) {
 fn config_stamp() -> Option<SystemTime> {
     let path = Bindings::path()?;
     std::fs::metadata(path).ok()?.modified().ok()
-}
-
-fn send_alt(letter: &str) {
-    let _ = Command::new("wtype")
-        .args(["-M", "alt", "-k", letter, "-m", "alt"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
 }
 
 fn send_key(name: &str) {

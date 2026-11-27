@@ -3,12 +3,12 @@ Hayato · the session menu                                               13 rows
 ────────────────────────────────────────────────────────────────────────────────
 ╭ the session menu ────────────────────────────────────────────────────────────╮
 │ ▍   Files  hayato-files                                        Alt+Ctrl+F   │
-│     Files (window)  pcmanfm                              Alt+Ctrl+Shift+F   │
+│     Files (window)  pcmanfm                                   Alt+Shift+F   │
 │     Capture  screenshot                                        Alt+Ctrl+C   │
 │     Translate  selection                                       Alt+Ctrl+T   │
 │     Search inside files  ripgrep                               Alt+Ctrl+G   │
 │     Download  yt-dlp                                           Alt+Ctrl+U   │
-│     Settings  radios                                           Alt+Ctrl+O   │
+│     Settings  radios                                                Alt+O   │
 │     Notifications  mako history                                Alt+Ctrl+N   │
 │     Clipboard  cliphist                                        Alt+Ctrl+V   │
 │     Emoji  1,296 rows                                          Alt+Ctrl+E   │
@@ -22,18 +22,18 @@ Hayato · the session menu                                               13 rows
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- [Enter]  open   [Alt+1]  actions   [Esc]  close
+ [Enter]  open   [Tab]  actions   [Esc]  close
 ===== 152x45 =====
 Hayato · the session menu                                                                                                                       13 rows
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ the session menu ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ▍   Files  hayato-files                                                                                                                Alt+Ctrl+F   │
-│     Files (window)  pcmanfm                                                                                                      Alt+Ctrl+Shift+F   │
+│     Files (window)  pcmanfm                                                                                                           Alt+Shift+F   │
 │     Capture  screenshot                                                                                                                Alt+Ctrl+C   │
 │     Translate  selection                                                                                                               Alt+Ctrl+T   │
 │     Search inside files  ripgrep                                                                                                       Alt+Ctrl+G   │
 │     Download  yt-dlp                                                                                                                   Alt+Ctrl+U   │
-│     Settings  radios                                                                                                                   Alt+Ctrl+O   │
+│     Settings  radios                                                                                                                        Alt+O   │
 │     Notifications  mako history                                                                                                        Alt+Ctrl+N   │
 │     Clipboard  cliphist                                                                                                                Alt+Ctrl+V   │
 │     Emoji  1,296 rows                                                                                                                  Alt+Ctrl+E   │
@@ -68,4 +68,4 @@ Hayato · the session menu                                                      
 │                                                                                                                                                      │
 │                                                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- [Enter]  open   [Alt+1]  actions   [Esc]  close
+ [Enter]  open   [Tab]  actions   [Esc]  close

@@ -1206,16 +1206,15 @@ done
 [ -z "$_missing_home" ] && ok "the home folders are there (Documents, Downloads, Music, Videos)" ||
 	warn "home folders missing:$_missing_home (rootfs-setup.sh creates them; a download recreates Downloads)"
 
-# The file list's Tab (Alt+1 where it arrives) hands the row to
-# bin/hayato-file-actions, which is still a script: without it the key says the
-# actions menu did not start.
+# The file list's Tab action hands the row to bin/hayato-file-actions, which
+# is still a script: without it the key says the actions menu did not start.
 _missing_actions=""
 for _c in tar unzip ffmpeg udisksctl; do have "$_c" || _missing_actions="$_missing_actions $_c"; done
 [ -x "$HOME/.config/bin/hayato-file-actions" ] || _missing_actions="$_missing_actions bin/hayato-file-actions"
 if [ -z "$_missing_actions" ]; then
 	ok "the file actions have their tools (tar, unzip, ffmpeg, udisksctl)"
 else
-	fail "file actions incomplete:$_missing_actions (Alt+1 offers rows that cannot run)"
+	fail "file actions incomplete:$_missing_actions (Tab offers rows that cannot run)"
 fi
 
 # Notes and documents: quick notes are Markdown in ~/Documents/Notes, ink notes
@@ -1679,7 +1678,7 @@ fi
 	fail "bin/hayato-keys is missing: the key view has no script"
 [ -x "$HOME/.config/bin/hayato-files" ] && ok "file browser (hayato-files) is executable" ||
 	fail "bin/hayato-files is missing: Alt+Ctrl+F and the Files menu entry do nothing"
-# The GTK4 Filer window (Alt+Ctrl+Shift+F) ships beside the TUI list. Its
+# The GTK4 Filer window (Alt+Shift+F) ships beside the TUI list. Its
 # --self-test proves the theme CSS rendered and the pure state / archive logic is
 # intact without needing a display; a stale /usr/local/bin copy shadows it.
 if _filer_bin=$(command -v hayato-filer 2>/dev/null) && [ -x "$_filer_bin" ]; then
@@ -1689,7 +1688,7 @@ if _filer_bin=$(command -v hayato-filer 2>/dev/null) && [ -x "$_filer_bin" ]; th
 		fail "hayato-filer --self-test failed: the Files window would open broken"
 	fi
 else
-	fail "hayato-filer is missing: Alt+Ctrl+Shift+F opens nothing"
+	fail "hayato-filer is missing: Alt+Shift+F opens nothing"
 fi
 # The translate key is taught in one place, the shortcuts page, and the Settings
 # row only says what it does - not that it exists.  A manual that lost the row
@@ -2562,7 +2561,7 @@ if [ -z "$_welcome" ]; then
 	_welcome_text=$("$HOME/.config/bin/hayato-welcome" --print 2>/dev/null || true)
 	_welcome_missing=""
 	for _k in 'Alt+Space' 'Alt+D' 'Search' 'Alt+Ctrl+F' 'Alt+Ctrl+T' 'Alt+Return' \
-		'Alt+Q' 'Alt+Escape' 'Alt+Ctrl+K'; do
+		'Alt+Q' 'Alt+Escape' 'Alt+/'; do
 		grep -qF -- "$_k" <<<"$_welcome_text" || _welcome_missing="$_welcome_missing $_k"
 	done
 	grep -qF -- 'once per install' <<<"$_welcome_text" ||
@@ -2902,15 +2901,15 @@ if have hayato-filer; then
 	# can be asked without starting one; `--self-test` runs headless below.
 	ok "file manager installed (hayato-filer is executable)"
 else
-	fail "hayato-filer is missing: the Files (window) entry and Alt+Ctrl+Shift+F do nothing"
+	fail "hayato-filer is missing: the Files (window) entry and Alt+Shift+F do nothing"
 fi
-# The window has a key of its own (Alt+Ctrl+Shift+F, the Shift variant of the
+# The window has a key of its own (Alt+Shift+F, the Shift variant of the
 # Files menu's Alt+Ctrl+F): without the binding the window is only reachable
 # from the launcher, which reads as "the shortcut stopped working".
-if grep -rqs 'Ctrl+Shift+f exec .*hayato-filer' /etc/sway/config.d/; then
-	ok "Alt+Ctrl+Shift+F opens the file manager (hayato-filer)"
+if grep -rqs 'Shift+f exec .*hayato-filer' /etc/sway/config.d/; then
+	ok "Alt+Shift+F opens the file manager (hayato-filer)"
 else
-	fail "no 'Ctrl+Shift+f exec ...hayato-filer' binding in /etc/sway/config.d/: Alt+Ctrl+Shift+F does nothing"
+	fail "no 'Shift+f exec ...hayato-filer' binding in /etc/sway/config.d/: Alt+Shift+F does nothing"
 fi
 # Mounting removable media uses udisks2; both the file manager (favnyr) and hayato-places
 # through /usr/bin/udisksctl to udisksd on the system bus. The check is the client
@@ -3332,7 +3331,7 @@ fi
 # Agents: the menu is a script; whether a CLI is installed is informational,
 # because installing one is the menu's own job.
 [ -x "$HOME/.config/bin/hayato-agents" ] && ok "agents menu (hayato-agents) is executable" ||
-	fail "bin/hayato-agents is missing: Alt+Ctrl+Shift+A does nothing"
+	fail "bin/hayato-agents is missing: Alt+Shift+A does nothing"
 # The agents menu draws the session's glyph rows natively via `hayato menu agents`.
 if [ -L "$HOME/.config/bin/hayato-agents" ] && [ "$(readlink -f "$HOME/.config/bin/hayato-agents")" = "/usr/bin/hayato" ]; then
 	ok "the agents menu draws the session's glyph rows (hayato menu agents)"
@@ -4416,7 +4415,7 @@ for _theme_key in "theme next" "theme wallpaper next"; do
 	if printf '%s' "$_theme_keys" | grep -qF "$_theme_key"; then
 		ok "the binding for \`hayato $_theme_key\` is present"
 	else
-		fail "no binding runs \`hayato $_theme_key\` (Alt+Shift+T and Alt+Shift+W)"
+		fail "no binding runs \`hayato $_theme_key\` (Alt+Ctrl+Shift+T and Alt+Shift+W)"
 	fi
 done
 

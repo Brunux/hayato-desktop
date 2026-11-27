@@ -1,7 +1,7 @@
 Hayato · Settings                                                                                  Network · Wi-Fi, Bluetooth, DNS, SSH, screen sharing 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ Sections ────────────────────────╮ ╭ Network ────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ▍   Network                     │ │  Type to filter · Enter opens or toggles · Tab switches pane                                            7 / 7  │
+│ ▍   Network                     │ │  Type to search all · Enter/Space acts · ← rail · [] section                                            7 / 7  │
 │      Wi-Fi, Bluetooth, DNS, SSH… │ │                                                                                                                 │
 │                                  │ │ ▍   Wi-Fi radio  on                                                                                            │
 │     Display & Sound             │ │     Wi-Fi networks  Hayato-5G                                                                                  │
@@ -42,4 +42,4 @@ Hayato · Settings                                                              
 │                                  │ │                                                                                                                 │
 │                                  │ │                                                                                                                 │
 ╰──────────────────────────────────╯ ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- [Tab]  sections   [Enter]  open / toggle   [type]  filter   [Esc]  close                                                                               
+ [←/Tab]  rail   [[]]  section   [Enter/Space]  act   [type]  search all   [Esc]  close                                                                 

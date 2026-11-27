@@ -512,22 +512,6 @@ impl Renderer {
             pixmap.stroke_path(&path, &bpaint, &stroke, Transform::identity(), None);
         }
 
-        // Crisp left accent tick
-        let mut tick_pb = PathBuilder::new();
-        Self::add_rounded_rect(&mut tick_pb, pill_x + 2.0, y + 4.0, 2.0, pill_h - 8.0, 1.0);
-        if let Some(path) = tick_pb.finish() {
-            let mut paint = Paint::default();
-            paint.set_color(self.theme.accent);
-            paint.anti_alias = true;
-            pixmap.fill_path(
-                &path,
-                &paint,
-                FillRule::Winding,
-                Transform::identity(),
-                None,
-            );
-        }
-
         self.font.draw_text(
             pixmap,
             &label,
@@ -665,24 +649,7 @@ impl Renderer {
             pixmap.fill_path(&bg_path, &paint, FillRule::Winding, transform, None);
         }
 
-        // 2. Crisp 3px left urgency/status rail
-        let mut rail_builder = PathBuilder::new();
-        Self::add_rounded_rect(
-            &mut rail_builder,
-            card_x + 3.0,
-            card_y + 5.0,
-            3.0,
-            (card_h - 10.0).max(8.0),
-            1.0,
-        );
-        if let Some(rail_path) = rail_builder.finish() {
-            let mut paint = Paint::default();
-            paint.set_color(with_alpha(icon_color, alpha));
-            paint.anti_alias = true;
-            pixmap.fill_path(&rail_path, &paint, FillRule::Winding, transform, None);
-        }
-
-        // 3. Border
+        // 2. Border
         let mut border_builder = PathBuilder::new();
         Self::add_rounded_rect(
             &mut border_builder,
@@ -824,11 +791,6 @@ impl Renderer {
         let map_x = |x: f32| cx + (x - cx) * scale;
         let map_y = |y: f32| cy + (y - cy) * scale;
 
-        let strip_color = match notif.urgency {
-            Urgency::Low => self.theme.border_subtle,
-            Urgency::Normal => self.theme.accent,
-            Urgency::Critical => self.theme.danger,
-        };
         let glyph_color = match notif.urgency {
             Urgency::Low => self.theme.text_dim,
             Urgency::Normal => self.theme.accent,
@@ -904,24 +866,7 @@ impl Renderer {
             pixmap.stroke_path(&rule_path, &paint, &stroke, transform, None);
         }
 
-        // 3. Crisp 3px left urgency rail
-        let mut strip_builder = PathBuilder::new();
-        Self::add_rounded_rect(
-            &mut strip_builder,
-            card_x + 3.0,
-            card_y + 4.0,
-            3.0,
-            (card_h - 8.0).max(8.0),
-            1.0,
-        );
-        if let Some(strip_path) = strip_builder.finish() {
-            let mut paint = Paint::default();
-            paint.set_color(with_alpha(strip_color, alpha));
-            paint.anti_alias = true;
-            pixmap.fill_path(&strip_path, &paint, FillRule::Winding, transform, None);
-        }
-
-        // 4. Outer border (Critical gets danger border; hovered file cards highlight accent)
+        // 3. Outer border (Critical gets danger border; hovered file cards highlight accent)
         let border_color = if notif.urgency == Urgency::Critical {
             self.theme.danger
         } else if notif.is_hovered && notif.open_path.is_some() {
@@ -1282,7 +1227,12 @@ impl Renderer {
                 if let Some(path) = pb.finish() {
                     let mut paint = Paint::default();
                     let line_alpha = if notif.is_hovered { 0.8 } else { 0.5 };
-                    paint.set_color(with_alpha(strip_color, alpha * line_alpha));
+                    let ttl_color = if notif.urgency == Urgency::Low {
+                        self.theme.border_subtle
+                    } else {
+                        glyph_color
+                    };
+                    paint.set_color(with_alpha(ttl_color, alpha * line_alpha));
                     paint.anti_alias = true;
                     pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
                 }

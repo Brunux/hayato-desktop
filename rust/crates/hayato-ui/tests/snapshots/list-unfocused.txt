@@ -1,11 +1,11 @@
 ===== 80x24 =====
     Files  hayato-files                                            Alt+Ctrl+F
-    Files (window)  pcmanfm                                  Alt+Ctrl+Shift+F
+    Files (window)  pcmanfm                                       Alt+Shift+F
     Capture  screenshot                                            Alt+Ctrl+C
     Translate  selection                                           Alt+Ctrl+T
     Search inside files  ripgrep                                   Alt+Ctrl+G
     Download  yt-dlp                                               Alt+Ctrl+U
-    Settings  radios                                               Alt+Ctrl+O
+    Settings  radios                                                    Alt+O
     Notifications  mako history                                    Alt+Ctrl+N
     Clipboard  cliphist                                            Alt+Ctrl+V
     Emoji  1,296 rows                                              Alt+Ctrl+E
@@ -25,12 +25,12 @@
 
 ===== 152x45 =====
     Files  hayato-files                                                                                                                    Alt+Ctrl+F
-    Files (window)  pcmanfm                                                                                                          Alt+Ctrl+Shift+F
+    Files (window)  pcmanfm                                                                                                               Alt+Shift+F
     Capture  screenshot                                                                                                                    Alt+Ctrl+C
     Translate  selection                                                                                                                   Alt+Ctrl+T
     Search inside files  ripgrep                                                                                                           Alt+Ctrl+G
     Download  yt-dlp                                                                                                                       Alt+Ctrl+U
-    Settings  radios                                                                                                                       Alt+Ctrl+O
+    Settings  radios                                                                                                                            Alt+O
     Notifications  mako history                                                                                                            Alt+Ctrl+N
     Clipboard  cliphist                                                                                                                    Alt+Ctrl+V
     Emoji  1,296 rows                                                                                                                      Alt+Ctrl+E

@@ -48,14 +48,13 @@ window#waybar {
     margin-right: 4px;
 }
 
-/* Terminal micro-HUD tooltips matching hayato-notify's 3px left accent rail,
-   3px corners, and monospace telemetry grammar across all 16 themes. */
+/* Terminal micro-HUD tooltips with 1px subtle border, 3px corners, and
+   monospace telemetry grammar across all 16 themes. */
 tooltip,
 tooltip.background {
     background: rgba(59, 66, 82, 0.97);
     color: #d8dee9;
     border: 1px solid rgba(136, 192, 208, 0.92);
-    border-left: 3px solid #88c0d0;
     border-radius: 3px;
     padding: 9px 13px;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
@@ -256,16 +255,15 @@ tooltip label {
     font-weight: 700;
 }
 
-/* System monitor attention states (>= 90% CPU/RAM/disk): 2px indicator bar
-   matching #custom-vnc.control, paired with an explicit status word in the tooltip. */
+/* System monitor attention states (>= 90% CPU/RAM/disk): tint the icon
+   itself cleanly with no bottom hairline; #custom-sysmon:hover still
+   highlights accent in normal `ok` state. */
 #custom-sysmon.warn {
     color: #ebcb8b;
-    box-shadow: inset 0 -2px 0 #ebcb8b;
 }
 
 #custom-sysmon.critical {
     color: #c88c95;
-    box-shadow: inset 0 -2px 0 #bf616a;
 }
 
 /* Remote control is the explicit second start (`--disable-input` absent), and

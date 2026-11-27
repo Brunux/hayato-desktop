@@ -21,7 +21,7 @@ Hayato · Palette                                                               
 │     Theme: Matte Black  the palette and its wallpaper                                                                                      system   │
 │     Theme: Flexoki Light  the palette and its wallpaper                                                                                    system   │
 │     Theme: Catppuccin Latte  the palette and its wallpaper                                                                                 system   │
-│     Next theme  the palette after this one (Alt+Shift+T)                                                                                   system   │
+│     Next theme  the palette after this one (Alt+Ctrl+Shift+T)                                                                              system   │
 │     Next wallpaper  of the active theme (Alt+Shift+W)                                                                                      system   │
 │                                                                                                                                                      │
 │                                                                                                                                                      │

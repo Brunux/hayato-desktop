@@ -603,7 +603,10 @@ impl Screen for GrepScreen {
                 } else if control && key.code == KeyCode::Char('n') {
                     self.mode = Mode::Prompt(Input::with_text(self.query.clone()));
                     Outcome::Consumed
-                } else if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace) && !control {
+                } else if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
+                    && !control
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                {
                     self.list.type_filter(key);
                     Outcome::Consumed
                 } else {

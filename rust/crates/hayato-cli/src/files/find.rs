@@ -322,9 +322,12 @@ impl Screen for FindScreen {
             }
             return Outcome::Consumed;
         }
-        if key.code == KeyCode::Esc && !self.list.filter().is_empty() {
-            self.list.set_filter("");
-            return Outcome::Consumed;
+        if key.code == KeyCode::Esc {
+            if !self.list.filter().is_empty() {
+                self.list.set_filter("");
+                return Outcome::Consumed;
+            }
+            return Outcome::Done(hayato_ui::app::exit::ESCAPE);
         }
         let typed = matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
             && !control

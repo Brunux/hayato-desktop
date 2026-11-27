@@ -42,4 +42,4 @@ Hayato · Notes
 │                                                                   │                                                                                  │
 │ 2 notes · 1 ink · edited 11-18 11:11                                                                                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- [Enter]  open   [Ctrl+P]  read   [Del]  trash   [Esc]  close
+ [Enter]  open   [^P]  read   [^S]  share   [Del]  trash   [Esc]  close

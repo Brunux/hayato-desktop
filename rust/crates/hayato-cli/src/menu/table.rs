@@ -813,7 +813,7 @@ pub const PALETTE_EXTRA: &[MenuItem] = &[
     item(
         "theme-next",
         "Next theme",
-        "the palette after this one (Alt+Shift+T)",
+        "the palette after this one (Alt+Ctrl+Shift+T)",
         Glyph::Theme,
         System,
         Action::Run {

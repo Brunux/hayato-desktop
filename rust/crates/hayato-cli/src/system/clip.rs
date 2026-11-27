@@ -222,9 +222,10 @@ impl ClipScreen {
                 KeyHint::new("Enter", "copy back"),
                 KeyHint::new("Tab", "filter kind"),
                 KeyHint::new("Del", "delete"),
-                KeyHint::new("Ctrl+Y", "share"),
-                KeyHint::new("Ctrl+S", "save img"),
-                KeyHint::new("Ctrl+X", "clear"),
+                KeyHint::new("^S", "share"),
+                KeyHint::new("^W", "save img"),
+                KeyHint::new("^T", "transform"),
+                KeyHint::new("^X", "clear"),
                 KeyHint::new("Esc", "back"),
             ],
             rows_height: Cell::new(20),
@@ -259,9 +260,10 @@ impl ClipScreen {
                 KeyHint::new("Enter", "copy back"),
                 KeyHint::new("Tab", "filter kind"),
                 KeyHint::new("Del", "delete"),
-                KeyHint::new("Ctrl+Y", "share"),
-                KeyHint::new("Ctrl+S", "save img"),
-                KeyHint::new("Ctrl+X", "clear"),
+                KeyHint::new("^S", "share"),
+                KeyHint::new("^W", "save img"),
+                KeyHint::new("^T", "transform"),
+                KeyHint::new("^X", "clear"),
                 KeyHint::new("Esc", "back"),
             ],
             rows_height: Cell::new(20),
@@ -922,10 +924,10 @@ impl Screen for ClipScreen {
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                KeyCode::Char('s') | KeyCode::Char('S') => {
                     return self.run_strip_action("share");
                 }
-                KeyCode::Char('s') | KeyCode::Char('S') => {
+                KeyCode::Char('w') | KeyCode::Char('W') => {
                     return self.run_strip_action("save");
                 }
                 KeyCode::Char('x') | KeyCode::Char('X') => {

@@ -82,23 +82,23 @@ fn theme_picker_rendering_and_key_handling() {
     // Initial draw
     terminal.draw(|frame| app.render(frame)).unwrap();
 
-    // Move cursor down with j
-    let key_j = press(KeyCode::Char('j'));
-    let out = app.handle(Event::Key(key_j));
+    // Move cursor down with Down arrow
+    let key_down = press(KeyCode::Down);
+    let out = app.handle(Event::Key(key_down));
     assert_eq!(out, Outcome::Continue);
 
-    // Filter with typing
-    let key_n = press(KeyCode::Char('n'));
-    let _ = app.handle(Event::Key(key_n));
-    let key_o = press(KeyCode::Char('o'));
-    let _ = app.handle(Event::Key(key_o));
+    // Filter with typing (including previously hijacked letters like 'w', 'k', 'q')
+    for ch in ['t', 'o', 'k', 'y', 'o'] {
+        let _ = app.handle(Event::Key(press(KeyCode::Char(ch))));
+    }
 
     // Redraw with filter
     terminal.draw(|frame| app.render(frame)).unwrap();
 
-    // Escape exits with ESCAPE
-    let key_esc = press(KeyCode::Esc);
-    let out_esc = app.handle(Event::Key(key_esc));
+    // First Esc clears filter, second Esc exits with ESCAPE
+    let out_clear = app.handle(Event::Key(press(KeyCode::Esc)));
+    assert_eq!(out_clear, Outcome::Continue);
+    let out_esc = app.handle(Event::Key(press(KeyCode::Esc)));
     assert_eq!(out_esc, Outcome::Done(hayato_ui::app::exit::ESCAPE));
 }
 

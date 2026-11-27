@@ -42,4 +42,4 @@ Hayato · Notes
 │                                                                   │                                                                                  │
 │ 0 notes · 0 ink · the folder is empty                                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- [Enter]  open   [Ctrl+P]  read   [Del]  trash   [Esc]  close
+ [Enter]  open   [^P]  read   [^S]  share   [Del]  trash   [Esc]  close

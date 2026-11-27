@@ -3,7 +3,7 @@ Hayato · Settings          Network · Wi-Fi, Bluetooth, DNS, SSH, screen sharin
 ╭ Network ─────────────────────────────────────────────────────────────────────╮
 │ [Net]  Disp   Look   Input   Power   Sys   A11y                              │
 │                                                                              │
-│  Tab/←→ switches section · type to filter · Enter acts               7 / 7  │
+│  ←→/[] section · type to search all · Enter acts                     7 / 7  │
 │                                                                              │
 │ ▍   Wi-Fi radio  on                                                         │
 │     Wi-Fi networks  Hayato-5G                                               │
@@ -21,4 +21,4 @@ Hayato · Settings          Network · Wi-Fi, Bluetooth, DNS, SSH, screen sharin
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- [Tab]  sections   [Enter]  open / toggle   [type]  filter   [Esc]  close       
+ [←→/[]]  sections   [Enter]  act   [type]  search all   [Esc]  close           

@@ -164,11 +164,11 @@ impl GamesScreen {
             keybar: vec![
                 KeyHint::new("Enter", "play"),
                 KeyHint::new("←/→", "platform"),
-                KeyHint::new("o", "options"),
-                KeyHint::new("m", "manual"),
-                KeyHint::new("r", "folder"),
-                KeyHint::new("f", "favourite"),
-                KeyHint::new("s", "rescan"),
+                KeyHint::new("^O", "options"),
+                KeyHint::new("^M", "manual"),
+                KeyHint::new("^R", "folder"),
+                KeyHint::new("^F", "favourite"),
+                KeyHint::new("^S", "rescan"),
                 KeyHint::new("Esc", "close"),
             ],
             manual_keybar: vec![
@@ -758,10 +758,9 @@ impl GamesScreen {
             height: 1,
             ..inner
         };
-        let note = self
-            .note
-            .as_deref()
-            .unwrap_or("Enter play · ←/→ platform · o options · m manual · f favourite · s rescan");
+        let note = self.note.as_deref().unwrap_or(
+            "Enter play · ←/→ platform · ^O options · ^M manual · ^F favourite · ^S rescan",
+        );
         draw_filter_bar(
             ctx.buf,
             filter,
@@ -787,19 +786,18 @@ impl GamesScreen {
         }
     }
 
-    /// The gamepad's three extra buttons arrive as **Alt+O**, **Alt+M** and
-    /// **Alt+R** (see `gamepad.rs`): a bare letter would type into another
-    /// screen's filter. O and M toggle their surface, so the same button that
-    /// opened it closes it; R opens the selected game's folder from anywhere.
-    fn alt_key(&mut self, key: KeyEvent) -> Option<Outcome> {
-        if !key.modifiers.contains(KeyModifiers::ALT) {
+    /// The gamepad's three extra buttons arrive as unbound `F21` (`Options`),
+    /// `F22` (`Manual`), and `F23` (`Folder`) keysyms (see `gamepad.rs`) so they
+    /// never collide with Sway's global `Alt` chords or type-to-filter input.
+    fn pad_key(&mut self, key: KeyEvent) -> Option<Outcome> {
+        if key
+            .modifiers
+            .intersects(KeyModifiers::ALT | KeyModifiers::CONTROL)
+        {
             return None;
         }
-        let KeyCode::Char(letter) = key.code else {
-            return None;
-        };
-        match letter.to_ascii_lowercase() {
-            'o' => {
+        match key.code {
+            KeyCode::F(21) => {
                 if matches!(self.mode, Mode::Options(_)) {
                     self.mode = Mode::Library;
                 } else {
@@ -807,7 +805,7 @@ impl GamesScreen {
                 }
                 Some(Outcome::Consumed)
             }
-            'm' => {
+            KeyCode::F(22) => {
                 if matches!(self.mode, Mode::Manual(_)) {
                     self.mode = Mode::Library;
                 } else {
@@ -815,7 +813,7 @@ impl GamesScreen {
                 }
                 Some(Outcome::Consumed)
             }
-            'r' => {
+            KeyCode::F(23) => {
                 self.reveal();
                 Some(Outcome::Consumed)
             }
@@ -1232,7 +1230,7 @@ impl Screen for GamesScreen {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
         }
-        if let Some(outcome) = self.alt_key(key) {
+        if let Some(outcome) = self.pad_key(key) {
             return outcome;
         }
         match self.mode {
@@ -1476,11 +1474,11 @@ fn manual_markdown(roots: &[PathBuf], core_present: &dyn Fn(&str) -> bool) -> St
          | `↑` / `↓` | move through the games |\n\
          | `Enter` | play the selected game |\n\
          | type | filter the platform by title or platform |\n\
-         | `o` | options: sort, layout, covers, hide missing cores, controller |\n\
-         | `m` | this manual |\n\
-         | `r` | open the game's folder in Files |\n\
-         | `f` | favourite / unfavourite |\n\
-         | `s` | rescan `~/Games` |\n\
+         | `Ctrl+O` | options: sort, layout, covers, hide missing cores, controller |\n\
+         | `Ctrl+M` | this manual |\n\
+         | `Ctrl+R` | open the game's folder in Files |\n\
+         | `Ctrl+F` | favourite / unfavourite |\n\
+         | `Ctrl+S` | rescan `~/Games` |\n\
          | `Esc` | clear the filter, then close the library |\n\
          | `Alt+F` | fullscreen on or off |\n\
          | `F1` | RetroArch's menu, inside a game |\n\
@@ -1488,9 +1486,9 @@ fn manual_markdown(roots: &[PathBuf], core_present: &dyn Fn(&str) -> bool) -> St
          A gamepad is optional: `hayato gamepad` maps a USB or Bluetooth pad to the\n\
          same arrows, Enter and Escape in every Hayato window, this one included. On\n\
          this screen **X** opens the options, **Y** the manual and **L1** the game's\n\
-         folder in Files; those three are Alt+O, Alt+M and Alt+R, because a bare\n\
-         letter would type into another screen's filter. Every button can be\n\
-         reassigned in `o` → Controller (it works with no pad connected). A PS4 pad\n\
+         folder in Files; those three map to unbound `F21`–`F23` keysyms so they\n\
+         never clash with Sway's `Alt` chords or type-to-filter lists. Every button can be\n\
+         reassigned in `Ctrl+O` → Controller (it works with no pad connected). A PS4 pad\n\
          pairs over Bluetooth: hold PS + Share until the light bar flashes, then pair\n\
          it in Settings → Bluetooth. A PS3 pad pairs once over USB: plug it in, press\n\
          PS, unplug it and press PS again.\n\n\
@@ -1662,26 +1660,24 @@ mod tests {
     }
 
     #[test]
-    fn the_pad_alt_combinations_toggle_the_surfaces() {
+    fn the_pad_function_keys_toggle_the_surfaces() {
         let mut screen = GamesScreen::new();
         let design = Design::for_session(None);
-        let alt = |letter| KeyEvent::new(KeyCode::Char(letter), KeyModifiers::ALT);
+        let fkey = |n| KeyEvent::new(KeyCode::F(n), KeyModifiers::NONE);
 
-        // X (Alt+O) opens the options, and X again closes them.
-        screen.key(alt('o'), &design);
+        // X (F21) opens the options, and X again closes them.
+        screen.key(fkey(21), &design);
         assert!(matches!(screen.mode, Mode::Options(_)));
-        screen.key(alt('o'), &design);
+        screen.key(fkey(21), &design);
         assert!(matches!(screen.mode, Mode::Library));
 
-        // Y (Alt+M) opens the manual, and Y again closes it.
-        screen.key(alt('m'), &design);
+        // Y (F22) opens the manual, and Y again closes it.
+        screen.key(fkey(22), &design);
         assert!(matches!(screen.mode, Mode::Manual(_)));
-        screen.key(alt('m'), &design);
+        screen.key(fkey(22), &design);
         assert!(matches!(screen.mode, Mode::Library));
 
-        // Without Alt a letter is not the pad's action: it types into the
-        // filter (or is the library's own key), which is why the pad never
-        // sends a bare letter.
+        // Plain letters type into the filter rather than triggering pad buttons.
         screen.key(
             KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE),
             &design,

@@ -120,12 +120,12 @@ impl FilerWindow {
         let back_btn = Button::with_label("\u{f053}");
         back_btn.add_css_class("filer-nav-btn");
         back_btn.add_css_class("filer-glyph");
-        back_btn.set_tooltip_text(Some("Back (Alt+Left)"));
+        back_btn.set_tooltip_text(Some("Back (Ctrl+Left)"));
 
         let fwd_btn = Button::with_label("\u{f054}");
         fwd_btn.add_css_class("filer-nav-btn");
         fwd_btn.add_css_class("filer-glyph");
-        fwd_btn.set_tooltip_text(Some("Forward (Alt+Right)"));
+        fwd_btn.set_tooltip_text(Some("Forward (Ctrl+Right)"));
         nav_group.append(&back_btn);
         nav_group.append(&fwd_btn);
 
@@ -694,7 +694,6 @@ impl FilerWindow {
     fn handle_key(self: &Rc<Self>, key: gdk::Key, mods: gdk::ModifierType) -> glib::Propagation {
         let ctrl = mods.contains(gdk::ModifierType::CONTROL_MASK);
         let shift = mods.contains(gdk::ModifierType::SHIFT_MASK);
-        let alt = mods.contains(gdk::ModifierType::ALT_MASK);
 
         // If typing in path_entry, filter_entry, or a popover Entry (rename / new folder),
         // let the Entry handle normal typing and only intercept Escape where appropriate.
@@ -903,16 +902,6 @@ impl FilerWindow {
                     self.close_tab_at(idx);
                     return glib::Propagation::Stop;
                 }
-                gdk::Key::q | gdk::Key::Q => {
-                    self.window.close();
-                    return glib::Propagation::Stop;
-                }
-                _ => {}
-            }
-        }
-
-        if alt {
-            match key {
                 gdk::Key::Left => {
                     if self.state.borrow_mut().go_back().is_some() {
                         self.reload_dir();
@@ -931,19 +920,10 @@ impl FilerWindow {
                     }
                     return glib::Propagation::Stop;
                 }
-                gdk::Key::Return | gdk::Key::KP_Enter => {
-                    self.toggle_properties();
+                gdk::Key::q | gdk::Key::Q => {
+                    self.window.close();
                     return glib::Propagation::Stop;
                 }
-                gdk::Key::_1 => return self.jump_tab_shortcut(0),
-                gdk::Key::_2 => return self.jump_tab_shortcut(1),
-                gdk::Key::_3 => return self.jump_tab_shortcut(2),
-                gdk::Key::_4 => return self.jump_tab_shortcut(3),
-                gdk::Key::_5 => return self.jump_tab_shortcut(4),
-                gdk::Key::_6 => return self.jump_tab_shortcut(5),
-                gdk::Key::_7 => return self.jump_tab_shortcut(6),
-                gdk::Key::_8 => return self.jump_tab_shortcut(7),
-                gdk::Key::_9 => return self.jump_tab_shortcut(8),
                 _ => {}
             }
         }
@@ -987,11 +967,6 @@ impl FilerWindow {
             }
             _ => glib::Propagation::Proceed,
         }
-    }
-
-    fn jump_tab_shortcut(self: &Rc<Self>, idx: usize) -> glib::Propagation {
-        self.switch_to_tab(idx);
-        glib::Propagation::Stop
     }
 
     pub fn open_new_tab(self: &Rc<Self>, dir: PathBuf) {

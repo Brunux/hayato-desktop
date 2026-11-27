@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-const ICON_SYSMON: &str = "<span font_desc='JetBrains Mono 13'>\u{f201}</span>";
+const ICON_SYSMON: &str = "<span font_desc='JetBrains Mono 13'>\u{f4bc}</span>";
 const WARN_PCT: u8 = 90;
 const CRIT_PCT: u8 = 95;
 
@@ -582,6 +582,7 @@ SwapFree:        1835008 kB
         let raw = bar_json_for(&snap);
         let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(parsed["class"], "ok");
+        assert!(parsed["text"].as_str().unwrap().contains('\u{f4bc}'));
         let tip = parsed["tooltip"].as_str().unwrap();
         assert!(tip.contains("SYS // LIVE"));
         assert!(tip.contains("up 4h 12m"));

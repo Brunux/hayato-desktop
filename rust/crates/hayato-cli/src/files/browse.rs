@@ -10,7 +10,7 @@
 //! directory stays in it instead of starting the script again, Backspace on an
 //! empty filter goes up, and the preview is a pane rather than a 32 px icon.
 //!
-//! The actions on a row are `Tab` - `Alt+1` too, where it reaches the window:
+//! The actions on a row are `Tab` (`hayato-file-actions`).
 //! sway binds it to workspace 1 and foot asks for no shortcut inhibitor, so
 //! inside the session it never arrives (the old picker could only use it because it does
 //! inhibit, `global-kb`).
@@ -493,7 +493,6 @@ impl Screen for FilesScreen {
                 return Outcome::Consumed;
             }
             KeyCode::Tab => return self.actions(),
-            KeyCode::Char('1') if alt => return self.actions(),
             KeyCode::Char('h') if control => {
                 self.setup.hidden = !self.setup.hidden;
                 self.load();

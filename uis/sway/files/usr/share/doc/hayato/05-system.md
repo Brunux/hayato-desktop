@@ -284,7 +284,7 @@ a shell but not the picture. A rotated screen, a window that will not draw, a
 lock screen that came up wrong: all of those are one glance away instead of one
 photograph.
 
-**Settings** (Alt+Ctrl+O) → **Share this screen** starts it and says where it is
+**Settings** (Alt+O) → **Share this screen** starts it and says where it is
 serving; the same list is in the root menu (Alt+Space), and it is where **Stop
 sharing** and **Copy the tunnel command** live. While it is on, the bar shows an
 eye for read-only sharing or a keyboard for remote control (right click stops

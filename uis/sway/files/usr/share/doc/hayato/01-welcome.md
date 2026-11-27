@@ -41,7 +41,7 @@ Useful CLI flags:
 * Open a terminal: **Alt+Return** (or the bar's menu → Terminal).
 * Open the launcher: the **Search key** (the magnifier, left of Tab) or
   **Alt+D**. Type part of a name, Enter.
-* See every key binding: **Alt+Ctrl+K**.
+* See every key binding: **Alt+/**.
 * This manual: the **Learn** entry in the bar menu (**Alt+Space**), or
   `hayato-learn` in a terminal.
 
@@ -210,7 +210,7 @@ after a boot that behaved strangely, and keep the output when you ask for help.
 * **Lock key** (top row, right-most): locks the screen, and systemd-logind
   suspends the machine a moment later. That path needs no polkit and no session
   state, which is why it always works. **Alt+Ctrl+L** locks without suspending.
-* **Alt+Escape** (or **Alt+Ctrl+P**) opens the power menu: lock, suspend,
+* **Alt+Escape** opens the power menu: lock, suspend,
   hibernate, log out, reboot and power off.
 * **Alt+Shift+Escape**: lock, then suspend. **Alt+Ctrl+Escape**: suspend without
   locking.

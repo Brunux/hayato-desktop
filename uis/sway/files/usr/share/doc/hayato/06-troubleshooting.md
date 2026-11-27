@@ -227,7 +227,7 @@ monitor* in `04-software.md`). In order:
   link to the crosspoint). **`Alt+Ctrl+Shift+D`** turns the panel back on - it
   runs `~/.config/bin/hayato-display --panel-on`, a sway command with no menu
   involved, which matters because a menu cannot be drawn with every output off.
-  When a screen can still draw, `Alt+Ctrl+O` → **Display arrangement** has the
+  When a screen can still draw, `Alt+O` → **Display arrangement** has the
   same row, **Bring the internal panel back**, even with no monitor plugged in.
   Blind, over ssh, the command is `swaymsg output eDP-1 enable` (or `DSI-1` on MT8183 tablets). A reboot clears
   it too, because the choice is never written to the saved arrangement.
@@ -870,7 +870,7 @@ ordinary gpg and tar; nothing about the export needs the menu.
 
 The restore writes files into your home and says **log out and back in**, which
 is not a suggestion: `~/.bashrc` is read by a new shell, `~/.config/sway` by the
-compositor (or `Alt+Shift+C` for a reload), and the agents read their account
+compositor (or `Alt+Ctrl+R` for Studio / `swaymsg reload` — note `Alt+Shift+C` reloads Sway config), and the agents read their account
 directories at startup. A terminal opened before the restore keeps the old
 environment until it is closed.
 

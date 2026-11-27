@@ -188,6 +188,20 @@ impl LensScreen {
     pub fn new(text: String, source: &'static str) -> Self {
         let kind = classify_text(&text);
         let url = extract_first_url(&text);
+        let mut keybar = vec![
+            KeyHint::new("Enter", "run action"),
+            KeyHint::new("c", "copy"),
+        ];
+        if url.is_some() {
+            keybar.push(KeyHint::new("o", "open URL"));
+        }
+        keybar.extend([
+            KeyHint::new("t", "translate"),
+            KeyHint::new("n", "note"),
+            KeyHint::new("q", "QR"),
+            KeyHint::new("s", "share"),
+            KeyHint::new("Esc", "close"),
+        ]);
         let mut screen = Self {
             text,
             source,
@@ -199,13 +213,7 @@ impl LensScreen {
             list: ListState::new(),
             keys: Vec::new(),
             header: Header::new("Hayato").subtitle("Lens"),
-            keybar: vec![
-                KeyHint::new("Enter", "run action"),
-                KeyHint::new("c", "copy"),
-                KeyHint::new("t", "translate"),
-                KeyHint::new("n", "note"),
-                KeyHint::new("Esc", "close"),
-            ],
+            keybar,
             rows_height: Cell::new(14),
         };
         screen.rebuild_rows();

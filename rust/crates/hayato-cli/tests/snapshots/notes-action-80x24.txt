@@ -21,4 +21,4 @@ Hayato · Notes
 │   Name it, then write it in editxr. The file is <date>-<title>.md in this…   │
 │   Enter runs it                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- [Enter]  open   [Ctrl+P]  read   [Del]  trash   [Esc]  close
+ [Enter]  open   [^P]  read   [^S]  share   [Del]  trash   [Esc]  close
