@@ -28,7 +28,7 @@ use crate::fs::devices::{self, DeviceEntry};
 use crate::fs::ops::{self, OpKind, OpProgress};
 use crate::fs::thumbs;
 use crate::fs::trash;
-use crate::fs::{FileEntry, format_mtime, format_size, free_space_bytes, list_dir};
+use crate::fs::{FileEntry, format_mode, format_mtime, format_size, free_space_bytes, list_dir};
 use crate::prefs;
 use crate::state::{AppState, SortField, SortOrder, ViewMode, home_dir, is_trash_files_dir};
 use crate::tools;
@@ -89,10 +89,12 @@ pub struct FilerWindow {
     /// Horizontal SizeGroups keeping List View headers and rows pixel-aligned.
     col_size_sg: SizeGroup,
     col_mtime_sg: SizeGroup,
-    col_kind_sg: SizeGroup,
+    col_perms_sg: SizeGroup,
+    col_owner_sg: SizeGroup,
     col_size_btn: RefCell<Option<Button>>,
     col_mtime_btn: RefCell<Option<Button>>,
-    col_kind_btn: RefCell<Option<Button>>,
+    col_perms_btn: RefCell<Option<Button>>,
+    col_owner_btn: RefCell<Option<Button>>,
     /// Header New Tab button: hidden while the tab strip (which carries its own
     /// add button) is showing, so only one "+" is ever visible.
     new_tab_btn: Button,
@@ -287,6 +289,7 @@ impl FilerWindow {
 
         let canvas_scroll = ScrolledWindow::new();
         canvas_scroll.add_css_class("filer-canvas");
+        canvas_scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
         canvas_scroll.set_vexpand(true);
         canvas_scroll.set_hexpand(true);
         canvas_scroll.set_child(Some(&flow_box));
@@ -298,10 +301,12 @@ impl FilerWindow {
         let status_label = Label::new(Some("Loading…"));
         status_label.set_halign(Align::Start);
         status_label.set_hexpand(true);
+        status_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
 
         let progress_box = GtkBox::new(Orientation::Horizontal, 6);
         progress_box.set_visible(false);
         let progress_label = Label::new(None);
+        progress_label.set_ellipsize(gtk4::pango::EllipsizeMode::Middle);
         let progress_bar = ProgressBar::new();
         progress_bar.add_css_class("filer-progress");
         progress_bar.set_valign(Align::Center);
@@ -446,10 +451,12 @@ impl FilerWindow {
             shelf: RefCell::new(Vec::new()),
             col_size_sg: SizeGroup::new(SizeGroupMode::Horizontal),
             col_mtime_sg: SizeGroup::new(SizeGroupMode::Horizontal),
-            col_kind_sg: SizeGroup::new(SizeGroupMode::Horizontal),
+            col_perms_sg: SizeGroup::new(SizeGroupMode::Horizontal),
+            col_owner_sg: SizeGroup::new(SizeGroupMode::Horizontal),
             col_size_btn: RefCell::new(None),
             col_mtime_btn: RefCell::new(None),
-            col_kind_btn: RefCell::new(None),
+            col_perms_btn: RefCell::new(None),
+            col_owner_btn: RefCell::new(None),
             new_tab_btn: new_tab_btn.clone(),
         });
 
@@ -1534,16 +1541,18 @@ impl FilerWindow {
         }
         *self.col_size_btn.borrow_mut() = None;
         *self.col_mtime_btn.borrow_mut() = None;
-        *self.col_kind_btn.borrow_mut() = None;
+        *self.col_perms_btn.borrow_mut() = None;
+        *self.col_owner_btn.borrow_mut() = None;
 
-        let (active_field, order, size_w, mtime_w, kind_w) = {
+        let (active_field, order, size_w, mtime_w, perms_w, owner_w) = {
             let st = self.state.borrow();
             (
                 st.sort_field,
                 st.sort_order,
                 st.col_size_width,
                 st.col_mtime_width,
-                st.col_kind_width,
+                st.col_perms_width,
+                st.col_owner_width,
             )
         };
         let arrow = |f: SortField| -> &'static str {
@@ -1562,11 +1571,12 @@ impl FilerWindow {
         spacer.set_size_request(32, -1);
         self.list_header.append(&spacer);
 
-        let cols: [(SortField, &str, bool, i32); 4] = [
+        let cols: [(SortField, &str, bool, i32); 5] = [
             (SortField::Name, "NAME", true, -1),
             (SortField::Size, "SIZE", false, size_w),
             (SortField::Modified, "MODIFIED", false, mtime_w),
-            (SortField::Kind, "TYPE", false, kind_w),
+            (SortField::Perms, "PERMS", false, perms_w),
+            (SortField::Owner, "OWNER", false, owner_w),
         ];
         for (idx, (field, title, expand, col_w)) in cols.into_iter().enumerate() {
             if idx > 0 {
@@ -1576,51 +1586,50 @@ impl FilerWindow {
                 handle.set_cursor_from_name(Some("col-resize"));
                 handle.set_tooltip_text(Some("Drag to resize column"));
 
+                // Track pointer coordinates in `list_header` space (which stays stationary
+                // while child buttons resize), eliminating the moving-handle feedback flicker.
                 let drag = GestureDrag::new();
-                let start_widths = Rc::new(Cell::new((0i32, 0i32, 0i32)));
-                let sw_begin = Rc::clone(&start_widths);
+                let drag_anchor = Rc::new(Cell::new((0.0f32, (0i32, 0i32, 0i32, 0i32))));
+                let anc_begin = Rc::clone(&drag_anchor);
                 let w_begin = Rc::clone(self);
                 let h_begin = handle.clone();
-                drag.connect_drag_begin(move |_, _, _| {
+                let hdr_begin = self.list_header.clone();
+                drag.connect_drag_begin(move |_, x, y| {
                     h_begin.add_css_class("dragging");
+                    let hdr_x = h_begin
+                        .compute_point(&hdr_begin, &gtk4::graphene::Point::new(x as f32, y as f32))
+                        .map_or(x as f32, |p| p.x());
                     let st = w_begin.state.borrow();
-                    sw_begin.set((st.col_size_width, st.col_mtime_width, st.col_kind_width));
+                    anc_begin.set((
+                        hdr_x,
+                        (
+                            st.col_size_width,
+                            st.col_mtime_width,
+                            st.col_perms_width,
+                            st.col_owner_width,
+                        ),
+                    ));
                 });
 
-                let sw_upd = Rc::clone(&start_widths);
+                let anc_upd = Rc::clone(&drag_anchor);
                 let w_upd = Rc::clone(self);
-                drag.connect_drag_update(move |_, dx, _| {
-                    let (s0, m0, k0) = sw_upd.get();
-                    let dx_i = dx.round() as i32;
-                    let (min_w, max_w) = (prefs::MIN_COL_WIDTH, prefs::MAX_COL_WIDTH);
-                    let (s1, m1, k1) = match field {
-                        // Border Name | Size: moving right gives width to Name, shrinks Size.
-                        SortField::Size => ((s0 - dx_i).clamp(min_w, max_w), m0, k0),
-                        // Border Size | Modified: tracks pointer 1:1 between Size and Modified.
-                        SortField::Modified => {
-                            let min_dx = (min_w - s0).max(m0 - max_w);
-                            let max_dx = (max_w - s0).min(m0 - min_w);
-                            let d = if min_dx <= max_dx {
-                                dx_i.clamp(min_dx, max_dx)
-                            } else {
-                                0
-                            };
-                            (s0 + d, m0 - d, k0)
-                        }
-                        // Border Modified | Type: tracks pointer 1:1 between Modified and Type.
-                        SortField::Kind => {
-                            let min_dx = (min_w - m0).max(k0 - max_w);
-                            let max_dx = (max_w - m0).min(k0 - min_w);
-                            let d = if min_dx <= max_dx {
-                                dx_i.clamp(min_dx, max_dx)
-                            } else {
-                                0
-                            };
-                            (s0, m0 + d, k0 - d)
-                        }
-                        SortField::Name => (s0, m0, k0),
+                let h_upd = handle.clone();
+                let hdr_upd = self.list_header.clone();
+                drag.connect_drag_update(move |g, dx, dy| {
+                    let (start_hdr_x, w0) = anc_upd.get();
+                    let cur_hdr_x = if let Some((sx, sy)) = g.start_point() {
+                        h_upd
+                            .compute_point(
+                                &hdr_upd,
+                                &gtk4::graphene::Point::new((sx + dx) as f32, (sy + dy) as f32),
+                            )
+                            .map_or(start_hdr_x + dx as f32, |p| p.x())
+                    } else {
+                        start_hdr_x + dx as f32
                     };
-                    w_upd.apply_column_widths(s1, m1, k1);
+                    let dx_i = (cur_hdr_x - start_hdr_x).round() as i32;
+                    let next = compute_resized_widths(field, w0, dx_i);
+                    w_upd.apply_column_widths(next.0, next.1, next.2, next.3);
                 });
 
                 let w_end = Rc::clone(self);
@@ -1635,7 +1644,9 @@ impl FilerWindow {
             }
 
             let lbl = Label::new(Some(&format!("{title}{}", arrow(field))));
-            lbl.set_halign(if expand { Align::Start } else { Align::End });
+            lbl.set_halign(Align::Fill);
+            lbl.set_hexpand(true);
+            lbl.set_xalign(if expand { 0.0 } else { 1.0 });
             lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
             let btn = Button::new();
             btn.set_child(Some(&lbl));
@@ -1652,9 +1663,13 @@ impl FilerWindow {
                     self.col_mtime_sg.add_widget(&btn);
                     *self.col_mtime_btn.borrow_mut() = Some(btn.clone());
                 }
-                SortField::Kind => {
-                    self.col_kind_sg.add_widget(&btn);
-                    *self.col_kind_btn.borrow_mut() = Some(btn.clone());
+                SortField::Perms => {
+                    self.col_perms_sg.add_widget(&btn);
+                    *self.col_perms_btn.borrow_mut() = Some(btn.clone());
+                }
+                SortField::Owner => {
+                    self.col_owner_sg.add_widget(&btn);
+                    *self.col_owner_btn.borrow_mut() = Some(btn.clone());
                 }
                 SortField::Name => {}
             }
@@ -1683,12 +1698,28 @@ impl FilerWindow {
         }
     }
 
-    fn apply_column_widths(&self, size_w: i32, mtime_w: i32, kind_w: i32) {
-        {
+    fn apply_column_widths(&self, size_w: i32, mtime_w: i32, perms_w: i32, owner_w: i32) {
+        let changed = {
             let mut st = self.state.borrow_mut();
-            st.col_size_width = size_w;
-            st.col_mtime_width = mtime_w;
-            st.col_kind_width = kind_w;
+            let prev = (
+                st.col_size_width,
+                st.col_mtime_width,
+                st.col_perms_width,
+                st.col_owner_width,
+            );
+            let next = (size_w, mtime_w, perms_w, owner_w);
+            if prev == next {
+                false
+            } else {
+                st.col_size_width = size_w;
+                st.col_mtime_width = mtime_w;
+                st.col_perms_width = perms_w;
+                st.col_owner_width = owner_w;
+                true
+            }
+        };
+        if !changed {
+            return;
         }
         if let Some(b) = self.col_size_btn.borrow().as_ref() {
             b.set_size_request(size_w, -1);
@@ -1696,8 +1727,11 @@ impl FilerWindow {
         if let Some(b) = self.col_mtime_btn.borrow().as_ref() {
             b.set_size_request(mtime_w, -1);
         }
-        if let Some(b) = self.col_kind_btn.borrow().as_ref() {
-            b.set_size_request(kind_w, -1);
+        if let Some(b) = self.col_perms_btn.borrow().as_ref() {
+            b.set_size_request(perms_w, -1);
+        }
+        if let Some(b) = self.col_owner_btn.borrow().as_ref() {
+            b.set_size_request(owner_w, -1);
         }
     }
 
@@ -2643,7 +2677,8 @@ impl FilerWindow {
         if entry.is_dir {
             name.add_css_class("dir");
         }
-        name.set_halign(Align::Start);
+        name.set_halign(Align::Fill);
+        name.set_xalign(0.0);
         name.set_hexpand(true);
         name.set_ellipsize(gtk4::pango::EllipsizeMode::Middle);
         row.append(&name);
@@ -2656,6 +2691,7 @@ impl FilerWindow {
         let size_lbl = Label::new(Some(&size_txt));
         size_lbl.add_css_class("filer-item-meta");
         size_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        size_lbl.set_halign(Align::Fill);
         size_lbl.set_xalign(1.0);
         self.col_size_sg.add_widget(&size_lbl);
         row.append(&size_lbl);
@@ -2663,16 +2699,26 @@ impl FilerWindow {
         let mtime_lbl = Label::new(Some(&format_mtime(entry.modified_secs)));
         mtime_lbl.add_css_class("filer-item-meta");
         mtime_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        mtime_lbl.set_halign(Align::Fill);
         mtime_lbl.set_xalign(1.0);
         self.col_mtime_sg.add_widget(&mtime_lbl);
         row.append(&mtime_lbl);
 
-        let kind_lbl = Label::new(Some(&entry.kind));
-        kind_lbl.add_css_class("filer-item-meta");
-        kind_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        kind_lbl.set_xalign(1.0);
-        self.col_kind_sg.add_widget(&kind_lbl);
-        row.append(&kind_lbl);
+        let perms_lbl = Label::new(Some(&format_mode(entry.mode)));
+        perms_lbl.add_css_class("filer-item-meta");
+        perms_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        perms_lbl.set_halign(Align::Fill);
+        perms_lbl.set_xalign(1.0);
+        self.col_perms_sg.add_widget(&perms_lbl);
+        row.append(&perms_lbl);
+
+        let owner_lbl = Label::new(Some(&entry.owner));
+        owner_lbl.add_css_class("filer-item-meta");
+        owner_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        owner_lbl.set_halign(Align::Fill);
+        owner_lbl.set_xalign(1.0);
+        self.col_owner_sg.add_widget(&owner_lbl);
+        row.append(&owner_lbl);
 
         self.attach_drag_source(&row, entry.path.clone());
         if entry.is_dir {
@@ -2876,6 +2922,10 @@ impl FilerWindow {
                         w.progress_label.set_text(&label);
                         w.progress_bar.set_fraction(fraction);
                     }
+                    Ok(OpProgress::Pulse { label }) => {
+                        w.progress_label.set_text(&label);
+                        w.progress_bar.pulse();
+                    }
                     Ok(OpProgress::Done { summary, undo }) => {
                         w.progress_box.set_visible(false);
                         *w.active_cancel.borrow_mut() = None;
@@ -3062,7 +3112,8 @@ impl FilerWindow {
             ("Sort by Name", SortField::Name),
             ("Sort by Modified", SortField::Modified),
             ("Sort by Size", SortField::Size),
-            ("Sort by Type", SortField::Kind),
+            ("Sort by Permissions", SortField::Perms),
+            ("Sort by Owner", SortField::Owner),
         ] {
             let icon = if cur_field == field { "\u{f00c}" } else { "" };
             let w = Rc::clone(self);
@@ -3758,6 +3809,42 @@ impl FilerWindow {
     }
 }
 
+fn transfer_width_pair(a0: i32, b0: i32, dx_i: i32) -> (i32, i32) {
+    let (min_w, max_w) = (prefs::MIN_COL_WIDTH, prefs::MAX_COL_WIDTH);
+    let min_dx = (min_w - a0).max(b0 - max_w);
+    let max_dx = (max_w - a0).min(b0 - min_w);
+    let d = if min_dx <= max_dx {
+        dx_i.clamp(min_dx, max_dx)
+    } else {
+        0
+    };
+    (a0 + d, b0 - d)
+}
+
+fn compute_resized_widths(
+    field: SortField,
+    (s0, m0, p0, o0): (i32, i32, i32, i32),
+    dx_i: i32,
+) -> (i32, i32, i32, i32) {
+    let (min_w, max_w) = (prefs::MIN_COL_WIDTH, prefs::MAX_COL_WIDTH);
+    match field {
+        SortField::Size => ((s0 - dx_i).clamp(min_w, max_w), m0, p0, o0),
+        SortField::Modified => {
+            let (s1, m1) = transfer_width_pair(s0, m0, dx_i);
+            (s1, m1, p0, o0)
+        }
+        SortField::Perms => {
+            let (m1, p1) = transfer_width_pair(m0, p0, dx_i);
+            (s0, m1, p1, o0)
+        }
+        SortField::Owner => {
+            let (p1, o1) = transfer_width_pair(p0, o0, dx_i);
+            (s0, m0, p1, o1)
+        }
+        SortField::Name => (s0, m0, p0, o0),
+    }
+}
+
 fn entry_focused(entry: &Entry, focused: Option<&Widget>) -> bool {
     gtk4::prelude::WidgetExt::is_visible(entry)
         && (entry.has_focus() || focused.is_some_and(|w| w.is_ancestor(entry)))
@@ -3840,7 +3927,7 @@ fn make_menu_item(
 
 #[cfg(test)]
 mod tests {
-    use super::hidden_button_spec;
+    use super::{SortField, compute_resized_widths, hidden_button_spec};
 
     #[test]
     fn hidden_button_switches_eye_glyph_and_tooltip() {
@@ -3851,5 +3938,26 @@ mod tests {
         let (shown_glyph, shown_tip) = hidden_button_spec(true);
         assert_eq!(shown_glyph, "\u{f06e}");
         assert!(shown_tip.contains("Hide Hidden Files"));
+    }
+
+    #[test]
+    fn resized_column_widths_stay_clamped_and_conserve_pair_totals() {
+        let base = (88, 160, 96, 88);
+        assert_eq!(
+            compute_resized_widths(SortField::Size, base, -12),
+            (100, 160, 96, 88)
+        );
+        assert_eq!(
+            compute_resized_widths(SortField::Modified, base, 20),
+            (108, 140, 96, 88)
+        );
+        assert_eq!(
+            compute_resized_widths(SortField::Perms, base, -16),
+            (88, 144, 112, 88)
+        );
+        assert_eq!(
+            compute_resized_widths(SortField::Owner, base, 14),
+            (88, 160, 110, 74)
+        );
     }
 }

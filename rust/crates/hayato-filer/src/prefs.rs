@@ -20,9 +20,10 @@ const DEFAULT_WIDTH: i32 = 980;
 const DEFAULT_HEIGHT: i32 = 640;
 pub const MIN_COL_WIDTH: i32 = 56;
 pub const MAX_COL_WIDTH: i32 = 420;
-pub const DEFAULT_COL_SIZE: i32 = 96;
-pub const DEFAULT_COL_MTIME: i32 = 176;
-pub const DEFAULT_COL_KIND: i32 = 96;
+pub const DEFAULT_COL_SIZE: i32 = 88;
+pub const DEFAULT_COL_MTIME: i32 = 160;
+pub const DEFAULT_COL_PERMS: i32 = 96;
+pub const DEFAULT_COL_OWNER: i32 = 88;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -37,7 +38,8 @@ pub struct FilerPrefs {
     pub window_height: i32,
     pub col_size_width: i32,
     pub col_mtime_width: i32,
-    pub col_kind_width: i32,
+    pub col_perms_width: i32,
+    pub col_owner_width: i32,
 }
 
 impl Default for FilerPrefs {
@@ -53,7 +55,8 @@ impl Default for FilerPrefs {
             window_height: DEFAULT_HEIGHT,
             col_size_width: DEFAULT_COL_SIZE,
             col_mtime_width: DEFAULT_COL_MTIME,
-            col_kind_width: DEFAULT_COL_KIND,
+            col_perms_width: DEFAULT_COL_PERMS,
+            col_owner_width: DEFAULT_COL_OWNER,
         }
     }
 }
@@ -65,7 +68,8 @@ impl FilerPrefs {
         self.window_height = self.window_height.max(MIN_HEIGHT);
         self.col_size_width = self.col_size_width.clamp(MIN_COL_WIDTH, MAX_COL_WIDTH);
         self.col_mtime_width = self.col_mtime_width.clamp(MIN_COL_WIDTH, MAX_COL_WIDTH);
-        self.col_kind_width = self.col_kind_width.clamp(MIN_COL_WIDTH, MAX_COL_WIDTH);
+        self.col_perms_width = self.col_perms_width.clamp(MIN_COL_WIDTH, MAX_COL_WIDTH);
+        self.col_owner_width = self.col_owner_width.clamp(MIN_COL_WIDTH, MAX_COL_WIDTH);
         self
     }
 }
@@ -124,7 +128,8 @@ mod tests {
             window_height: 800,
             col_size_width: 112,
             col_mtime_width: 210,
-            col_kind_width: 104,
+            col_perms_width: 104,
+            col_owner_width: 92,
         };
         save_to(&path, &prefs);
         assert_eq!(load_from(&path), prefs);

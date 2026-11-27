@@ -6,7 +6,8 @@ pub mod ops;
 pub mod thumbs;
 pub mod trash;
 
-use std::ffi::CString;
+use std::collections::HashMap;
+use std::ffi::{CStr, CString};
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
@@ -22,13 +23,14 @@ pub struct FileEntry {
     pub size: u64,
     pub modified_secs: i64,
     pub mode: u32,
+    pub owner: String,
     pub kind: String,
     pub icon_glyph: &'static str,
     pub icon_class: &'static str,
 }
 
 impl FileEntry {
-    pub fn from_path(path: &Path) -> Option<Self> {
+    pub fn from_path(path: &Path, uid_cache: &mut HashMap<u32, String>) -> Option<Self> {
         let name = path.file_name()?.to_string_lossy().into_owned();
         let sym_meta = fs::symlink_metadata(path).ok()?;
         let is_symlink = sym_meta.file_type().is_symlink();
@@ -46,6 +48,7 @@ impl FileEntry {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
         let mode = meta.mode();
+        let owner = resolve_owner_name(meta.uid(), uid_cache);
         let (kind, icon_glyph, icon_class) = classify_entry(&name, is_dir, mode);
         Some(Self {
             path: path.to_path_buf(),
@@ -55,6 +58,7 @@ impl FileEntry {
             size,
             modified_secs,
             mode,
+            owner,
             kind,
             icon_glyph,
             icon_class,
@@ -133,12 +137,29 @@ impl FileEntry {
 pub fn list_dir(dir: &Path) -> Result<Vec<FileEntry>, String> {
     let rd = fs::read_dir(dir).map_err(|e| format!("Cannot open {}: {e}", dir.display()))?;
     let mut out = Vec::new();
+    let mut uid_cache = HashMap::new();
     for item in rd.flatten() {
-        if let Some(entry) = FileEntry::from_path(&item.path()) {
+        if let Some(entry) = FileEntry::from_path(&item.path(), &mut uid_cache) {
             out.push(entry);
         }
     }
     Ok(out)
+}
+
+fn resolve_owner_name(uid: u32, cache: &mut HashMap<u32, String>) -> String {
+    if let Some(cached) = cache.get(&uid) {
+        return cached.clone();
+    }
+    let resolved = unsafe {
+        let pw = libc::getpwuid(uid);
+        if !pw.is_null() && !(*pw).pw_name.is_null() {
+            CStr::from_ptr((*pw).pw_name).to_string_lossy().into_owned()
+        } else {
+            uid.to_string()
+        }
+    };
+    cache.insert(uid, resolved.clone());
+    resolved
 }
 
 pub fn ext_lower(name: &str) -> Option<String> {
@@ -293,5 +314,9 @@ mod tests {
         assert_eq!(format_size(5 * 1024 * 1024), "5.0 MB");
         assert_eq!(format_mode(0o755), "rwxr-xr-x");
         assert_eq!(format_mode(0o644), "rw-r--r--");
+        let mut cache = HashMap::new();
+        let owner = resolve_owner_name(0, &mut cache);
+        assert_eq!(owner, "root");
+        assert_eq!(resolve_owner_name(0, &mut cache), "root");
     }
 }

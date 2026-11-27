@@ -6,11 +6,13 @@
 //! archive lands under a free name from `ops::unique_dest`.
 
 use std::ffi::OsString;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
+use std::time::Duration;
 
 use crate::fs::ops::{self, OpProgress, UndoAction};
 
@@ -70,13 +72,20 @@ pub fn archive_stem(sources: &[PathBuf]) -> String {
 }
 
 /// Extract an archive beside itself, never overwriting what is already there.
+#[cfg(test)]
 pub fn extract_here(archive: &Path) -> Result<String, String> {
+    let mut cmd = build_extract_cmd(archive)?;
+    run_cancellable(&mut cmd, None)?;
+    Ok(format!("Extracted {}", display(archive)))
+}
+
+fn build_extract_cmd(archive: &Path) -> Result<Command, String> {
     let format =
         format_of(archive).ok_or_else(|| format!("{} is not an archive", display(archive)))?;
     let dir = archive
         .parent()
         .ok_or_else(|| "Archive has no folder".to_string())?;
-    let mut cmd = match format {
+    let cmd = match format {
         ArchiveFormat::Zip => {
             let mut c = Command::new("unzip");
             c.arg("-n").arg("-q").arg(archive).arg("-d").arg(dir);
@@ -105,16 +114,14 @@ pub fn extract_here(archive: &Path) -> Result<String, String> {
             c
         }
     };
-    run(&mut cmd)?;
-    Ok(format!("Extracted {}", display(archive)))
+    Ok(cmd)
 }
 
-/// Create an archive of `sources` inside `dest_dir`; returns the new path.
-pub fn compress(
+fn prepare_compress(
     sources: &[PathBuf],
     format: ArchiveFormat,
     dest_dir: &Path,
-) -> Result<PathBuf, String> {
+) -> Result<(PathBuf, Command), String> {
     if sources.is_empty() {
         return Err("Nothing selected".to_string());
     }
@@ -149,7 +156,18 @@ pub fn compress(
         }
     };
     cmd.arg("--").args(&names).current_dir(base);
-    if let Err(e) = run(&mut cmd) {
+    Ok((dest, cmd))
+}
+
+/// Create an archive of `sources` inside `dest_dir`; returns the new path.
+#[cfg(test)]
+pub fn compress(
+    sources: &[PathBuf],
+    format: ArchiveFormat,
+    dest_dir: &Path,
+) -> Result<PathBuf, String> {
+    let (dest, mut cmd) = prepare_compress(sources, format, dest_dir)?;
+    if let Err(e) = run_cancellable(&mut cmd, None) {
         // A half-written archive is worse than none.
         let _ = std::fs::remove_file(&dest);
         return Err(e);
@@ -157,23 +175,49 @@ pub fn compress(
     Ok(dest)
 }
 
-fn run(cmd: &mut Command) -> Result<(), String> {
-    let out = cmd.stdin(Stdio::null()).output().map_err(|e| {
-        format!(
-            "{} could not start: {e}",
-            cmd.get_program().to_string_lossy()
-        )
-    })?;
-    if out.status.success() {
-        return Ok(());
+fn run_cancellable(
+    cmd: &mut Command,
+    control: Option<(&AtomicBool, &Sender<OpProgress>, &str)>,
+) -> Result<(), String> {
+    let prog = cmd.get_program().to_string_lossy().into_owned();
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("{prog} could not start: {e}"))?;
+
+    loop {
+        if let Some((cancel, tx, label)) = control {
+            if cancel.load(Ordering::Relaxed) {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("Cancelled".into());
+            }
+            let _ = tx.send(OpProgress::Pulse {
+                label: label.to_string(),
+            });
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if status.success() {
+                    return Ok(());
+                }
+                let mut err_buf = String::new();
+                if let Some(mut se) = child.stderr.take() {
+                    let _ = se.read_to_string(&mut err_buf);
+                }
+                let msg = err_buf.lines().last().unwrap_or("").trim();
+                return Err(if msg.is_empty() {
+                    format!("{prog} failed")
+                } else {
+                    msg.to_string()
+                });
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(90)),
+            Err(e) => return Err(format!("{prog} failed: {e}")),
+        }
     }
-    let err = String::from_utf8_lossy(&out.stderr);
-    let msg = err.lines().last().unwrap_or("").trim();
-    Err(if msg.is_empty() {
-        format!("{} failed", cmd.get_program().to_string_lossy())
-    } else {
-        msg.to_string()
-    })
 }
 
 fn display(p: &Path) -> String {
@@ -188,24 +232,29 @@ pub fn spawn_extract(archives: Vec<PathBuf>, tx: Sender<OpProgress>, cancel: Arc
     let _ = std::thread::Builder::new()
         .name("hayato-filer-archive".into())
         .spawn(move || {
-            let total = archives.len().max(1);
             let mut done = 0usize;
             for archive in archives {
-                if cancel.load(Ordering::Relaxed) {
-                    let _ = tx.send(OpProgress::Done {
-                        summary: format!("Cancelled after {done} archive(s)"),
-                        undo: None,
-                    });
-                    return;
-                }
-                let _ = tx.send(OpProgress::Update {
-                    label: format!("Extracting {}…", display(&archive)),
-                    fraction: done as f64 / total as f64,
-                });
-                if let Err(e) = extract_here(&archive) {
-                    let _ = tx.send(OpProgress::Error {
-                        message: format!("{}: {e}", display(&archive)),
-                    });
+                let label = format!("Extracting {}…", display(&archive));
+                let mut cmd = match build_extract_cmd(&archive) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let _ = tx.send(OpProgress::Error {
+                            message: format!("{}: {e}", display(&archive)),
+                        });
+                        return;
+                    }
+                };
+                if let Err(e) = run_cancellable(&mut cmd, Some((&cancel, &tx, &label))) {
+                    if e == "Cancelled" {
+                        let _ = tx.send(OpProgress::Done {
+                            summary: format!("Cancelled after {done} archive(s)"),
+                            undo: None,
+                        });
+                    } else {
+                        let _ = tx.send(OpProgress::Error {
+                            message: format!("{}: {e}", display(&archive)),
+                        });
+                    }
                     return;
                 }
                 done += 1;
@@ -228,27 +277,32 @@ pub fn spawn_compress(
     let _ = std::thread::Builder::new()
         .name("hayato-filer-archive".into())
         .spawn(move || {
-            if cancel.load(Ordering::Relaxed) {
-                let _ = tx.send(OpProgress::Done {
-                    summary: "Cancelled".to_string(),
-                    undo: None,
-                });
-                return;
-            }
-            let _ = tx.send(OpProgress::Update {
-                label: format!("Compressing to .{}…", format.extension()),
-                fraction: 0.4,
-            });
-            match compress(&sources, format, &dest_dir) {
-                Ok(dest) => {
-                    let name = display(&dest);
+            let (dest, mut cmd) = match prepare_compress(&sources, format, &dest_dir) {
+                Ok(pair) => pair,
+                Err(e) => {
+                    let _ = tx.send(OpProgress::Error { message: e });
+                    return;
+                }
+            };
+            let name = display(&dest);
+            let label = format!("Compressing {name}…");
+            match run_cancellable(&mut cmd, Some((&cancel, &tx, &label))) {
+                Ok(()) => {
                     let _ = tx.send(OpProgress::Done {
                         summary: format!("Created {name}"),
                         undo: Some(UndoAction::Created(vec![dest])),
                     });
                 }
                 Err(e) => {
-                    let _ = tx.send(OpProgress::Error { message: e });
+                    let _ = std::fs::remove_file(&dest);
+                    if e == "Cancelled" {
+                        let _ = tx.send(OpProgress::Done {
+                            summary: "Cancelled".to_string(),
+                            undo: None,
+                        });
+                    } else {
+                        let _ = tx.send(OpProgress::Error { message: e });
+                    }
                 }
             }
         });

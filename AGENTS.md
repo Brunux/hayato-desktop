@@ -371,7 +371,7 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
     browser (`Alt+Shift+F`), the windowed companion of the `hayato menu files` TUI; the two
     share neither code nor state. Its UI choices (view mode, sort field and order, hidden files,
     compact sidebar, window size, and resizable list column widths `col_size_width`,
-    `col_mtime_width`, `col_kind_width`) persist in `~/.config/hayato/filer-state.json`
+    `col_mtime_width`, `col_perms_width`, `col_owner_width`) persist in `~/.config/hayato/filer-state.json`
     (`prefs.rs`, read on launch, written on close) and pinned folders in
     `~/.config/hayato/filer-bookmarks.json`; a missing or corrupt file falls back to the
     defaults, never a second copy of the choice. In Quick Look (`quicklook.rs`),
