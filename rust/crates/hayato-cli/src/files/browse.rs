@@ -293,6 +293,10 @@ impl FilesScreen {
         screen
     }
 
+    pub fn current_dir(&self) -> &std::path::Path {
+        &self.setup.dir
+    }
+
     /// The state the rows are built from, once per change and never per
     /// frame.
     fn load(&mut self) {

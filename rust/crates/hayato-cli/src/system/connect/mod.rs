@@ -4,9 +4,13 @@
 //! Runs strictly while the Connect window is open (`Drop` tears down the TLS/WSS
 //! server, discovery scanner, and clipboard watcher cleanly).
 
+pub mod alerts;
+pub mod camera;
 pub mod crypto;
+pub mod media;
 pub mod screen;
 pub mod server;
+pub mod sync;
 pub mod trust;
 
 use std::path::PathBuf;
@@ -63,8 +67,13 @@ pub fn menu(
         let code = crate::run_screen(terminal, design, "Hayato Connect", &mut screen)?;
         match screen.pending_request.take() {
             Some(ConnectRequest::PickFileToSend) => {
-                if let Some(chosen) = pick_path_to_send(terminal, design)? {
+                if let Some(chosen) = pick_path_to_send(terminal, design, false)? {
                     screen.send_path(chosen);
+                }
+            }
+            Some(ConnectRequest::PickSyncFolder) => {
+                if let Some(chosen) = pick_path_to_send(terminal, design, true)? {
+                    screen.set_sync_folder(chosen);
                 }
             }
             None => return Ok(code),
@@ -75,6 +84,7 @@ pub fn menu(
 fn pick_path_to_send(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
+    folder_only: bool,
 ) -> Result<Option<PathBuf>, Failure> {
     let home = std::env::var("HOME")
         .map(PathBuf::from)
@@ -99,8 +109,23 @@ fn pick_path_to_send(
     }
     match screen.chosen {
         Some(crate::files::Chosen::Open(path)) | Some(crate::files::Chosen::Actions(path)) => {
-            Ok(Some(path))
+            if folder_only {
+                let dir = if path.is_dir() {
+                    path
+                } else {
+                    path.parent().unwrap_or(&home).to_path_buf()
+                };
+                Ok(Some(dir))
+            } else {
+                Ok(Some(path))
+            }
         }
-        _ => Ok(None),
+        _ => {
+            if folder_only {
+                Ok(Some(screen.current_dir().to_path_buf()))
+            } else {
+                Ok(None)
+            }
+        }
     }
 }

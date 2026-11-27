@@ -114,10 +114,14 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
     zero-daemon on-demand LocalSend v2 UDP multicast (`224.0.0.167:53317`) peer discovery.
 10c. **Hayato Connect (`hayato connect` / `hayato-connect`)**: `system/connect/` extends Hayato Share/Drop
     into an opt-in, zero-daemon encrypted (`openssl` ECDSA P-256 TLS 1.3 + `tungstenite` WSS) workspace
-    that lives and dies with its TUI window. Pairing binds QR SPKI fingerprint pinning with a deterministic
-    6-digit SAS verification code (`crypto::derive_sas`) and explicit `AuthorizePeer` confirmation before
-    saving trusted device tokens to `$XDG_CONFIG_HOME/hayato/connect/devices.json` (`0600`, `trust.rs`);
-    clipboard synchronization hashes payloads via SHA-256 (`last_clip_hash`) to prevent echo loops.
+    that lives and dies with its TUI window (`AlertWatcher`, TLS/WSS loops, `CamSink` viewfinder/`v4l2`,
+    and clipboard polling all tear down on `Drop`). Pairing binds URL-fragment `#fp=` pinning + WebCrypto
+    SHA-256 6-digit SAS verification (`crypto::derive_sas`), one-time QR `pair_token` rotation, nonce
+    replay guard, and `AuthorizePeer` confirmation before saving device tokens (`0600`, `trust.rs`).
+    Clipboard sync hashes payloads (`last_clip_hash`) and skips `x-kde-passwordManagerHint`/binary MIME;
+    `Remote` provides `playerctl`/`wpctl` MPRIS2 media control + phone `getUserMedia` camera streaming;
+    `Alerts` relays session notifications (pausing during recording); `Transfer` validates on-demand
+    folder sync paths strictly inside `sync_root` via `sync::safe_rel_path`.
 11. **A modal replaces the body; it never floats over a live list**: a `Confirm` or a
    `centered` card is drawn on its own screen (like the Ask strip and the kill screen), or the
    screen first clears the card area. At 80×24 a 56-wide card cuts list rows in half

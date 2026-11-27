@@ -86,6 +86,7 @@ pub enum PendingConfirm {
 
 pub enum ConnectRequest {
     PickFileToSend,
+    PickSyncFolder,
 }
 
 #[derive(Clone)]
@@ -100,6 +101,16 @@ enum RowAction {
     UnpairDevice { id: String, label: String },
     OpenDownloads,
     CopyUrl,
+    PickSyncFolder,
+    ScanSyncFolder,
+    MediaCmd(&'static str),
+    ToggleMediaMirror,
+    TogglePhoneCam,
+    FlipCamLens,
+    ToggleCamViewfinder,
+    SnapCamPhoto,
+    ToggleAlertsMirror,
+    SendTestAlert,
 }
 
 enum ConnectPhase {
@@ -143,11 +154,18 @@ pub struct ConnectScreen {
     peers: Vec<LocalSendPeer>,
     telemetry: ConnectTelemetry,
     activity: VecDeque<String>,
+    alerts_log: VecDeque<String>,
     list: ListState,
     actions: Vec<Option<RowAction>>,
     status_line: String,
     deck_title: String,
+    cam_label_line: String,
     auto_clip: bool,
+    media_mirror: bool,
+    alerts_mirror: bool,
+    cam_facing: String,
+    sync_folder: PathBuf,
+    poll_ticks: u8,
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
@@ -180,6 +198,9 @@ impl ConnectScreen {
         let lan_ip = server.ip.clone();
         let port = server.port;
         let auto_clip = server.auto_clip();
+        let media_mirror = server.media_mirror();
+        let alerts_mirror = server.alerts_mirror();
+        let sync_folder = server.sync_root();
         let telemetry = server.snapshot();
         let scanner = Some(PeerScanner::start());
 
@@ -201,11 +222,18 @@ impl ConnectScreen {
             peers: Vec::new(),
             telemetry,
             activity: VecDeque::with_capacity(MAX_ACTIVITY),
+            alerts_log: VecDeque::with_capacity(8),
             list: ListState::new(),
             actions: Vec::new(),
             status_line: "Ready · scan QR on phone or Ctrl+S to send".to_string(),
             deck_title: String::from("Pairing Deck"),
+            cam_label_line: String::new(),
             auto_clip,
+            media_mirror,
+            alerts_mirror,
+            cam_facing: String::from("environment"),
+            sync_folder,
+            poll_ticks: 0,
             header: Header::new("Hayato").subtitle("Connect"),
             keybar: Vec::new(),
             rows_height: Cell::new(14),
@@ -265,11 +293,18 @@ impl ConnectScreen {
                 "Received IMG_4021.jpg -> ~/Downloads".to_string(),
                 "Synced clipboard (24 B)".to_string(),
             ]),
+            alerts_log: VecDeque::from(["[Signal] Alice: Hey — check the PDF".to_string()]),
             list: ListState::new(),
             actions: Vec::new(),
             status_line: "Ready · 1 trusted device".to_string(),
             deck_title: String::from("Pairing Deck"),
+            cam_label_line: String::new(),
             auto_clip: true,
+            media_mirror: true,
+            alerts_mirror: true,
+            cam_facing: String::from("environment"),
+            sync_folder: PathBuf::from("/home/user/Documents/Notes"),
+            poll_ticks: 0,
             header: Header::new("Hayato").subtitle("Connect"),
             keybar: Vec::new(),
             rows_height: Cell::new(14),
@@ -359,6 +394,10 @@ impl ConnectScreen {
             }
         }
         if let Some(srv) = &self.server {
+            self.poll_ticks = self.poll_ticks.wrapping_add(1);
+            if self.poll_ticks.is_multiple_of(6) {
+                let _ = srv.poll_and_broadcast_media();
+            }
             let tel = srv.snapshot();
             if tel.seq != self.telemetry.seq {
                 self.telemetry = tel;
@@ -431,6 +470,26 @@ impl ConnectScreen {
                 ConnectEvent::TransferFinished { summary } => {
                     self.push_activity(summary.clone());
                     self.status_line = summary;
+                    self.rebuild_rows();
+                }
+                ConnectEvent::AlertReceived { title, body, from } => {
+                    let line = format!("[{from}] {title}: {body}");
+                    if self.alerts_log.len() >= 8 {
+                        self.alerts_log.pop_back();
+                    }
+                    self.alerts_log.push_front(line.clone());
+                    self.push_activity(line);
+                    self.rebuild_rows();
+                }
+                ConnectEvent::MediaCmdExecuted { cmd, from } => {
+                    let msg = format!("{from} -> {cmd}");
+                    self.status_line = msg.clone();
+                    self.push_activity(msg);
+                    self.rebuild_rows();
+                }
+                ConnectEvent::SyncUpdated { summary } => {
+                    self.status_line = format!("Folder diff: {summary}");
+                    self.push_activity(self.status_line.clone());
                     self.rebuild_rows();
                 }
                 ConnectEvent::PairUrlRotated(next_url) => {
@@ -568,51 +627,180 @@ impl ConnectScreen {
                 );
                 actions.push(Some(RowAction::ToggleAutoClip));
 
-                rows.push(Row::heading("Folder Sync (P2 Roadmap)"));
+                rows.push(Row::heading("On-Demand Folder Sync"));
                 actions.push(None);
+                let sync_stat = if self.telemetry.sync_summary.is_empty() {
+                    "Idle · 1-shot manifest diff (no daemon)"
+                } else {
+                    self.telemetry.sync_summary.as_str()
+                };
                 rows.push(
-                    Row::new("On-demand Folder Sync")
+                    Row::new(format!("Sync Root: {}", self.sync_folder.display()))
                         .glyph(Glyph::Folder)
-                        .detail("one-shot diff sync planned cleanly after P0/P1")
-                        .value("Planned"),
+                        .detail(sync_stat)
+                        .value("Change\u{2026}"),
                 );
-                actions.push(None);
+                actions.push(Some(RowAction::PickSyncFolder));
+                rows.push(
+                    Row::new("Scan Sync Folder Manifest")
+                        .glyph(Glyph::Sync)
+                        .detail("index local files for phone two-way diff")
+                        .value("Run"),
+                );
+                actions.push(Some(RowAction::ScanSyncFolder));
             }
             ConnectSection::Remote => {
-                rows.push(Row::heading("Remote Media & Phone Camera (P1 Roadmap)"));
+                rows.push(Row::heading("Now Playing (MPRIS2 <-> Phone Web Remote)"));
+                actions.push(None);
+                let md = &self.telemetry.media;
+                let vol_str = if md.muted {
+                    format!("{}% [MUTE]", md.volume_pct)
+                } else {
+                    format!("{}%", md.volume_pct)
+                };
+                let state_badge = if md.status.is_empty() {
+                    "Idle".to_string()
+                } else {
+                    format!("{} · {vol_str}", md.status)
+                };
+                rows.push(
+                    Row::new(md.summary_line())
+                        .glyph(Glyph::Music)
+                        .detail(if md.player.is_empty() {
+                            "Start Cassette, Spotify, or browser video"
+                        } else {
+                            md.player.as_str()
+                        })
+                        .value(state_badge),
+                );
                 actions.push(None);
                 rows.push(
-                    Row::new("MPRIS Remote Media Bridge")
+                    Row::new("Play / Pause")
                         .glyph(Glyph::Play)
-                        .detail("Play/Pause, Next/Prev & metadata mirror via zbus")
-                        .value("P1"),
+                        .detail("toggle active player playback")
+                        .value("p / Space"),
                 );
-                actions.push(None);
+                actions.push(Some(RowAction::MediaCmd("play_pause")));
                 rows.push(
-                    Row::new("Phone Camera as Virtual Webcam")
-                        .glyph(Glyph::Camera)
-                        .detail("WebRTC DTLS/SRTP -> session-scoped PipeWire source")
-                        .value("P1"),
+                    Row::new("Next Track")
+                        .glyph(Glyph::Next)
+                        .detail("skip forward")
+                        .value("n"),
                 );
+                actions.push(Some(RowAction::MediaCmd("next")));
+                rows.push(
+                    Row::new("Previous Track")
+                        .glyph(Glyph::Prev)
+                        .detail("skip backward")
+                        .value("b"),
+                );
+                actions.push(Some(RowAction::MediaCmd("prev")));
+                rows.push(
+                    Row::new("Volume Up / Down / Mute")
+                        .glyph(Glyph::Volume)
+                        .detail("adjust PipeWire default sink (+ / - / m)")
+                        .value(vol_str),
+                );
+                actions.push(Some(RowAction::MediaCmd("mute")));
+                rows.push(
+                    Row::new("Mirror Controls to Phone")
+                        .glyph(Glyph::Sync)
+                        .detail("push track & volume updates over WSS")
+                        .value(if self.media_mirror { "ON" } else { "OFF" }),
+                );
+                actions.push(Some(RowAction::ToggleMediaMirror));
+
+                rows.push(Row::heading("Phone Camera -> Desktop Webcam"));
                 actions.push(None);
+                let cam = &self.telemetry.cam;
+                let cam_val = if cam.active {
+                    format!("LIVE · {} fps · {} kbps", cam.fps, cam.kbps)
+                } else if let Some(dev) = &cam.v4l2_device {
+                    format!("Ready ({dev})")
+                } else {
+                    "Off".to_string()
+                };
+                rows.push(
+                    Row::new("Request Phone Camera Stream")
+                        .glyph(Glyph::Camera)
+                        .detail("stream getUserMedia frames over TLS WSS")
+                        .value(cam_val),
+                );
+                actions.push(Some(RowAction::TogglePhoneCam));
+                rows.push(
+                    Row::new("Switch Camera Lens")
+                        .glyph(Glyph::Rotate)
+                        .detail("toggle front selfie vs back camera")
+                        .value(if self.cam_facing == "user" {
+                            "Front"
+                        } else {
+                            "Back"
+                        }),
+                );
+                actions.push(Some(RowAction::FlipCamLens));
+                rows.push(
+                    Row::new("Open Viewfinder / Virtual Cam Sink")
+                        .glyph(Glyph::Video)
+                        .detail(if cam.v4l2_device.is_some() {
+                            "pipes frames to v4l2loopback node"
+                        } else {
+                            "opens low-latency mpv Phone Cam window (v)"
+                        })
+                        .value(if cam.viewfinder_running {
+                            "Running"
+                        } else {
+                            "Closed"
+                        }),
+                );
+                actions.push(Some(RowAction::ToggleCamViewfinder));
+                rows.push(
+                    Row::new("Save Phone Camera Snapshot")
+                        .glyph(Glyph::Image)
+                        .detail("~/Pictures/Camera/hayato-phone-*.jpg")
+                        .value("Snap"),
+                );
+                actions.push(Some(RowAction::SnapCamPhoto));
             }
             ConnectSection::Alerts => {
-                rows.push(Row::heading("Scoped Notification Bridge (P2 Roadmap)"));
+                rows.push(Row::heading("Scoped Notification Bridge"));
                 actions.push(None);
                 rows.push(
-                    Row::new("Desktop -> Phone Tab Relay")
+                    Row::new("Desktop -> Phone Alerts")
                         .glyph(Glyph::Bell)
-                        .detail("foreground browser notifications while Connect is open")
-                        .value("P2"),
+                        .detail("forwards session notifications (pauses while recording)")
+                        .value(if self.alerts_mirror { "ON" } else { "OFF" }),
                 );
-                actions.push(None);
+                actions.push(Some(RowAction::ToggleAlertsMirror));
                 rows.push(
-                    Row::new("Phone -> Desktop Webhook")
+                    Row::new("Send Test Alert to Phone")
+                        .glyph(Glyph::Sparkle)
+                        .detail("verify foreground browser notification on phone")
+                        .value("Test"),
+                );
+                actions.push(Some(RowAction::SendTestAlert));
+                rows.push(
+                    Row::new("Phone -> Desktop Endpoint")
                         .glyph(Glyph::Info)
-                        .detail("explicit forwarder endpoint; browsers cannot read OS shade")
-                        .value("P2"),
+                        .detail("POST /api/notify or Phone Web App 'Send Alert' button")
+                        .value("Active"),
                 );
                 actions.push(None);
+
+                rows.push(Row::heading("Recent Alerts"));
+                actions.push(None);
+                if self.alerts_log.is_empty() {
+                    rows.push(
+                        Row::new("No alerts relayed this session")
+                            .glyph(Glyph::Info)
+                            .detail("Notifications stay strictly in session memory"),
+                    );
+                    actions.push(None);
+                } else {
+                    for item in self.alerts_log.iter().take(6) {
+                        rows.push(Row::new(item).glyph(Glyph::Bell));
+                        actions.push(None);
+                    }
+                }
             }
         }
 
@@ -636,6 +824,21 @@ impl ConnectScreen {
             format!("{} · Saved Deck", d.name)
         } else {
             "Pairing Deck".to_string()
+        };
+        let cam = &self.telemetry.cam;
+        self.cam_label_line = if cam.active {
+            format!(
+                "Cam LIVE {} @ {} fps · {} kbps",
+                cam.resolution, cam.fps, cam.kbps
+            )
+        } else if self.telemetry.media.has_track() {
+            format!(
+                "{}: {}",
+                self.telemetry.media.status,
+                self.telemetry.media.summary_line()
+            )
+        } else {
+            String::new()
         };
         let connected = self.telemetry.connected_peers.len();
         let peer_note = if connected > 0 {
@@ -674,6 +877,9 @@ impl ConnectScreen {
                 ];
                 if *section == ConnectSection::Overview {
                     hints.push(KeyHint::new("d", "unpair"));
+                } else if *section == ConnectSection::Remote {
+                    hints.push(KeyHint::new("p/n/b", "media"));
+                    hints.push(KeyHint::new("v", "cam"));
                 }
                 hints.push(KeyHint::new("Esc", "close"));
                 hints
@@ -757,8 +963,152 @@ impl ConnectScreen {
                 self.status_line = format!("Opened {dir}");
             }
             RowAction::CopyUrl => self.copy_pair_url(),
+            RowAction::PickSyncFolder => {
+                self.pending_request = Some(ConnectRequest::PickSyncFolder);
+                return Outcome::Done(0);
+            }
+            RowAction::ScanSyncFolder => {
+                match super::sync::build_manifest(&self.sync_folder) {
+                    Ok(entries) => {
+                        self.status_line = format!(
+                            "Indexed {} file(s) in {}",
+                            entries.len(),
+                            self.sync_folder.display()
+                        );
+                        self.push_activity(self.status_line.clone());
+                    }
+                    Err(e) => self.status_line = e,
+                }
+                self.rebuild_rows();
+            }
+            RowAction::MediaCmd(cmd) => self.run_media_cmd(cmd),
+            RowAction::ToggleMediaMirror => {
+                self.media_mirror = !self.media_mirror;
+                if let Some(srv) = &self.server {
+                    srv.set_media_mirror(self.media_mirror);
+                }
+                self.status_line = format!(
+                    "Media remote mirror {}",
+                    if self.media_mirror { "ON" } else { "OFF" }
+                );
+                self.rebuild_rows();
+            }
+            RowAction::TogglePhoneCam => {
+                let next = !self.telemetry.cam.active;
+                if let Some(srv) = &self.server {
+                    let count = srv.request_phone_cam(next, &self.cam_facing);
+                    self.status_line = if count > 0 {
+                        format!(
+                            "Requested phone camera {} ({})",
+                            if next { "START" } else { "STOP" },
+                            self.cam_facing
+                        )
+                    } else {
+                        "Connect phone browser first to stream camera".to_string()
+                    };
+                }
+            }
+            RowAction::FlipCamLens => {
+                self.cam_facing = if self.cam_facing == "environment" {
+                    "user".to_string()
+                } else {
+                    "environment".to_string()
+                };
+                if let Some(srv) = &self.server
+                    && self.telemetry.cam.active
+                {
+                    srv.request_phone_cam(true, &self.cam_facing);
+                }
+                self.status_line = format!(
+                    "Camera lens preference: {}",
+                    if self.cam_facing == "user" {
+                        "Front"
+                    } else {
+                        "Back"
+                    }
+                );
+                self.rebuild_rows();
+            }
+            RowAction::ToggleCamViewfinder => {
+                if let Some(srv) = &self.server {
+                    match srv.toggle_cam_viewfinder() {
+                        Ok(msg) => {
+                            self.telemetry = srv.snapshot();
+                            self.status_line = msg;
+                            self.rebuild_rows();
+                        }
+                        Err(e) => self.status_line = e,
+                    }
+                }
+            }
+            RowAction::SnapCamPhoto => {
+                if let Some(srv) = &self.server {
+                    match srv.save_cam_snapshot() {
+                        Ok(p) => {
+                            self.status_line = format!("Saved {}", p.display());
+                            self.push_activity(self.status_line.clone());
+                            self.rebuild_rows();
+                        }
+                        Err(e) => self.status_line = e,
+                    }
+                }
+            }
+            RowAction::ToggleAlertsMirror => {
+                self.alerts_mirror = !self.alerts_mirror;
+                if let Some(srv) = &self.server {
+                    srv.set_alerts_mirror(self.alerts_mirror);
+                }
+                self.status_line = format!(
+                    "Desktop -> Phone alerts {}",
+                    if self.alerts_mirror { "ON" } else { "OFF" }
+                );
+                self.rebuild_rows();
+            }
+            RowAction::SendTestAlert => {
+                if let Some(srv) = &self.server {
+                    let count = srv.broadcast_alert(
+                        "Hayato Connect",
+                        "Test Alert",
+                        "Notification forwarding is active",
+                    );
+                    self.status_line = if count > 0 {
+                        format!("Sent test alert to {count} phone(s)")
+                    } else {
+                        "No phone connected to receive test alert".to_string()
+                    };
+                }
+            }
         }
         Outcome::Consumed
+    }
+
+    pub fn set_sync_folder(&mut self, folder: PathBuf) {
+        let _ = super::sync::save_sync_folder(&super::sync::default_sync_config_path(), &folder);
+        if let Some(srv) = &self.server {
+            srv.set_sync_root(folder.clone());
+        }
+        self.status_line = format!("Sync root: {}", folder.display());
+        self.push_activity(self.status_line.clone());
+        self.sync_folder = folder;
+        self.rebuild_rows();
+    }
+
+    fn run_media_cmd(&mut self, cmd: &str) {
+        let res = if let Some(srv) = &self.server {
+            let r = srv.exec_local_media(cmd);
+            self.telemetry = srv.snapshot();
+            r
+        } else {
+            super::media::exec_media_cmd(cmd)
+        };
+        match res {
+            Ok(msg) => {
+                self.status_line = msg;
+                self.rebuild_rows();
+                self.sync_chrome();
+            }
+            Err(e) => self.status_line = e,
+        }
     }
 
     fn open_pair_qr(&mut self) {
@@ -935,6 +1285,8 @@ impl ConnectScreen {
                 ratio,
                 "",
             );
+        } else if !self.cam_label_line.is_empty() && y < btns_y {
+            put_trunc(buf, inner.x, y, &self.cam_label_line, inner.width, accent);
         }
 
         // Bottom interactive deck pills
@@ -1321,6 +1673,33 @@ impl Screen for ConnectScreen {
                     return self.activate_row_action(RowAction::UnpairDevice { id, label });
                 }
             }
+            KeyCode::Char('p') if self.active_section() == ConnectSection::Remote => {
+                self.run_media_cmd("play_pause");
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('n') if self.active_section() == ConnectSection::Remote => {
+                self.run_media_cmd("next");
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('b') if self.active_section() == ConnectSection::Remote => {
+                self.run_media_cmd("prev");
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('+' | '=') if self.active_section() == ConnectSection::Remote => {
+                self.run_media_cmd("vol_up");
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('-') if self.active_section() == ConnectSection::Remote => {
+                self.run_media_cmd("vol_down");
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('m') if self.active_section() == ConnectSection::Remote => {
+                self.run_media_cmd("mute");
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('v') if self.active_section() == ConnectSection::Remote => {
+                return self.activate_row_action(RowAction::ToggleCamViewfinder);
+            }
             KeyCode::Esc => return self.try_close(),
             _ => {}
         }
@@ -1567,18 +1946,25 @@ mod tests {
         assert_eq!(screen.phase(), Some("connect.transfer"));
         let transfer = render(&mut screen, 94, 30);
         assert!(transfer.contains("Auto-sync Desktop <-> Phone"));
+        assert!(transfer.contains("Sync Root:"));
 
         screen.key(
             KeyEvent::new(KeyCode::Char('3'), KeyModifiers::NONE),
             &Design::solarized(),
         );
         assert_eq!(screen.phase(), Some("connect.remote"));
+        let remote = render(&mut screen, 152, 45);
+        assert!(remote.contains("Play / Pause"));
+        assert!(remote.contains("Request Phone Camera Stream"));
 
         screen.key(
             KeyEvent::new(KeyCode::Char('4'), KeyModifiers::NONE),
             &Design::solarized(),
         );
         assert_eq!(screen.phase(), Some("connect.alerts"));
+        let alerts = render(&mut screen, 94, 30);
+        assert!(alerts.contains("Desktop -> Phone Alerts"));
+        assert!(alerts.contains("Signal"));
 
         // PairQr modal + copy feedback
         screen.key(

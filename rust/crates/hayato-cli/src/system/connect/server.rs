@@ -20,7 +20,14 @@ use openssl::ssl::SslStream;
 use serde::{Deserialize, Serialize};
 use tungstenite::Message;
 
+use super::alerts::{AlertWatcher, send_desktop_alert};
+use super::camera::{CamSink, CamTelemetry};
 use super::crypto::{ConnectIdentity, derive_sas, sha256_hex};
+use super::media::{MediaSnapshot, exec_media_cmd, poll_media};
+use super::sync::{
+    FileEntry, build_manifest, compute_diff_plan, default_sync_config_path, load_sync_folder,
+    safe_rel_path,
+};
 use super::trust::TrustStore;
 use crate::system::share::SharePayload;
 use crate::system::share::server::{
@@ -60,6 +67,9 @@ pub struct ConnectTelemetry {
     pub last_event: String,
     pub connected_peers: Vec<ConnectedPeer>,
     pub last_clip_preview: String,
+    pub media: MediaSnapshot,
+    pub cam: CamTelemetry,
+    pub sync_summary: String,
 }
 
 #[derive(Debug)]
@@ -87,6 +97,18 @@ pub enum ConnectEvent {
         title: String,
         text: String,
         from: String,
+    },
+    AlertReceived {
+        title: String,
+        body: String,
+        from: String,
+    },
+    MediaCmdExecuted {
+        cmd: String,
+        from: String,
+    },
+    SyncUpdated {
+        summary: String,
     },
     TransferFinished {
         summary: String,
@@ -121,6 +143,27 @@ enum InboundWsMsg {
         title: String,
         text: String,
     },
+    MediaCmd {
+        cmd: String,
+    },
+    CamMeta {
+        #[serde(default)]
+        active: bool,
+        #[serde(default)]
+        facing: String,
+        #[serde(default)]
+        width: u32,
+        #[serde(default)]
+        height: u32,
+    },
+    Alert {
+        #[serde(default)]
+        title: String,
+        body: String,
+    },
+    SyncManifest {
+        files: Vec<FileEntry>,
+    },
     Ping,
 }
 
@@ -143,6 +186,23 @@ enum OutboundWsMsg {
     Clipboard {
         text: String,
         sha256: String,
+    },
+    Media {
+        media: MediaSnapshot,
+    },
+    Alert {
+        app: String,
+        summary: String,
+        body: String,
+    },
+    CamControl {
+        active: bool,
+        facing: String,
+    },
+    SyncDiff {
+        push: Vec<FileEntry>,
+        pull: Vec<String>,
+        up_to_date: usize,
     },
     Offer {
         id: String,
@@ -170,6 +230,7 @@ struct SharedState {
     used_nonces: Mutex<HashSet<String>>,
     spki_fp: String,
     downloads_dir: PathBuf,
+    sync_root: Mutex<PathBuf>,
     theme: ThemeCss,
     trust: Mutex<TrustStore>,
     offers: Mutex<HashMap<String, OfferedItem>>,
@@ -178,6 +239,8 @@ struct SharedState {
     telemetry: Mutex<ConnectTelemetry>,
     last_clip_hash: Mutex<String>,
     auto_clip_sync: AtomicBool,
+    media_mirror: AtomicBool,
+    cam: Arc<CamSink>,
     ev_tx: Sender<ConnectEvent>,
 }
 
@@ -188,12 +251,14 @@ pub struct ConnectServer {
     pub spki_fp: String,
     stop: Arc<AtomicBool>,
     shared: Arc<SharedState>,
+    alert_watcher: AlertWatcher,
     runtime_session_file: Option<PathBuf>,
 }
 
 impl Drop for ConnectServer {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+        self.shared.cam.stop_all();
         if let Ok(mut pending) = self.shared.pending_auth.lock() {
             for (_, tx) in pending.drain() {
                 let _ = tx.send(false);
@@ -241,6 +306,8 @@ impl ConnectServer {
 
         let (ev_tx, ev_rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
+        let sync_folder = load_sync_folder(&default_sync_config_path());
+        let cam = Arc::new(CamSink::new());
         let shared = Arc::new(SharedState {
             ip: ip.clone(),
             port,
@@ -248,6 +315,7 @@ impl ConnectServer {
             used_nonces: Mutex::new(HashSet::new()),
             spki_fp: identity.spki_fp.clone(),
             downloads_dir,
+            sync_root: Mutex::new(sync_folder),
             theme: active_theme_css(),
             trust: Mutex::new(trust),
             offers: Mutex::new(HashMap::new()),
@@ -255,10 +323,13 @@ impl ConnectServer {
             clients: Mutex::new(Vec::new()),
             telemetry: Mutex::new(ConnectTelemetry {
                 last_event: "TLS/WSS ready · scan QR or wait for paired phone".to_string(),
+                cam: cam.telemetry(),
                 ..ConnectTelemetry::default()
             }),
             last_clip_hash: Mutex::new(String::new()),
             auto_clip_sync: AtomicBool::new(true),
+            media_mirror: AtomicBool::new(true),
+            cam,
             ev_tx,
         });
 
@@ -295,7 +366,7 @@ impl ConnectServer {
             })
             .map_err(|e| format!("spawn TLS accept loop: {e}"))?;
 
-        // Session-scoped clipboard watcher (dies on Drop)
+        // Session-scoped clipboard + media telemetry loop (dies on Drop)
         let stop_clip = Arc::clone(&stop);
         let shared_clip = Arc::clone(&shared);
         std::thread::Builder::new()
@@ -305,6 +376,23 @@ impl ConnectServer {
             })
             .map_err(|e| format!("spawn clipboard watcher: {e}"))?;
 
+        let shared_alert = Arc::clone(&shared);
+        let alert_watcher = AlertWatcher::start(true, move |app, summary, body| {
+            broadcast_ws(
+                &shared_alert,
+                &OutboundWsMsg::Alert {
+                    app: app.clone(),
+                    summary: summary.clone(),
+                    body: body.clone(),
+                },
+            );
+            let _ = shared_alert.ev_tx.send(ConnectEvent::AlertReceived {
+                title: summary,
+                body,
+                from: app,
+            });
+        });
+
         Ok((
             Self {
                 ip,
@@ -313,10 +401,113 @@ impl ConnectServer {
                 spki_fp: identity.spki_fp,
                 stop,
                 shared,
+                alert_watcher,
                 runtime_session_file,
             },
             ev_rx,
         ))
+    }
+
+    pub fn set_media_mirror(&self, enabled: bool) {
+        self.shared.media_mirror.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn media_mirror(&self) -> bool {
+        self.shared.media_mirror.load(Ordering::Relaxed)
+    }
+
+    pub fn set_alerts_mirror(&self, enabled: bool) {
+        self.alert_watcher.set_enabled(enabled);
+    }
+
+    pub fn alerts_mirror(&self) -> bool {
+        self.alert_watcher.is_enabled()
+    }
+
+    pub fn broadcast_alert(&self, app: &str, summary: &str, body: &str) -> usize {
+        broadcast_ws(
+            &self.shared,
+            &OutboundWsMsg::Alert {
+                app: app.to_string(),
+                summary: summary.to_string(),
+                body: body.to_string(),
+            },
+        )
+    }
+
+    pub fn poll_and_broadcast_media(&self) -> MediaSnapshot {
+        let snap = poll_media();
+        let changed = self
+            .shared
+            .telemetry
+            .lock()
+            .map(|mut tel| {
+                let diff = tel.media != snap;
+                tel.media = snap.clone();
+                if diff {
+                    tel.seq += 1;
+                }
+                diff
+            })
+            .unwrap_or(false);
+        if changed && self.shared.media_mirror.load(Ordering::Relaxed) {
+            broadcast_ws(
+                &self.shared,
+                &OutboundWsMsg::Media {
+                    media: snap.clone(),
+                },
+            );
+        }
+        snap
+    }
+
+    pub fn exec_local_media(&self, cmd: &str) -> Result<String, String> {
+        let res = exec_media_cmd(cmd)?;
+        self.poll_and_broadcast_media();
+        Ok(res)
+    }
+
+    pub fn toggle_cam_viewfinder(&self) -> Result<String, String> {
+        let res = self.shared.cam.toggle_viewfinder()?;
+        if let Ok(mut tel) = self.shared.telemetry.lock() {
+            tel.cam = self.shared.cam.telemetry();
+            tel.last_event = res.clone();
+            tel.seq += 1;
+        }
+        Ok(res)
+    }
+
+    pub fn save_cam_snapshot(&self) -> Result<PathBuf, String> {
+        let path = self.shared.cam.save_snapshot()?;
+        if let Ok(mut tel) = self.shared.telemetry.lock() {
+            tel.last_event = format!("Saved photo {}", path.display());
+            tel.seq += 1;
+        }
+        Ok(path)
+    }
+
+    pub fn request_phone_cam(&self, active: bool, facing: &str) -> usize {
+        broadcast_ws(
+            &self.shared,
+            &OutboundWsMsg::CamControl {
+                active,
+                facing: facing.to_string(),
+            },
+        )
+    }
+
+    pub fn set_sync_root(&self, folder: PathBuf) {
+        if let Ok(mut g) = self.shared.sync_root.lock() {
+            *g = folder;
+        }
+    }
+
+    pub fn sync_root(&self) -> PathBuf {
+        self.shared
+            .sync_root
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_else(|_| load_sync_folder(&default_sync_config_path()))
     }
 
     pub fn set_auto_clip(&self, enabled: bool) {
@@ -528,6 +719,7 @@ fn handle_tls_connection(
     let mut is_ws = false;
     let mut content_length: u64 = 0;
     let mut filename_hdr = String::new();
+    let mut rel_path_hdr = String::new();
     let mut device_id_hdr = String::new();
     let mut device_secret_hdr = String::new();
     let mut ua_hdr = String::new();
@@ -543,6 +735,8 @@ fn handle_tls_connection(
                 content_length = val.parse().unwrap_or(0);
             } else if k.eq_ignore_ascii_case("x-filename") {
                 filename_hdr = val.to_string();
+            } else if k.eq_ignore_ascii_case("x-rel-path") {
+                rel_path_hdr = val.to_string();
             } else if k.eq_ignore_ascii_case("x-device-id") {
                 device_id_hdr = val.to_string();
             } else if k.eq_ignore_ascii_case("x-device-secret") {
@@ -608,6 +802,38 @@ fn handle_tls_connection(
                 return;
             }
             handle_http_clip(ssl, content_length, &shared);
+        }
+        ("POST", "/api/notify") => {
+            if !verify_http_auth(&shared, &device_id_hdr, &device_secret_hdr) {
+                let _ = ssl.write_all(
+                    b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 12\r\n\r\nUnauthorized",
+                );
+                return;
+            }
+            handle_http_notify(ssl, content_length, &shared);
+        }
+        ("POST", "/api/sync/upload") => {
+            if !verify_http_auth(&shared, &device_id_hdr, &device_secret_hdr) {
+                let _ = ssl.write_all(
+                    b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 12\r\n\r\nUnauthorized",
+                );
+                return;
+            }
+            handle_sync_upload(ssl, content_length, &rel_path_hdr, &shared);
+        }
+        ("GET", "/api/sync/download") => {
+            let dev_q = query_param(query_str, "device").unwrap_or(device_id_hdr);
+            let sec_q = query_param(query_str, "secret").unwrap_or(device_secret_hdr);
+            if !verify_http_auth(&shared, &dev_q, &sec_q) {
+                let _ = ssl.write_all(
+                    b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 12\r\n\r\nUnauthorized",
+                );
+                return;
+            }
+            let rel_q = query_param(query_str, "rel")
+                .map(|r| percent_decode(&r))
+                .unwrap_or_default();
+            handle_sync_download(ssl, &rel_q, &shared);
         }
         ("GET", p) if p.starts_with("/api/download/") => {
             let dev_q = query_param(query_str, "device").unwrap_or(device_id_hdr);
@@ -737,6 +963,14 @@ fn handle_websocket(
         .ev_tx
         .send(ConnectEvent::PeerConnected(authed_peer.clone()));
 
+    let initial_media = poll_media();
+    let _ = send_ws_json(
+        &mut ws,
+        &OutboundWsMsg::Media {
+            media: initial_media,
+        },
+    );
+
     'ws: while !stop.load(Ordering::Relaxed) {
         loop {
             match out_rx.try_recv() {
@@ -758,6 +992,13 @@ fn handle_websocket(
                     handle_ws_message(msg, &authed_peer, &mut ws, &shared);
                 }
             }
+            Ok(Message::Binary(bin)) => {
+                shared.cam.push_jpeg_frame(&bin);
+                if let Ok(mut tel) = shared.telemetry.lock() {
+                    tel.cam = shared.cam.telemetry();
+                    tel.seq += 1;
+                }
+            }
             Ok(Message::Ping(p)) => {
                 if ws.send(Message::Pong(p)).is_err() {
                     break 'ws;
@@ -777,8 +1018,17 @@ fn handle_websocket(
         }
     }
 
-    if let Ok(mut clients) = shared.clients.lock() {
+    let empty = if let Ok(mut clients) = shared.clients.lock() {
         clients.retain(|(p, _)| p.device_id != authed_peer.device_id);
+        clients.is_empty()
+    } else {
+        false
+    };
+    if empty {
+        shared.cam.stop_all();
+        if let Ok(mut tel) = shared.telemetry.lock() {
+            tel.cam = shared.cam.telemetry();
+        }
     }
     refresh_peers_telemetry(&shared);
     let _ = shared.ev_tx.send(ConnectEvent::PeerDisconnected {
@@ -961,6 +1211,86 @@ fn handle_ws_message<S: Read + Write>(
                 });
             }
         }
+        InboundWsMsg::MediaCmd { cmd } => {
+            if exec_media_cmd(&cmd).is_ok() {
+                let snap = poll_media();
+                if let Ok(mut tel) = shared.telemetry.lock() {
+                    tel.media = snap.clone();
+                    tel.last_event = format!("{} ran media command: {cmd}", peer.name);
+                    tel.seq += 1;
+                }
+                if shared.media_mirror.load(Ordering::Relaxed) {
+                    broadcast_ws(shared, &OutboundWsMsg::Media { media: snap });
+                }
+                let _ = shared.ev_tx.send(ConnectEvent::MediaCmdExecuted {
+                    cmd,
+                    from: peer.name.clone(),
+                });
+            }
+        }
+        InboundWsMsg::CamMeta {
+            active,
+            facing,
+            width,
+            height,
+        } => {
+            shared.cam.set_meta(active, facing, width, height);
+            if let Ok(mut tel) = shared.telemetry.lock() {
+                tel.cam = shared.cam.telemetry();
+                tel.last_event = if active {
+                    format!("{} camera stream LIVE ({}x{})", peer.name, width, height)
+                } else {
+                    format!("{} camera stream stopped", peer.name)
+                };
+                tel.seq += 1;
+            }
+        }
+        InboundWsMsg::Alert { title, body } => {
+            if !body.trim().is_empty() && body.len() <= MAX_CLIP_BYTES {
+                let _ = send_desktop_alert(&peer.name, &title, &body);
+                if let Ok(mut tel) = shared.telemetry.lock() {
+                    tel.last_event =
+                        format!("Alert from {}: {}", peer.name, preview_one_line(&body));
+                    tel.seq += 1;
+                }
+                let _ = shared.ev_tx.send(ConnectEvent::AlertReceived {
+                    title,
+                    body,
+                    from: peer.name.clone(),
+                });
+            }
+        }
+        InboundWsMsg::SyncManifest { files } => {
+            let root = shared
+                .sync_root
+                .lock()
+                .map(|g| g.clone())
+                .unwrap_or_else(|_| load_sync_folder(&default_sync_config_path()));
+            let _ = fs::create_dir_all(&root);
+            if let Ok(local) = build_manifest(&root) {
+                let plan = compute_diff_plan(&local, &files);
+                let summary = format!(
+                    "{} push · {} pull · {} ok",
+                    plan.push_to_phone.len(),
+                    plan.pull_from_phone.len(),
+                    plan.up_to_date
+                );
+                if let Ok(mut tel) = shared.telemetry.lock() {
+                    tel.sync_summary = summary.clone();
+                    tel.last_event = format!("Folder diff: {summary}");
+                    tel.seq += 1;
+                }
+                let _ = send_ws_json(
+                    ws,
+                    &OutboundWsMsg::SyncDiff {
+                        push: plan.push_to_phone,
+                        pull: plan.pull_from_phone,
+                        up_to_date: plan.up_to_date,
+                    },
+                );
+                let _ = shared.ev_tx.send(ConnectEvent::SyncUpdated { summary });
+            }
+        }
         InboundWsMsg::Ping => {
             let _ = send_ws_json(ws, &OutboundWsMsg::Pong);
         }
@@ -1049,6 +1379,146 @@ fn handle_http_upload(
         }
         let _ = fs::remove_file(&dest_path);
         let _ = ssl.write_all(b"HTTP/1.1 500 Error\r\nContent-Length: 5\r\n\r\nError");
+    }
+}
+
+fn handle_http_notify(
+    mut ssl: SslStream<TcpStream>,
+    content_length: u64,
+    shared: &Arc<SharedState>,
+) {
+    if content_length == 0 || content_length > 8192 {
+        let _ = ssl.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 11\r\n\r\nBad payload");
+        return;
+    }
+    let mut body = vec![0u8; content_length as usize];
+    if ssl.read_exact(&mut body).is_err() {
+        let _ = ssl.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 11\r\n\r\nRead failed");
+        return;
+    }
+    let raw = String::from_utf8_lossy(&body).to_string();
+    let (title, text) = if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
+        (
+            v.get("title")
+                .and_then(|t| t.as_str())
+                .unwrap_or("Phone Alert")
+                .to_string(),
+            v.get("body")
+                .and_then(|b| b.as_str())
+                .unwrap_or("")
+                .to_string(),
+        )
+    } else {
+        ("Phone Alert".to_string(), raw)
+    };
+    let _ = send_desktop_alert("Phone", &title, &text);
+    if let Ok(mut tel) = shared.telemetry.lock() {
+        tel.last_event = format!("Webhook alert: {title}");
+        tel.seq += 1;
+    }
+    let _ = shared.ev_tx.send(ConnectEvent::AlertReceived {
+        title,
+        body: text,
+        from: "Webhook".to_string(),
+    });
+    let _ = ssl.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK");
+}
+
+fn handle_sync_upload(
+    mut ssl: SslStream<TcpStream>,
+    content_length: u64,
+    rel_hdr: &str,
+    shared: &Arc<SharedState>,
+) {
+    if content_length > MAX_UPLOAD_BYTES {
+        let _ =
+            ssl.write_all(b"HTTP/1.1 413 Payload Too Large\r\nContent-Length: 9\r\n\r\nToo large");
+        return;
+    }
+    let root = shared
+        .sync_root
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_else(|_| load_sync_folder(&default_sync_config_path()));
+    let _ = fs::create_dir_all(&root);
+    let Some(target) = safe_rel_path(&root, rel_hdr, false) else {
+        let _ =
+            ssl.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 12\r\n\r\nInvalid path");
+        return;
+    };
+    if let Some(parent) = target.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let Ok(mut out) = File::create(&target) else {
+        let _ = ssl.write_all(b"HTTP/1.1 500 Error\r\nContent-Length: 11\r\n\r\nWrite error");
+        return;
+    };
+    let mut buf = [0u8; 32_768];
+    let mut rem = content_length;
+    while rem > 0 {
+        let want = (rem as usize).min(buf.len());
+        match ssl.read(&mut buf[..want]) {
+            Ok(0) | Err(_) => {
+                let _ = fs::remove_file(&target);
+                let _ = ssl.write_all(b"HTTP/1.1 500 Error\r\nContent-Length: 5\r\n\r\nError");
+                return;
+            }
+            Ok(n) => {
+                if out.write_all(&buf[..n]).is_err() {
+                    let _ = fs::remove_file(&target);
+                    let _ = ssl.write_all(b"HTTP/1.1 500 Error\r\nContent-Length: 5\r\n\r\nError");
+                    return;
+                }
+                rem -= n as u64;
+            }
+        }
+    }
+    if let Ok(mut tel) = shared.telemetry.lock() {
+        tel.transfers += 1;
+        tel.last_event = format!("Synced in: {rel_hdr}");
+        tel.seq += 1;
+    }
+    let _ = ssl.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK");
+}
+
+fn handle_sync_download(mut ssl: SslStream<TcpStream>, rel: &str, shared: &Arc<SharedState>) {
+    let root = shared
+        .sync_root
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_else(|_| load_sync_folder(&default_sync_config_path()));
+    let Some(target) = safe_rel_path(&root, rel, true) else {
+        let _ = ssl.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nNot Found");
+        return;
+    };
+    let Ok(mut file) = File::open(&target) else {
+        let _ = ssl.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nNot Found");
+        return;
+    };
+    let size = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let fname = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("sync.bin");
+    let hdr = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\
+         Content-Disposition: attachment; filename=\"{}\"\r\n\
+         Content-Length: {size}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+        sanitize_filename(fname)
+    );
+    if ssl.write_all(hdr.as_bytes()).is_err() {
+        return;
+    }
+    let mut buf = [0u8; 32_768];
+    loop {
+        match file.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                if ssl.write_all(&buf[..n]).is_err() {
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -1396,6 +1866,26 @@ fn write_runtime_marker(ip: &str, port: u16) -> Option<PathBuf> {
     Some(path)
 }
 
+fn percent_decode(raw: &str) -> String {
+    let mut bytes = Vec::with_capacity(raw.len());
+    let src = raw.as_bytes();
+    let mut i = 0;
+    while i < src.len() {
+        if src[i] == b'%'
+            && i + 2 < src.len()
+            && let Ok(hex) = std::str::from_utf8(&src[i + 1..i + 3])
+            && let Ok(val) = u8::from_str_radix(hex, 16)
+        {
+            bytes.push(val);
+            i += 3;
+            continue;
+        }
+        bytes.push(if src[i] == b'+' { b' ' } else { src[i] });
+        i += 1;
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 fn query_param(query: &str, key: &str) -> Option<String> {
     for kv in query.split('&') {
         if let Some((k, v)) = kv.split_once('=')
@@ -1469,12 +1959,41 @@ fn render_connect_web_app(css: &ThemeCss, spki_fp: &str, pair_token: &str) -> St
            <p id='ust' class='hint'></p>\
          </div>\
          <div class='card'>\
-           <strong>Clipboard, Links & Notes</strong>\
-           <textarea id='txt' rows='3' placeholder='Paste text, URL, or note\u{2026}' style='margin:.5rem 0'></textarea>\
+           <div class='row'><strong>Folder Sync (1-Shot)</strong><span id='sst' class='hint'>Idle</span></div>\
+           <input id='sf' type='file' webkitdirectory multiple style='margin:.5rem 0;width:100%'>\
+           <button class='btn' onclick='runFolderSync()'>Diff & Sync Selected Folder</button>\
+         </div>\
+         <div class='card'>\
+           <div class='row'><strong>Remote Media</strong><span id='mst' class='hint'>No player</span></div>\
+           <p id='mtrack' class='hint' style='margin:.35rem 0 .6rem'>\u{2014}</p>\
+           <div class='row'>\
+             <button class='btn' onclick='mCmd(\"prev\")'>\u{23ee}</button>\
+             <button class='btn' onclick='mCmd(\"seek_back\")'>-10s</button>\
+             <button class='btn primary' onclick='mCmd(\"play_pause\")'>\u{23ef}</button>\
+             <button class='btn' onclick='mCmd(\"seek_fwd\")'>+10s</button>\
+             <button class='btn' onclick='mCmd(\"next\")'>\u{23ed}</button>\
+             <button class='btn' onclick='mCmd(\"vol_down\")'>Vol-</button>\
+             <button class='btn' onclick='mCmd(\"mute\")'>Mute</button>\
+             <button class='btn' onclick='mCmd(\"vol_up\")'>Vol+</button>\
+           </div>\
+         </div>\
+         <div class='card'>\
+           <div class='row'><strong>Phone Camera</strong><span id='camst' class='hint'>Off</span></div>\
+           <div class='row' style='margin-top:.5rem'>\
+             <button class='btn primary' id='cambtn' onclick='toggleCam()'>Start Webcam Stream</button>\
+             <button class='btn' onclick='flipCam()'>Flip Lens</button>\
+           </div>\
+           <video id='cvid' autoplay playsinline muted style='display:none;width:100%;border-radius:8px;margin-top:.5rem'></video>\
+         </div>\
+         <div class='card'>\
+           <strong>Clipboard, Links, Notes & Alerts</strong>\
+           <textarea id='txt' rows='3' placeholder='Paste text, URL, note, or desktop alert\u{2026}' style='margin:.5rem 0'></textarea>\
            <div class='row'>\
              <button class='btn primary' onclick='sendClip()'>Sync Clipboard</button>\
              <button class='btn' onclick='sendLink()'>Open Link</button>\
              <button class='btn' onclick='sendNote()'>Save Note</button>\
+             <button class='btn' onclick='sendAlert()'>Send Alert</button>\
+             <button class='btn' onclick='enableWebNotif()'>Browser Alerts</button>\
            </div>\
            <p id='cst' class='hint'></p>\
          </div>\
@@ -1489,9 +2008,10 @@ fn render_connect_web_app(css: &ThemeCss, spki_fp: &str, pair_token: &str) -> St
          const st=document.getElementById('st');const feed=document.getElementById('feed');\
          const hashFp=(location.hash.match(/fp=([A-Za-z0-9_-]+)/)||[])[1]||'';\
          function safeHttp(u){{return typeof u==='string'&&/^https?:/.test(u.trim().toLowerCase())&&u.trim().toLowerCase().indexOf('http')===0&&(u.trim().slice(0,7).toLowerCase()==='http://'||u.trim().slice(0,8).toLowerCase()==='https://');}}\
-         function addFeed(html){{if(feed.querySelector('.hint'))feed.innerHTML='';const d=document.createElement('div');d.className='item';d.innerHTML=html;feed.prepend(d);}}\
+         function addTextFeed(txt){{if(feed.querySelector('.hint'))feed.innerHTML='';const d=document.createElement('div');d.className='item';d.textContent=txt;feed.prepend(d);}}\
          function randHex(n){{const a=new Uint8Array(n);crypto.getRandomValues(a);return Array.from(a,b=>b.toString(16).padStart(2,'0')).join('');}}\
          const peerNonce=randHex(12);\
+         let camStream=null,camTimer=null,camFacing='environment',syncFiles={{}};\
          async function localSas(){{if(!crypto.subtle)return '';const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(FP+'\\x00'+PAIR+'\\x00'+peerNonce));const n=new DataView(b).getUint32(0,false)%1000000;const s=String(n).padStart(6,'0');return s.slice(0,3)+'-'+s.slice(3);}}\
          if(hashFp&&hashFp!==FP){{st.textContent='Certificate fingerprint mismatch — re-scan QR';}}else{{\
          const wsUrl=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws';\
@@ -1501,21 +2021,44 @@ fn render_connect_web_app(css: &ThemeCss, spki_fp: &str, pair_token: &str) -> St
            if(m.type==='awaiting_approval'){{const exp=await localSas();if(exp&&m.sas!==exp){{st.textContent='SAS mismatch — aborting';ws.close();return;}}st.textContent='Approve on desktop';document.getElementById('sasbox').style.display='block';document.getElementById('sas').textContent=exp||m.sas;}}\
            else if(m.type==='paired'){{document.getElementById('sasbox').style.display='none';if(m.device_secret){{dev={{id:m.device_id,secret:m.device_secret,name:m.name}};localStorage.setItem(STORE,JSON.stringify(dev));}}st.textContent='Paired ('+m.name+')';}}\
            else if(m.type==='denied'){{st.textContent=m.reason||'Denied';}}\
-           else if(m.type==='clipboard'){{document.getElementById('txt').value=m.text;if(navigator.clipboard)navigator.clipboard.writeText(m.text).catch(()=>{{}});addFeed('Clipboard updated');}}\
+           else if(m.type==='clipboard'){{document.getElementById('txt').value=m.text;if(navigator.clipboard)navigator.clipboard.writeText(m.text).catch(()=>{{}});addTextFeed('Clipboard updated');}}\
+           else if(m.type==='media'){{const md=m.media||{{}};document.getElementById('mst').textContent=(md.status||'Idle')+' · '+(md.volume_pct||0)+'%'+(md.muted?' [MUTE]':'');document.getElementById('mtrack').textContent=md.title?((md.artist?md.artist+' \u{2014} ':'')+md.title):'No active media player';}}\
+           else if(m.type==='alert'){{addTextFeed('['+m.app+'] '+m.summary+(m.body?': '+m.body:''));if(window.Notification&&Notification.permission==='granted'){{new Notification(m.app+': '+m.summary,{{body:m.body}});}}}}\
+           else if(m.type==='cam_control'){{if(m.facing)camFacing=m.facing;if(m.active&&!camStream)startCam();else if(!m.active&&camStream)stopCam();}}\
+           else if(m.type==='sync_diff'){{handleSyncDiff(m);}}\
            else if(m.type==='link'){{if(!safeHttp(m.url))return;const a=document.createElement('a');a.href=m.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=m.title||m.url;const d=document.createElement('div');d.className='item';d.appendChild(a);if(feed.querySelector('.hint'))feed.innerHTML='';feed.prepend(d);}}\
            else if(m.type==='offer'){{if(m.kind==='file'){{const u='/api/download/'+encodeURIComponent(m.id)+'?device='+encodeURIComponent(dev.id||'')+'&secret='+encodeURIComponent(dev.secret||'');\
-             const a=document.createElement('a');a.href=u;a.className='btn primary';a.textContent='Download '+m.title+' ('+m.size+')';const d=document.createElement('div');d.className='item';d.appendChild(a);if(feed.querySelector('.hint'))feed.innerHTML='';feed.prepend(d);}}else if(m.url&&safeHttp(m.url)){{const a=document.createElement('a');a.href=m.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=m.title||m.url;const d=document.createElement('div');d.className='item';d.appendChild(a);if(feed.querySelector('.hint'))feed.innerHTML='';feed.prepend(d);}}else if(m.text){{document.getElementById('txt').value=m.text;addFeed('Text snippet ready above');}}}}\
+             const a=document.createElement('a');a.href=u;a.className='btn primary';a.textContent='Download '+m.title+' ('+m.size+')';const d=document.createElement('div');d.className='item';d.appendChild(a);if(feed.querySelector('.hint'))feed.innerHTML='';feed.prepend(d);}}else if(m.url&&safeHttp(m.url)){{const a=document.createElement('a');a.href=m.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=m.title||m.url;const d=document.createElement('div');d.className='item';d.appendChild(a);if(feed.querySelector('.hint'))feed.innerHTML='';feed.prepend(d);}}else if(m.text){{document.getElementById('txt').value=m.text;addTextFeed('Text snippet ready above');}}}}\
          }};\
-         ws.onclose=()=>{{st.textContent='Disconnected';}};}}\
+         ws.onclose=()=>{{stopCam();st.textContent='Disconnected';}};}}\
          function uploadFiles(){{const inp=document.getElementById('uf');if(!inp.files.length||!dev.id)return;\
            const bar=document.getElementById('up');const ust=document.getElementById('ust');bar.style.display='block';\
            let i=0;function next(){{if(i>=inp.files.length){{ust.textContent='Sent '+inp.files.length+' file(s)';return;}}\
            const f=inp.files[i++];const x=new XMLHttpRequest();x.open('POST','/api/upload');\
            x.setRequestHeader('X-Filename',f.name);x.setRequestHeader('X-Device-Id',dev.id);x.setRequestHeader('X-Device-Secret',dev.secret);\
            x.upload.onprogress=e=>{{if(e.lengthComputable)bar.value=Math.round(e.loaded/e.total*100);}};x.onload=()=>next();x.send(f);}}next();}}\
+         function runFolderSync(){{const inp=document.getElementById('sf');if(!inp.files.length||!window._hws)return;\
+           syncFiles={{}};const manifest=[];for(const f of inp.files){{const rel=f.webkitRelativePath||f.name;const clean=rel.indexOf('/')>0?rel.slice(rel.indexOf('/')+1):rel;syncFiles[clean]=f;manifest.push({{rel_path:clean,size:f.size,mtime_s:Math.floor(f.lastModified/1000)}});}}\
+           document.getElementById('sst').textContent='Computing diff ('+manifest.length+' files)\u{2026}';\
+           window._hws.send(JSON.stringify({{type:'sync_manifest',files:manifest}}));}}\
+         async function handleSyncDiff(d){{const sst=document.getElementById('sst');let pushed=0;\
+           for(const rel of (d.pull||[])){{const f=syncFiles[rel];if(!f)continue;await fetch('/api/sync/upload',{{method:'POST',headers:{{'X-Rel-Path':rel,'X-Device-Id':dev.id,'X-Device-Secret':dev.secret}},body:f}});pushed++;}}\
+           for(const entry of (d.push||[])){{const u='/api/sync/download?rel='+encodeURIComponent(entry.rel_path)+'&device='+encodeURIComponent(dev.id||'')+'&secret='+encodeURIComponent(dev.secret||'');const a=document.createElement('a');a.href=u;a.className='btn';a.textContent='Pull updated: '+entry.rel_path;const item=document.createElement('div');item.className='item';item.appendChild(a);feed.prepend(item);}}\
+           sst.textContent='Uploaded '+pushed+', ready to pull '+((d.push||[]).length)+' ('+(d.up_to_date||0)+' ok)';}}\
+         function mCmd(c){{if(window._hws)window._hws.send(JSON.stringify({{type:'media_cmd',cmd:c}}));}}\
+         async function startCam(){{if(!navigator.mediaDevices||!window._hws)return;\
+           try{{camStream=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:camFacing,width:{{ideal:960}},height:{{ideal:540}}}},audio:false}});const v=document.getElementById('cvid');v.srcObject=camStream;v.style.display='block';await v.play();\
+           const cv=document.createElement('canvas');const ctx=cv.getContext('2d');document.getElementById('camst').textContent='LIVE ('+camFacing+')';document.getElementById('cambtn').textContent='Stop Camera';\
+           window._hws.send(JSON.stringify({{type:'cam_meta',active:true,facing:camFacing,width:v.videoWidth||960,height:v.videoHeight||540}}));\
+           camTimer=setInterval(()=>{{if(!camStream||window._hws.readyState!==1||v.videoWidth===0)return;cv.width=v.videoWidth;cv.height=v.videoHeight;ctx.drawImage(v,0,0);cv.toBlob(b=>{{if(b&&window._hws.readyState===1)window._hws.send(b);}},'image/jpeg',0.72);}},66);}}catch(e){{document.getElementById('camst').textContent='Camera denied';}}}}\
+         function stopCam(){{if(camTimer){{clearInterval(camTimer);camTimer=null;}}if(camStream){{camStream.getTracks().forEach(t=>t.stop());camStream=null;}}const v=document.getElementById('cvid');if(v){{v.srcObject=null;v.style.display='none';}}document.getElementById('camst').textContent='Off';document.getElementById('cambtn').textContent='Start Webcam Stream';if(window._hws&&window._hws.readyState===1)window._hws.send(JSON.stringify({{type:'cam_meta',active:false,facing:camFacing,width:0,height:0}}));}}\
+         function toggleCam(){{if(camStream)stopCam();else startCam();}}\
+         function flipCam(){{camFacing=camFacing==='environment'?'user':'environment';if(camStream){{stopCam();startCam();}}}}\
          function sendClip(){{const t=document.getElementById('txt').value;if(!t||!window._hws)return;window._hws.send(JSON.stringify({{type:'clipboard',text:t}}));document.getElementById('cst').textContent='Sent clipboard';}}\
          function sendLink(){{const t=document.getElementById('txt').value.trim();if(!t||!window._hws)return;window._hws.send(JSON.stringify({{type:'link',url:t}}));document.getElementById('cst').textContent='Sent link to browser';}}\
          function sendNote(){{const t=document.getElementById('txt').value;if(!t||!window._hws)return;window._hws.send(JSON.stringify({{type:'note',title:'',text:t}}));document.getElementById('cst').textContent='Saved to Notes Inbox';}}\
+         function sendAlert(){{const t=document.getElementById('txt').value.trim();if(!t||!window._hws)return;window._hws.send(JSON.stringify({{type:'alert',title:'Phone Alert',body:t}}));document.getElementById('cst').textContent='Sent alert to desktop';}}\
+         function enableWebNotif(){{if(window.Notification)Notification.requestPermission().then(p=>{{document.getElementById('cst').textContent='Browser alerts: '+p;}});}}\
          </script></body></html>",
         bg = css.bg,
         surface = css.surface,
@@ -1629,7 +2172,16 @@ mod tests {
             .get_ref()
             .get_ref()
             .set_read_timeout(Some(Duration::from_secs(2)));
-        let closed = ws2.read();
-        assert!(matches!(closed, Ok(Message::Close(_)) | Err(_)));
+        let mut saw_close = false;
+        for _ in 0..4 {
+            match ws2.read() {
+                Ok(Message::Close(_)) | Err(_) => {
+                    saw_close = true;
+                    break;
+                }
+                Ok(_) => continue,
+            }
+        }
+        assert!(saw_close);
     }
 }
