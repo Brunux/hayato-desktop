@@ -634,13 +634,11 @@ impl DevScreen {
 
         // Summary (word-wrapped)
         let w = usize::from(inner.width.max(1));
-        let chars: Vec<char> = info.summary.chars().collect();
-        for chunk in chars.chunks(w) {
+        for line in super::manual::wrap(info.summary, w) {
             if y >= inner.bottom().saturating_sub(4) {
                 break;
             }
-            let s: String = chunk.iter().collect();
-            put_trunc(buf, inner.x, y, &s, inner.width, body);
+            put_trunc(buf, inner.x, y, &line, inner.width, body);
             y += 1;
         }
         y += 1;
@@ -654,8 +652,13 @@ impl DevScreen {
                     break;
                 }
                 let line = format!("• {item}");
-                put_trunc(buf, inner.x, y, &line, inner.width, body);
-                y += 1;
+                for wrapped in super::manual::wrap(&line, w) {
+                    if y >= inner.bottom().saturating_sub(4) {
+                        break;
+                    }
+                    put_trunc(buf, inner.x, y, &wrapped, inner.width, body);
+                    y += 1;
+                }
             }
             y += 1;
         }

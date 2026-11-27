@@ -553,7 +553,10 @@ impl Screen for FormatScreen {
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {
-        Some(&self.keybar)
+        match self.mode {
+            FormatMode::Select => Some(&self.keybar),
+            FormatMode::Confirm { .. } => None,
+        }
     }
 
     fn header(&self) -> Option<&Header> {

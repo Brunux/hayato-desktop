@@ -578,7 +578,7 @@ list below says why.
 The **Settings** menu (Alt+Ctrl+O, and the root menu) is grouped into seven sections:
 
 - **Network** - Wi-Fi radio and networks (with a sign-in row when the network asks for one), Bluetooth radio and devices, DNS, Remote login (SSH), Share this screen.
-- **Display & Sound** - Night light, Display arrangement, Workspaces per monitor, Rotation, Audio output, Volume per application (pavucontrol), Media.
+- **Display & Sound** - Night light, Display arrangement, Workspaces per monitor, Rotation, Audio output, Volume per application (`hayato menu audio`), Media.
 - **Appearance** - Theme, Wallpaper, Bar position, Bar density, Bar modules, Window corners, Window shadows, Window blur, Animations.
 - **Input** - Touchpad, Keyboard layout, Tablet mode (with Calibrate rotation when on).
 - **Power & Idle** - Battery, the power menu, and **Idle & lock** (screen-off, lock and panel-off timeouts, with a "Never" choice).

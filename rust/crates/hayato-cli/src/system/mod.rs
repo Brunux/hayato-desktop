@@ -378,6 +378,29 @@ pub fn split_panes(
     )
 }
 
+/// Draw `qr` into `area` when the terminal cells fit cleanly, or show `fallback`.
+pub fn draw_qr_fit(
+    buf: &mut ratatui::buffer::Buffer,
+    area: ratatui::layout::Rect,
+    design: &hayato_ui::Design,
+    qr: &hayato_ui::QrCode,
+    fallback: &str,
+) {
+    let (need_w, need_h) = qr.cell_size();
+    if area.width >= need_w && area.height >= need_h {
+        hayato_ui::draw_qr(buf, area, design, qr);
+    } else if area.height >= 1 && area.width >= 8 {
+        let _ = hayato_ui::widgets::put_trunc(
+            buf,
+            area.x,
+            area.y,
+            fallback,
+            area.width,
+            design.style(hayato_ui::TextStyle::Dim),
+        );
+    }
+}
+
 /// Spawn a shell line detached in a new session. Kept for the surfaces that
 /// still sequence several external tools; new work builds an argv instead
 /// (`spawn_detached_argv`).

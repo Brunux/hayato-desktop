@@ -828,7 +828,11 @@ fn build_rows(section: Section) -> (Vec<hayato_ui::Row>, Vec<String>) {
             rows.push(row("Audio output", audio_detail(), Glyph::Volume));
             keys.push("audio".to_string());
 
-            rows.push(row("Volume per application", "pavucontrol", Glyph::Volume));
+            rows.push(row(
+                "Volume per application",
+                "hayato menu audio",
+                Glyph::Volume,
+            ));
             keys.push("mixer".to_string());
 
             rows.push(row("Media", media_detail(), Glyph::Music));
@@ -2581,7 +2585,7 @@ fn dispatch_key(
             }
         }
         "power" => {
-            spawn_subcommand("hayato", &["menu", "power"]);
+            super::spawn_detached_argv("hayato", &["menu", "power"]);
             return Ok(KeyOutcome::Exit(0));
         }
         "power-profile" => {
@@ -2681,26 +2685,6 @@ fn change_password(password: &str) -> Result<(), String> {
             reason
         })
     }
-}
-
-fn spawn_subcommand(prog: &str, args: &[&str]) {
-    use std::os::unix::process::CommandExt;
-    let mut command = std::process::Command::new(prog);
-    command
-        .args(args)
-        .env_remove("HAYATO_UI")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setsid() < 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-    let _ = command.spawn();
 }
 
 fn missing(names: &[&str]) -> Option<String> {

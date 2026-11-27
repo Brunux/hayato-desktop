@@ -551,7 +551,20 @@ impl<'a> App<'a> {
             };
             let outcome = if event::poll(timeout)? {
                 last_event = Instant::now();
-                self.handle(event::read()?)
+                let ev = event::read()?;
+                let needs_full_clear = matches!(ev, Event::FocusGained | Event::Resize(_, _))
+                    || matches!(
+                        &ev,
+                        Event::Key(k)
+                            if k.kind == KeyEventKind::Press
+                                && k.modifiers == KeyModifiers::CONTROL
+                                && matches!(k.code, KeyCode::Char('l' | 'L'))
+                    );
+                let out = self.handle(ev);
+                if needs_full_clear && !matches!(out, Outcome::Done(_)) {
+                    let _ = terminal.clear();
+                }
+                out
             } else {
                 if let Some(limit) = limit
                     && last_event.elapsed() >= limit

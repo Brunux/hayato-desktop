@@ -474,7 +474,8 @@ impl Screen for KillScreen {
                     return Outcome::Done(hayato_ui::app::exit::ESCAPE);
                 }
                 let typed = matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-                    && !key.modifiers.contains(KeyModifiers::CONTROL);
+                    && !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT);
                 if typed {
                     self.list.type_filter(key);
                     return Outcome::Consumed;

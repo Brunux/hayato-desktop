@@ -593,10 +593,10 @@ impl Screen for NotesScreen {
                         }
                     }
                 }
-                _ => {
-                    let _ = self.title_input.handle(key);
-                    Outcome::Consumed
-                }
+                _ => match self.title_input.handle(key) {
+                    hayato_ui::InputAction::Ignored => Outcome::Continue,
+                    _ => Outcome::Consumed,
+                },
             };
         }
         if key.code == KeyCode::Esc && !self.list.filter().is_empty() {

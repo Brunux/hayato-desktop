@@ -282,7 +282,16 @@ impl DnsScreen {
                     put_trunc(buf, inner.x, y, servers, inner.width, dim);
                     y += 1;
                 }
-                put_trunc(buf, inner.x, y + 1, desc, inner.width, dim);
+                for line in super::manual::wrap(desc, usize::from(inner.width.max(1)))
+                    .into_iter()
+                    .take(2)
+                {
+                    if y + 1 >= inner.bottom().saturating_sub(2) {
+                        break;
+                    }
+                    put_trunc(buf, inner.x, y + 1, &line, inner.width, dim);
+                    y += 1;
+                }
             } else {
                 put_trunc(
                     buf,

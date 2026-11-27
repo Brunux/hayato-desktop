@@ -527,10 +527,10 @@ impl Screen for DownloadScreen {
                 }
                 Outcome::Done(hayato_ui::app::exit::ESCAPE)
             }
-            _ => {
-                let _ = self.input.handle(key);
-                Outcome::Consumed
-            }
+            _ => match self.input.handle(key) {
+                hayato_ui::InputAction::Ignored => Outcome::Continue,
+                _ => Outcome::Consumed,
+            },
         }
     }
 

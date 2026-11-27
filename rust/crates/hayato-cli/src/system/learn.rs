@@ -164,6 +164,7 @@ pub struct LearnScreen {
     doc_cache: HashMap<PathBuf, CachedDoc>,
     active_doc: Option<CachedDoc>,
     active_path: Option<PathBuf>,
+    wrapped_doc: Option<(Option<PathBuf>, u16, CachedDoc)>,
     content_scroll: Cell<u16>,
     search_input: Input,
     search_results: Vec<SearchResult>,
@@ -210,6 +211,7 @@ impl LearnScreen {
             doc_cache: HashMap::new(),
             active_doc: None,
             active_path: None,
+            wrapped_doc: None,
             content_scroll: Cell::new(0),
             search_input: Input::new(),
             search_results: Vec::new(),
@@ -441,6 +443,7 @@ impl LearnScreen {
         if let Some(doc) = self.load_or_cache_page(path, meta.as_ref()) {
             self.active_path = Some(path.to_path_buf());
             self.active_doc = Some(doc);
+            self.wrapped_doc = None;
             self.content_scroll.set(0);
             self.focus = FocusPane::Reader;
         }
@@ -451,6 +454,7 @@ impl LearnScreen {
         if let Some(cached) = self.doc_cache.get(&cache_key).cloned() {
             self.active_path = Some(cache_key);
             self.active_doc = Some(cached);
+            self.wrapped_doc = None;
             self.content_scroll.set(0);
             self.focus = FocusPane::Reader;
             return;
@@ -491,6 +495,7 @@ impl LearnScreen {
                 self.doc_cache.insert(cache_key.clone(), doc.clone());
                 self.active_path = Some(cache_key);
                 self.active_doc = Some(doc);
+                self.wrapped_doc = None;
                 self.content_scroll.set(0);
                 self.focus = FocusPane::Reader;
             }
@@ -617,30 +622,61 @@ impl LearnScreen {
         }
     }
 
+    fn current_doc(&self) -> Option<&CachedDoc> {
+        let Some(active) = self.active_doc.as_ref() else {
+            return None;
+        };
+        if let Some((path, _, wrapped)) = &self.wrapped_doc
+            && *path == self.active_path
+            && wrapped.title == active.title
+        {
+            return Some(wrapped);
+        }
+        Some(active)
+    }
+
+    fn ensure_wrapped_doc(&mut self, max_w: u16) {
+        let Some(active) = self.active_doc.as_ref() else {
+            self.wrapped_doc = None;
+            return;
+        };
+        if let Some((path, w, wrapped)) = &self.wrapped_doc
+            && *path == self.active_path
+            && *w == max_w
+            && wrapped.title == active.title
+        {
+            return;
+        }
+        let wrapped = wrap_doc_to_width(active, usize::from(max_w.max(16)));
+        self.wrapped_doc = Some((self.active_path.clone(), max_w, wrapped));
+    }
+
     fn max_scroll(&self) -> usize {
-        let total = self.active_doc.as_ref().map_or(0, |d| d.lines.len());
+        let total = self.current_doc().map_or(0, |d| d.lines.len());
         let viewport = usize::from(self.reader_height.get().max(1));
         total.saturating_sub(viewport)
     }
 
     fn jump_next_section(&mut self) {
-        let Some(doc) = &self.active_doc else {
+        let max = self.max_scroll();
+        let Some(doc) = self.current_doc() else {
             return;
         };
         let scroll = usize::from(self.content_scroll.get());
         if let Some(target) = next_section_line(&doc.sections, scroll) {
-            let clamped = target.min(self.max_scroll());
+            let clamped = target.min(max);
             self.content_scroll.set(clamped as u16);
         }
     }
 
     fn jump_prev_section(&mut self) {
-        let Some(doc) = &self.active_doc else {
+        let max = self.max_scroll();
+        let Some(doc) = self.current_doc() else {
             return;
         };
         let scroll = usize::from(self.content_scroll.get());
         if let Some(target) = prev_section_line(&doc.sections, scroll) {
-            let clamped = target.min(self.max_scroll());
+            let clamped = target.min(max);
             self.content_scroll.set(clamped as u16);
         }
     }
@@ -1149,7 +1185,12 @@ impl LearnScreen {
             design.style(TextStyle::Dim)
         };
 
-        let card_title = match &self.active_doc {
+        let rects = Self::reader_layout(area, design);
+        self.reader_height.set(rects.content.height);
+        let content_w = rects.content.width.saturating_sub(2).max(16);
+        self.ensure_wrapped_doc(content_w);
+
+        let card_title = match self.current_doc() {
             Some(doc) => {
                 if focused && self.pulse_on(design) {
                     format!("\u{25b9} {}", doc.title)
@@ -1168,10 +1209,7 @@ impl LearnScreen {
             title_style,
         );
 
-        let rects = Self::reader_layout(area, design);
-        self.reader_height.set(rects.content.height);
-
-        let Some(doc) = &self.active_doc else {
+        let Some(doc) = self.current_doc() else {
             self.draw_reader_empty(buf, rects.content, design);
             return;
         };
@@ -1410,11 +1448,15 @@ impl Screen for LearnScreen {
         // Global shortcuts
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
-                KeyCode::Char('f') | KeyCode::Char('F') => {
+                KeyCode::Char('1') => {
+                    self.switch_tab(SidebarTab::Manual);
+                    return Outcome::Consumed;
+                }
+                KeyCode::Char('2') | KeyCode::Char('f') | KeyCode::Char('F') => {
                     self.switch_tab(SidebarTab::Search);
                     return Outcome::Consumed;
                 }
-                KeyCode::Char('m') | KeyCode::Char('M') => {
+                KeyCode::Char('3') | KeyCode::Char('m') | KeyCode::Char('M') => {
                     self.switch_tab(SidebarTab::Man);
                     return Outcome::Consumed;
                 }
@@ -1606,10 +1648,7 @@ impl LearnScreen {
                             }
                             return Outcome::Consumed;
                         }
-                        KeyCode::Char(_) | KeyCode::Backspace
-                            if !key.modifiers.contains(KeyModifiers::CONTROL)
-                                && !key.modifiers.contains(KeyModifiers::ALT) =>
-                        {
+                        _ if Input::handles_edit_key(key) => {
                             let _ = self.input.handle(key);
                             self.filter_pages();
                             self.preview_selected_chapter();
@@ -1705,10 +1744,7 @@ impl LearnScreen {
                 }
             }
             SidebarTab::Search | SidebarTab::Man => {
-                if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-                    && !key.modifiers.contains(KeyModifiers::CONTROL)
-                    && !key.modifiers.contains(KeyModifiers::ALT)
-                {
+                if Input::handles_edit_key(key) {
                     let _ = self.search_input.handle(key);
                     if self.tab == SidebarTab::Search {
                         self.refresh_search_manuals();
@@ -1903,6 +1939,112 @@ pub fn map_sections_to_lines(headings: &[String], lines: &[Vec<DocSpan>]) -> Vec
         }
     }
     mapped
+}
+
+fn wrap_doc_to_width(doc: &CachedDoc, max_w: usize) -> CachedDoc {
+    if max_w == 0 {
+        return doc.clone();
+    }
+    let mut out_lines: Vec<Vec<DocSpan>> = Vec::with_capacity(doc.lines.len());
+    let mut line_map: Vec<usize> = Vec::with_capacity(doc.lines.len());
+
+    let push_span = |line: &mut Vec<DocSpan>, text: &str, style: TextStyle| {
+        if text.is_empty() {
+            return;
+        }
+        if let Some(last) = line.last_mut()
+            && last.style == style
+        {
+            last.text.push_str(text);
+        } else {
+            line.push(DocSpan {
+                text: text.to_string(),
+                style,
+            });
+        }
+    };
+
+    for spans in &doc.lines {
+        line_map.push(out_lines.len());
+        let total_w: usize = spans
+            .iter()
+            .map(|s| UnicodeWidthStr::width(s.text.as_str()))
+            .sum();
+        if spans.is_empty() || total_w <= max_w {
+            out_lines.push(spans.clone());
+            continue;
+        }
+        let mut cur_line: Vec<DocSpan> = Vec::new();
+        let mut cur_w: usize = 0;
+
+        for span in spans {
+            let mut idx = 0;
+            while idx < span.text.len() {
+                let first = span.text[idx..].chars().next().unwrap();
+                let is_ws = first.is_whitespace();
+                let mut end = idx + first.len_utf8();
+                while end < span.text.len() {
+                    let ch = span.text[end..].chars().next().unwrap();
+                    if ch.is_whitespace() != is_ws {
+                        break;
+                    }
+                    end += ch.len_utf8();
+                }
+                let token = &span.text[idx..end];
+                let tok_w = UnicodeWidthStr::width(token);
+                idx = end;
+
+                if cur_w == 0 && is_ws {
+                    continue;
+                }
+                if cur_w + tok_w <= max_w {
+                    push_span(&mut cur_line, token, span.style);
+                    cur_w += tok_w;
+                } else if is_ws {
+                    out_lines.push(std::mem::take(&mut cur_line));
+                    cur_w = 0;
+                } else {
+                    if cur_w > 0 && tok_w <= max_w {
+                        out_lines.push(std::mem::take(&mut cur_line));
+                        cur_w = 0;
+                    }
+                    if tok_w <= max_w {
+                        push_span(&mut cur_line, token, span.style);
+                        cur_w = tok_w;
+                    } else {
+                        for ch in token.chars() {
+                            let cw = UnicodeWidthChar::width(ch).unwrap_or(1);
+                            if cur_w > 0 && cur_w + cw > max_w {
+                                out_lines.push(std::mem::take(&mut cur_line));
+                                cur_w = 0;
+                            }
+                            let mut ch_buf = [0u8; 4];
+                            push_span(&mut cur_line, ch.encode_utf8(&mut ch_buf), span.style);
+                            cur_w += cw;
+                        }
+                    }
+                }
+            }
+        }
+        out_lines.push(cur_line);
+    }
+
+    let sections = doc
+        .sections
+        .iter()
+        .map(|sec| DocSection {
+            line: line_map.get(sec.line).copied().unwrap_or(0),
+            title: sec.title.clone(),
+        })
+        .collect();
+
+    CachedDoc {
+        title: doc.title.clone(),
+        chapter: doc.chapter.clone(),
+        read_minutes: doc.read_minutes,
+        lines: out_lines,
+        sections,
+    }
 }
 
 fn is_man_section_heading(line: &str) -> bool {
@@ -2180,5 +2322,18 @@ mod tests {
         let narrow_reader = render_screen(&mut screen, 80, 24);
         assert!(narrow_reader.contains("Getting Started"));
         assert!(narrow_reader.contains("First Boot"));
+
+        // Float width 94x30: dynamically wraps long lines so reader content stays readable
+        let float_view = render_screen(&mut screen, 94, 30);
+        assert!(float_view.contains("Getting Started"));
+        assert!(
+            screen
+                .current_doc()
+                .is_some_and(|d| d.lines.iter().all(|l| l
+                    .iter()
+                    .map(|s| UnicodeWidthStr::width(s.text.as_str()))
+                    .sum::<usize>()
+                    <= 60))
+        );
     }
 }

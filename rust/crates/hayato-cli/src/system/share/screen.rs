@@ -571,17 +571,13 @@ impl ShareScreen {
         if let Some(qr) = &self.qr {
             let qr_h = url_y.saturating_sub(inner.y);
             let qr_area = Rect::new(inner.x, inner.y, inner.width, qr_h);
-            let (need_w, need_h) = qr.cell_size();
-            if qr_h >= 4 && qr_area.width >= need_w && qr_area.height >= need_h {
-                draw_qr(ctx.buf, qr_area, ctx.design, qr);
-            } else if qr_h >= 2 {
-                let _ = put_trunc(
+            if qr_h >= 2 {
+                crate::system::draw_qr_fit(
                     ctx.buf,
-                    inner.x,
-                    inner.y,
+                    qr_area,
+                    ctx.design,
+                    qr,
                     "QR too large for this pane · press Enter for full view",
-                    inner.width,
-                    ctx.design.style(TextStyle::Dim),
                 );
             }
         }
@@ -672,7 +668,13 @@ impl Screen for ShareScreen {
                         inner.width,
                         footer_y.saturating_sub(inner.y + 1),
                     );
-                    draw_qr(ctx.buf, qr_area, ctx.design, qr);
+                    crate::system::draw_qr_fit(
+                        ctx.buf,
+                        qr_area,
+                        ctx.design,
+                        qr,
+                        "QR too large for window · widen window or press Esc",
+                    );
                     let display_footer = if self.direct_qr_status || title.starts_with("Wi-Fi") {
                         self.status_line.as_str()
                     } else {

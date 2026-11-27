@@ -485,6 +485,7 @@ impl AgentsScreen {
                 KeyHint::new("Enter", "launch / install"),
                 KeyHint::new("Ctrl+D", "set default"),
                 KeyHint::new("Ctrl+A", "accounts"),
+                KeyHint::new("type", "filter"),
                 KeyHint::new("Esc", "close"),
             ],
             rows_height: Cell::new(18),

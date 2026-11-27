@@ -54,7 +54,7 @@ impl EmojiScreen {
             header: Header::new("Hayato").subtitle("Emoji"),
             keybar: vec![
                 KeyHint::new("Enter", "insert at cursor"),
-                KeyHint::new("Alt+1", "copy only"),
+                KeyHint::new("Ctrl+Y", "copy only"),
                 KeyHint::new("type", "filter"),
                 KeyHint::new("Esc", "close"),
             ],
@@ -183,9 +183,8 @@ impl Screen for EmojiScreen {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
         }
-        let is_copy_only = (key.code == KeyCode::Char('y')
-            && key.modifiers.contains(KeyModifiers::CONTROL))
-            || (key.code == KeyCode::Char('1') && key.modifiers.contains(KeyModifiers::ALT));
+        let is_copy_only =
+            key.code == KeyCode::Char('y') && key.modifiers.contains(KeyModifiers::CONTROL);
         let rows_height = self.rows_height.get();
         if is_copy_only {
             if let Some(index) = self.list.selected_index() {

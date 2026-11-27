@@ -861,7 +861,10 @@ impl SoftwareScreen {
                     tags.push(RowTag::Heading);
                 }
             }
-            Phase::Detail { .. } | Phase::Confirm(_) | Phase::Running { .. } => {}
+            Phase::Detail { .. } | Phase::Confirm(_) | Phase::Running { .. } => {
+                self.sync_chrome();
+                return;
+            }
         }
 
         self.row_tags = tags;
@@ -962,6 +965,16 @@ impl SoftwareScreen {
             },
             Phase::Running { .. } => vec![KeyHint::new("Esc", "back when done")],
         };
+    }
+
+    fn propose_safe_updates(&mut self) {
+        let safe_pkgs: Vec<String> = self
+            .updates
+            .iter()
+            .filter(|u| !u.held_for_safety)
+            .map(|u| u.package.clone())
+            .collect();
+        self.propose_transaction(PendingAction::UpdatePackages(safe_pkgs));
     }
 
     fn selected_tag(&self) -> Option<&RowTag> {
@@ -2046,7 +2059,7 @@ impl Screen for SoftwareScreen {
                         if let ConfirmKind::Blocked { return_to, .. } = *boxed {
                             self.phase = *return_to;
                         }
-                        self.sync_chrome();
+                        self.rebuild_list();
                     }
                     return Outcome::Consumed;
                 }
@@ -2067,7 +2080,7 @@ impl Screen for SoftwareScreen {
                         if let ConfirmKind::Ask { return_to, .. } = *boxed {
                             self.phase = *return_to;
                         }
-                        self.sync_chrome();
+                        self.rebuild_list();
                         return Outcome::Consumed;
                     }
                     ConfirmAction::None => return Outcome::Consumed,
@@ -2159,7 +2172,9 @@ impl Screen for SoftwareScreen {
                             self.switch_tab(Tab::Discover);
                             Outcome::Consumed
                         }
-                        Phase::Tab(_) => Outcome::Done(hayato_ui::app::exit::ESCAPE),
+                        Phase::Tab(_) if key.code == KeyCode::Esc => {
+                            Outcome::Done(hayato_ui::app::exit::ESCAPE)
+                        }
                         _ => Outcome::Consumed,
                     };
                 }
@@ -2236,13 +2251,7 @@ impl Screen for SoftwareScreen {
                     return Outcome::Consumed;
                 }
                 KeyCode::Char('U') if matches!(self.phase, Phase::Tab(Tab::Updates)) => {
-                    let safe_pkgs: Vec<String> = self
-                        .updates
-                        .iter()
-                        .filter(|u| !u.held_for_safety)
-                        .map(|u| u.package.clone())
-                        .collect();
-                    self.propose_transaction(PendingAction::UpdatePackages(safe_pkgs));
+                    self.propose_safe_updates();
                     return Outcome::Consumed;
                 }
                 KeyCode::Char('u') if matches!(self.phase, Phase::Tab(Tab::Updates)) => {
@@ -2294,13 +2303,7 @@ impl Screen for SoftwareScreen {
             && key.code == KeyCode::Char('U')
             && matches!(self.phase, Phase::Tab(Tab::Updates))
         {
-            let safe_pkgs: Vec<String> = self
-                .updates
-                .iter()
-                .filter(|u| !u.held_for_safety)
-                .map(|u| u.package.clone())
-                .collect();
-            self.propose_transaction(PendingAction::UpdatePackages(safe_pkgs));
+            self.propose_safe_updates();
             return Outcome::Consumed;
         }
 
@@ -2373,7 +2376,7 @@ impl Screen for SoftwareScreen {
                     if let ConfirmKind::Blocked { return_to, .. } = *boxed {
                         self.phase = *return_to;
                     }
-                    self.sync_chrome();
+                    self.rebuild_list();
                 }
                 ConfirmKind::Ask {
                     action, confirm, ..
@@ -2391,7 +2394,7 @@ impl Screen for SoftwareScreen {
                         if let ConfirmKind::Ask { return_to, .. } = *boxed {
                             self.phase = *return_to;
                         }
-                        self.sync_chrome();
+                        self.rebuild_list();
                     }
                     ConfirmAction::None => {}
                 },

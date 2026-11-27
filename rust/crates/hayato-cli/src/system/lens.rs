@@ -382,16 +382,7 @@ impl LensScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 90 {
-            let left_w = (u32::from(area.width) * 44 / 100).max(36) as u16;
-            let right_w = area.width.saturating_sub(left_w + 1);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(area.x + left_w + 1, area.y, right_w, area.height)),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 42, 42)
     }
 
     fn draw_preview(&self, buf: &mut Buffer, area: Rect, design: &Design) {
@@ -407,7 +398,13 @@ impl LensScreen {
             return;
         }
         if let Some(qr) = &self.show_qr {
-            draw_qr(buf, inner, design, qr);
+            super::draw_qr_fit(
+                buf,
+                inner,
+                design,
+                qr,
+                "QR too large for preview pane \u{00b7} widen window",
+            );
             return;
         }
         let (badge, role) = self.kind.badge();

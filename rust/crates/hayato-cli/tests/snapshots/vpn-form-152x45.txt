@@ -42,4 +42,4 @@ Hayato · VPN                                                                   
 │                                                                             │ │                                                                      │
 │                                                                             │ │                                                                      │
 ╰─────────────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────────────────────────────╯
- [Tab/↑↓]  field   [Ctrl+S]  save   [Ctrl+G]  genkey   [Ctrl+Y]  copy pub   [Ctrl+V]  paste   [Esc]  cancel                                             
+ [Tab/↑↓]  field   [Ctrl+S]  save   [Ctrl+G]  genkey   [Ctrl+Y]  copy pub   [Ctrl+O]  browse   [Ctrl+V]  paste   [Ctrl+R]  reveal   [Esc]  cancel       

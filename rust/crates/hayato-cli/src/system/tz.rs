@@ -154,7 +154,7 @@ impl TzScreen {
         put_trunc(buf, inner.x, y, "NETWORK TIME (NTP)", inner.width, accent);
         y += 1;
         let (ntp_label, ntp_role) = if self.ntp {
-            ("● Automatic sync ON (systemd-timesyncd)", ColorRole::Ok)
+            ("● Auto sync ON (timesyncd)", ColorRole::Ok)
         } else {
             ("○ Automatic sync OFF", ColorRole::Warn)
         };
@@ -182,7 +182,7 @@ impl TzScreen {
             buf,
             inner.x,
             inner.bottom().saturating_sub(1),
-            "Enter applies zone & restarts Waybar · Ctrl+N toggles NTP",
+            "Enter: apply · ^N: toggle NTP",
             inner.width,
             dim,
         );

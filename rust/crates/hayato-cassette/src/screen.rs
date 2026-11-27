@@ -861,10 +861,16 @@ impl CassetteScreen {
             return;
         }
         self.last_fx_track_id = Some(id.clone());
-        self.fx = Some(fx::coalesce(EffectTimer::from_ms(
-            220,
-            Interpolation::CubicOut,
-        )));
+        if !self.focused || self.headless_test {
+            return;
+        }
+        self.fx = Some(fx::sweep_in(
+            Motion::LeftToRight,
+            6,
+            0,
+            self.border_ramp[0],
+            EffectTimer::from_ms(140, Interpolation::QuadOut),
+        ));
         self.last_fx_tick = Instant::now();
     }
 
@@ -3189,6 +3195,8 @@ impl Screen for CassetteScreen {
             Event::FocusGained => {
                 self.focused = true;
                 self.unfocused_since = None;
+                self.fx = None;
+                self.last_fx_tick = Instant::now();
                 self.hub.send(ProviderCmd::SetFocused(true));
                 Outcome::Consumed
             }
@@ -3863,14 +3871,17 @@ impl Screen for CassetteScreen {
             self.draw_right_drawer(ctx.buf, dr_rect, ctx.design, &mut hits);
         }
 
-        // Bounded tachyonfx on Main Stage only (never over Sixel drawer!)
+        // Bounded tachyonfx strictly on track/search list below Cassette Deck (never over Sixel album art!)
         if let Some(effect) = self.fx.as_mut() {
-            if ctx.design.reduced_motion() {
+            if ctx.design.reduced_motion()
+                || !self.focused
+                || !matches!(self.stage, MainStage::Collection | MainStage::Search)
+            {
                 self.fx = None;
             } else {
                 let dt = self.last_fx_tick.elapsed();
                 self.last_fx_tick = Instant::now();
-                effect.process(dt.into(), ctx.buf, main_rect);
+                effect.process(dt.into(), ctx.buf, stage_rect);
                 if effect.done() {
                     self.fx = None;
                 }
@@ -4095,6 +4106,10 @@ impl Screen for CassetteScreen {
                 }
                 _ => {}
             }
+        }
+
+        if ctrl || key.modifiers.contains(KeyModifiers::ALT) {
+            return Outcome::Continue;
         }
 
         // 4. Global single-key zero-conflict lowercase bindings
@@ -4346,14 +4361,19 @@ impl Screen for CassetteScreen {
                     return Outcome::Consumed;
                 }
                 _ => {
-                    if let ListAction::Activated(i) =
-                        self.sidebar_list
-                            .handle(key, self.rows_height.get(), design)
-                        && let Some(c) = self.filtered_collections.get(i).cloned()
+                    return match self
+                        .sidebar_list
+                        .handle(key, self.rows_height.get(), design)
                     {
-                        self.open_collection(c);
-                    }
-                    return Outcome::Consumed;
+                        ListAction::Activated(i) => {
+                            if let Some(c) = self.filtered_collections.get(i).cloned() {
+                                self.open_collection(c);
+                            }
+                            Outcome::Consumed
+                        }
+                        ListAction::Moved => Outcome::Consumed,
+                        ListAction::Ignored => Outcome::Continue,
+                    };
                 }
             },
             Focus::RightDrawer => match key.code {
@@ -4404,12 +4424,14 @@ impl Screen for CassetteScreen {
                     return Outcome::Consumed;
                 }
                 _ => {
-                    if let ListAction::Activated(i) =
-                        self.queue_list.handle(key, self.rows_height.get(), design)
-                    {
-                        self.activate_queue_row(i);
-                    }
-                    return Outcome::Consumed;
+                    return match self.queue_list.handle(key, self.rows_height.get(), design) {
+                        ListAction::Activated(i) => {
+                            self.activate_queue_row(i);
+                            Outcome::Consumed
+                        }
+                        ListAction::Moved => Outcome::Consumed,
+                        ListAction::Ignored => Outcome::Continue,
+                    };
                 }
             },
             Focus::Main => match self.stage {
@@ -4456,13 +4478,18 @@ impl Screen for CassetteScreen {
                         return Outcome::Consumed;
                     }
                     _ => {
-                        if let ListAction::Activated(i) =
-                            self.collection_list
-                                .handle(key, self.rows_height.get(), design)
-                        {
-                            self.activate_collection_row(i);
-                        }
-                        return Outcome::Consumed;
+                        return match self.collection_list.handle(
+                            key,
+                            self.rows_height.get(),
+                            design,
+                        ) {
+                            ListAction::Activated(i) => {
+                                self.activate_collection_row(i);
+                                Outcome::Consumed
+                            }
+                            ListAction::Moved => Outcome::Consumed,
+                            ListAction::Ignored => Outcome::Continue,
+                        };
                     }
                 },
                 MainStage::Visualizer => match key.code {
@@ -4482,16 +4509,20 @@ impl Screen for CassetteScreen {
                         });
                         return Outcome::Consumed;
                     }
-                    _ => {}
+                    _ => return Outcome::Continue,
                 },
                 MainStage::Settings => {
-                    if let ListAction::Activated(idx) =
-                        self.settings_list
-                            .handle(key, self.rows_height.get(), design)
+                    return match self
+                        .settings_list
+                        .handle(key, self.rows_height.get(), design)
                     {
-                        self.activate_settings_row(idx);
-                    }
-                    return Outcome::Consumed;
+                        ListAction::Activated(idx) => {
+                            self.activate_settings_row(idx);
+                            Outcome::Consumed
+                        }
+                        ListAction::Moved => Outcome::Consumed,
+                        ListAction::Ignored => Outcome::Continue,
+                    };
                 }
                 MainStage::Search => {
                     self.focus = Focus::SearchBar;

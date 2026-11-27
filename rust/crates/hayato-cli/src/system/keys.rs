@@ -458,10 +458,7 @@ impl Screen for KeysScreen {
             return Outcome::Continue;
         }
         let rows_height = self.rows_height.get();
-        if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-            && !key.modifiers.contains(KeyModifiers::CONTROL)
-            && !key.modifiers.contains(KeyModifiers::ALT)
-        {
+        if Input::handles_edit_key(key) {
             let _ = self.input.handle(key);
             self.filter_bindings();
             return Outcome::Continue;

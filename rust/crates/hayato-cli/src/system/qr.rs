@@ -488,7 +488,13 @@ impl Screen for QrScreen {
                     width: ctx.area.width.saturating_sub(4),
                     height: ctx.area.height.saturating_sub(4),
                 };
-                draw_qr(ctx.buf, inner, ctx.design, qr);
+                super::draw_qr_fit(
+                    ctx.buf,
+                    inner,
+                    ctx.design,
+                    qr,
+                    "QR too large for window \u{00b7} widen or resize window",
+                );
             }
             QrMode::Typing(input) => {
                 draw_card(ctx.buf, ctx.area, ctx.design, Some("The code"), true);
@@ -635,6 +641,7 @@ impl Screen for QrScreen {
                     self.sync_chrome();
                     Outcome::Consumed
                 }
+                hayato_ui::InputAction::Ignored => Outcome::Continue,
                 _ => Outcome::Consumed,
             },
             QrMode::Menu => {

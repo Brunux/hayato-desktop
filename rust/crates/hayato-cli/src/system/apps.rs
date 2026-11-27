@@ -445,10 +445,7 @@ impl Screen for AppsScreen {
         }
         let rows_height = self.rows_height.get();
         // Handle input
-        if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-            && !key.modifiers.contains(KeyModifiers::CONTROL)
-            && !key.modifiers.contains(KeyModifiers::ALT)
-        {
+        if Input::handles_edit_key(key) {
             let action = self.input.handle(key);
             if action == hayato_ui::InputAction::Changed {
                 self.filter_entries();

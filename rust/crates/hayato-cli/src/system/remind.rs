@@ -578,10 +578,10 @@ impl Screen for RemindScreen {
                     }
                     return Outcome::Consumed;
                 }
-                _ => {
-                    let _ = self.title_input.handle(key);
-                    return Outcome::Consumed;
-                }
+                _ => match self.title_input.handle(key) {
+                    hayato_ui::InputAction::Ignored => return Outcome::Continue,
+                    _ => return Outcome::Consumed,
+                },
             },
             RemindMode::NewWhen(title) => {
                 let title = title.clone();

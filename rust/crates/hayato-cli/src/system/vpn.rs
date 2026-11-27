@@ -1542,7 +1542,9 @@ impl VpnScreen {
                         KeyHint::new("Ctrl+S", "save"),
                         KeyHint::new("Ctrl+G", "genkey"),
                         KeyHint::new("Ctrl+Y", "copy pub"),
+                        KeyHint::new("Ctrl+O", "browse"),
                         KeyHint::new("Ctrl+V", "paste"),
+                        KeyHint::new("Ctrl+R", "reveal"),
                         KeyHint::new("Esc", "cancel"),
                     ],
                     FormProtocol::OpenVpn => vec![
@@ -1558,6 +1560,7 @@ impl VpnScreen {
             VpnPhase::ConfirmDelete { .. } => {
                 self.header = Header::new("Hayato").subtitle("VPN").status("Delete");
                 self.keybar = vec![
+                    KeyHint::new("\u{2190}\u{2192}", "choose"),
                     KeyHint::new("Enter", "confirm"),
                     KeyHint::new("Esc", "cancel"),
                 ];
@@ -2515,6 +2518,8 @@ impl Screen for VpnScreen {
 
         if let Some(right_area) = right {
             self.draw_inspector(ctx.buf, right_area, ctx.design);
+        } else {
+            *self.inspector_hits.borrow_mut() = InspectorHits::default();
         }
     }
 
