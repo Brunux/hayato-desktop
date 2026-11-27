@@ -510,7 +510,7 @@ fn vpn_connections() -> Vec<(String, bool)> {
 fn vpn_detail() -> String {
     let conns = vpn_connections();
     if conns.is_empty() {
-        return "none configured · Enter opens nmtui".to_string();
+        return "none configured · Enter opens VPN".to_string();
     }
     if let Some((active, _)) = conns.iter().find(|(_, on)| *on) {
         format!("connected: {active}")
@@ -1086,12 +1086,13 @@ const HIT_SECTION_BASE: usize = 20_000;
 
 /// Master-Detail Settings Control Center.
 ///
-/// Wide terminals (`>= 100` cols) render a persistent left section rail paired
+/// Wide terminals (`>= 84` cols) render a persistent left section rail paired
 /// with the active section's live settings list on the right. Compact terminals
-/// (`< 100` cols) render a clickable horizontal section tab strip above the list.
+/// (`< 84` cols) render a clickable horizontal section tab strip above the list.
 pub struct SettingsScreen {
     active_section: usize,
     focus_rail: bool,
+    dual_pane: Cell<bool>,
     cache: Vec<Option<(Vec<hayato_ui::Row>, Vec<String>)>>,
     keys: Vec<String>,
     list: ListState,
@@ -1122,6 +1123,7 @@ impl SettingsScreen {
         let mut screen = Self {
             active_section: idx,
             focus_rail: false,
+            dual_pane: Cell::new(true),
             cache: vec![None; Section::ALL.len()],
             keys: Vec::new(),
             list: ListState::new().with_empty("no matching settings"),
@@ -1168,6 +1170,7 @@ impl SettingsScreen {
         let mut screen = Self {
             active_section: 0,
             focus_rail: false,
+            dual_pane: Cell::new(true),
             cache,
             keys: Vec::new(),
             list: ListState::new().with_empty("no matching settings"),
@@ -1292,6 +1295,10 @@ impl SettingsScreen {
 impl Screen for SettingsScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         let (left, right) = Self::split_panes(ctx.area);
+        self.dual_pane.set(right.is_some());
+        if right.is_none() {
+            self.focus_rail = false;
+        }
         let mut hits = self.section_hits.borrow_mut();
         hits.clear();
 
@@ -1304,6 +1311,7 @@ impl Screen for SettingsScreen {
                 left.width.saturating_sub(4),
                 left.height.saturating_sub(2),
             );
+            let show_details = inner.height >= (Section::ALL.len() as u16) * 3;
             let mut y = inner.y;
             for (idx, sec) in Section::ALL.iter().enumerate() {
                 if y >= inner.bottom() {
@@ -1335,9 +1343,10 @@ impl Screen for SettingsScreen {
                     inner.width.saturating_sub(2),
                     label_style,
                 );
-                hits.push(Rect::new(inner.x, y, inner.width, 1));
+                let hit_h = if show_details { 2 } else { 1 }.min(inner.bottom().saturating_sub(y));
+                hits.push(Rect::new(inner.x, y, inner.width, hit_h));
                 y += 1;
-                if y < inner.bottom() && inner.height >= 16 {
+                if y < inner.bottom() && show_details {
                     put_trunc(
                         ctx.buf,
                         inner.x + 5,
@@ -1431,7 +1440,12 @@ impl Screen for SettingsScreen {
         }
         match key.code {
             KeyCode::Tab => {
-                self.focus_rail = !self.focus_rail;
+                if self.dual_pane.get() {
+                    self.focus_rail = !self.focus_rail;
+                } else {
+                    let next = (self.active_section + 1) % Section::ALL.len();
+                    self.load_section(next);
+                }
                 return Outcome::Consumed;
             }
             KeyCode::BackTab => {

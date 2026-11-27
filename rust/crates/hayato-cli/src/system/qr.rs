@@ -695,7 +695,8 @@ impl Screen for QrScreen {
         if !matches!(self.mode, QrMode::Menu) {
             return None;
         }
-        let (_, rows) = super::pick::list_layout(area);
+        let (left, _) = super::split_panes(area, 50, 46);
+        let (_, rows) = super::pick::list_layout(left);
         self.list.hit_row(rows, x, y, design)
     }
 

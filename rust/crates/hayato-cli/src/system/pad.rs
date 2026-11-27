@@ -15,6 +15,7 @@
 //! pairing once over USB because BlueZ's sixaxis plugin writes this machine's
 //! address into it. The screen says which one is waiting.
 
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 
 use hayato_ui::widgets::put_trunc;
@@ -38,6 +39,8 @@ pub struct ControllerScreen {
     path: Option<PathBuf>,
     pads: Vec<PadInfo>,
     row: usize,
+    scroll: Cell<usize>,
+    row_hits: RefCell<Vec<Rect>>,
     note: String,
     header: Header,
     keybar: Vec<KeyHint>,
@@ -50,11 +53,13 @@ impl ControllerScreen {
             path,
             pads,
             row: 0,
+            scroll: Cell::new(0),
+            row_hits: RefCell::new(Vec::new()),
             note: "Changes apply to every Hayato window, without a restart".to_string(),
             header: Header::new("Hayato").subtitle("Controller"),
             keybar: vec![
                 KeyHint::new("←/→", "change"),
-                KeyHint::new("Enter", "next"),
+                KeyHint::new("Enter", "cycle"),
                 KeyHint::new("r", "reset"),
                 KeyHint::new("Esc", "back"),
             ],
@@ -115,7 +120,7 @@ impl Screen for ControllerScreen {
     }
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
-        let (left, right) = super::split_panes(ctx.area, 56, 52);
+        let (left, right) = super::split_panes(ctx.area, 52, 44);
         draw_card(ctx.buf, left, ctx.design, Some("Buttons"), true);
         let inner = Rect {
             x: left.x + 2,
@@ -140,13 +145,22 @@ impl Screen for ControllerScreen {
                 let mut ry = r_in.y;
                 put_trunc(ctx.buf, r_in.x, ry, "CONSOLE LAYOUT", r_in.width, accent);
                 ry += 2;
-                let diagram = [
-                    "   ╭────[ L1 ]──────────[ R1 ]────╮",
-                    "  ╱   ╭─╮                  (△)     ╲",
-                    " │  (◀ ┼ ▶)   [Sh] [Op]  (□) (○)    │",
-                    "  ╲   ╰─╯                  (×)     ╱",
-                    "   ╰───(  LS  )──────(  RS  )─────╯",
-                ];
+                let diagram: &[&str] = if r_in.width >= 37 {
+                    &[
+                        "   ╭────[ L1 ]──────────[ R1 ]────╮",
+                        "  ╱   ╭─╮                  (△)     ╲",
+                        " │  (◀ ┼ ▶)   [Sh] [Op]  (□) (○)    │",
+                        "  ╲   ╰─╯                  (×)     ╱",
+                        "   ╰───(  LS  )──────(  RS  )─────╯",
+                    ]
+                } else {
+                    &[
+                        " ╭──[ L1 ]──────[ R1 ]──╮",
+                        " │  (┼)  [Sh][Op] (△)   │",
+                        " │ (LS)   (RS)  (□)(○)  │",
+                        " ╰─────────────────(×)──╯",
+                    ]
+                };
                 for line in diagram {
                     if ry >= r_in.bottom().saturating_sub(5) {
                         break;
@@ -236,20 +250,35 @@ impl Screen for ControllerScreen {
         y += 1;
 
         let bottom = inner.bottom().saturating_sub(3);
-        for index in 0..ROWS {
+        let stride = ctx.design.row_stride();
+        let avail_h = bottom.saturating_sub(y);
+        let max_vis = avail_h.div_ceil(stride).max(1) as usize;
+        let mut scroll = self.scroll.get();
+        if self.row < scroll {
+            scroll = self.row;
+        } else if self.row >= scroll + max_vis {
+            scroll = self.row + 1 - max_vis;
+        }
+        self.scroll.set(scroll);
+        let mut hits = self.row_hits.borrow_mut();
+        hits.clear();
+
+        for (index, item) in (0..ROWS).enumerate().skip(scroll) {
             if y >= bottom {
                 break;
             }
+            let _ = item;
             let selected = index == self.row;
             let row = Rect {
                 x: inner.x,
                 y,
                 width: inner.width,
-                height: 1,
+                height: stride.min(bottom.saturating_sub(y)).max(1),
             };
+            hits.push(Rect::new(inner.x, y, inner.width, row.height));
             let background = if selected {
                 ctx.buf.set_style(
-                    row,
+                    Rect::new(inner.x, y, inner.width, 1),
                     Style::default().bg(ctx.design.color(ColorRole::Selection)),
                 );
                 ctx.design.color(ColorRole::Selection)
@@ -280,7 +309,7 @@ impl Screen for ControllerScreen {
                     .set_string(inner.x, y, "Reset to defaults", label_style);
                 ctx.buf
                     .set_string(inner.right().saturating_sub(6), y, "r", value_style);
-                y += 1;
+                y += stride;
                 continue;
             }
 
@@ -296,8 +325,9 @@ impl Screen for ControllerScreen {
                 arrows_x.saturating_sub(unicode_width::UnicodeWidthStr::width(value) as u16 + 2);
             ctx.buf.set_string(value_x, y, value, value_style);
             ctx.buf.set_string(arrows_x, y, arrows, arrow_style);
-            y += 1;
+            y += stride;
         }
+        drop(hits);
 
         // The pairing step, shown until a Sony pad is seen at all, so a person
         // who has just taken the pad out of the drawer knows what to do before
@@ -323,7 +353,7 @@ impl Screen for ControllerScreen {
             }
         }
 
-        let hint = "↑/↓ row · ←/→ change · Enter next · r reset · Esc back";
+        let hint = "↑/↓ row · ←/→ change · Enter cycle · r reset · Esc back";
         put_trunc(
             ctx.buf,
             inner.x,
@@ -375,6 +405,26 @@ impl Screen for ControllerScreen {
             }
             _ => Outcome::Consumed,
         }
+    }
+
+    fn hit(&self, _area: Rect, x: u16, y: u16, _design: &Design) -> Option<usize> {
+        let scroll = self.scroll.get();
+        let hits = self.row_hits.borrow();
+        hits.iter()
+            .enumerate()
+            .find(|(_, r)| x >= r.x && x < r.right() && y >= r.y && y < r.bottom())
+            .map(|(i, _)| scroll + i)
+    }
+
+    fn click(&mut self, row: Option<usize>) -> Outcome {
+        let Some(idx) = row else {
+            return Outcome::Continue;
+        };
+        if idx < ROWS {
+            self.row = idx;
+            self.activate();
+        }
+        Outcome::Consumed
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {

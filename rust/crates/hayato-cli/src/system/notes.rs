@@ -386,7 +386,8 @@ impl NotesScreen {
             area.x + 2,
             area.y,
             &self.preview.title,
-            area.width.saturating_sub(10),
+            area.width
+                .saturating_sub(self.preview.badge.len() as u16 + 6),
             design.style(TextStyle::Title),
         );
         let badge_x = area
@@ -672,12 +673,7 @@ impl Screen for NotesScreen {
         if self.mode != Mode::List {
             return None;
         }
-        let inner = Rect {
-            x: area.x + 2,
-            y: area.y + 1,
-            width: area.width.saturating_sub(4),
-            height: area.height.saturating_sub(2),
-        };
+        let inner = design.block(hayato_ui::Border::Rounded).inner(area);
         self.list.hit_row(panes(inner).list, x, y, design)
     }
 

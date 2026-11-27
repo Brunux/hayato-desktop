@@ -544,10 +544,13 @@ impl Screen for RemindScreen {
                     ColorRole::Accent,
                 );
                 x += 2;
-                ctx.buf.set_string(
+                let max_w = filter.right().saturating_sub(x);
+                put_trunc(
+                    ctx.buf,
                     x,
                     filter.y,
-                    format!("“{title}” · pick when it fires (Esc edits message)"),
+                    &format!("“{title}” · pick when it fires (Esc edits message)"),
+                    max_w,
                     ctx.design.style(TextStyle::Title),
                 );
                 self.rows_height.set(rows.height);
@@ -706,7 +709,10 @@ impl Screen for RemindScreen {
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {
-        Some(&self.keybar)
+        match &self.mode {
+            RemindMode::List => Some(&self.keybar),
+            RemindMode::NewTitle | RemindMode::NewWhen(_) => None,
+        }
     }
 
     fn header(&self) -> Option<&Header> {

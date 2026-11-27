@@ -6,6 +6,7 @@
 //! - `[3] Photo Snap` (0s/3s/5s pixel-hacker countdown, Mirror, live `mpv.sock` viewfinder,
 //!   1-key Copy & Share via Hayato Share, Cancel-first Delete confirm)
 
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -21,6 +22,13 @@ use ratatui::style::{Modifier, Style};
 
 use super::digits::{draw_pixel_digits, pixel_width};
 use super::{camera_photos_dir, format_bytes, v4l2};
+
+#[derive(Default)]
+struct StudioHits {
+    confirm_area: Rect,
+    tabs: [Rect; 3],
+    controls: Vec<(usize, Rect)>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StudioMode {
@@ -53,6 +61,7 @@ pub struct StudioScreen {
     last_snap: Option<PathBuf>,
     recent: Vec<RecentItem>,
     status_line: String,
+    hits: RefCell<StudioHits>,
     header: Header,
     keybar: Vec<KeyHint>,
 }
@@ -82,6 +91,7 @@ impl StudioScreen {
             last_snap: None,
             recent,
             status_line: "Ready · Enter starts · [1-3] switch mode".to_string(),
+            hits: RefCell::new(StudioHits::default()),
             header: Header::new("Hayato").subtitle("Studio"),
             keybar: Vec::new(),
         };
@@ -101,6 +111,7 @@ impl StudioScreen {
             last_snap: None,
             recent: Vec::new(),
             status_line: "Ready".to_string(),
+            hits: RefCell::new(StudioHits::default()),
             header: Header::new("Hayato").subtitle("Studio"),
             keybar: Vec::new(),
         };
@@ -124,8 +135,9 @@ impl StudioScreen {
                 KeyHint::new("q", "quality"),
                 KeyHint::new("a", "audio"),
                 KeyHint::new("w", "cam"),
-                KeyHint::new("c", "corner"),
+                KeyHint::new("c/z", "corner/size"),
                 KeyHint::new("^S", "share"),
+                KeyHint::new("^O", "folder"),
                 KeyHint::new("Esc", "close"),
             ],
             StudioMode::Webcam => vec![
@@ -135,6 +147,7 @@ impl StudioScreen {
                 KeyHint::new("a", "audio"),
                 KeyHint::new("m", "mirror"),
                 KeyHint::new("^S", "share"),
+                KeyHint::new("^O", "folder"),
                 KeyHint::new("Esc", "close"),
             ],
             StudioMode::Photo => vec![
@@ -144,6 +157,7 @@ impl StudioScreen {
                 KeyHint::new("m", "mirror"),
                 KeyHint::new("v", "viewfinder"),
                 KeyHint::new("^S", "share"),
+                KeyHint::new("^O", "folder"),
                 KeyHint::new("d", "delete"),
                 KeyHint::new("Esc", "close"),
             ],
@@ -188,13 +202,16 @@ impl StudioScreen {
         }
     }
 
-    fn draw_tabs(&self, ctx: &mut BodyCtx, x: u16, y: u16, max_w: u16) {
+    fn draw_tabs(&self, ctx: &mut BodyCtx, x: u16, y: u16, max_w: u16, hits: &mut StudioHits) {
         let mut cx = x;
-        for (num, mode, label) in [
+        for (i, (num, mode, label)) in [
             ("1", StudioMode::Screen, "Screen Record"),
             ("2", StudioMode::Webcam, "Webcam Video"),
             ("3", StudioMode::Photo, "Photo Snap"),
-        ] {
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let active = self.mode == mode;
             let text = format!(" [{num}] {label} ");
             let st = if active {
@@ -208,6 +225,7 @@ impl StudioScreen {
             let w = text.len() as u16;
             if cx + w <= x + max_w {
                 let _ = put(ctx.buf, cx, y, &text, w, st);
+                hits.tabs[i] = Rect::new(cx, y, w, 1);
                 cx += w + 1;
             }
         }
@@ -251,11 +269,16 @@ impl Screen for StudioScreen {
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
         if let StudioPhase::ConfirmDelete { confirm, .. } = &mut self.phase {
+            *self.hits.borrow_mut() = StudioHits {
+                confirm_area: ctx.area,
+                ..Default::default()
+            };
             confirm.render(ctx.area, ctx.buf, ctx.design);
             return;
         }
 
         if let StudioPhase::Countdown { remaining, started } = self.phase {
+            *self.hits.borrow_mut() = StudioHits::default();
             let inner = draw_card(ctx.buf, ctx.area, ctx.design, Some("Photo Snap"), true);
             let left = remaining
                 .saturating_sub(started.elapsed().as_secs() as u8)
@@ -290,7 +313,8 @@ impl Screen for StudioScreen {
         if ctx.area.height < 10 || ctx.area.width < 40 {
             return;
         }
-        self.draw_tabs(ctx, ctx.area.x, ctx.area.y, ctx.area.width);
+        let mut hb = StudioHits::default();
+        self.draw_tabs(ctx, ctx.area.x, ctx.area.y, ctx.area.width, &mut hb);
 
         let body = Rect::new(
             ctx.area.x,
@@ -337,6 +361,8 @@ impl Screen for StudioScreen {
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
+                hb.controls
+                    .push((10, Rect::new(inner.x, y, inner.width, 1)));
                 y += 2;
                 let _ = put_trunc(
                     ctx.buf,
@@ -346,6 +372,8 @@ impl Screen for StudioScreen {
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
+                hb.controls
+                    .push((11, Rect::new(inner.x, y, inner.width, 1)));
                 y += 2;
                 let _ = put_trunc(
                     ctx.buf,
@@ -358,40 +386,99 @@ impl Screen for StudioScreen {
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
+                hb.controls
+                    .push((12, Rect::new(inner.x, y, inner.width, 1)));
                 y += 2;
                 let cam_st = if self.options.webcam { "ON" } else { "OFF" };
                 let _ = put_trunc(
                     ctx.buf,
                     inner.x,
                     y,
-                    &format!(
-                        "[w] Webcam  : [{cam_st}] · [c] Corner: {} · [z] Size: {}",
-                        self.options.corner.short(),
-                        self.options.pip_size.as_str().to_uppercase()
-                    ),
+                    &format!("[w] Webcam  : [{cam_st}]"),
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
+                hb.controls
+                    .push((13, Rect::new(inner.x, y, inner.width, 1)));
                 y += 1;
+                let corner_txt = format!("[c] Corner  : {}", self.options.corner.short());
+                let size_txt = format!(
+                    "[z] Size: {}",
+                    self.options.pip_size.as_str().to_uppercase()
+                );
+                let c_w = corner_txt.chars().count() as u16;
+                if inner.width < 52 {
+                    let _ = put_trunc(
+                        ctx.buf,
+                        inner.x,
+                        y,
+                        &corner_txt,
+                        inner.width,
+                        ctx.design.style(TextStyle::Body),
+                    );
+                    hb.controls
+                        .push((14, Rect::new(inner.x, y, inner.width, 1)));
+                    y += 1;
+                    let _ = put_trunc(
+                        ctx.buf,
+                        inner.x,
+                        y,
+                        &size_txt,
+                        inner.width,
+                        ctx.design.style(TextStyle::Body),
+                    );
+                    hb.controls
+                        .push((15, Rect::new(inner.x, y, inner.width, 1)));
+                } else {
+                    let _ = put_trunc(
+                        ctx.buf,
+                        inner.x,
+                        y,
+                        &format!("{corner_txt} · {size_txt}"),
+                        inner.width,
+                        ctx.design.style(TextStyle::Body),
+                    );
+                    hb.controls
+                        .push((14, Rect::new(inner.x, y, c_w.min(inner.width), 1)));
+                    let sz_x = inner.x + c_w + 3;
+                    if sz_x < inner.right() {
+                        hb.controls.push((
+                            15,
+                            Rect::new(sz_x, y, inner.right().saturating_sub(sz_x), 1),
+                        ));
+                    }
+                }
+                y += 1;
+                let sticky_txt = if self.options.sticky {
+                    "[s] Sticky  : ALL WS"
+                } else {
+                    "[s] Sticky  : CURRENT WS"
+                };
+                let mirror_txt = format!(
+                    "[m] Mirror: {}",
+                    if self.options.mirror { "ON" } else { "OFF" }
+                );
+                let st_w = sticky_txt.chars().count() as u16;
                 let _ = put_trunc(
                     ctx.buf,
                     inner.x,
                     y,
-                    &format!(
-                        "[s] Sticky  : {} · [m] Mirror: {}",
-                        if self.options.sticky {
-                            "ALL WS"
-                        } else {
-                            "CURRENT WS"
-                        },
-                        if self.options.mirror { "ON" } else { "OFF" }
-                    ),
+                    &format!("{sticky_txt} · {mirror_txt}"),
                     inner.width,
                     ctx.design.style(TextStyle::Dim),
                 );
+                hb.controls
+                    .push((16, Rect::new(inner.x, y, st_w.min(inner.width), 1)));
+                let mr_x = inner.x + st_w + 3;
+                if mr_x < inner.right() {
+                    hb.controls.push((
+                        17,
+                        Rect::new(mr_x, y, inner.right().saturating_sub(mr_x), 1),
+                    ));
+                }
                 y += 2;
                 if y < inner.bottom().saturating_sub(1) {
-                    let _ = draw_badge(
+                    let end = draw_badge(
                         ctx.buf,
                         inner.x,
                         y,
@@ -399,6 +486,8 @@ impl Screen for StudioScreen {
                         "  [ Enter ]  ● START SCREEN RECORDING  ",
                         ColorRole::Danger,
                     );
+                    hb.controls
+                        .push((20, Rect::new(inner.x, y, end.saturating_sub(inner.x), 1)));
                 }
             }
             StudioMode::Webcam => {
@@ -419,6 +508,8 @@ impl Screen for StudioScreen {
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
+                hb.controls
+                    .push((11, Rect::new(inner.x, y, inner.width, 1)));
                 y += 2;
                 let _ = put_trunc(
                     ctx.buf,
@@ -431,6 +522,8 @@ impl Screen for StudioScreen {
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
+                hb.controls
+                    .push((12, Rect::new(inner.x, y, inner.width, 1)));
                 y += 2;
                 let _ = put_trunc(
                     ctx.buf,
@@ -443,9 +536,11 @@ impl Screen for StudioScreen {
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
+                hb.controls
+                    .push((17, Rect::new(inner.x, y, inner.width, 1)));
                 y += 2;
                 if y < inner.bottom().saturating_sub(1) {
-                    let _ = draw_badge(
+                    let end = draw_badge(
                         ctx.buf,
                         inner.x,
                         y,
@@ -453,6 +548,8 @@ impl Screen for StudioScreen {
                         "  [ Enter ]  ● START WEBCAM RECORDING  ",
                         ColorRole::Danger,
                     );
+                    hb.controls
+                        .push((20, Rect::new(inner.x, y, end.saturating_sub(inner.x), 1)));
                 }
             }
             StudioMode::Photo => {
@@ -473,6 +570,8 @@ impl Screen for StudioScreen {
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
+                hb.controls
+                    .push((18, Rect::new(inner.x, y, inner.width, 1)));
                 y += 2;
                 let _ = put_trunc(
                     ctx.buf,
@@ -485,6 +584,8 @@ impl Screen for StudioScreen {
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
+                hb.controls
+                    .push((17, Rect::new(inner.x, y, inner.width, 1)));
                 y += 2;
                 let _ = put_trunc(
                     ctx.buf,
@@ -501,9 +602,11 @@ impl Screen for StudioScreen {
                     inner.width,
                     ctx.design.style(TextStyle::Body),
                 );
+                hb.controls
+                    .push((19, Rect::new(inner.x, y, inner.width, 1)));
                 y += 2;
                 if y < inner.bottom().saturating_sub(1) {
-                    let _ = draw_badge(
+                    let end = draw_badge(
                         ctx.buf,
                         inner.x,
                         y,
@@ -511,9 +614,12 @@ impl Screen for StudioScreen {
                         "  [ Space ]  SNAP PHOTO  ",
                         ColorRole::Accent,
                     );
+                    hb.controls
+                        .push((20, Rect::new(inner.x, y, end.saturating_sub(inner.x), 1)));
                 }
             }
         }
+        *self.hits.borrow_mut() = hb;
 
         let footer_y = inner.bottom().saturating_sub(1);
         let _ = put_trunc(
@@ -703,15 +809,24 @@ impl Screen for StudioScreen {
                 return Outcome::Consumed;
             }
             KeyCode::Char('d') if self.mode == StudioMode::Photo => {
-                if let Some(p) = self.last_snap.clone() {
+                let target = self.last_snap.clone().or_else(|| {
+                    self.recent
+                        .iter()
+                        .find(|r| r.is_photo)
+                        .map(|r| r.path.clone())
+                });
+                if let Some(p) = target {
                     self.phase = StudioPhase::ConfirmDelete {
                         path: p,
-                        confirm: Confirm::new("Delete last photo?", "Delete")
-                            .with_detail(
-                                "This permanently removes the photo from ~/Pictures/Camera.",
-                            )
-                            .destructive(true),
+                        confirm: Confirm::new(
+                            "Delete last photo?",
+                            "Removes the photo permanently from ~/Pictures/Camera.",
+                        )
+                        .with_options(&["Cancel", "Delete"])
+                        .destructive(true),
                     };
+                } else {
+                    self.status_line = "No photo to delete yet".to_string();
                 }
                 return Outcome::Consumed;
             }
@@ -749,12 +864,155 @@ impl Screen for StudioScreen {
         Outcome::Continue
     }
 
+    fn hit(&self, _area: Rect, col: u16, row: u16, design: &Design) -> Option<usize> {
+        let hb = self.hits.borrow();
+        if let StudioPhase::ConfirmDelete { confirm, .. } = &self.phase {
+            return confirm.hit(hb.confirm_area, design, col, row);
+        }
+        if !matches!(self.phase, StudioPhase::Idle) {
+            return None;
+        }
+        let in_rect = |r: Rect| {
+            r.width > 0
+                && r.height > 0
+                && col >= r.x
+                && col < r.right()
+                && row >= r.y
+                && row < r.bottom()
+        };
+        for (i, r) in hb.tabs.iter().enumerate() {
+            if in_rect(*r) {
+                return Some(i);
+            }
+        }
+        for (id, r) in &hb.controls {
+            if in_rect(*r) {
+                return Some(*id);
+            }
+        }
+        None
+    }
+
+    fn click(&mut self, index: Option<usize>) -> Outcome {
+        let Some(id) = index else {
+            return Outcome::Continue;
+        };
+        if let StudioPhase::ConfirmDelete { path, confirm } = &mut self.phase {
+            match confirm.click(id) {
+                ConfirmAction::Chosen(1) => {
+                    let p = path.clone();
+                    let _ = std::fs::remove_file(&p);
+                    self.last_snap = None;
+                    self.recent = scan_recent();
+                    self.status_line = "Deleted last photo".to_string();
+                    self.phase = StudioPhase::Idle;
+                }
+                ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                    self.phase = StudioPhase::Idle;
+                }
+                ConfirmAction::None => {}
+            }
+            return Outcome::Consumed;
+        }
+        if !matches!(self.phase, StudioPhase::Idle) {
+            return Outcome::Consumed;
+        }
+        match id {
+            0 => {
+                self.mode = StudioMode::Screen;
+                self.sync_chrome();
+            }
+            1 => {
+                self.mode = StudioMode::Webcam;
+                self.sync_chrome();
+            }
+            2 => {
+                self.mode = StudioMode::Photo;
+                self.sync_chrome();
+            }
+            10 => self.area = !self.area,
+            11 => {
+                self.options.quality = self.options.quality.cycle();
+                self.save_opts();
+            }
+            12 => {
+                self.options.audio = self.options.audio.cycle();
+                self.save_opts();
+            }
+            13 => {
+                self.options.webcam = !self.options.webcam;
+                self.save_opts();
+            }
+            14 => {
+                self.options.corner = self.options.corner.cycle();
+                self.save_opts();
+            }
+            15 => {
+                self.options.pip_size = self.options.pip_size.cycle();
+                self.save_opts();
+            }
+            16 => {
+                self.options.sticky = !self.options.sticky;
+                self.save_opts();
+            }
+            17 => {
+                self.options.mirror = !self.options.mirror;
+                self.save_opts();
+                if self.viewfinder_pid.is_some() {
+                    let _ = super::mpv_toggle_mirror();
+                }
+            }
+            18 => {
+                self.options.timer_secs = match self.options.timer_secs {
+                    0 => 3,
+                    3 => 5,
+                    _ => 0,
+                };
+                self.save_opts();
+            }
+            19 => self.toggle_viewfinder(false),
+            20 => match self.mode {
+                StudioMode::Screen => {
+                    self.save_opts();
+                    if let Some(pid) = self.viewfinder_pid.take() {
+                        super::stop_pid_if_comm(pid, &["mpv"]);
+                    }
+                    super::trigger_start("screen", self.area);
+                    return Outcome::Done(hayato_ui::app::exit::OK);
+                }
+                StudioMode::Webcam => {
+                    self.save_opts();
+                    if let Some(pid) = self.viewfinder_pid.take() {
+                        super::stop_pid_if_comm(pid, &["mpv"]);
+                    }
+                    super::trigger_start("webcam", false);
+                    return Outcome::Done(hayato_ui::app::exit::OK);
+                }
+                StudioMode::Photo => {
+                    if self.options.timer_secs > 0 {
+                        self.phase = StudioPhase::Countdown {
+                            remaining: self.options.timer_secs,
+                            started: Instant::now(),
+                        };
+                    } else {
+                        self.do_snap();
+                    }
+                }
+            },
+            _ => {}
+        }
+        Outcome::Consumed
+    }
+
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {
-        Some(&self.keybar)
+        match self.phase {
+            StudioPhase::Idle => Some(&self.keybar),
+            StudioPhase::Countdown { .. } | StudioPhase::ConfirmDelete { .. } => None,
+        }
     }
 }
 

@@ -180,18 +180,14 @@ impl NotifyScreen {
         } else {
             Glyph::Bell
         };
-        let dnd_label = if self.dnd {
-            "Do not disturb: ON"
-        } else {
-            "Do not disturb: OFF"
-        };
+        let dnd_label = if self.dnd { "DND: ON" } else { "DND: OFF" };
         self.strip.set_items(vec![
             ActionItem::new("dnd", "^D", dnd_label).glyph(dnd_glyph),
-            ActionItem::new("restore", "^R", "Restore last").glyph(Glyph::Undo),
+            ActionItem::new("restore", "^R", "Restore").glyph(Glyph::Undo),
             ActionItem::new(
                 "dismiss",
                 "^X",
-                format!("Dismiss all ({})", self.notifications.len()),
+                format!("Clear ({})", self.notifications.len()),
             )
             .glyph(Glyph::Trash),
         ]);
@@ -495,7 +491,10 @@ impl Screen for NotifyScreen {
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {
-        Some(&self.keybar)
+        match self.mode {
+            NotifyMode::Browse => Some(&self.keybar),
+            NotifyMode::ConfirmDismiss(_) => None,
+        }
     }
 
     fn header(&self) -> Option<&Header> {

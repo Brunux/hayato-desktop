@@ -934,13 +934,24 @@ impl SoftwareScreen {
                 KeyHint::new("1-4/Tab", "view"),
                 KeyHint::new("Esc", "back"),
             ],
-            Phase::Detail { .. } => vec![
-                KeyHint::new("i", "install"),
-                KeyHint::new("u", "update"),
-                KeyHint::new("o", "open"),
-                KeyHint::new("r", "remove"),
-                KeyHint::new("Esc", "back"),
-            ],
+            Phase::Detail { app, .. } => {
+                let pkg = app.package_name(&self.catalog);
+                let is_inst = self.installed.contains_key(pkg);
+                let has_upd = self.updates.iter().any(|u| u.package == pkg);
+                let mut hints = Vec::new();
+                if !is_inst {
+                    hints.push(KeyHint::new("i", "install"));
+                }
+                if has_upd {
+                    hints.push(KeyHint::new("u", "update"));
+                }
+                if is_inst {
+                    hints.push(KeyHint::new("o", "open"));
+                    hints.push(KeyHint::new("r", "remove"));
+                }
+                hints.push(KeyHint::new("Esc", "back"));
+                hints
+            }
             Phase::Confirm(k) => match &**k {
                 ConfirmKind::Ask { .. } => vec![
                     KeyHint::new("\u{2190}/\u{2192}", "choose"),
@@ -1209,6 +1220,7 @@ impl SoftwareScreen {
             },
             other => Box::new(Self::clone_nav_phase(other)),
         };
+        *self.hits.borrow_mut() = HitBoxes::default();
 
         let (tag, title, labels, steps): (String, String, Vec<String>, Vec<Vec<String>>) =
             match action {
@@ -1956,7 +1968,8 @@ impl Screen for SoftwareScreen {
                     .add_modifier(Modifier::BOLD),
             );
             y += 1;
-        } else if matches!(self.phase, Phase::Tab(Tab::Updates)) {
+        }
+        if matches!(self.phase, Phase::Tab(Tab::Updates)) && y + 1 < card.bottom() {
             let btn_style = Style::default()
                 .fg(ctx.design.color(ColorRole::SelectionText))
                 .bg(ctx.design.color(ColorRole::Accent))
@@ -1964,11 +1977,20 @@ impl Screen for SoftwareScreen {
             let sec_style = Style::default()
                 .fg(ctx.design.color(ColorRole::Text))
                 .bg(ctx.design.color(ColorRole::Bg));
-            let u_lbl = " Update all safe (U) ";
+            let compact = card.width < 50;
+            let u_lbl = if compact {
+                " Update all (U) "
+            } else {
+                " Update all safe (U) "
+            };
+            let r_lbl = if compact {
+                " Refresh (^U) "
+            } else {
+                " Refresh lists (Ctrl+U) "
+            };
             let uw = u_lbl.len() as u16;
             put(ctx.buf, card.x + 1, y, u_lbl, uw, btn_style);
             hb.update_all_btn = Rect::new(card.x + 1, y, uw, 1);
-            let r_lbl = " Refresh lists (Ctrl+U) ";
             let rw = r_lbl.len() as u16;
             let rx = card.x + 1 + uw + 2;
             if rx + rw <= card.right() {
@@ -2213,7 +2235,7 @@ impl Screen for SoftwareScreen {
                     });
                     return Outcome::Consumed;
                 }
-                KeyCode::Char('U') => {
+                KeyCode::Char('U') if matches!(self.phase, Phase::Tab(Tab::Updates)) => {
                     let safe_pkgs: Vec<String> = self
                         .updates
                         .iter()
@@ -2268,7 +2290,10 @@ impl Screen for SoftwareScreen {
             }
         }
 
-        if key.modifiers == KeyModifiers::SHIFT && key.code == KeyCode::Char('U') {
+        if key.modifiers == KeyModifiers::SHIFT
+            && key.code == KeyCode::Char('U')
+            && matches!(self.phase, Phase::Tab(Tab::Updates))
+        {
             let safe_pkgs: Vec<String> = self
                 .updates
                 .iter()
@@ -2287,6 +2312,9 @@ impl Screen for SoftwareScreen {
     }
 
     fn hit(&self, _area: Rect, col: u16, row: u16, design: &Design) -> Option<usize> {
+        if matches!(self.phase, Phase::Running { .. }) {
+            return None;
+        }
         let in_rect = |r: Rect| {
             r.width > 0
                 && r.height > 0
@@ -2328,6 +2356,9 @@ impl Screen for SoftwareScreen {
     }
 
     fn click(&mut self, index: Option<usize>) -> Outcome {
+        if matches!(self.phase, Phase::Running { .. }) {
+            return Outcome::Consumed;
+        }
         let Some(index) = index else {
             return Outcome::Continue;
         };

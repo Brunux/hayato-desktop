@@ -475,7 +475,7 @@ impl TranslateScreen {
             buf,
             inner.x,
             inner.bottom().saturating_sub(1),
-            "Enter saves target language · Ctrl+T translates & copies",
+            "Enter saves · Ctrl+T translates & copies",
             inner.width,
             dim,
         );
@@ -486,7 +486,7 @@ impl Screen for TranslateScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         let (left, right) = Self::split_panes(ctx.area);
         draw_card(ctx.buf, left, ctx.design, Some("Target Language"), true);
-        let (filter, rows) = Self::left_layout(left);
+        let (filter, mut rows) = Self::left_layout(left);
         let default_msg = format!(
             "Everything goes into {} · Enter sets · Ctrl+T translates",
             name_of(&self.current)
@@ -505,6 +505,22 @@ impl Screen for TranslateScreen {
             self.list.visible_len(),
             LANGUAGES.len(),
         );
+        if right.is_none()
+            && let Some((src, out_text)) = &self.translated
+            && rows.height > 3
+        {
+            rows.height = rows.height.saturating_sub(1);
+            let preview_y = rows.bottom();
+            let first = out_text.lines().next().unwrap_or("");
+            put_trunc(
+                ctx.buf,
+                rows.x,
+                preview_y,
+                &format!("{src} → {}: {first}", name_of(&self.current)),
+                rows.width,
+                Style::default().fg(ctx.design.color(ColorRole::Ok)),
+            );
+        }
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
 

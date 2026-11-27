@@ -21,4 +21,4 @@ Hayato · Software                                                      Kdenlive
 │   Install (i)    Back (Esc)                                                  │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- [i]  install   [u]  update   [o]  open   [r]  remove   [Esc]  back             
+ [i]  install   [Esc]  back                                                     

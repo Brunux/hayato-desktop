@@ -123,6 +123,7 @@ impl PkgScreen {
                 KeyHint::new("Enter", "install"),
                 KeyHint::new("Ctrl+X", "remove"),
                 KeyHint::new("Ctrl+U", "apt update"),
+                KeyHint::new("Ctrl+G", "full-upgrade"),
                 KeyHint::new("Esc", "new search"),
             ],
             rows_height: Cell::new(16),
@@ -884,7 +885,7 @@ impl Screen for PkgScreen {
                 }
                 ListAction::Moved => {
                     self.ensure_selected_info();
-                    Outcome::Continue
+                    Outcome::Consumed
                 }
                 ListAction::Ignored => Outcome::Continue,
             }

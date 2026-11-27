@@ -75,6 +75,9 @@ pub struct ShareScreen {
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
+    list_area: Cell<Rect>,
+    confirm_area: Cell<Rect>,
+    direct_qr_status: bool,
     lan_ip: String,
 }
 
@@ -109,6 +112,9 @@ impl ShareScreen {
                 .status(format!("{lan_ip} · Ready")),
             keybar: Vec::new(),
             rows_height: Cell::new(14),
+            list_area: Cell::new(Rect::default()),
+            confirm_area: Cell::new(Rect::default()),
+            direct_qr_status: false,
             lan_ip,
         };
 
@@ -164,6 +170,9 @@ impl ShareScreen {
                 .status("192.168.1.42 · Ready"),
             keybar: Vec::new(),
             rows_height: Cell::new(14),
+            list_area: Cell::new(Rect::default()),
+            confirm_area: Cell::new(Rect::default()),
+            direct_qr_status: false,
             lan_ip: "192.168.1.42".to_string(),
         };
         screen.rebuild_rows();
@@ -561,12 +570,18 @@ impl ShareScreen {
 
         if let Some(qr) = &self.qr {
             let qr_h = url_y.saturating_sub(inner.y);
-            if qr_h >= 4 {
-                draw_qr(
+            let qr_area = Rect::new(inner.x, inner.y, inner.width, qr_h);
+            let (need_w, need_h) = qr.cell_size();
+            if qr_h >= 4 && qr_area.width >= need_w && qr_area.height >= need_h {
+                draw_qr(ctx.buf, qr_area, ctx.design, qr);
+            } else if qr_h >= 2 {
+                let _ = put_trunc(
                     ctx.buf,
-                    Rect::new(inner.x, inner.y, inner.width, qr_h),
-                    ctx.design,
-                    qr,
+                    inner.x,
+                    inner.y,
+                    "QR too large for this pane · press Enter for full view",
+                    inner.width,
+                    ctx.design.style(TextStyle::Dim),
                 );
             }
         }
@@ -641,6 +656,7 @@ impl Screen for ShareScreen {
 
     fn draw(&mut self, ctx: &mut BodyCtx) {
         if let SharePhase::ConfirmLargeZip(confirm) = &mut self.phase {
+            self.confirm_area.set(ctx.area);
             confirm.render(ctx.area, ctx.buf, ctx.design);
             return;
         }
@@ -657,7 +673,7 @@ impl Screen for ShareScreen {
                         footer_y.saturating_sub(inner.y + 1),
                     );
                     draw_qr(ctx.buf, qr_area, ctx.design, qr);
-                    let display_footer = if title.starts_with("Wi-Fi") {
+                    let display_footer = if self.direct_qr_status || title.starts_with("Wi-Fi") {
                         self.status_line.as_str()
                     } else {
                         text.as_str()
@@ -734,13 +750,10 @@ impl Screen for ShareScreen {
             let list_y = inner.y + 3;
             let list_h = footer_y.saturating_sub(list_y);
             self.rows_height.set(list_h);
+            let list_rect = Rect::new(inner.x, list_y, inner.width, list_h);
+            self.list_area.set(list_rect);
             if list_h > 0 {
-                self.list.render(
-                    Rect::new(inner.x, list_y, inner.width, list_h),
-                    ctx.buf,
-                    ctx.design,
-                    true,
-                );
+                self.list.render(list_rect, ctx.buf, ctx.design, true);
             }
 
             let scanning = self.scanner.as_ref().is_some_and(PeerScanner::is_scanning);
@@ -805,6 +818,7 @@ impl Screen for ShareScreen {
             SharePhase::ActiveLan | SharePhase::Receive | SharePhase::DirectQr { .. } => {
                 match key.code {
                     KeyCode::Esc | KeyCode::Char('q') => {
+                        self.direct_qr_status = false;
                         self.phase = SharePhase::Sheet;
                         self.sync_chrome();
                         return Outcome::Consumed;
@@ -818,12 +832,16 @@ impl Screen for ShareScreen {
                             };
                             match crate::system::qr::save_qr_png(text, prefix) {
                                 Ok(p) => {
+                                    self.direct_qr_status = true;
                                     self.status_line = format!(
                                         "Saved {}",
                                         p.file_name().unwrap_or_default().to_string_lossy()
                                     );
                                 }
-                                Err(e) => self.status_line = e,
+                                Err(e) => {
+                                    self.direct_qr_status = true;
+                                    self.status_line = e;
+                                }
                             }
                         }
                         return Outcome::Consumed;
@@ -831,6 +849,7 @@ impl Screen for ShareScreen {
                     KeyCode::Char('c') => {
                         if let SharePhase::DirectQr { text, .. } = &self.phase {
                             let t = text.clone();
+                            self.direct_qr_status = true;
                             self.copy_text(&t, "payload");
                         } else if let Some(srv) = &self.server {
                             let u = srv.url.clone();
@@ -845,7 +864,7 @@ impl Screen for ShareScreen {
                         }
                         return Outcome::Consumed;
                     }
-                    _ => return Outcome::Consumed,
+                    _ => return Outcome::Continue,
                 }
             }
             SharePhase::Sheet | SharePhase::ConfirmLargeZip(_) => {}
@@ -888,12 +907,53 @@ impl Screen for ShareScreen {
         }
     }
 
+    fn hit(&self, _area: Rect, col: u16, row: u16, design: &Design) -> Option<usize> {
+        if let SharePhase::ConfirmLargeZip(confirm) = &self.phase {
+            return confirm.hit(self.confirm_area.get(), design, col, row);
+        }
+        if matches!(self.phase, SharePhase::Sheet) {
+            return self.list.hit_row(self.list_area.get(), col, row, design);
+        }
+        None
+    }
+
+    fn click(&mut self, index: Option<usize>) -> Outcome {
+        let Some(row) = index else {
+            return Outcome::Continue;
+        };
+        if let SharePhase::ConfirmLargeZip(confirm) = &mut self.phase {
+            match confirm.click(row) {
+                ConfirmAction::Chosen(1) => {
+                    self.phase = SharePhase::Sheet;
+                    if let Err(e) = self.activate_lan(false) {
+                        self.status_line = e;
+                    }
+                }
+                ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                    self.phase = SharePhase::Sheet;
+                    self.sync_chrome();
+                }
+                ConfirmAction::None => {}
+            }
+            return Outcome::Consumed;
+        }
+        if matches!(self.phase, SharePhase::Sheet) {
+            self.list.set_cursor(row);
+            self.activate_selected();
+            return Outcome::Consumed;
+        }
+        Outcome::Continue
+    }
+
     fn header(&self) -> Option<&Header> {
         Some(&self.header)
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {
-        Some(&self.keybar)
+        match &self.phase {
+            SharePhase::ConfirmLargeZip(_) => None,
+            _ => Some(&self.keybar),
+        }
     }
 }
 

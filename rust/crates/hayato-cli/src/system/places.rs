@@ -708,7 +708,6 @@ impl Screen for PlacesScreen {
         }
         let is_eject = (key.modifiers.contains(KeyModifiers::CONTROL)
             && matches!(key.code, KeyCode::Char('e') | KeyCode::Char('E')))
-            || (key.modifiers.contains(KeyModifiers::ALT) && key.code == KeyCode::Char('1'))
             || key.code == KeyCode::Delete;
         if is_eject {
             if let Some(place) = self.selected_place()
@@ -808,6 +807,7 @@ impl EjectScreen {
                 KeyHint::new("Ctrl+E", "eject all"),
                 KeyHint::new("Ctrl+O", "open folder"),
                 KeyHint::new("Ctrl+R", "refresh"),
+                KeyHint::new("type", "filter"),
                 KeyHint::new("Esc", "close"),
             ],
             rows_height: Cell::new(16),

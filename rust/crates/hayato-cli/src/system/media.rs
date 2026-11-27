@@ -80,7 +80,7 @@ impl MediaScreen {
             header: Header::new("Hayato").subtitle("Media"),
             keybar: vec![
                 KeyHint::new("Enter", "act"),
-                KeyHint::new("r", "refresh"),
+                KeyHint::new("Ctrl+R", "refresh"),
                 KeyHint::new("Esc", "close"),
             ],
             rows_height: Cell::new(20),
@@ -125,7 +125,7 @@ impl MediaScreen {
             rows.push(
                 Row::new("Nothing is playing")
                     .glyph(Glyph::Music)
-                    .detail("no MPRIS player is running · press Enter or r to refresh"),
+                    .detail("no MPRIS player is running · press Enter or Ctrl+R to refresh"),
             );
             actions.push("refresh".to_string());
         } else {
@@ -264,9 +264,9 @@ impl MediaScreen {
                 put_trunc(buf, inner.x, y, "Transport", inner.width, accent);
                 y += 1;
                 let bar = if active.status.is_playing() {
-                    "[ ⏮ Prev ]   [ ⏸ Pause ]   [ ⏭ Next ]   [ ⏹ Stop ]"
+                    "[⏮ Prev] [⏸ Pause] [⏭ Next] [⏹ Stop]"
                 } else {
-                    "[ ⏮ Prev ]   [ ▶ Play  ]   [ ⏭ Next ]   [ ⏹ Stop ]"
+                    "[⏮ Prev] [▶ Play]  [⏭ Next] [⏹ Stop]"
                 };
                 put_trunc(buf, inner.x, y, bar, inner.width, body);
             }
@@ -305,7 +305,7 @@ impl MediaScreen {
             buf,
             inner.x,
             inner.bottom().saturating_sub(1),
-            "Space toggles play/pause · Ctrl+R refreshes",
+            "Enter triggers action · Ctrl+R refreshes",
             inner.width,
             dim,
         );

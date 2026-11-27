@@ -850,7 +850,7 @@ impl LearnScreen {
     fn tab_labels(width: u16) -> [&'static str; 3] {
         if width >= 35 {
             ["[1] Manual", "[2] Search", "[3] Man"]
-        } else if width >= 27 {
+        } else if width >= 32 {
             ["[1]Manual", "[2]Search", "[3]Man"]
         } else {
             ["[1]Man", "[2]Rg", "[3]Doc"]
@@ -1476,7 +1476,7 @@ impl Screen for LearnScreen {
         self.focus = FocusPane::Sidebar;
         match self.tab {
             SidebarTab::Manual => {
-                let already_selected = self.list.selected_index() == Some(hit);
+                let already_selected = self.list.cursor() == hit;
                 self.list.set_cursor(hit);
                 self.preview_selected_chapter();
                 if already_selected || !self.last_dual_pane.get() {
@@ -1517,13 +1517,19 @@ impl Screen for LearnScreen {
         if let Some(reader) = layout.reader {
             if rect_contains(reader, x, y) {
                 let rects = Self::reader_layout(reader, design);
-                if let Some(prev) = rects.prev_btn {
-                    if rect_contains(prev, x, y) {
+                if self
+                    .active_doc
+                    .as_ref()
+                    .is_some_and(|d| !d.sections.is_empty())
+                {
+                    if let Some(prev) = rects.prev_btn
+                        && rect_contains(prev, x, y)
+                    {
                         return Some(HIT_READER_PREV_SEC);
                     }
-                }
-                if let Some(next) = rects.next_btn {
-                    if rect_contains(next, x, y) {
+                    if let Some(next) = rects.next_btn
+                        && rect_contains(next, x, y)
+                    {
                         return Some(HIT_READER_NEXT_SEC);
                     }
                 }
