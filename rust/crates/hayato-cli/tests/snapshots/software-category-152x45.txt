@@ -9,7 +9,7 @@ Hayato · Software                                                              
 │     FFmpeg  light · Fast command-line converter, trimmer and muxer…        │ │                                                                      │
 │                                                                             │ │  Full non-linear video editor with multi-track timeline and effect…  │
 │                                                                             │ │                                                                      │
-│                                                                             │ │  Press Enter for App Detail, sizes & permissions.                    │
+│                                                                             │ │  Enter for details, sizes & permissions.                             │
 │                                                                             │ │                                                                      │
 │                                                                             │ │                                                                      │
 │                                                                             │ │                                                                      │

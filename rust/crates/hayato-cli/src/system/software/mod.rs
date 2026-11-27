@@ -1430,9 +1430,12 @@ impl SoftwareScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
+        // Match `files::PREVIEW_MIN_WIDTH` (84 cols) so opening Software inline
+        // inside `Alt+Space` (`900x600` `hayato-pick`, ~94-98 cols) shows the
+        // side-by-side Preview pane while keeping 80x24 single-pane.
+        if area.width >= 84 {
             let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 52) / 100).max(48) as u16;
+            let left_w = ((u32::from(area.width) * 52) / 100).max(42) as u16;
             let right_w = area.width.saturating_sub(left_w + gap);
             (
                 Rect::new(area.x, area.y, left_w, area.height),
@@ -1540,14 +1543,7 @@ impl SoftwareScreen {
                 };
                 put_trunc(buf, x, y, pitch, w, body);
                 y += 2;
-                put_trunc(
-                    buf,
-                    x,
-                    y,
-                    "Press Enter for App Detail, sizes & permissions.",
-                    w,
-                    dim,
-                );
+                put_trunc(buf, x, y, "Enter for details, sizes & permissions.", w, dim);
             }
             Some(RowTag::UpdatePkg(i)) => {
                 let u = &self.updates[*i];
@@ -2628,5 +2624,19 @@ mod tests {
         assert_eq!(s.phase(), Some("updates"));
         s.switch_tab(Tab::Cleanup);
         assert_eq!(s.phase(), Some("cleanup"));
+    }
+
+    #[test]
+    fn split_panes_shows_preview_at_pick_window_width() {
+        let (_, compact) = SoftwareScreen::split_panes(Rect::new(0, 0, 80, 22));
+        assert!(compact.is_none());
+
+        let (left_pick, preview_pick) = SoftwareScreen::split_panes(Rect::new(0, 0, 96, 30));
+        assert!(preview_pick.is_some());
+        assert!(left_pick.width >= 48);
+
+        let (left_wide, preview_wide) = SoftwareScreen::split_panes(Rect::new(0, 0, 152, 42));
+        assert_eq!(left_wide.width, 79);
+        assert_eq!(preview_wide.unwrap().width, 72);
     }
 }
