@@ -4,6 +4,7 @@
 //! toggle Video vs Audio-only (m4a) inline (`Tab` / `Ctrl+P`), shows recent
 //! files in `~/Downloads`, and runs `yt-dlp` inside an embedded [`TaskView`].
 
+use std::cell::Cell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -171,6 +172,7 @@ pub struct DownloadScreen {
     active_bg: bool,
     mode: DownloadMode,
     banner: Option<(String, bool)>,
+    pill_hits: Cell<[Rect; 2]>,
     header: Header,
     keybar: Vec<KeyHint>,
 }
@@ -198,6 +200,16 @@ impl DownloadScreen {
             )
         });
 
+        let mut hints = vec![
+            KeyHint::new("Enter", "download"),
+            KeyHint::new("Tab/^P", "video / audio"),
+            KeyHint::new("Ctrl+O", "open folder"),
+        ];
+        if active_bg {
+            hints.push(KeyHint::new("Ctrl+K", "stop bg"));
+        }
+        hints.push(KeyHint::new("Esc", "close"));
+
         Self {
             input,
             audio_only: false,
@@ -206,35 +218,16 @@ impl DownloadScreen {
             active_bg,
             mode: DownloadMode::Compose,
             banner,
+            pill_hits: Cell::new([Rect::default(), Rect::default()]),
             header: Header::new("Hayato")
                 .subtitle("Download Deck")
                 .status(format!("{total_files} files in ~/Downloads")),
-            keybar: vec![
-                KeyHint::new("Enter", "download"),
-                KeyHint::new("Tab", "video / audio"),
-                KeyHint::new("Ctrl+O", "open folder"),
-                KeyHint::new("Esc", "close"),
-            ],
+            keybar: hints,
         }
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
-            let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 56) / 100).max(52) as u16;
-            let right_w = area.width.saturating_sub(left_w + gap);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(
-                    area.x + left_w + gap,
-                    area.y,
-                    right_w,
-                    area.height,
-                )),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 56, 52)
     }
 
     fn start_download(&mut self) {
@@ -355,14 +348,21 @@ impl Screen for DownloadScreen {
                 "  ○ Audio only (m4a)  "
             };
             let next_x = put(ctx.buf, inner.x, y, vid_pill, inner.width, vid_st);
+            let aud_x = next_x + 2;
+            let aud_w = unicode_width::UnicodeWidthStr::width(aud_pill) as u16;
             put_trunc(
                 ctx.buf,
-                next_x + 2,
+                aud_x,
                 y,
                 aud_pill,
-                inner.right().saturating_sub(next_x + 2),
+                inner.right().saturating_sub(aud_x),
                 aud_st,
             );
+            let vid_w = next_x.saturating_sub(inner.x);
+            self.pill_hits.set([
+                Rect::new(inner.x, y, vid_w, 1),
+                Rect::new(aud_x, y, aud_w.min(inner.right().saturating_sub(aud_x)), 1),
+            ]);
             y += 2;
 
             put_trunc(
@@ -380,7 +380,7 @@ impl Screen for DownloadScreen {
                     ctx.buf,
                     inner.x,
                     y,
-                    "● A background yt-dlp job is running · Ctrl+K stops it",
+                    "● Background yt-dlp running · Ctrl+K stops",
                     inner.width,
                     Style::default().fg(ctx.design.color(ColorRole::Warn)),
                 );
@@ -473,12 +473,17 @@ impl Screen for DownloadScreen {
         }
         if let DownloadMode::Downloading(tv) = &mut self.mode {
             return match tv.key(key, design) {
-                Outcome::Done(_) => {
+                Outcome::Done(code) => {
                     self.mode = DownloadMode::Compose;
                     self.total_files = downloads_count();
                     self.recent = recent_downloads(12);
                     self.active_bg = is_downloading();
-                    self.banner = Some(("Download finished · check ~/Downloads".into(), false));
+                    let msg = if code == hayato_ui::app::exit::OK {
+                        "Download finished · check ~/Downloads"
+                    } else {
+                        "Download stopped · check ~/Downloads"
+                    };
+                    self.banner = Some((msg.into(), false));
                     Outcome::Consumed
                 }
                 other => other,
@@ -522,10 +527,40 @@ impl Screen for DownloadScreen {
                 }
                 Outcome::Done(hayato_ui::app::exit::ESCAPE)
             }
-            _ => {
-                let _ = self.input.handle(key);
+            _ => match self.input.handle(key) {
+                hayato_ui::InputAction::Ignored => Outcome::Continue,
+                _ => Outcome::Consumed,
+            },
+        }
+    }
+
+    fn hit(&self, _area: Rect, x: u16, y: u16, _design: &Design) -> Option<usize> {
+        if !matches!(self.mode, DownloadMode::Compose) {
+            return None;
+        }
+        let pills = self.pill_hits.get();
+        for (i, r) in pills.iter().enumerate() {
+            if r.width > 0 && x >= r.x && x < r.right() && y >= r.y && y < r.bottom() {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    fn click(&mut self, row: Option<usize>) -> Outcome {
+        if !matches!(self.mode, DownloadMode::Compose) {
+            return Outcome::Continue;
+        }
+        match row {
+            Some(0) => {
+                self.audio_only = false;
                 Outcome::Consumed
             }
+            Some(1) => {
+                self.audio_only = true;
+                Outcome::Consumed
+            }
+            _ => Outcome::Continue,
         }
     }
 

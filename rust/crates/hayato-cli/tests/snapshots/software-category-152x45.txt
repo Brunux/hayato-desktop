@@ -1,0 +1,45 @@
+Hayato · Software                                                                                                                           Edit videos 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Discover   Installed   Updates(3)   Cleanup                                                                       / search apps…               All APT 
+╭ Edit videos ────────────────────────────────────────────────────────────────╮ ╭ Preview ─────────────────────────────────────────────────────────────╮
+│ ▍   Kdenlive  heavy · 4 GB note · Full non-linear video editor wi…         │ │  Kdenlive                                                            │
+│     Shotcut  medium · Streamlined video editor with broad fo…              │ │                                                                      │
+│     Pitivi  medium · Clean GTK video editor built on GStreamer fo…         │ │  Version 26.08.3-1 · Download 4.5 MB                                 │
+│     HandBrake  medium · GUI video transcoder with device presets …         │ │  On disk 20.7 MB · Debian main                                       │
+│     FFmpeg  light · Fast command-line converter, trimmer and muxer…        │ │                                                                      │
+│                                                                             │ │  Full non-linear video editor with multi-track timeline and effect…  │
+│                                                                             │ │                                                                      │
+│                                                                             │ │  Enter for details, sizes & permissions.                             │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+╰─────────────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────────────────────────────╯
+ [Enter]  open   [/]  search   [1-4/Tab]  view   [a]  all apt   [Esc]  back                                                                             

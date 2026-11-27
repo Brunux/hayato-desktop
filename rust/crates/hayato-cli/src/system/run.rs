@@ -20,7 +20,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 
 use crate::paths::Paths;
-use crate::system::{have, missing, print, say};
+use crate::system::{have, missing, say, spawn_detached, spawn_detached_argv};
 
 const MAX_HISTORY: usize = 50;
 
@@ -159,21 +159,13 @@ impl RunScreen {
         }
         self.save_history();
 
-        // Spawn detached without invoking a shell
-        let mut child = std::process::Command::new("setsid");
+        // Spawn detached synchronously via `pre_exec(|| setsid())` without
+        // invoking a shell so closing `foot` never SIGHUPs the target.
         if in_foot {
-            child.args(["foot", "-e", &cmd.path]);
+            spawn_detached_argv("foot", &["-e", &cmd.path]);
         } else {
-            child.arg(&cmd.path);
+            spawn_detached_argv(&cmd.path, &[]);
         }
-        let _ = child
-            .env_remove("HAYATO_UI")
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
-
-        print(&format!("Ran: {}", cmd.name));
     }
 
     fn run_unknown(&mut self, input: &str, in_foot: bool) {
@@ -195,16 +187,7 @@ impl RunScreen {
             cmd.to_string()
         };
 
-        // Spawn detached
-        let _ = std::process::Command::new("setsid")
-            .args(["sh", "-c", &exec_cmd])
-            .env_remove("HAYATO_UI")
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
-
-        print(&format!("Ran (unknown): {}", cmd));
+        spawn_detached(&exec_cmd);
     }
 }
 
@@ -263,10 +246,7 @@ impl Screen for RunScreen {
             return Outcome::Continue;
         }
         let rows_height = self.rows_height.get();
-        if matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-            && !key.modifiers.contains(KeyModifiers::CONTROL)
-            && !key.modifiers.contains(KeyModifiers::ALT)
-        {
+        if Input::handles_edit_key(key) {
             let _ = self.input.handle(key);
             self.filter_commands();
             return Outcome::Continue;
@@ -375,11 +355,8 @@ pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
-    if let Some(said) = missing(&["setsid", "foot"]) {
-        return Err(crate::Failure::new(
-            "Run",
-            format!("{said} (util-linux, foot)"),
-        ));
+    if let Some(said) = missing(&["foot"]) {
+        return Err(crate::Failure::new("Run", format!("{said} (foot)")));
     }
     let mut screen = RunScreen::new();
     let code = crate::run_screen(terminal, design, "Run", &mut screen)?;

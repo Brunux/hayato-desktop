@@ -12,7 +12,7 @@ Hayato · VPN                                                                   
 │                                                                             │ │  Autoconnect  Enabled (starts on boot)                               │
 │                                                                             │ │                                                                      │
 │                                                                             │ │  QUICK ACTIONS                                                       │
-│                                                                             │ │   Disconnect    Edit    Auto: On    Delete                           │
+│                                                                             │ │   Disconnect   Edit   Auto: On   Delete                              │
 │                                                                             │ │                                                                      │
 │                                                                             │ │  SHORTCUTS                                                           │
 │                                                                             │ │  n  New tunnel form   e  Edit focused tunnel                         │

@@ -312,22 +312,7 @@ impl RemindScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
-            let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 56) / 100).max(50) as u16;
-            let right_w = area.width.saturating_sub(left_w + gap);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(
-                    area.x + left_w + gap,
-                    area.y,
-                    right_w,
-                    area.height,
-                )),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 56, 50)
     }
 
     fn draw_inspector(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
@@ -559,10 +544,13 @@ impl Screen for RemindScreen {
                     ColorRole::Accent,
                 );
                 x += 2;
-                ctx.buf.set_string(
+                let max_w = filter.right().saturating_sub(x);
+                put_trunc(
+                    ctx.buf,
                     x,
                     filter.y,
-                    format!("“{title}” · pick when it fires (Esc edits message)"),
+                    &format!("“{title}” · pick when it fires (Esc edits message)"),
+                    max_w,
                     ctx.design.style(TextStyle::Title),
                 );
                 self.rows_height.set(rows.height);
@@ -590,10 +578,10 @@ impl Screen for RemindScreen {
                     }
                     return Outcome::Consumed;
                 }
-                _ => {
-                    let _ = self.title_input.handle(key);
-                    return Outcome::Consumed;
-                }
+                _ => match self.title_input.handle(key) {
+                    hayato_ui::InputAction::Ignored => return Outcome::Continue,
+                    _ => return Outcome::Consumed,
+                },
             },
             RemindMode::NewWhen(title) => {
                 let title = title.clone();
@@ -721,7 +709,10 @@ impl Screen for RemindScreen {
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {
-        Some(&self.keybar)
+        match &self.mode {
+            RemindMode::List => Some(&self.keybar),
+            RemindMode::NewTitle | RemindMode::NewWhen(_) => None,
+        }
     }
 
     fn header(&self) -> Option<&Header> {

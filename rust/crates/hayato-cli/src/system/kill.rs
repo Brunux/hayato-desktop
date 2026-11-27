@@ -216,22 +216,7 @@ impl KillScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
-            let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 56) / 100).max(52) as u16;
-            let right_w = area.width.saturating_sub(left_w + gap);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(
-                    area.x + left_w + gap,
-                    area.y,
-                    right_w,
-                    area.height,
-                )),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 56, 52)
     }
 
     fn draw_inspector(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
@@ -489,7 +474,8 @@ impl Screen for KillScreen {
                     return Outcome::Done(hayato_ui::app::exit::ESCAPE);
                 }
                 let typed = matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-                    && !key.modifiers.contains(KeyModifiers::CONTROL);
+                    && !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT);
                 if typed {
                     self.list.type_filter(key);
                     return Outcome::Consumed;

@@ -222,7 +222,8 @@ impl ClipScreen {
                 KeyHint::new("Enter", "copy back"),
                 KeyHint::new("Tab", "filter kind"),
                 KeyHint::new("Del", "delete"),
-                KeyHint::new("Ctrl+S", "save image"),
+                KeyHint::new("Ctrl+Y", "share"),
+                KeyHint::new("Ctrl+S", "save img"),
                 KeyHint::new("Ctrl+X", "clear"),
                 KeyHint::new("Esc", "back"),
             ],
@@ -258,7 +259,8 @@ impl ClipScreen {
                 KeyHint::new("Enter", "copy back"),
                 KeyHint::new("Tab", "filter kind"),
                 KeyHint::new("Del", "delete"),
-                KeyHint::new("Ctrl+S", "save image"),
+                KeyHint::new("Ctrl+Y", "share"),
+                KeyHint::new("Ctrl+S", "save img"),
                 KeyHint::new("Ctrl+X", "clear"),
                 KeyHint::new("Esc", "back"),
             ],
@@ -297,14 +299,10 @@ impl ClipScreen {
 
     fn build_rows(&mut self) {
         self.strip.set_items(vec![
-            ActionItem::new("share", "Alt+S", "Share").glyph(Glyph::Qr),
-            ActionItem::new("save", "^S", "Save newest image").glyph(Glyph::Image),
-            ActionItem::new(
-                "wipe",
-                "^X",
-                format!("Clear history ({})", self.entries.len()),
-            )
-            .glyph(Glyph::Trash),
+            ActionItem::new("share", "^Y", "Share").glyph(Glyph::Qr),
+            ActionItem::new("save", "^S", "Save img").glyph(Glyph::Image),
+            ActionItem::new("wipe", "^X", format!("Clear ({})", self.entries.len()))
+                .glyph(Glyph::Trash),
         ]);
 
         let mut rows = Vec::new();
@@ -392,22 +390,7 @@ impl ClipScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
-            let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 48) / 100).max(46) as u16;
-            let right_w = area.width.saturating_sub(left_w + gap);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(
-                    area.x + left_w + gap,
-                    area.y,
-                    right_w,
-                    area.height,
-                )),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 48, 46)
     }
 
     fn left_layout(area: Rect) -> (Rect, Rect, Rect, Rect) {
@@ -929,18 +912,19 @@ impl Screen for ClipScreen {
             return Outcome::Consumed;
         }
 
-        match self.strip.handle(key) {
-            ActionStripEvent::Activated(id) => return self.run_strip_action(id),
-            ActionStripEvent::Consumed => return Outcome::Consumed,
-            ActionStripEvent::Ignored => {}
+        if key.code == KeyCode::Right && self.list.filter().is_empty() {
+            self.cycle_kind_filter(1);
+            return Outcome::Consumed;
         }
-        if key.modifiers.contains(KeyModifiers::ALT)
-            && matches!(key.code, KeyCode::Char('s') | KeyCode::Char('S'))
-        {
-            return self.run_strip_action("share");
+        if key.code == KeyCode::Left && self.list.filter().is_empty() {
+            self.cycle_kind_filter(-1);
+            return Outcome::Consumed;
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    return self.run_strip_action("share");
+                }
                 KeyCode::Char('s') | KeyCode::Char('S') => {
                     return self.run_strip_action("save");
                 }
@@ -961,8 +945,7 @@ impl Screen for ClipScreen {
         }
         let rows_height = self.rows_height.get();
         let is_delete = key.code == KeyCode::Delete
-            || (key.code == KeyCode::Char('d') && key.modifiers.contains(KeyModifiers::CONTROL))
-            || (key.code == KeyCode::Char('1') && key.modifiers.contains(KeyModifiers::ALT));
+            || (key.code == KeyCode::Char('d') && key.modifiers.contains(KeyModifiers::CONTROL));
         if is_delete {
             if let Some(row_idx) = self.list.selected_index()
                 && let Some(&entry_idx) = self.visible_indices.get(row_idx)
@@ -1086,7 +1069,10 @@ impl Screen for ClipScreen {
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {
-        Some(&self.keybar)
+        match self.mode {
+            ClipMode::Browse => Some(&self.keybar),
+            ClipMode::ConfirmWipe(_) => None,
+        }
     }
 
     fn header(&self) -> Option<&Header> {

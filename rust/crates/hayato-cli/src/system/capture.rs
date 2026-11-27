@@ -371,7 +371,7 @@ impl CaptureScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
+        if area.width >= super::DUAL_PANE_MIN_WIDTH {
             let left_w = ((area.width as u32 * 48) / 100).clamp(44, 62) as u16;
             let right_w = area.width.saturating_sub(left_w + 1);
             let left = Rect::new(area.x, area.y, left_w, area.height);
@@ -435,13 +435,19 @@ impl CaptureScreen {
         let mut y = inner.y;
 
         // 1. Status & Target Folder
-        let x = draw_badge(ctx.buf, inner.x, y, ctx.design, "● READY", ColorRole::Ok);
+        let (badge_txt, badge_role, badge_desc) =
+            if matches!(self.mode, CaptureMode::Recording { .. }) {
+                ("● RECORDING", ColorRole::Danger, "Screen recording active")
+            } else {
+                ("● READY", ColorRole::Ok, "Stills & Annotation")
+            };
+        let x = draw_badge(ctx.buf, inner.x, y, ctx.design, badge_txt, badge_role);
         let avail = inner.right().saturating_sub(x + 2);
         put_trunc(
             ctx.buf,
             x + 2,
             y,
-            "Stills & Annotation",
+            badge_desc,
             avail,
             ctx.design.style(TextStyle::Body),
         );
@@ -457,12 +463,21 @@ impl CaptureScreen {
             );
             y += 2;
         }
-        if y + 2 <= inner.bottom() {
+        if y + 3 <= inner.bottom() {
             put_trunc(
                 ctx.buf,
                 inner.x,
                 y,
-                "Video / Webcam → Studio (Alt+Ctrl+R) · OCR / QR → Lens (Alt+I)",
+                "Video / Webcam → Studio (Alt+Ctrl+R)",
+                inner.width,
+                ctx.design.style(TextStyle::Dim),
+            );
+            y += 1;
+            put_trunc(
+                ctx.buf,
+                inner.x,
+                y,
+                "OCR / QR → Lens (Alt+I)",
                 inner.width,
                 ctx.design.style(TextStyle::Dim),
             );

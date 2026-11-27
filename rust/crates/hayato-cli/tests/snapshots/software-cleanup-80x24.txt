@@ -1,0 +1,24 @@
+Hayato · Software                                          534.0 MB reclaimable 
+────────────────────────────────────────────────────────────────────────────────
+ Discover   Installed   Updates(3)   Cleanup    / search apps…          All APT 
+╭ Cleanup & Reclaim Space ─────────────────────────────────────────────────────╮
+│ ▍   [x] Unused dependencies (autoremove)  2 packages no longer n…           │
+│     [x] Downloaded .deb cache  /var/cache/apt/archives           310.0 MB   │
+│     [ ] Orphaned configs (rc state)  1 removed package configs lef…         │
+│     [ ] Trash & thumbnail caches  ~/.local/share/Trash + ~/.cache…          │
+│     ! Old kernels: 1 extra image(s)  Protected in Software — ma…            │
+│     Clean selected items  Runs autoremove, apt clean, or config…            │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [Space]  toggle   [c/Enter]  clean   [1-4/Tab]  view   [Esc]  back             

@@ -207,22 +207,7 @@ impl DnsScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
-            let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 50) / 100).max(46) as u16;
-            let right_w = area.width.saturating_sub(left_w + gap);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(
-                    area.x + left_w + gap,
-                    area.y,
-                    right_w,
-                    area.height,
-                )),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 50, 46)
     }
 
     fn draw_inspector(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
@@ -297,7 +282,16 @@ impl DnsScreen {
                     put_trunc(buf, inner.x, y, servers, inner.width, dim);
                     y += 1;
                 }
-                put_trunc(buf, inner.x, y + 1, desc, inner.width, dim);
+                for line in super::manual::wrap(desc, usize::from(inner.width.max(1)))
+                    .into_iter()
+                    .take(2)
+                {
+                    if y + 1 >= inner.bottom().saturating_sub(2) {
+                        break;
+                    }
+                    put_trunc(buf, inner.x, y + 1, &line, inner.width, dim);
+                    y += 1;
+                }
             } else {
                 put_trunc(
                     buf,

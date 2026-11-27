@@ -123,6 +123,7 @@ impl PkgScreen {
                 KeyHint::new("Enter", "install"),
                 KeyHint::new("Ctrl+X", "remove"),
                 KeyHint::new("Ctrl+U", "apt update"),
+                KeyHint::new("Ctrl+G", "full-upgrade"),
                 KeyHint::new("Esc", "new search"),
             ],
             rows_height: Cell::new(16),
@@ -256,22 +257,7 @@ impl PkgScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
-            let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 52) / 100).max(48) as u16;
-            let right_w = area.width.saturating_sub(left_w + gap);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(
-                    area.x + left_w + gap,
-                    area.y,
-                    right_w,
-                    area.height,
-                )),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 52, 48)
     }
 
     fn draw_inspector(&self, buf: &mut Buffer, area: Rect, design: &Design) {
@@ -899,7 +885,7 @@ impl Screen for PkgScreen {
                 }
                 ListAction::Moved => {
                     self.ensure_selected_info();
-                    Outcome::Continue
+                    Outcome::Consumed
                 }
                 ListAction::Ignored => Outcome::Continue,
             }

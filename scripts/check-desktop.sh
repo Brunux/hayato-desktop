@@ -3737,6 +3737,23 @@ if have hayato; then
 		fail "hayato menu places --rows failed (spec 017)"
 	fi
 
+	# Hayato Software Catalog (`hayato menu software`)
+	if grep -qE '^  menu software ' <<<"$_fw_help"; then
+		ok "hayato --help lists \`menu software\`"
+	else
+		fail "hayato --help does not list \`menu software\`"
+	fi
+	if hayato menu software --rows 2>/dev/null | grep -q 'video-edit'; then
+		ok "hayato menu software --rows prints curated intent catalog"
+	else
+		fail "hayato menu software --rows failed or lost video-edit intent"
+	fi
+	if hayato menu software --search "video editor" 2>/dev/null | grep -qE 'kdenlive|shotcut'; then
+		ok "hayato menu software --search maps \"video editor\" to curated apps"
+	else
+		fail "hayato menu software --search \"video editor\" returned no video editors"
+	fi
+
 	# Spec 020: frictionless, self-contained in-window UX & live window sizing.
 	# Interactive TUI modules in hayato-cli must never call Card::send() or
 	# external `notify-send` while a TUI window is open, and `hayato --glyphs`

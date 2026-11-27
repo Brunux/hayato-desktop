@@ -58,8 +58,13 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    events). `hayato gamepad` is the one input helper: it reads `/dev/input` and injects
    arrows/Enter/Escape into the focused `hayato-*` window, because a USB or Bluetooth pad must
    navigate every framework menu, not only the Games library; its pid lock keeps it single.
-5. **Dual density support**: `Screen::key` and `Screen::hit` receive `&Design` (`$XDG_RUNTIME_DIR/hayato-tablet`)
-   rather than caching hit boxes across normal vs tablet row spacing.
+5. **Dual density & dual-pane split contract**: `Screen::key` and `Screen::hit` receive
+   `&Design` (`$XDG_RUNTIME_DIR/hayato-tablet`) rather than caching hit boxes across normal vs
+   tablet row spacing. Dual-pane screens split horizontally at
+   `system::DUAL_PANE_MIN_WIDTH` (`84` cols, shared via `system::split_panes` matching
+   `files::PREVIEW_MIN_WIDTH`) so `900×600` (`hayato-pick`, ~94–98 cols opened via `Alt+Space`)
+   shows side-by-side detail/preview panes while `80×24` stays single-pane; never hardcode
+   `area.width >= 100` for dual-pane breakpoints.
 6. **Generated glyph & icon tables**:
    - Glyph codepoints (`Symbols Nerd Font Mono` + `Font Awesome 6 Free Solid` + `Font Awesome 6 Brands Regular`, avoiding Codicons `ea60..ec1e` stripped in Debian `fonts-nerd-symbols 3.4.0+dfsg2-1`): edit `scripts/make-glyphs.sh`, never hand-edit `glyphs/table.rs`.
    - `hayato-notify` (`FontRenderer`) loads both `SymbolsNerdFontMono` and `Font Awesome 6` (`Solid`/`Brands`) and resolves UI glyph codepoints via `hayato_ui::Glyph`.
@@ -144,11 +149,20 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    zero resident daemons. `system/audio.rs` parses `pactl list sink-inputs` for inline per-app
    volume, mute, and sink routing without spawning `pavucontrol`.
 12d. **APT Transaction Guard (`system/pkg_guard.rs`)**:
-   Every UI `apt-get` install, removal, or `full-upgrade` (`pkg.rs`, `setup/bundles.rs`,
-   `vpn.rs`) must simulate first via `apt-get -s` (`pkg_guard::evaluate`) and always pass
-   `--no-install-recommends`. Any plan that installs/upgrades `linux-image-*`/`linux-modules-*`/boot
-   packages or removes core session packages (`hayato*`, `sway*`, `systemd`, etc.) is blocked
-   in the UI; broad removals or large installs require a Cancel-first `Confirm` modal.
+   Every UI `apt-get` install, removal, or `full-upgrade` (`software/`, `pkg.rs`,
+   `setup/bundles.rs`, `vpn.rs`) must simulate first via `apt-get -s` (`pkg_guard::evaluate`)
+   and always pass `--no-install-recommends`. Any plan that installs/upgrades
+   `linux-image-*`/`linux-modules-*`/boot packages or removes core session packages (`hayato*`,
+   `sway*`, `systemd`, etc.) is blocked in the UI; broad removals or large installs require
+   a Cancel-first `Confirm` modal.
+12e. **Hayato Software Catalog (`hayato menu software`, `system/software/`)**:
+   Intent-first Debian `forky` application discovery, updates, and cleanup. Curated intents and
+   apps live in `packages/software/catalog.json` (embedded via `include_str!` and validated on
+   load so missing packages, orphan intent refs, or kernel/protected packages fail unit tests;
+   no `toml` crate needed). Never run background APT daemons or block `draw()` on APT: load
+   metadata asynchronously via channel, key disk cache (`$XDG_CACHE_HOME/hayato/software/meta/`)
+   by `/var/lib/apt/lists` mtime, and route every install/update/remove/cleanup through
+   `pkg_guard`. Keep `bar-updates` and `hayato menu pkg` intact as the low-level package fallback.
 13. **A file card opens its folder**: a notification about a written file carries the
    `x-hayato-open-path` hint (`Card::open_path`, `hayato notify --open`, or `BUSY_OPEN` for a
    busy result). A left click on the card body runs `hayato-files <parent>`; grimshot predates the

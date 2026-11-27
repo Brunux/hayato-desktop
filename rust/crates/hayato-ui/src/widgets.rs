@@ -2318,6 +2318,33 @@ impl Input {
         iter.next().map_or(self.text.len(), |(off, _)| pos + off)
     }
 
+    /// True when `key` edits text or moves the caret inside this input
+    /// (`Char`, `Backspace`, `Delete`, `Left`, `Right`, `Ctrl+U`, `Ctrl+W`, `Ctrl+A`, `Ctrl+E`),
+    /// leaving `Enter`, `Esc`, `Up`, `Down`, `Home`, `End`, and app shortcuts untouched.
+    pub fn handles_edit_key(key: KeyEvent) -> bool {
+        if key.kind != ratatui::crossterm::event::KeyEventKind::Press {
+            return false;
+        }
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
+        if alt {
+            return false;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            return matches!(
+                key.code,
+                KeyCode::Char('a' | 'e' | 'u' | 'w' | 'A' | 'E' | 'U' | 'W')
+            );
+        }
+        matches!(
+            key.code,
+            KeyCode::Char(_)
+                | KeyCode::Backspace
+                | KeyCode::Delete
+                | KeyCode::Left
+                | KeyCode::Right
+        )
+    }
+
     pub fn handle(&mut self, key: KeyEvent) -> InputAction {
         if key.kind != ratatui::crossterm::event::KeyEventKind::Press {
             return InputAction::Ignored;
@@ -2360,11 +2387,11 @@ impl Input {
                     InputAction::Ignored
                 }
             }
-            KeyCode::Char('a') if control => {
+            KeyCode::Char('a' | 'A') if control => {
                 self.cursor = 0;
                 InputAction::Changed
             }
-            KeyCode::Char('e') if control => {
+            KeyCode::Char('e' | 'E') if control => {
                 self.cursor = self.text.len();
                 InputAction::Changed
             }
@@ -2387,12 +2414,12 @@ impl Input {
                     InputAction::Ignored
                 }
             }
-            KeyCode::Char('u') if control => {
+            KeyCode::Char('u' | 'U') if control => {
                 self.text.clear();
                 self.cursor = 0;
                 InputAction::Changed
             }
-            KeyCode::Char('w') if control => {
+            KeyCode::Char('w' | 'W') if control => {
                 let before = &self.text[..self.cursor];
                 let kept = before.trim_end().len();
                 let start = before[..kept]

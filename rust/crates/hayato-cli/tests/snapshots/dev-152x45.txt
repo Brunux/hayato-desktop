@@ -10,7 +10,7 @@ Hayato · Developer
 │     Save a diagnostics bundle  the system report and this boot's journ… │ │ TaskView.                                                               │
 │  Packages & Identity  ────────────────────────────────────────────────   │ │                                                                         │
 │     Hayato APT repository  Cloudsmith debian/forky · status, enable, d… │ │ What it does                                                            │
-│     SSH keys & Git identity  copy ~/.ssh/*.pub to clipboard · view git… │ │ • 10-core.sh   Rootfs, boot backend, APT & systemd services             │
+│     SSH keys & Git identity  copy ~/.ssh/*.pub to clipboard · view git… │ │ • 10-core.sh Rootfs, boot backend, APT & systemd services               │
 │  Desktop & UI Dev  ───────────────────────────────────────────────────   │ │ • 20-device.sh Kernel, firmware, audio, display & board quirks          │
 │     Preview login greeter  hayato greeter --preview · test themes & la… │ │ • 30-desktop.sh SwayFX, Waybar, theme files, glyphs & hayato CLI        │
 │     Reload desktop services  swaymsg reload · restart waybar and hayat… │ │                                                                         │

@@ -646,6 +646,32 @@ impl DisplayScreen {
         self.header = Header::new("Hayato")
             .subtitle("Display Studio")
             .status(summary);
+        self.keybar = match self.phase {
+            DisplayPhase::DualMonitor => {
+                let mut hints = vec![
+                    KeyHint::new("←→", "adjust"),
+                    KeyHint::new("↑↓", "select"),
+                    KeyHint::new("Ctrl+S", "apply & save"),
+                ];
+                if self.is_dirty() {
+                    hints.push(KeyHint::new("Ctrl+Z", "discard"));
+                }
+                hints.push(KeyHint::new("Ctrl+R", "refresh"));
+                hints.push(KeyHint::new("Esc", "close"));
+                hints
+            }
+            DisplayPhase::PanelOff => vec![
+                KeyHint::new("Enter", "enable"),
+                KeyHint::new("↑↓", "select"),
+                KeyHint::new("Ctrl+R", "refresh"),
+                KeyHint::new("Esc", "close"),
+            ],
+            DisplayPhase::SinglePanel => vec![
+                KeyHint::new("Enter", "open wdisplays"),
+                KeyHint::new("Ctrl+R", "refresh"),
+                KeyHint::new("Esc", "close"),
+            ],
+        };
     }
 
     fn reload_live(&mut self) {
@@ -667,7 +693,7 @@ impl DisplayScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
+        if area.width >= super::DUAL_PANE_MIN_WIDTH {
             let gap = 1u16;
             let left_w = ((u32::from(area.width) * 52) / 100)
                 .max(48)
@@ -1337,7 +1363,7 @@ impl DisplayScreen {
                     Glyph::Check,
                     "Apply & Save".to_string(),
                     if self.is_dirty() {
-                        "Enter · write 40-display.conf".to_string()
+                        "Enter · save".to_string()
                     } else {
                         "up to date".to_string()
                     },
@@ -1357,7 +1383,9 @@ impl DisplayScreen {
                 ),
             };
 
-            let row_rect = Rect::new(inner.x, y, inner.width, 1);
+            let step = if inner.height >= 16 { 2 } else { 1 };
+            let hit_h = design.row_stride().min(step);
+            let row_rect = Rect::new(inner.x, y, inner.width, hit_h);
             hits.push(row_rect);
 
             let marker = if selected { "▍" } else { " " };
@@ -1400,7 +1428,7 @@ impl DisplayScreen {
                 put_trunc(buf, vx, y, &value, val_w, val_style);
             }
 
-            y += if inner.height >= 16 { 2 } else { 1 };
+            y += step;
         }
     }
 }

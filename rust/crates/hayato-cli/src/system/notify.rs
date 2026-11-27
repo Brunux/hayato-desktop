@@ -180,18 +180,14 @@ impl NotifyScreen {
         } else {
             Glyph::Bell
         };
-        let dnd_label = if self.dnd {
-            "Do not disturb: ON"
-        } else {
-            "Do not disturb: OFF"
-        };
+        let dnd_label = if self.dnd { "DND: ON" } else { "DND: OFF" };
         self.strip.set_items(vec![
             ActionItem::new("dnd", "^D", dnd_label).glyph(dnd_glyph),
-            ActionItem::new("restore", "^R", "Restore last").glyph(Glyph::Undo),
+            ActionItem::new("restore", "^R", "Restore").glyph(Glyph::Undo),
             ActionItem::new(
                 "dismiss",
                 "^X",
-                format!("Dismiss all ({})", self.notifications.len()),
+                format!("Clear ({})", self.notifications.len()),
             )
             .glyph(Glyph::Trash),
         ]);
@@ -220,22 +216,7 @@ impl NotifyScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
-            let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 50) / 100).max(48) as u16;
-            let right_w = area.width.saturating_sub(left_w + gap);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(
-                    area.x + left_w + gap,
-                    area.y,
-                    right_w,
-                    area.height,
-                )),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 50, 48)
     }
 
     fn draw_inspector(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
@@ -510,7 +491,10 @@ impl Screen for NotifyScreen {
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {
-        Some(&self.keybar)
+        match self.mode {
+            NotifyMode::Browse => Some(&self.keybar),
+            NotifyMode::ConfirmDismiss(_) => None,
+        }
     }
 
     fn header(&self) -> Option<&Header> {

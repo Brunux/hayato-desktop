@@ -99,6 +99,7 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("greeter", "Login screen (Greeter)", "hayato menu greeter"),
         ("automount", "Auto-mount USB drives", "automount.conf"),
         ("idle", "Idle & lock", "hayato-idle"),
+        ("software", "Software catalog", "hayato menu software"),
         ("updates", "System updates", "hayato-pkg"),
         ("clean", "Free space", "hayato-clean"),
         ("tablet", "Tablet mode", "tablet-mode toggle"),
@@ -509,7 +510,7 @@ fn vpn_connections() -> Vec<(String, bool)> {
 fn vpn_detail() -> String {
     let conns = vpn_connections();
     if conns.is_empty() {
-        return "none configured · Enter opens nmtui".to_string();
+        return "none configured · Enter opens VPN".to_string();
     }
     if let Some((active, _)) = conns.iter().find(|(_, on)| *on) {
         format!("connected: {active}")
@@ -712,6 +713,7 @@ fn section_keys(section: Section) -> &'static [&'static str] {
             "clipboard",
             "notify",
             "dnd",
+            "software",
             "updates",
             "clean",
             "automount",
@@ -826,7 +828,11 @@ fn build_rows(section: Section) -> (Vec<hayato_ui::Row>, Vec<String>) {
             rows.push(row("Audio output", audio_detail(), Glyph::Volume));
             keys.push("audio".to_string());
 
-            rows.push(row("Volume per application", "pavucontrol", Glyph::Volume));
+            rows.push(row(
+                "Volume per application",
+                "hayato menu audio",
+                Glyph::Volume,
+            ));
             keys.push("mixer".to_string());
 
             rows.push(row("Media", media_detail(), Glyph::Music));
@@ -1003,6 +1009,13 @@ fn build_rows(section: Section) -> (Vec<hayato_ui::Row>, Vec<String>) {
             keys.push("dnd".to_string());
 
             rows.push(row(
+                "Software catalog",
+                "discover apps, updates & cleanup",
+                Glyph::Box,
+            ));
+            keys.push("software".to_string());
+
+            rows.push(row(
                 "System updates",
                 "apt: search, install, upgrade",
                 Glyph::Sync,
@@ -1077,12 +1090,13 @@ const HIT_SECTION_BASE: usize = 20_000;
 
 /// Master-Detail Settings Control Center.
 ///
-/// Wide terminals (`>= 100` cols) render a persistent left section rail paired
+/// Wide terminals (`>= 84` cols) render a persistent left section rail paired
 /// with the active section's live settings list on the right. Compact terminals
-/// (`< 100` cols) render a clickable horizontal section tab strip above the list.
+/// (`< 84` cols) render a clickable horizontal section tab strip above the list.
 pub struct SettingsScreen {
     active_section: usize,
     focus_rail: bool,
+    dual_pane: Cell<bool>,
     cache: Vec<Option<(Vec<hayato_ui::Row>, Vec<String>)>>,
     keys: Vec<String>,
     list: ListState,
@@ -1113,6 +1127,7 @@ impl SettingsScreen {
         let mut screen = Self {
             active_section: idx,
             focus_rail: false,
+            dual_pane: Cell::new(true),
             cache: vec![None; Section::ALL.len()],
             keys: Vec::new(),
             list: ListState::new().with_empty("no matching settings"),
@@ -1159,6 +1174,7 @@ impl SettingsScreen {
         let mut screen = Self {
             active_section: 0,
             focus_rail: false,
+            dual_pane: Cell::new(true),
             cache,
             keys: Vec::new(),
             list: ListState::new().with_empty("no matching settings"),
@@ -1214,7 +1230,7 @@ impl SettingsScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
+        if area.width >= super::DUAL_PANE_MIN_WIDTH {
             let gap = 1u16;
             let left_w = ((u32::from(area.width) * 28) / 100).clamp(28, 36) as u16;
             let right_w = area.width.saturating_sub(left_w + gap);
@@ -1283,6 +1299,10 @@ impl SettingsScreen {
 impl Screen for SettingsScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
         let (left, right) = Self::split_panes(ctx.area);
+        self.dual_pane.set(right.is_some());
+        if right.is_none() {
+            self.focus_rail = false;
+        }
         let mut hits = self.section_hits.borrow_mut();
         hits.clear();
 
@@ -1295,6 +1315,7 @@ impl Screen for SettingsScreen {
                 left.width.saturating_sub(4),
                 left.height.saturating_sub(2),
             );
+            let show_details = inner.height >= (Section::ALL.len() as u16) * 3;
             let mut y = inner.y;
             for (idx, sec) in Section::ALL.iter().enumerate() {
                 if y >= inner.bottom() {
@@ -1326,9 +1347,10 @@ impl Screen for SettingsScreen {
                     inner.width.saturating_sub(2),
                     label_style,
                 );
-                hits.push(Rect::new(inner.x, y, inner.width, 1));
+                let hit_h = if show_details { 2 } else { 1 }.min(inner.bottom().saturating_sub(y));
+                hits.push(Rect::new(inner.x, y, inner.width, hit_h));
                 y += 1;
-                if y < inner.bottom() && inner.height >= 16 {
+                if y < inner.bottom() && show_details {
                     put_trunc(
                         ctx.buf,
                         inner.x + 5,
@@ -1422,7 +1444,12 @@ impl Screen for SettingsScreen {
         }
         match key.code {
             KeyCode::Tab => {
-                self.focus_rail = !self.focus_rail;
+                if self.dual_pane.get() {
+                    self.focus_rail = !self.focus_rail;
+                } else {
+                    let next = (self.active_section + 1) % Section::ALL.len();
+                    self.load_section(next);
+                }
                 return Outcome::Consumed;
             }
             KeyCode::BackTab => {
@@ -2457,6 +2484,9 @@ fn dispatch_key(
                 banner = Some(format!("Could not write {conf_display}"));
             }
         }
+        "software" => {
+            let _ = super::software::menu_with_args(&[], terminal, design)?;
+        }
         "updates" => {
             let _ = super::pkg::menu(terminal, design)?;
         }
@@ -2471,11 +2501,7 @@ fn dispatch_key(
             if onscreen_keyboard_running() {
                 banner = Some("The on-screen keyboard is already up".to_string());
             } else {
-                let _ = Command::new("wvkbd-mobintl")
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn();
+                super::spawn_detached_argv("wvkbd-mobintl", &[]);
                 banner = Some("On-screen keyboard: shown at the bottom".to_string());
             }
         }
@@ -2559,7 +2585,7 @@ fn dispatch_key(
             }
         }
         "power" => {
-            spawn_subcommand("hayato", &["menu", "power"]);
+            super::spawn_detached_argv("hayato", &["menu", "power"]);
             return Ok(KeyOutcome::Exit(0));
         }
         "power-profile" => {
@@ -2659,26 +2685,6 @@ fn change_password(password: &str) -> Result<(), String> {
             reason
         })
     }
-}
-
-fn spawn_subcommand(prog: &str, args: &[&str]) {
-    use std::os::unix::process::CommandExt;
-    let mut command = std::process::Command::new(prog);
-    command
-        .args(args)
-        .env_remove("HAYATO_UI")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setsid() < 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-    let _ = command.spawn();
 }
 
 fn missing(names: &[&str]) -> Option<String> {

@@ -1,6 +1,6 @@
 //! Native Hayato VPN Studio: WireGuard and OpenVPN over NetworkManager (`hayato menu vpn`).
 //!
-//! Master-detail Tunnel Studio (`width >= 100`, single-pane + context strip on 80x24)
+//! Master-detail Tunnel Studio (`width >= 84`, single-pane + context strip on 80x24)
 //! paired with a single-screen multi-field Form Editor (`VpnPhase::EditForm`) using
 //! `Input::render_field`:
 //! - Inline protocol toggle (`[WireGuard | OpenVPN]`), live validation, and live config preview
@@ -1542,7 +1542,9 @@ impl VpnScreen {
                         KeyHint::new("Ctrl+S", "save"),
                         KeyHint::new("Ctrl+G", "genkey"),
                         KeyHint::new("Ctrl+Y", "copy pub"),
+                        KeyHint::new("Ctrl+O", "browse"),
                         KeyHint::new("Ctrl+V", "paste"),
+                        KeyHint::new("Ctrl+R", "reveal"),
                         KeyHint::new("Esc", "cancel"),
                     ],
                     FormProtocol::OpenVpn => vec![
@@ -1558,6 +1560,7 @@ impl VpnScreen {
             VpnPhase::ConfirmDelete { .. } => {
                 self.header = Header::new("Hayato").subtitle("VPN").status("Delete");
                 self.keybar = vec![
+                    KeyHint::new("\u{2190}\u{2192}", "choose"),
                     KeyHint::new("Enter", "confirm"),
                     KeyHint::new("Esc", "cancel"),
                 ];
@@ -1706,22 +1709,7 @@ impl VpnScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
-            let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 52) / 100).max(48) as u16;
-            let right_w = area.width.saturating_sub(left_w + gap);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(
-                    area.x + left_w + gap,
-                    area.y,
-                    right_w,
-                    area.height,
-                )),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 52, 48)
     }
 
     fn draw_inspector(&self, buf: &mut Buffer, area: Rect, design: &Design) {
@@ -1844,45 +1832,46 @@ impl VpnScreen {
                 let pill_style = Style::default()
                     .fg(design.color(ColorRole::Text))
                     .bg(design.color(ColorRole::SurfaceAlt));
-                let mut cx = x;
+                let del_style = Style::default()
+                    .fg(design.color(ColorRole::Danger))
+                    .bg(design.color(ColorRole::SurfaceAlt));
                 let toggle_lbl = if p.active {
                     " Disconnect "
                 } else {
                     " Connect "
                 };
-                let tw = toggle_lbl.len() as u16;
-                put(buf, cx, y, toggle_lbl, tw, pill_style);
-                hits.toggle_btn = Rect::new(cx, y, tw, 1);
-                cx += tw + 2;
-
-                let edit_lbl = " Edit ";
-                let ew = edit_lbl.len() as u16;
-                if cx + ew <= inner.right() {
-                    put(buf, cx, y, edit_lbl, ew, pill_style);
-                    hits.edit_btn = Rect::new(cx, y, ew, 1);
-                    cx += ew + 2;
-                }
-
                 let auto_lbl = if p.autoconnect {
                     " Auto: On "
                 } else {
                     " Auto: Off "
                 };
-                let aw = auto_lbl.len() as u16;
-                if cx + aw <= inner.right() {
-                    put(buf, cx, y, auto_lbl, aw, pill_style);
-                    hits.auto_btn = Rect::new(cx, y, aw, 1);
-                    cx += aw + 2;
-                }
-
-                let del_lbl = " Delete ";
-                let dw = del_lbl.len() as u16;
-                if cx + dw <= inner.right() {
-                    let del_style = Style::default()
-                        .fg(design.color(ColorRole::Danger))
-                        .bg(design.color(ColorRole::SurfaceAlt));
-                    put(buf, cx, y, del_lbl, dw, del_style);
-                    hits.delete_btn = Rect::new(cx, y, dw, 1);
+                let mut cx = x;
+                let pills: [(&str, Style, usize); 4] = [
+                    (toggle_lbl, pill_style, 0),
+                    (" Edit ", pill_style, 1),
+                    (auto_lbl, pill_style, 2),
+                    (" Delete ", del_style, 3),
+                ];
+                for (lbl, st, slot) in pills {
+                    let bw = lbl.len() as u16;
+                    if cx > x && cx + bw > inner.right() {
+                        if y + 1 >= inner.bottom() {
+                            break;
+                        }
+                        y += 1;
+                        cx = x;
+                    }
+                    if cx + bw <= inner.right() {
+                        put(buf, cx, y, lbl, bw, st);
+                        let rect = Rect::new(cx, y, bw, 1);
+                        match slot {
+                            0 => hits.toggle_btn = rect,
+                            1 => hits.edit_btn = rect,
+                            2 => hits.auto_btn = rect,
+                            _ => hits.delete_btn = rect,
+                        }
+                        cx += bw + 1;
+                    }
                 }
                 y += 2;
             }
@@ -2529,6 +2518,8 @@ impl Screen for VpnScreen {
 
         if let Some(right_area) = right {
             self.draw_inspector(ctx.buf, right_area, ctx.design);
+        } else {
+            *self.inspector_hits.borrow_mut() = InspectorHits::default();
         }
     }
 
@@ -2804,12 +2795,15 @@ impl Screen for VpnScreen {
                 }
                 KeyCode::Char('d') | KeyCode::Delete => {
                     if let Some(p) = self.selected_profile().cloned() {
-                        let confirm =
-                            Confirm::new(format!("Delete VPN profile '{}'?", p.name), "Delete")
-                                .with_detail(format!(
-                                    "Removes {} configuration from NetworkManager",
-                                    p.kind.label()
-                                ));
+                        let confirm = Confirm::new(
+                            format!("Delete VPN profile '{}'?", p.name),
+                            format!(
+                                "Removes {} configuration from NetworkManager",
+                                p.kind.label()
+                            ),
+                        )
+                        .with_options(&["Cancel", "Delete"])
+                        .destructive(true);
                         self.phase = VpnPhase::ConfirmDelete {
                             name: p.name,
                             uuid: p.uuid,
@@ -3022,12 +3016,15 @@ impl Screen for VpnScreen {
             }
             503 => {
                 if let Some(p) = self.selected_profile().cloned() {
-                    let confirm =
-                        Confirm::new(format!("Delete VPN profile '{}'?", p.name), "Delete")
-                            .with_detail(format!(
-                                "Removes {} configuration from NetworkManager",
-                                p.kind.label()
-                            ));
+                    let confirm = Confirm::new(
+                        format!("Delete VPN profile '{}'?", p.name),
+                        format!(
+                            "Removes {} configuration from NetworkManager",
+                            p.kind.label()
+                        ),
+                    )
+                    .with_options(&["Cancel", "Delete"])
+                    .destructive(true);
                     self.phase = VpnPhase::ConfirmDelete {
                         name: p.name,
                         uuid: p.uuid,

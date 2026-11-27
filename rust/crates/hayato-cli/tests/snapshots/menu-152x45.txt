@@ -1,4 +1,4 @@
-Hayato · Menu                                                                                                                               38 commands
+Hayato · Menu                                                                                                                               39 commands
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ Commands ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                                                                                                  │
@@ -38,8 +38,8 @@ Hayato · Menu                                                                  
 │     Audio output  switch sink, mute, app mixer                                                                                             system │ │
 │     Themes  browse and preview palettes & wallpapers                                                                                       system │ │
 │     Notifications  history and do-not-disturb                                                                                              system │ │
+│     Software  discover apps by task, updates & cleanup                                                                                     system │ │
 │     Packages  search, then install via apt                                                                                                 system │ │
 │     Developer  profile export/restore & diagnostics                                                                                        system │ │
-│     Learn  the manual, with search                                                                                                         system │ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
  [Enter]  open   [type]  filter   [↑↓]  move   [Esc]  close

@@ -8,7 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use hayato_ui::widgets::put_trunc;
+use hayato_ui::widgets::{put, put_trunc};
 use hayato_ui::{
     BodyCtx, ColorRole, Design, Glyph, Header, KeyHint, ListAction, ListState, Outcome, Row,
     Screen, TextStyle, Urgency, draw_card, draw_filter_bar,
@@ -16,11 +16,13 @@ use hayato_ui::{
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 
 use super::pick::{Question, row};
 use super::{out, say};
+
+const HIT_TRANSLATE: usize = usize::MAX;
 
 pub const LANGUAGES: &[(&str, &str)] = &[
     ("en", "English"),
@@ -272,6 +274,7 @@ pub struct TranslateScreen {
     header: Header,
     keybar: Vec<KeyHint>,
     rows_height: Cell<u16>,
+    translate_btn: Cell<Rect>,
 }
 
 impl Default for TranslateScreen {
@@ -303,6 +306,7 @@ impl TranslateScreen {
                 KeyHint::new("Esc", "close"),
             ],
             rows_height: Cell::new(18),
+            translate_btn: Cell::new(Rect::default()),
         };
         screen.rebuild_rows();
         screen
@@ -330,22 +334,7 @@ impl TranslateScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
-            let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 44) / 100).max(40) as u16;
-            let right_w = area.width.saturating_sub(left_w + gap);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(
-                    area.x + left_w + gap,
-                    area.y,
-                    right_w,
-                    area.height,
-                )),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 44, 40)
     }
 
     fn left_layout(area: Rect) -> (Rect, Rect) {
@@ -383,16 +372,20 @@ impl TranslateScreen {
             self.banner = Some(("Clipboard is empty — copy text first".into(), true));
             return;
         }
-        match query_google(text, &self.current) {
+        let target_name = name_of(&self.current);
+        let result =
+            query_google(text, &self.current).or_else(|| query_local_translate(text, target_name));
+        match result {
             Some((out_text, detected)) => {
                 let _ = Command::new("wl-copy").arg(&out_text).status();
-                let src = name_of(&detected).to_string();
+                let src = if detected == "Local AI" {
+                    "Local AI".to_string()
+                } else {
+                    name_of(&detected).to_string()
+                };
                 self.translated = Some((src.clone(), out_text));
                 self.banner = Some((
-                    format!(
-                        "Translated {src} → {} & copied to clipboard",
-                        name_of(&self.current)
-                    ),
+                    format!("Translated {src} → {target_name} & copied to clipboard"),
                     false,
                 ));
             }
@@ -400,6 +393,27 @@ impl TranslateScreen {
                 self.banner = Some(("Could not reach translator (check network)".into(), true));
             }
         }
+    }
+
+    fn draw_translate_pill(
+        &self,
+        buf: &mut ratatui::buffer::Buffer,
+        x: u16,
+        y: u16,
+        max_w: u16,
+        design: &Design,
+    ) {
+        let label = " ^T Translate clipboard ";
+        let pill_w = (label.len() as u16).min(max_w);
+        if pill_w < 8 {
+            return;
+        }
+        let pill_style = Style::default()
+            .fg(design.color(ColorRole::KeyText))
+            .bg(design.color(ColorRole::Accent))
+            .add_modifier(Modifier::BOLD);
+        put(buf, x, y, label, pill_w, pill_style);
+        self.translate_btn.set(Rect::new(x, y, pill_w, 1));
     }
 
     fn draw_workbench(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {
@@ -444,13 +458,14 @@ impl TranslateScreen {
             put_trunc(buf, inner.x, y, "(clipboard is empty)", inner.width, dim);
             y += 2;
         } else {
-            let chars: Vec<char> = self.clipboard_sample.chars().take(w * 4).collect();
-            for chunk in chars.chunks(w).take(4) {
+            for line in super::manual::wrap(&self.clipboard_sample, w)
+                .into_iter()
+                .take(4)
+            {
                 if y >= inner.bottom().saturating_sub(6) {
                     break;
                 }
-                let s: String = chunk.iter().collect();
-                put_trunc(buf, inner.x, y, &s, inner.width, body);
+                put_trunc(buf, inner.x, y, &line, inner.width, body);
                 y += 1;
             }
             y += 1;
@@ -466,13 +481,11 @@ impl TranslateScreen {
                 ok,
             );
             y += 1;
-            let chars: Vec<char> = out_text.chars().collect();
-            for chunk in chars.chunks(w) {
-                if y >= inner.bottom().saturating_sub(2) {
+            for line in super::manual::wrap(out_text, w) {
+                if y >= inner.bottom().saturating_sub(3) {
                     break;
                 }
-                let s: String = chunk.iter().collect();
-                put_trunc(buf, inner.x, y, &s, inner.width, body);
+                put_trunc(buf, inner.x, y, &line, inner.width, body);
                 y += 1;
             }
         } else if y < inner.bottom().saturating_sub(3) {
@@ -486,11 +499,21 @@ impl TranslateScreen {
             );
         }
 
+        let footer_y = inner.bottom().saturating_sub(1);
+        if inner.height >= 10 {
+            self.draw_translate_pill(
+                buf,
+                inner.x,
+                footer_y.saturating_sub(1),
+                inner.width,
+                design,
+            );
+        }
         put_trunc(
             buf,
             inner.x,
-            inner.bottom().saturating_sub(1),
-            "Enter saves target language · Ctrl+T translates & copies",
+            footer_y,
+            "Enter saves · Ctrl+T translates & copies",
             inner.width,
             dim,
         );
@@ -499,9 +522,10 @@ impl TranslateScreen {
 
 impl Screen for TranslateScreen {
     fn draw(&mut self, ctx: &mut BodyCtx) {
+        self.translate_btn.set(Rect::default());
         let (left, right) = Self::split_panes(ctx.area);
         draw_card(ctx.buf, left, ctx.design, Some("Target Language"), true);
-        let (filter, rows) = Self::left_layout(left);
+        let (filter, mut rows) = Self::left_layout(left);
         let default_msg = format!(
             "Everything goes into {} · Enter sets · Ctrl+T translates",
             name_of(&self.current)
@@ -520,6 +544,26 @@ impl Screen for TranslateScreen {
             self.list.visible_len(),
             LANGUAGES.len(),
         );
+        if right.is_none() && rows.height > 4 {
+            rows.height = rows.height.saturating_sub(1);
+            let pill_y = rows.bottom();
+            self.draw_translate_pill(ctx.buf, rows.x, pill_y, rows.width, ctx.design);
+            if let Some((src, out_text)) = &self.translated
+                && rows.height > 3
+            {
+                rows.height = rows.height.saturating_sub(1);
+                let preview_y = rows.bottom();
+                let first = out_text.lines().next().unwrap_or("");
+                put_trunc(
+                    ctx.buf,
+                    rows.x,
+                    preview_y,
+                    &format!("{src} → {}: {first}", name_of(&self.current)),
+                    rows.width,
+                    Style::default().fg(ctx.design.color(ColorRole::Ok)),
+                );
+            }
+        }
         self.rows_height.set(rows.height);
         self.list.render(rows, ctx.buf, ctx.design, true);
 
@@ -569,13 +613,27 @@ impl Screen for TranslateScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        let btn = self.translate_btn.get();
+        if btn.width > 0 && btn.height > 0 && btn.contains(Position { x, y }) {
+            return Some(HIT_TRANSLATE);
+        }
         let (left, _) = Self::split_panes(area);
-        let (_, rows) = Self::left_layout(left);
+        let (_, mut rows) = Self::left_layout(left);
+        if area.width < super::DUAL_PANE_MIN_WIDTH && rows.height > 4 {
+            rows.height = rows.height.saturating_sub(1);
+            if self.translated.is_some() && rows.height > 3 {
+                rows.height = rows.height.saturating_sub(1);
+            }
+        }
         self.list.hit_row(rows, x, y, design)
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
         if let Some(r) = row {
+            if r == HIT_TRANSLATE {
+                self.translate_clipboard_now();
+                return Outcome::Consumed;
+            }
             self.list.set_cursor(r);
             self.select_current();
             return Outcome::Consumed;

@@ -224,22 +224,7 @@ impl FormatScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
-            let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 48) / 100).max(46) as u16;
-            let right_w = area.width.saturating_sub(left_w + gap);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(
-                    area.x + left_w + gap,
-                    area.y,
-                    right_w,
-                    area.height,
-                )),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 48, 46)
     }
 
     fn left_layout(area: Rect) -> (Rect, Rect) {
@@ -507,7 +492,28 @@ impl Screen for FormatScreen {
             return confirm.hit(area, design, x, y);
         }
         let (left, _) = Self::split_panes(area);
-        let (_, rows) = Self::left_layout(left);
+        let (fs_bar, rows) = Self::left_layout(left);
+        if y == fs_bar.y && fs_bar.height >= 1 {
+            let exfat_lbl = if self.fs_idx == 0 {
+                "[ ● exFAT · universal ]"
+            } else {
+                "  ○ exFAT · universal  "
+            };
+            let ext4_lbl = if self.fs_idx == 1 {
+                "[ ● ext4 · Linux ]"
+            } else {
+                "  ○ ext4 · Linux  "
+            };
+            let w1 = unicode_width::UnicodeWidthStr::width(exfat_lbl) as u16;
+            let w2 = unicode_width::UnicodeWidthStr::width(ext4_lbl) as u16;
+            if x >= fs_bar.x && x < fs_bar.x + w1.min(fs_bar.width) {
+                return Some(10_000);
+            }
+            let x2 = fs_bar.x + w1 + 1;
+            if x >= x2 && x < (x2 + w2).min(fs_bar.right()) {
+                return Some(10_001);
+            }
+        }
         self.list.hit_row(rows, x, y, design)
     }
 
@@ -531,6 +537,14 @@ impl Screen for FormatScreen {
             return Outcome::Consumed;
         }
         if let Some(r) = row {
+            if r == 10_000 {
+                self.fs_idx = 0;
+                return Outcome::Consumed;
+            }
+            if r == 10_001 {
+                self.fs_idx = 1;
+                return Outcome::Consumed;
+            }
             self.list.set_cursor(r);
             self.open_confirm();
             return Outcome::Consumed;
@@ -539,7 +553,10 @@ impl Screen for FormatScreen {
     }
 
     fn keybar(&self) -> Option<&[KeyHint]> {
-        Some(&self.keybar)
+        match self.mode {
+            FormatMode::Select => Some(&self.keybar),
+            FormatMode::Confirm { .. } => None,
+        }
     }
 
     fn header(&self) -> Option<&Header> {

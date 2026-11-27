@@ -488,7 +488,13 @@ impl Screen for QrScreen {
                     width: ctx.area.width.saturating_sub(4),
                     height: ctx.area.height.saturating_sub(4),
                 };
-                draw_qr(ctx.buf, inner, ctx.design, qr);
+                super::draw_qr_fit(
+                    ctx.buf,
+                    inner,
+                    ctx.design,
+                    qr,
+                    "QR too large for window \u{00b7} widen or resize window",
+                );
             }
             QrMode::Typing(input) => {
                 draw_card(ctx.buf, ctx.area, ctx.design, Some("The code"), true);
@@ -508,22 +514,7 @@ impl Screen for QrScreen {
                 input.render(field, ctx.buf, ctx.design, "text or URL\u{2026}");
             }
             QrMode::Menu => {
-                let (left, right) = if ctx.area.width >= 100 {
-                    let gap = 1u16;
-                    let left_w = ((u32::from(ctx.area.width) * 50) / 100).max(46) as u16;
-                    let right_w = ctx.area.width.saturating_sub(left_w + gap);
-                    (
-                        Rect::new(ctx.area.x, ctx.area.y, left_w, ctx.area.height),
-                        Some(Rect::new(
-                            ctx.area.x + left_w + gap,
-                            ctx.area.y,
-                            right_w,
-                            ctx.area.height,
-                        )),
-                    )
-                } else {
-                    (ctx.area, None)
-                };
+                let (left, right) = super::split_panes(ctx.area, 50, 46);
                 draw_card(ctx.buf, left, ctx.design, Some("The code"), true);
                 let (filter, rows) = super::pick::list_layout(left);
                 put_trunc(
@@ -650,6 +641,7 @@ impl Screen for QrScreen {
                     self.sync_chrome();
                     Outcome::Consumed
                 }
+                hayato_ui::InputAction::Ignored => Outcome::Continue,
                 _ => Outcome::Consumed,
             },
             QrMode::Menu => {
@@ -710,7 +702,8 @@ impl Screen for QrScreen {
         if !matches!(self.mode, QrMode::Menu) {
             return None;
         }
-        let (_, rows) = super::pick::list_layout(area);
+        let (left, _) = super::split_panes(area, 50, 46);
+        let (_, rows) = super::pick::list_layout(left);
         self.list.hit_row(rows, x, y, design)
     }
 

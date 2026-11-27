@@ -79,7 +79,7 @@ impl WindowScreen {
             header: Header::new("Hayato").subtitle("Windows"),
             keybar: vec![
                 KeyHint::new("Enter", "focus"),
-                KeyHint::new("Alt+1", "close"),
+                KeyHint::new("Ctrl+D", "close"),
                 KeyHint::new("type", "filter"),
                 KeyHint::new("\u{2191}\u{2193}", "move"),
                 KeyHint::new("Esc", "close"),
@@ -262,14 +262,6 @@ impl Screen for WindowScreen {
                 }
             }
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                if let Some(selected) = self.list.selected_index() {
-                    if let Some(window) = self.filtered.get(selected).cloned() {
-                        self.close_window(&window);
-                        return Outcome::Continue;
-                    }
-                }
-            }
-            KeyCode::Char('1') if key.modifiers.contains(KeyModifiers::ALT) => {
                 if let Some(selected) = self.list.selected_index() {
                     if let Some(window) = self.filtered.get(selected).cloned() {
                         self.close_window(&window);

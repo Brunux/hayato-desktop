@@ -6,9 +6,10 @@ mod screen;
 mod sway_ipc;
 
 use std::io::{self, IsTerminal};
+use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 use hayato_music_core::{NowPlayingFile, PlayState, format_time, load_config, runtime_dir};
 use hayato_ui::{App, Design, Header};
@@ -25,6 +26,41 @@ use ratatui::crossterm::terminal::{
 use screen::{CassetteScreen, THEME_RELOAD_FLAG};
 
 const VERSION: &str = include_str!("../../../../VERSION");
+static SAVED_STDERR_FD: AtomicI32 = AtomicI32::new(-1);
+
+fn redirect_stderr_to_log() {
+    let _ = std::fs::create_dir_all(runtime_dir());
+    let log_path = runtime_dir().join("cassette.log");
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&log_path)
+        .or_else(|_| std::fs::OpenOptions::new().write(true).open("/dev/null"));
+    let Ok(file) = file else {
+        return;
+    };
+    unsafe {
+        if SAVED_STDERR_FD.load(Ordering::Relaxed) < 0 {
+            let saved = libc::dup(2);
+            if saved >= 0 {
+                let _ = libc::fcntl(saved, libc::F_SETFD, libc::FD_CLOEXEC);
+                SAVED_STDERR_FD.store(saved, Ordering::Relaxed);
+            }
+        }
+        let _ = libc::dup2(file.as_raw_fd(), 2);
+    }
+}
+
+fn restore_stderr_fd() {
+    let saved = SAVED_STDERR_FD.swap(-1, Ordering::Relaxed);
+    if saved >= 0 {
+        unsafe {
+            let _ = libc::dup2(saved, 2);
+            let _ = libc::close(saved);
+        }
+    }
+}
 
 extern "C" fn handle_sigusr1(_: libc::c_int) {
     THEME_RELOAD_FLAG.store(true, Ordering::Relaxed);
@@ -88,6 +124,7 @@ fn run_tui(play_file: Option<PathBuf>, start_mini: bool) -> i32 {
     if enable_raw_mode().is_err() {
         return 3;
     }
+    redirect_stderr_to_log();
     let mut stdout = io::stdout();
     let _ = execute!(
         stdout,
@@ -106,11 +143,13 @@ fn run_tui(play_file: Option<PathBuf>, start_mini: bool) -> i32 {
             DisableMouseCapture,
             LeaveAlternateScreen
         );
+        restore_stderr_fd();
         default_hook(info);
     }));
 
     let Ok(mut terminal) = Terminal::new(CrosstermBackend::new(io::stdout())) else {
         let _ = disable_raw_mode();
+        restore_stderr_fd();
         return 3;
     };
 
@@ -130,6 +169,7 @@ fn run_tui(play_file: Option<PathBuf>, start_mini: bool) -> i32 {
         DisableMouseCapture,
         LeaveAlternateScreen
     );
+    restore_stderr_fd();
     code
 }
 

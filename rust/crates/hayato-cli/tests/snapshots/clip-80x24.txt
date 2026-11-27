@@ -2,7 +2,7 @@ Hayato · Clipboard
 ────────────────────────────────────────────────────────────────────────────────
 ╭ History ─────────────────────────────────────────────────────────────────────╮
 │ [All 0]  Text 0   Links 0   Images 0                                         │
-│  Alt+S   Share   ^S   Save newest image   ^X   Clear history (0)          │
+│  ^Y   Share   ^S   Save img   ^X   Clear (0)                [Tab] actions │
 │                                                                              │
 │  Clipboard history is empty · Esc backs out                                 │
 │                                                                              │

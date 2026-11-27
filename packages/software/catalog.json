@@ -1,0 +1,580 @@
+{
+  "schema": 1,
+  "intents": [
+    {
+      "id": "video-edit",
+      "title": "Edit videos",
+      "blurb": "Cut timelines, transcode clips and export movies",
+      "glyph": "video",
+      "keywords": ["video", "editor", "edit", "movie", "clip", "film", "timeline", "transcode"],
+      "apps": ["kdenlive", "shotcut", "pitivi", "handbrake", "ffmpeg"]
+    },
+    {
+      "id": "python-dev",
+      "title": "Program in Python",
+      "blurb": "Python runtime, virtual environments, pipx and beginner IDEs",
+      "glyph": "python",
+      "keywords": ["python", "program", "programming", "code", "coding", "pip", "venv", "script", "ide"],
+      "apps": ["python3", "python3-venv", "pipx", "python3-pip", "thonny", "geany"]
+    },
+    {
+      "id": "office",
+      "title": "Office & documents",
+      "blurb": "Write docs, spreadsheets, slides, read PDFs/EPUBs and take ink notes",
+      "glyph": "document",
+      "keywords": ["office", "word", "writer", "spreadsheet", "excel", "slides", "pdf", "epub", "notes", "document"],
+      "apps": ["libreoffice-writer", "libreoffice-calc", "libreoffice-impress", "gnumeric", "papers", "foliate", "xournalpp"]
+    },
+    {
+      "id": "draw",
+      "title": "Draw & paint",
+      "blurb": "Digital painting, photo retouching and vector illustration",
+      "glyph": "brush",
+      "keywords": ["draw", "drawing", "paint", "art", "illustration", "vector", "svg", "krita", "photoshop", "gimp"],
+      "apps": ["krita", "gimp", "inkscape", "mypaint"]
+    },
+    {
+      "id": "games",
+      "title": "Play games",
+      "blurb": "Retro consoles, kart racing, city builders and voxel worlds",
+      "glyph": "target",
+      "keywords": ["game", "games", "gaming", "play", "emulator", "retro", "minecraft", "doom"],
+      "apps": ["retroarch", "supertuxkart", "crispy-doom", "freedoom", "openttd", "scummvm", "luanti"]
+    },
+    {
+      "id": "music",
+      "title": "Listen & edit audio",
+      "blurb": "Music library players, multitrack audio editing and media playback",
+      "glyph": "music",
+      "keywords": ["music", "audio", "player", "mp3", "flac", "podcast", "sound", "daw", "edit"],
+      "apps": ["strawberry", "audacity", "audacious", "mpv", "vlc"]
+    },
+    {
+      "id": "screen-record",
+      "title": "Record & stream",
+      "blurb": "Capture Wayland desktop video or stream scenes",
+      "glyph": "camera",
+      "keywords": ["record", "screen", "screencast", "stream", "capture", "obs", "webcam"],
+      "apps": ["wf-recorder", "obs-studio"]
+    },
+    {
+      "id": "privacy",
+      "title": "Stay private",
+      "blurb": "Offline password vault, PGP encryption and onion routing",
+      "glyph": "shield",
+      "keywords": ["privacy", "private", "password", "vault", "security", "encrypt", "pgp", "tor", "keepass"],
+      "apps": ["keepassxc", "gnupg", "tor"]
+    },
+    {
+      "id": "system-tools",
+      "title": "System & disk tools",
+      "blurb": "Resource monitors, partition editor and disk space analyzer",
+      "glyph": "sliders",
+      "keywords": ["system", "monitor", "cpu", "disk", "partition", "gparted", "usage", "top"],
+      "apps": ["btop", "htop", "gparted", "ncdu"]
+    },
+    {
+      "id": "web",
+      "title": "Browse & sync",
+      "blurb": "Web browsers, BitTorrent client and P2P folder sync",
+      "glyph": "globe",
+      "keywords": ["web", "browser", "internet", "chrome", "firefox", "torrent", "sync", "files"],
+      "apps": ["firefox-esr", "chromium", "qbittorrent", "syncthing"]
+    },
+    {
+      "id": "photos",
+      "title": "Organize & edit photos",
+      "blurb": "Photo library manager, RAW darkroom and fast Wayland viewer",
+      "glyph": "image",
+      "keywords": ["photo", "photos", "camera", "raw", "lightroom", "gallery", "image", "viewer"],
+      "apps": ["shotwell", "darktable", "imv"]
+    },
+    {
+      "id": "dev-tools",
+      "title": "Build software",
+      "blurb": "Git, C/C++ toolchain, terminal editor and lightweight IDE",
+      "glyph": "code",
+      "keywords": ["dev", "developer", "git", "compile", "build", "c", "c++", "neovim", "vim", "editor"],
+      "apps": ["git", "build-essential", "neovim", "geany"]
+    }
+  ],
+  "apps": [
+    {
+      "id": "kdenlive",
+      "name": "Kdenlive",
+      "package": "kdenlive",
+      "summary": "Full non-linear video editor with multi-track timeline and effects.",
+      "weight": "heavy",
+      "keywords": ["video", "editor", "nle", "timeline", "youtube"],
+      "launch": "org.kde.kdenlive"
+    },
+    {
+      "id": "shotcut",
+      "name": "Shotcut",
+      "package": "shotcut",
+      "summary": "Streamlined video editor with broad format support; good on 4 GB RAM.",
+      "weight": "medium",
+      "keywords": ["video", "editor", "1080p", "cut"],
+      "launch": "org.shotcut.Shotcut"
+    },
+    {
+      "id": "pitivi",
+      "name": "Pitivi",
+      "package": "pitivi",
+      "summary": "Clean GTK video editor built on GStreamer for quick cuts and titles.",
+      "weight": "medium",
+      "keywords": ["video", "editor", "gtk"],
+      "launch": "org.pitivi.Pitivi"
+    },
+    {
+      "id": "handbrake",
+      "name": "HandBrake",
+      "package": "handbrake",
+      "summary": "GUI video transcoder with device presets and batch queue.",
+      "weight": "medium",
+      "keywords": ["video", "convert", "transcode", "mp4", "compress"],
+      "launch": "fr.handbrake.ghb"
+    },
+    {
+      "id": "ffmpeg",
+      "name": "FFmpeg",
+      "package": "ffmpeg",
+      "summary": "Fast command-line converter, trimmer and muxer for audio & video.",
+      "weight": "light",
+      "keywords": ["video", "audio", "cli", "convert", "trim"],
+      "launch": null
+    },
+    {
+      "id": "python3",
+      "name": "Python 3",
+      "package": "python3",
+      "summary": "Core Python 3 interpreter and standard library.",
+      "weight": "light",
+      "keywords": ["python", "interpreter", "script"],
+      "launch": null
+    },
+    {
+      "id": "python3-venv",
+      "name": "Python venv",
+      "package": "python3-venv",
+      "summary": "Built-in isolated virtual environments (`python3 -m venv`).",
+      "weight": "light",
+      "keywords": ["python", "venv", "environment"],
+      "launch": null
+    },
+    {
+      "id": "pipx",
+      "name": "pipx",
+      "package": "pipx",
+      "summary": "Install and run Python CLI apps in isolated environments cleanly.",
+      "weight": "light",
+      "keywords": ["python", "pip", "cli", "packages"],
+      "launch": null
+    },
+    {
+      "id": "python3-pip",
+      "name": "pip",
+      "package": "python3-pip",
+      "summary": "Python package installer for project virtual environments.",
+      "weight": "light",
+      "keywords": ["python", "pip", "library"],
+      "launch": null
+    },
+    {
+      "id": "thonny",
+      "name": "Thonny",
+      "package": "thonny",
+      "summary": "Beginner-friendly Python IDE with built-in debugger and variable inspector.",
+      "weight": "light",
+      "keywords": ["python", "ide", "learn", "debug"],
+      "launch": "org.thonny.Thonny"
+    },
+    {
+      "id": "geany",
+      "name": "Geany",
+      "package": "geany",
+      "summary": "Fast, lightweight GTK text editor & IDE for Python, C and shell.",
+      "weight": "light",
+      "keywords": ["editor", "ide", "python", "code"],
+      "launch": "geany"
+    },
+    {
+      "id": "libreoffice-writer",
+      "name": "LibreOffice Writer",
+      "package": "libreoffice-writer",
+      "summary": "Full word processor supporting DOCX, ODT and PDF export.",
+      "weight": "heavy",
+      "keywords": ["office", "word", "writer", "docx", "document"],
+      "launch": "libreoffice-writer"
+    },
+    {
+      "id": "libreoffice-calc",
+      "name": "LibreOffice Calc",
+      "package": "libreoffice-calc",
+      "summary": "Full spreadsheet app supporting XLSX, ODS, charts and pivot tables.",
+      "weight": "heavy",
+      "keywords": ["office", "excel", "spreadsheet", "csv", "calc"],
+      "launch": "libreoffice-calc"
+    },
+    {
+      "id": "libreoffice-impress",
+      "name": "LibreOffice Impress",
+      "package": "libreoffice-impress",
+      "summary": "Presentation editor compatible with PPTX and ODP decks.",
+      "weight": "heavy",
+      "keywords": ["office", "powerpoint", "slides", "presentation"],
+      "launch": "libreoffice-impress"
+    },
+    {
+      "id": "gnumeric",
+      "name": "Gnumeric",
+      "package": "gnumeric",
+      "summary": "Ultra-light, fast GTK spreadsheet ideal for 4 GB RAM laptops.",
+      "weight": "light",
+      "keywords": ["spreadsheet", "excel", "lightweight", "csv"],
+      "launch": "gnumeric"
+    },
+    {
+      "id": "papers",
+      "name": "Papers",
+      "package": "papers",
+      "summary": "Modern GNOME/GTK4 PDF and document reader.",
+      "weight": "light",
+      "keywords": ["pdf", "reader", "document", "view"],
+      "launch": "org.gnome.Papers"
+    },
+    {
+      "id": "foliate",
+      "name": "Foliate",
+      "package": "foliate",
+      "summary": "Clean GTK e-book reader for EPUB, Mobipocket and Kindle formats.",
+      "weight": "light",
+      "keywords": ["epub", "ebook", "book", "reader"],
+      "launch": "com.github.johnfactotum.Foliate"
+    },
+    {
+      "id": "xournalpp",
+      "name": "Xournal++",
+      "package": "xournalpp",
+      "summary": "Stylus handwriting, note-taking and PDF annotation/signing app.",
+      "weight": "light",
+      "keywords": ["stylus", "ink", "notes", "pdf", "sign"],
+      "launch": "com.github.xournalpp.xournalpp"
+    },
+    {
+      "id": "krita",
+      "name": "Krita",
+      "package": "krita",
+      "summary": "Studio-grade digital painting, brushes and concept art suite.",
+      "weight": "heavy",
+      "keywords": ["draw", "paint", "art", "stylus", "brush"],
+      "launch": "org.kde.krita"
+    },
+    {
+      "id": "gimp",
+      "name": "GIMP",
+      "package": "gimp",
+      "summary": "Powerful raster image manipulation and photo retouching editor.",
+      "weight": "medium",
+      "keywords": ["image", "photo", "editor", "photoshop", "layers"],
+      "launch": "gimp"
+    },
+    {
+      "id": "inkscape",
+      "name": "Inkscape",
+      "package": "inkscape",
+      "summary": "Vector graphics editor for SVG logos, diagrams and print layouts.",
+      "weight": "medium",
+      "keywords": ["vector", "svg", "draw", "illustrator", "logo"],
+      "launch": "org.inkscape.Inkscape"
+    },
+    {
+      "id": "mypaint",
+      "name": "MyPaint",
+      "package": "mypaint",
+      "summary": "Lightweight infinite-canvas sketching & painting app for stylus tablets.",
+      "weight": "light",
+      "keywords": ["draw", "sketch", "paint", "stylus"],
+      "launch": "org.mypaint.MyPaint"
+    },
+    {
+      "id": "retroarch",
+      "name": "RetroArch",
+      "package": "retroarch",
+      "summary": "Tuned Hayato build (no bloat) for NES/SNES/GBA/PSX/N64 emulation.",
+      "weight": "light",
+      "keywords": ["retro", "emulator", "rom", "games", "console"],
+      "launch": "hayato menu games"
+    },
+    {
+      "id": "supertuxkart",
+      "name": "SuperTuxKart",
+      "package": "supertuxkart",
+      "summary": "3D open-source arcade kart racer with split-screen multiplayer.",
+      "weight": "heavy",
+      "keywords": ["racing", "kart", "3d", "game"],
+      "launch": "supertuxkart"
+    },
+    {
+      "id": "crispy-doom",
+      "name": "Crispy Doom",
+      "package": "crispy-doom",
+      "summary": "Classic high-framerate Doom engine ready for Freedoom or IWADs.",
+      "weight": "light",
+      "keywords": ["doom", "fps", "retro", "game"],
+      "launch": "crispy-doom"
+    },
+    {
+      "id": "freedoom",
+      "name": "Freedoom",
+      "package": "freedoom",
+      "summary": "Open-content classic FPS campaigns playable with Crispy Doom.",
+      "weight": "light",
+      "keywords": ["doom", "fps", "game"],
+      "launch": null
+    },
+    {
+      "id": "openttd",
+      "name": "OpenTTD",
+      "package": "openttd",
+      "summary": "Beloved transport tycoon & rail network strategy simulation.",
+      "weight": "light",
+      "keywords": ["strategy", "tycoon", "trains", "simulation", "game"],
+      "launch": "openttd"
+    },
+    {
+      "id": "scummvm",
+      "name": "ScummVM",
+      "package": "scummvm",
+      "summary": "Runner for classic point-and-click adventure games.",
+      "weight": "light",
+      "keywords": ["adventure", "retro", "point and click", "game"],
+      "launch": "scummvm"
+    },
+    {
+      "id": "luanti",
+      "name": "Luanti (Minetest)",
+      "package": "luanti",
+      "summary": "Lightweight voxel sandbox block-building engine with rich mods.",
+      "weight": "medium",
+      "keywords": ["voxel", "minecraft", "sandbox", "game"],
+      "launch": "org.luanti.luanti"
+    },
+    {
+      "id": "strawberry",
+      "name": "Strawberry",
+      "package": "strawberry",
+      "summary": "Audiophile music collection manager & player with hi-res support.",
+      "weight": "light",
+      "keywords": ["music", "library", "flac", "player"],
+      "launch": "org.strawberrymusicplayer.strawberry"
+    },
+    {
+      "id": "audacity",
+      "name": "Audacity",
+      "package": "audacity",
+      "summary": "Multi-track audio recorder and waveform editor for podcasts & music.",
+      "weight": "medium",
+      "keywords": ["audio", "edit", "podcast", "record", "wav"],
+      "launch": "audacity"
+    },
+    {
+      "id": "audacious",
+      "name": "Audacious",
+      "package": "audacious",
+      "summary": "Featherweight classic music player with Winamp-style simplicity.",
+      "weight": "light",
+      "keywords": ["music", "lightweight", "mp3", "player"],
+      "launch": "audacious"
+    },
+    {
+      "id": "mpv",
+      "name": "mpv",
+      "package": "mpv",
+      "summary": "Minimal hardware-accelerated Wayland video & media player.",
+      "weight": "light",
+      "keywords": ["video", "player", "media", "hardware"],
+      "launch": "mpv"
+    },
+    {
+      "id": "vlc",
+      "name": "VLC",
+      "package": "vlc",
+      "summary": "Versatile GUI media player that opens almost any disc or stream.",
+      "weight": "medium",
+      "keywords": ["video", "dvd", "stream", "player"],
+      "launch": "vlc"
+    },
+    {
+      "id": "wf-recorder",
+      "name": "wf-recorder",
+      "package": "wf-recorder",
+      "summary": "Low-overhead Wayland screen recorder used by Hayato Studio.",
+      "weight": "light",
+      "keywords": ["record", "screen", "wayland", "video"],
+      "launch": "hayato menu studio"
+    },
+    {
+      "id": "obs-studio",
+      "name": "OBS Studio",
+      "package": "obs-studio",
+      "summary": "Full scene compositor for live streaming and multi-source recording.",
+      "weight": "heavy",
+      "keywords": ["stream", "record", "obs", "webcam", "scenes"],
+      "launch": "com.obsproject.Studio"
+    },
+    {
+      "id": "keepassxc",
+      "name": "KeePassXC",
+      "package": "keepassxc",
+      "summary": "Offline, encrypted password manager compatible with `.kdbx` vaults.",
+      "weight": "light",
+      "keywords": ["password", "vault", "keepass", "security", "totp"],
+      "launch": "org.keepassxc.KeePassXC"
+    },
+    {
+      "id": "gnupg",
+      "name": "GnuPG",
+      "package": "gnupg",
+      "summary": "OpenPGP file signing, encryption and key verification tools.",
+      "weight": "light",
+      "keywords": ["pgp", "gpg", "encrypt", "sign"],
+      "launch": null
+    },
+    {
+      "id": "tor",
+      "name": "Tor",
+      "package": "tor",
+      "summary": "Onion routing network daemon & `torsocks` privacy transport.",
+      "weight": "light",
+      "keywords": ["tor", "privacy", "onion", "network"],
+      "launch": null
+    },
+    {
+      "id": "btop",
+      "name": "btop",
+      "package": "btop",
+      "summary": "Rich terminal system monitor showing CPU, RAM, disk and battery.",
+      "weight": "light",
+      "keywords": ["monitor", "cpu", "ram", "top", "terminal"],
+      "launch": "foot -e btop"
+    },
+    {
+      "id": "htop",
+      "name": "htop",
+      "package": "htop",
+      "summary": "Fast classic interactive process viewer in the terminal.",
+      "weight": "light",
+      "keywords": ["process", "monitor", "top", "terminal"],
+      "launch": "foot -e htop"
+    },
+    {
+      "id": "gparted",
+      "name": "GParted",
+      "package": "gparted",
+      "summary": "Graphical disk partition manager for USB drives, SD cards and ext4.",
+      "weight": "light",
+      "keywords": ["disk", "partition", "usb", "format", "ext4"],
+      "launch": "gparted"
+    },
+    {
+      "id": "ncdu",
+      "name": "ncdu",
+      "package": "ncdu",
+      "summary": "Fast keyboard-first disk usage analyzer for finding large folders.",
+      "weight": "light",
+      "keywords": ["disk", "space", "storage", "cleanup", "terminal"],
+      "launch": "foot -e ncdu ~"
+    },
+    {
+      "id": "firefox-esr",
+      "name": "Firefox ESR",
+      "package": "firefox-esr",
+      "summary": "Extended Support Release browser tuned with Debian Wayland defaults.",
+      "weight": "medium",
+      "keywords": ["browser", "web", "internet", "firefox"],
+      "launch": "firefox-esr"
+    },
+    {
+      "id": "chromium",
+      "name": "Chromium",
+      "package": "chromium",
+      "summary": "Open-source Chromium web browser with Wayland support.",
+      "weight": "heavy",
+      "keywords": ["browser", "web", "chrome", "chromium"],
+      "launch": "chromium"
+    },
+    {
+      "id": "qbittorrent",
+      "name": "qBittorrent",
+      "package": "qbittorrent",
+      "summary": "Clean, ad-free BitTorrent client for Linux ISOs and large files.",
+      "weight": "light",
+      "keywords": ["torrent", "download", "p2p"],
+      "launch": "org.qbittorrent.qBittorrent"
+    },
+    {
+      "id": "syncthing",
+      "name": "Syncthing",
+      "package": "syncthing",
+      "summary": "Continuous, private peer-to-peer folder sync across your devices.",
+      "weight": "light",
+      "keywords": ["sync", "backup", "cloud-free", "p2p"],
+      "launch": null
+    },
+    {
+      "id": "shotwell",
+      "name": "Shotwell",
+      "package": "shotwell",
+      "summary": "Fast GTK photo organizer with albums, tagging and basic crops.",
+      "weight": "light",
+      "keywords": ["photo", "gallery", "import", "album"],
+      "launch": "org.gnome.Shotwell"
+    },
+    {
+      "id": "darktable",
+      "name": "darktable",
+      "package": "darktable",
+      "summary": "Non-destructive RAW photography workflow and color grading studio.",
+      "weight": "heavy",
+      "keywords": ["raw", "photo", "darkroom", "lightroom"],
+      "launch": "org.darktable.Darktable"
+    },
+    {
+      "id": "imv",
+      "name": "imv",
+      "package": "imv",
+      "summary": "Lightweight native Wayland image viewer used by Hayato Files.",
+      "weight": "light",
+      "keywords": ["image", "viewer", "picture", "wayland"],
+      "launch": "imv"
+    },
+    {
+      "id": "git",
+      "name": "Git",
+      "package": "git",
+      "summary": "Distributed version control system for code and dotfiles.",
+      "weight": "light",
+      "keywords": ["git", "vcs", "code", "dev"],
+      "launch": null
+    },
+    {
+      "id": "build-essential",
+      "name": "C/C++ Build Tools",
+      "package": "build-essential",
+      "summary": "GCC compiler, Make and Debian packaging essentials.",
+      "weight": "medium",
+      "keywords": ["gcc", "make", "compile", "c", "c++"],
+      "launch": null
+    },
+    {
+      "id": "neovim",
+      "name": "Neovim",
+      "package": "neovim",
+      "summary": "Fast extensible modal text editor for code and config files.",
+      "weight": "light",
+      "keywords": ["vim", "neovim", "editor", "code"],
+      "launch": "foot -e nvim"
+    }
+  ]
+}

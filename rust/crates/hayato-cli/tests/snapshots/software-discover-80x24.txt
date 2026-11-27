@@ -1,0 +1,24 @@
+Hayato · Software                          3 installed · 3 updates (1 security) 
+────────────────────────────────────────────────────────────────────────────────
+ Discover   Installed   Updates(3)   Cleanup    / search apps…          All APT 
+╭ What do you want to do? ─────────────────────────────────────────────────────╮
+│ ▍   Edit videos  Kdenlive, Shotcut, Pitivi                    1/5 on disk   │
+│     Program in Python  Python 3, Python venv, pipx                 6 apps   │
+│     Office & documents  LibreOffice Writer, LibreOffice Calc, Libr…         │
+│     Draw & paint  Krita, GIMP, Inkscape                            4 apps   │
+│     Play games  RetroArch, SuperTuxKart, Crispy Doom               7 apps   │
+│     Listen & edit audio  Strawberry, Audacity, Audacious           5 apps   │
+│     Record & stream  wf-recorder, OBS Studio                       2 apps   │
+│     Stay private  KeePassXC, GnuPG, Tor                            3 apps   │
+│     System & disk tools  btop, htop, GParted                  1/4 on disk   │
+│     Browse & sync  Firefox ESR, Chromium, qBittorrent         1/4 on disk   │
+│     Organize & edit photos  Shotwell, darktable, imv               3 apps   │
+│     Build software  Git, C/C++ Build Tools, Neovim                 4 apps   │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  open   [/]  search   [1-4/Tab]  view   [a]  all apt   [Esc]  back     

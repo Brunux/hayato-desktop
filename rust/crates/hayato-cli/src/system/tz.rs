@@ -17,7 +17,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 
-use super::{out, sudo};
+use super::{out, spawn_detached_argv, sudo};
 
 /// What the menu needs before it offers anything.
 pub const NEEDED: &[&str] = &["timedatectl"];
@@ -84,22 +84,7 @@ impl TzScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
-            let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 52) / 100).max(48) as u16;
-            let right_w = area.width.saturating_sub(left_w + gap);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(
-                    area.x + left_w + gap,
-                    area.y,
-                    right_w,
-                    area.height,
-                )),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 52, 48)
     }
 
     fn left_layout(area: Rect) -> (Rect, Rect) {
@@ -169,7 +154,7 @@ impl TzScreen {
         put_trunc(buf, inner.x, y, "NETWORK TIME (NTP)", inner.width, accent);
         y += 1;
         let (ntp_label, ntp_role) = if self.ntp {
-            ("● Automatic sync ON (systemd-timesyncd)", ColorRole::Ok)
+            ("● Auto sync ON (timesyncd)", ColorRole::Ok)
         } else {
             ("○ Automatic sync OFF", ColorRole::Warn)
         };
@@ -197,7 +182,7 @@ impl TzScreen {
             buf,
             inner.x,
             inner.bottom().saturating_sub(1),
-            "Enter applies zone & restarts Waybar · Ctrl+N toggles NTP",
+            "Enter: apply · ^N: toggle NTP",
             inner.width,
             dim,
         );
@@ -350,7 +335,7 @@ pub fn menu(
                 }
                 if out(&["pgrep", "-x", "waybar"]).is_some() {
                     let _ = out(&["pkill", "-x", "waybar"]);
-                    let _ = std::process::Command::new("setsid").arg("waybar").spawn();
+                    spawn_detached_argv("waybar", &[]);
                 }
                 let now =
                     out(&["env", &format!("TZ={zone}"), "date", "+%H:%M"]).unwrap_or_default();

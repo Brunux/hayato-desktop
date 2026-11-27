@@ -386,7 +386,8 @@ impl NotesScreen {
             area.x + 2,
             area.y,
             &self.preview.title,
-            area.width.saturating_sub(10),
+            area.width
+                .saturating_sub(self.preview.badge.len() as u16 + 6),
             design.style(TextStyle::Title),
         );
         let badge_x = area
@@ -592,10 +593,10 @@ impl Screen for NotesScreen {
                         }
                     }
                 }
-                _ => {
-                    let _ = self.title_input.handle(key);
-                    Outcome::Consumed
-                }
+                _ => match self.title_input.handle(key) {
+                    hayato_ui::InputAction::Ignored => Outcome::Continue,
+                    _ => Outcome::Consumed,
+                },
             };
         }
         if key.code == KeyCode::Esc && !self.list.filter().is_empty() {
@@ -672,12 +673,7 @@ impl Screen for NotesScreen {
         if self.mode != Mode::List {
             return None;
         }
-        let inner = Rect {
-            x: area.x + 2,
-            y: area.y + 1,
-            width: area.width.saturating_sub(4),
-            height: area.height.saturating_sub(2),
-        };
+        let inner = design.block(hayato_ui::Border::Rounded).inner(area);
         self.list.hit_row(panes(inner).list, x, y, design)
     }
 
@@ -712,7 +708,7 @@ struct Panes {
 }
 
 fn panes(inner: Rect) -> Panes {
-    if inner.width >= 100 {
+    if inner.width >= super::DUAL_PANE_MIN_WIDTH.saturating_sub(2) {
         let shelf = (inner.width * 44 / 100).clamp(38, 64);
         Panes {
             filter: Rect {

@@ -24,6 +24,7 @@ symlinks to `/usr/bin/hayato`.
 | **Alt+M** | `hayato-cassette --toggle` (`hayato-music`) | **Cassette**: terminal-native local (FLAC/MP3/OGG/Opus) & Spotify cyberdeck music player in a Sway scratchpad with Sixel album art, 32-band FFT spectrum, synced `.lrc` lyrics, MPRIS2, and Waybar `custom/cassette` pill (`09-music.md`) |
 | **Share** (root menu / `Ctrl+S` in apps) | `hayato share` (`hayato-share`) | **Share Sheet**: send files, folders (auto-ZIP), Lens captures, clipboard, notes, or stdin to phones via themed LAN QR web card (with 2-way upload & clipboard push), zero-daemon LocalSend v2 discovery, instant offline QR, or local targets |
 | **Alt+Ctrl+O** | `hayato menu settings` (`hayato-settings`) | **Settings**: seven sections - Network, Display & Sound, Appearance, Input, Power & Idle, System, Accessibility - each holding the switches and panels for that subject |
+| **Software** (root menu, Settings) | `hayato menu software` | **Hayato Software**: intent-first Debian `forky` app catalog, access/trust details, updates, and system cleanup (`04-software.md`) |
 | **Alt+Ctrl+P** or **Alt+Escape** | `hayato menu power` (`hayato-power`) | **power**: lock, suspend, hibernate, log out, reboot, shut down - the last three ask once more |
 | **Alt+Ctrl+N** | `hayato menu notify` (`hayato-notify-history`) | the notification history, with do-not-disturb and "copy this notification" |
 | **Alt+C** or **Alt+Ctrl+Q** | `hayato menu calc` (`hayato-calc`) | a calculator: type `(3*4)/2` or `2**8`, Enter copies the result |

@@ -30,7 +30,8 @@ use hayato_cli::system::{
     emoji::EmojiScreen, games::GamesScreen, keys::KeysScreen, kill::KillScreen, learn::LearnScreen,
     media::MediaScreen, net::NetScreen, notify::NotifyScreen, pad::ControllerScreen,
     pkg::PkgScreen, qr::QrScreen, remind::RemindScreen, run::RunScreen, settings::SettingsScreen,
-    setup::SetupScreen, theme_picker::ThemePickerScreen, vpn::VpnScreen, window::WindowScreen,
+    setup::SetupScreen, software::SoftwareScreen, theme_picker::ThemePickerScreen, vpn::VpnScreen,
+    window::WindowScreen,
 };
 use hayato_ui::{App, Density, Design, Header, Screen};
 use ratatui::Terminal;
@@ -412,4 +413,23 @@ fn the_setup_assistant_renders_at_both_grids() {
 fn the_vpn_client_renders_tunnels_at_both_grids() {
     golden("vpn", || Box::new(VpnScreen::for_snapshot()));
     golden("vpn-form", || Box::new(VpnScreen::for_form_snapshot()));
+}
+
+#[test]
+fn the_software_catalog_renders_views_at_both_grids() {
+    golden("software-discover", || {
+        Box::new(SoftwareScreen::for_snapshot_discover())
+    });
+    golden("software-category", || {
+        Box::new(SoftwareScreen::for_snapshot_category())
+    });
+    golden("software-detail", || {
+        Box::new(SoftwareScreen::for_snapshot_detail())
+    });
+    golden("software-updates", || {
+        Box::new(SoftwareScreen::for_snapshot_updates())
+    });
+    golden("software-cleanup", || {
+        Box::new(SoftwareScreen::for_snapshot_cleanup())
+    });
 }

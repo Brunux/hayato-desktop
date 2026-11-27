@@ -1,4 +1,4 @@
-Hayato · Menu                                                       38 commands
+Hayato · Menu                                                       39 commands
 ────────────────────────────────────────────────────────────────────────────────
 ╭ Commands ────────────────────────────────────────────────────────────────────╮
 │  type to filter: a name, a word of it, or `system`                          │

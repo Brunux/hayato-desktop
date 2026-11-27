@@ -1,0 +1,45 @@
+Hayato · Software                                                                                                                  534.0 MB reclaimable 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Discover   Installed   Updates(3)   Cleanup                                                                       / search apps…               All APT 
+╭ Cleanup & Reclaim Space ────────────────────────────────────────────────────╮ ╭ Preview ─────────────────────────────────────────────────────────────╮
+│ ▍   [x] Unused dependencies (autoremove)  2 packages no longer …           │ │  HAYATO SOFTWARE                                                     │
+│     [x] Downloaded .deb cache  /var/cache/apt/archives          310.0 MB   │ │                                                                      │
+│     [ ] Orphaned configs (rc state)  1 removed package configs le…         │ │  Native Debian APT catalog with kernel/boot guard.                   │
+│     [ ] Trash & thumbnail caches  ~/.local/share/Trash + ~/.cach…          │ │  All installs use --no-install-recommends after simulation.          │
+│     ! Old kernels: 1 extra image(s)  Protected in Software — m…            │ │                                                                      │
+│     Clean selected items  Runs autoremove, apt clean, or confi…            │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+│                                                                             │ │                                                                      │
+╰─────────────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────────────────────────────────────╯
+ [Space]  toggle   [c/Enter]  clean   [1-4/Tab]  view   [Esc]  back                                                                                     
