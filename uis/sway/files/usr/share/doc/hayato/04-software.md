@@ -13,13 +13,15 @@ Releases. `sudo` does not ask for a password.
 ```sh
 sudo hayato-apt enable                  # enable the Cloudsmith APT repository and refresh keys
 sudo apt update                         # refresh the package lists
-sudo apt install <package>              # add something
+sudo apt install --no-install-recommends <package>  # add something without Recommends
 sudo apt remove <package>               # remove it (add --purge for its configuration)
 apt search <word>                       # find packages
 apt show <package>                      # details, size, dependencies
-sudo apt full-upgrade                   # upgrade Debian and Hayato in place
+sudo apt full-upgrade --no-install-recommends       # upgrade Debian and Hayato in place
 sudo hayato-apt upgrade-from-github     # fallback: install the latest release .debs directly from GitHub
 ```
+
+> **Kernel & boot safety:** `hayato menu pkg` and Setup bundles always pass `--no-install-recommends` and simulate every transaction (`apt-get -s`) first, blocking any UI operation that would pull in or remove `linux-image-*`, bootloaders, or core session packages. Note that running raw `apt` in a terminal bypasses that UI guard.
 
 Nothing about this machine depends on a package manager other than apt: no
 Flatpak, no Snap, no AUR. Every Hayato release publishes both full disk images

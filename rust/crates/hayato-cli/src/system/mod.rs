@@ -129,6 +129,7 @@ pub mod notify_settings;
 pub mod pad;
 pub mod pick;
 pub mod pkg;
+pub mod pkg_guard;
 pub mod places;
 pub mod portal;
 pub mod power;

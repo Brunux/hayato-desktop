@@ -3152,6 +3152,20 @@ fn browse_for_file(
 }
 
 fn run_interactive_apt_install(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) {
+    if let Ok(crate::system::pkg_guard::Verdict::Block(lines)) =
+        crate::system::pkg_guard::check_install(&["network-manager-openvpn"])
+    {
+        super::say(
+            "VPN",
+            format!(
+                "Blocked for safety: {}",
+                crate::system::pkg_guard::summary(&lines)
+            ),
+            hayato_ui::Urgency::Critical,
+            Glyph::Shield,
+        );
+        return;
+    }
     let _ = ratatui::crossterm::terminal::disable_raw_mode();
     let _ = ratatui::crossterm::execute!(
         terminal.backend_mut(),
@@ -3160,7 +3174,7 @@ fn run_interactive_apt_install(terminal: &mut Terminal<CrosstermBackend<io::Stdo
     let _ = Command::new("sh")
         .args([
             "-c",
-            "sudo -n apt-get update && sudo -n apt-get install -y network-manager-openvpn; echo; read -r -p 'Press Enter to return...' _",
+            "sudo -n apt-get update && sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends network-manager-openvpn; echo; read -r -p 'Press Enter to return...' _",
         ])
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())

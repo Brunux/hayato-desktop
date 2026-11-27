@@ -143,6 +143,12 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    live IPv4 and RX/TX counters from NetworkManager and `/sys/class/net/<dev>/statistics/` with
    zero resident daemons. `system/audio.rs` parses `pactl list sink-inputs` for inline per-app
    volume, mute, and sink routing without spawning `pavucontrol`.
+12d. **APT Transaction Guard (`system/pkg_guard.rs`)**:
+   Every UI `apt-get` install, removal, or `full-upgrade` (`pkg.rs`, `setup/bundles.rs`,
+   `vpn.rs`) must simulate first via `apt-get -s` (`pkg_guard::evaluate`) and always pass
+   `--no-install-recommends`. Any plan that installs/upgrades `linux-image-*`/`linux-modules-*`/boot
+   packages or removes core session packages (`hayato*`, `sway*`, `systemd`, etc.) is blocked
+   in the UI; broad removals or large installs require a Cancel-first `Confirm` modal.
 13. **A file card opens its folder**: a notification about a written file carries the
    `x-hayato-open-path` hint (`Card::open_path`, `hayato notify --open`, or `BUSY_OPEN` for a
    busy result). A left click on the card body runs `hayato-files <parent>`; grimshot predates the

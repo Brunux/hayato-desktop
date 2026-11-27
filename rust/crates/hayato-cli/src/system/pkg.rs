@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use hayato_ui::widgets::{put, put_trunc};
+use hayato_ui::widgets::{Confirm, ConfirmAction, put, put_trunc};
 use hayato_ui::{
     BodyCtx, ColorRole, Design, Glyph, Header, Input, KeyHint, ListAction, ListState, Outcome, Row,
     Screen, Task, TaskView, TextStyle, draw_card, draw_empty, draw_filter_bar,
@@ -22,6 +22,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 
 use crate::system::missing;
+use crate::system::pkg_guard::{self, Verdict};
 
 /// A package entry.
 #[derive(Clone, Debug)]
@@ -41,11 +42,28 @@ pub struct PackageInfo {
     pub description: Vec<String>,
 }
 
+/// The transaction a guard prompt is holding back.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Pending {
+    Install(String),
+    Remove(String),
+    FullUpgrade,
+}
+
+/// The simulation said something the person must see before (or instead of)
+/// running the transaction: a warning with a Cancel-first confirm, or a block
+/// with no way forward.
+pub enum GuardPrompt {
+    Warn { pending: Pending, confirm: Confirm },
+    Blocked { title: String, lines: Vec<String> },
+}
+
 /// Stage of the package screen. `Installing` owns the task view, so a stage
 /// that says "installing" cannot exist without the view that draws it.
 pub enum PkgStage {
     Query,
     Results,
+    Guard(Box<GuardPrompt>),
     Installing(Box<TaskView>),
 }
 
@@ -59,6 +77,7 @@ pub struct PkgScreen {
     header: Header,
     keybar: Vec<KeyHint>,
     results_keyhints: Vec<KeyHint>,
+    guard_keyhints: Vec<KeyHint>,
     rows_height: Cell<u16>,
     stage: PkgStage,
     query: String,
@@ -107,6 +126,7 @@ impl PkgScreen {
                 KeyHint::new("Esc", "new search"),
             ],
             rows_height: Cell::new(16),
+            guard_keyhints: Vec::new(),
             stage: PkgStage::Query,
             query: String::new(),
         }
@@ -421,25 +441,115 @@ impl PkgScreen {
         row
     }
 
+    /// Simulate first, then either run, ask, or refuse (`pkg_guard`).
+    fn guarded(&mut self, pending: Pending) {
+        let verdict = match &pending {
+            Pending::Install(name) => pkg_guard::check_install(&[name.as_str()]),
+            Pending::Remove(name) => pkg_guard::check_remove(&[name.as_str()]),
+            Pending::FullUpgrade => pkg_guard::check_full_upgrade(),
+        };
+        let what = match &pending {
+            Pending::Install(name) => format!("Install {name}"),
+            Pending::Remove(name) => format!("Remove {name}"),
+            Pending::FullUpgrade => "Upgrade installed packages".to_string(),
+        };
+        match verdict {
+            Ok(Verdict::Allow) => self.run_pending(pending),
+            Ok(Verdict::Warn(lines)) => self.enter_guard(GuardPrompt::Warn {
+                confirm: Confirm::new(format!("{what}?"), lines.join("\n"))
+                    .with_options(&["Cancel", "Continue"])
+                    .destructive(matches!(pending, Pending::Remove(_))),
+                pending,
+            }),
+            Ok(Verdict::Block(lines)) => self.enter_guard(GuardPrompt::Blocked {
+                title: format!("{what}: blocked for safety"),
+                lines,
+            }),
+            // No simulation, no certainty: ask instead of guessing.
+            Err(error) => self.enter_guard(GuardPrompt::Warn {
+                confirm: Confirm::new(
+                    format!("{what}?"),
+                    format!("Could not simulate it first: {error}"),
+                )
+                .with_options(&["Cancel", "Continue"]),
+                pending,
+            }),
+        }
+    }
+
+    fn enter_guard(&mut self, prompt: GuardPrompt) {
+        self.guard_keyhints = match &prompt {
+            GuardPrompt::Warn { .. } => vec![
+                KeyHint::new("\u{2190}/\u{2192}", "choose"),
+                KeyHint::new("Enter", "confirm"),
+                KeyHint::new("Esc", "cancel"),
+            ],
+            GuardPrompt::Blocked { .. } => vec![KeyHint::new("Esc", "back")],
+        };
+        self.stage = PkgStage::Guard(Box::new(prompt));
+    }
+
+    fn leave_guard(&mut self) {
+        self.stage = if self.query.is_empty() {
+            PkgStage::Query
+        } else {
+            PkgStage::Results
+        };
+    }
+
+    fn run_pending(&mut self, pending: Pending) {
+        match pending {
+            Pending::Install(name) => self.run_install(&name),
+            Pending::Remove(name) => self.run_remove(&name),
+            Pending::FullUpgrade => self.run_full_upgrade(),
+        }
+    }
+
     fn start_install(&mut self, name: &str) {
+        self.guarded(Pending::Install(name.to_string()));
+    }
+
+    fn start_remove(&mut self, name: &str) {
+        self.guarded(Pending::Remove(name.to_string()));
+    }
+
+    fn start_full_upgrade(&mut self) {
+        self.guarded(Pending::FullUpgrade);
+    }
+
+    fn guard_key(&mut self, key: KeyEvent) -> Outcome {
+        let PkgStage::Guard(prompt) = &mut self.stage else {
+            return Outcome::Continue;
+        };
+        match &mut **prompt {
+            GuardPrompt::Blocked { .. } => {
+                if matches!(key.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Backspace) {
+                    self.leave_guard();
+                }
+                Outcome::Consumed
+            }
+            GuardPrompt::Warn { pending, confirm } => match confirm.handle(key) {
+                ConfirmAction::Chosen(1) => {
+                    let pending = pending.clone();
+                    self.run_pending(pending);
+                    Outcome::Consumed
+                }
+                ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => {
+                    self.leave_guard();
+                    Outcome::Consumed
+                }
+                ConfirmAction::None => Outcome::Consumed,
+            },
+        }
+    }
+
+    fn run_install(&mut self, name: &str) {
         let tag = format!("pkg-install-{}", std::process::id());
-        let cmd = vec![
-            "sudo".to_string(),
-            "-n".to_string(),
-            "DEBIAN_FRONTEND=noninteractive".to_string(),
-            "apt-get".to_string(),
-            "install".to_string(),
-            "-y".to_string(),
-            "-o".to_string(),
-            "Dpkg::Options::=--force-confdef".to_string(),
-            "-o".to_string(),
-            "Dpkg::Options::=--force-confold".to_string(),
-            name.to_string(),
-        ];
+        let cmd = pkg_guard::install_argv(name);
         if let Ok(task) = Task::start_steps(
             &tag,
             format!("Install {name}"),
-            vec![format!("apt-get install -y {name}")],
+            vec![format!("apt-get install -y --no-install-recommends {name}")],
             false,
             vec![cmd],
         ) {
@@ -447,7 +557,7 @@ impl PkgScreen {
         }
     }
 
-    fn start_remove(&mut self, name: &str) {
+    fn run_remove(&mut self, name: &str) {
         let tag = format!("pkg-remove-{}", std::process::id());
         let cmd = vec![
             "sudo".to_string(),
@@ -488,7 +598,7 @@ impl PkgScreen {
         }
     }
 
-    fn start_full_upgrade(&mut self) {
+    fn run_full_upgrade(&mut self) {
         let tag = format!("pkg-upgrade-{}", std::process::id());
         let steps = vec![
             vec![
@@ -504,6 +614,7 @@ impl PkgScreen {
                 "apt-get".to_string(),
                 "full-upgrade".to_string(),
                 "-y".to_string(),
+                "--no-install-recommends".to_string(),
                 "-o".to_string(),
                 "Dpkg::Options::=--force-confdef".to_string(),
                 "-o".to_string(),
@@ -529,7 +640,7 @@ impl Screen for PkgScreen {
     fn desired_size(&self) -> Option<(u16, u16)> {
         match self.stage {
             PkgStage::Query => Some((780, 420)),
-            PkgStage::Results | PkgStage::Installing(_) => Some((940, 620)),
+            PkgStage::Results | PkgStage::Installing(_) | PkgStage::Guard(_) => Some((940, 620)),
         }
     }
 
@@ -552,12 +663,45 @@ impl Screen for PkgScreen {
             tv.draw(ctx);
             return;
         }
+        if let PkgStage::Guard(prompt) = &self.stage {
+            match &**prompt {
+                GuardPrompt::Warn { confirm, .. } => {
+                    confirm.render(ctx.area, ctx.buf, ctx.design);
+                }
+                GuardPrompt::Blocked { title, lines } => {
+                    let inner = draw_card(ctx.buf, ctx.area, ctx.design, Some(title), true);
+                    let danger = Style::default()
+                        .fg(ctx.design.color(ColorRole::Danger))
+                        .add_modifier(Modifier::BOLD);
+                    let body = ctx.design.style(TextStyle::Body);
+                    for (y, line) in (inner.y + 1..).zip(lines) {
+                        if y >= inner.bottom() {
+                            break;
+                        }
+                        let style = if line.starts_with("would ") {
+                            danger
+                        } else {
+                            body
+                        };
+                        put_trunc(
+                            ctx.buf,
+                            inner.x + 1,
+                            y,
+                            &format!("\u{2717} {line}"),
+                            inner.width.saturating_sub(2),
+                            style,
+                        );
+                    }
+                }
+            }
+            return;
+        }
 
         let (left, right) = Self::split_panes(ctx.area);
         let card_title = match &self.stage {
             PkgStage::Query => "Search",
             PkgStage::Results => "Results",
-            PkgStage::Installing(_) => "Installing",
+            PkgStage::Installing(_) | PkgStage::Guard(_) => "Installing",
         };
         draw_card(ctx.buf, left, ctx.design, Some(card_title), true);
 
@@ -628,7 +772,7 @@ impl Screen for PkgScreen {
                 self.rows_height.set(rows.height);
                 self.list.render(rows, ctx.buf, ctx.design, true);
             }
-            PkgStage::Installing(_) => {}
+            PkgStage::Installing(_) | PkgStage::Guard(_) => {}
         }
 
         if let Some(right_area) = right {
@@ -639,6 +783,10 @@ impl Screen for PkgScreen {
     fn key(&mut self, key: KeyEvent, design: &Design) -> Outcome {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
+        }
+
+        if matches!(self.stage, PkgStage::Guard(_)) {
+            return self.guard_key(key);
         }
 
         if matches!(self.stage, PkgStage::Installing(_)) {
@@ -764,6 +912,21 @@ impl Screen for PkgScreen {
         let Some(row) = row else {
             return Outcome::Continue;
         };
+        if let PkgStage::Guard(prompt) = &mut self.stage {
+            if let GuardPrompt::Warn { pending, confirm } = &mut **prompt {
+                match confirm.click(row) {
+                    ConfirmAction::Chosen(1) => {
+                        let pending = pending.clone();
+                        self.run_pending(pending);
+                    }
+                    ConfirmAction::Chosen(_) | ConfirmAction::Cancelled => self.leave_guard(),
+                    ConfirmAction::None => {}
+                }
+            } else {
+                self.leave_guard();
+            }
+            return Outcome::Consumed;
+        }
         if matches!(self.stage, PkgStage::Query) {
             self.quick_list.set_cursor(row);
             match self.quick_list.selected_index() {
@@ -786,12 +949,18 @@ impl Screen for PkgScreen {
     }
 
     fn hit(&self, area: Rect, x: u16, y: u16, design: &Design) -> Option<usize> {
+        if let PkgStage::Guard(prompt) = &self.stage {
+            return match &**prompt {
+                GuardPrompt::Warn { confirm, .. } => confirm.hit(area, design, x, y),
+                GuardPrompt::Blocked { .. } => Some(0),
+            };
+        }
         let (left, _) = Self::split_panes(area);
         let (_, rows) = Self::list_layout(left);
         match &self.stage {
             PkgStage::Query => self.quick_list.hit_row(rows, x, y, design),
             PkgStage::Results => self.list.hit_row(rows, x, y, design),
-            PkgStage::Installing(_) => None,
+            PkgStage::Installing(_) | PkgStage::Guard(_) => None,
         }
     }
 
@@ -799,6 +968,7 @@ impl Screen for PkgScreen {
         match &self.stage {
             PkgStage::Query => Some(&self.keybar),
             PkgStage::Results => Some(&self.results_keyhints),
+            PkgStage::Guard(_) => Some(&self.guard_keyhints),
             PkgStage::Installing(tv) => tv.keybar(),
         }
     }
@@ -814,6 +984,7 @@ impl Screen for PkgScreen {
         Some(match &self.stage {
             PkgStage::Query => "query",
             PkgStage::Results => "results",
+            PkgStage::Guard(_) => "guard",
             PkgStage::Installing(_) => "installing",
         })
     }

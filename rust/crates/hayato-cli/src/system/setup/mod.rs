@@ -1285,6 +1285,17 @@ fn run_delegate(
             let _ = crate::system::vpn::menu(terminal, design);
         }
         DelegateAction::InstallBundles(ids) => {
+            let apt_pkgs = bundles::apt_packages(&ids);
+            if !apt_pkgs.is_empty()
+                && let Ok(crate::system::pkg_guard::Verdict::Block(lines)) =
+                    crate::system::pkg_guard::check_install(&apt_pkgs)
+            {
+                screen.status_msg = Some(format!(
+                    "Blocked for safety: {}",
+                    crate::system::pkg_guard::summary(&lines)
+                ));
+                return Ok(());
+            }
             if let Some(script) = bundles::build_install_script(&ids) {
                 run_interactive_cmd(terminal, "sh", &["-c", &script]);
                 screen
