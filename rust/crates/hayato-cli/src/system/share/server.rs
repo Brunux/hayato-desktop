@@ -388,7 +388,7 @@ fn create_zip_bundle(paths: &[PathBuf]) -> Result<(PathBuf, String, u64), String
     Ok((zip_path, zip_name, size))
 }
 
-fn prepare_serve_kind(
+pub(crate) fn prepare_serve_kind(
     payload: &SharePayload,
     receive_dir: PathBuf,
 ) -> Result<(ServeKind, Option<PathBuf>), String> {
@@ -500,17 +500,17 @@ fn prepare_serve_kind(
 }
 
 #[derive(Clone)]
-struct ThemeCss {
-    bg: String,
-    surface: String,
-    border: String,
-    text: String,
-    muted: String,
-    accent: String,
-    ok: String,
+pub(crate) struct ThemeCss {
+    pub(crate) bg: String,
+    pub(crate) surface: String,
+    pub(crate) border: String,
+    pub(crate) text: String,
+    pub(crate) muted: String,
+    pub(crate) accent: String,
+    pub(crate) ok: String,
 }
 
-fn active_theme_css() -> ThemeCss {
+pub(crate) fn active_theme_css() -> ThemeCss {
     let paths = hayato_theme::store::Paths::from_env();
     let slug = hayato_theme::store::active(&paths).unwrap_or_else(|| "tokyo-night".to_string());
     crate::theme::theme(&slug)
@@ -539,7 +539,7 @@ fn active_theme_css() -> ThemeCss {
         })
 }
 
-fn security_headers(content_type: &str, content_len: usize) -> String {
+pub(crate) fn security_headers(content_type: &str, content_len: usize) -> String {
     format!(
         "HTTP/1.1 200 OK\r\n\
          Content-Type: {content_type}\r\n\
@@ -547,7 +547,7 @@ fn security_headers(content_type: &str, content_len: usize) -> String {
          Cache-Control: no-store\r\n\
          X-Content-Type-Options: nosniff\r\n\
          Referrer-Policy: no-referrer\r\n\
-         Content-Security-Policy: default-src 'self' 'unsafe-inline'; img-src 'self' data:\r\n\
+         Content-Security-Policy: default-src 'self' 'unsafe-inline'; connect-src 'self' wss: https:; img-src 'self' data:\r\n\
          Connection: close\r\n\r\n"
     )
 }

@@ -26,12 +26,12 @@ use hayato_cli::padmap::Bindings;
 use hayato_cli::system::{
     about::AboutScreen, apps::AppsScreen, audio::AudioScreen, bluetooth::BluetoothScreen,
     calc::CalcScreen, capture::CaptureScreen, clean::CleanScreen, clip::ClipScreen,
-    colour::ColourScreen, dev::DevScreen, display::DisplayScreen, display::Output as DisplayOutput,
-    emoji::EmojiScreen, games::GamesScreen, keys::KeysScreen, kill::KillScreen, learn::LearnScreen,
-    media::MediaScreen, net::NetScreen, notify::NotifyScreen, pad::ControllerScreen,
-    pkg::PkgScreen, qr::QrScreen, remind::RemindScreen, run::RunScreen, settings::SettingsScreen,
-    setup::SetupScreen, software::SoftwareScreen, theme_picker::ThemePickerScreen, vpn::VpnScreen,
-    window::WindowScreen,
+    colour::ColourScreen, connect::ConnectScreen, dev::DevScreen, display::DisplayScreen,
+    display::Output as DisplayOutput, emoji::EmojiScreen, games::GamesScreen, keys::KeysScreen,
+    kill::KillScreen, learn::LearnScreen, media::MediaScreen, net::NetScreen, notify::NotifyScreen,
+    pad::ControllerScreen, pkg::PkgScreen, qr::QrScreen, remind::RemindScreen, run::RunScreen,
+    settings::SettingsScreen, setup::SetupScreen, software::SoftwareScreen,
+    theme_picker::ThemePickerScreen, vpn::VpnScreen, window::WindowScreen,
 };
 use hayato_ui::{App, Density, Design, Header, Screen};
 use ratatui::Terminal;
@@ -221,6 +221,11 @@ fn about_with_the_machines_own_facts_still_renders() {
 #[test]
 fn free_space_while_calculating_still_renders() {
     smoke("clean", || Box::new(CleanScreen::new()));
+}
+
+#[test]
+fn connect_workspace_renders_at_both_grids() {
+    smoke("connect", || Box::new(ConnectScreen::for_test()));
 }
 
 #[test]

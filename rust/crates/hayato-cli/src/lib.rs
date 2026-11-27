@@ -483,6 +483,7 @@ fn query(resolved: &Resolved) -> Option<i32> {
         ("menu lens", ["--detach"]) => Some(system::lens::detach_capture()),
         ("menu lens", ["--after-menu"]) => Some(system::lens::capture_and_launch(true)),
         ("share", _) => system::share::try_capture_stdin(&resolved.args),
+        ("connect", _) => system::connect::try_query(&resolved.args),
         ("menu studio", _) => system::studio::try_query(&resolved.args),
         ("menu notes", ["--rows"] | ["rows"]) => {
             let mut out = io::stdout();
@@ -666,6 +667,7 @@ fn execute(
         "menu lens" => system::lens::menu(&resolved.args, terminal, design),
         "menu drop" => system::drop::menu(&resolved.args, terminal, design),
         "share" => system::share::menu(&resolved.args, terminal, design),
+        "connect" => system::connect::menu(&resolved.args, terminal, design),
         "menu remind" => system::remind::menu(terminal, design),
         "menu calc" => system::calc::menu(terminal, design),
         "menu colour" => system::colour::menu(terminal, design),

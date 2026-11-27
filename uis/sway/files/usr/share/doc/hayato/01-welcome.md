@@ -137,6 +137,7 @@ Beyond the core launcher and file browser, Hayato ships focused local-first stud
 | **Personal Setup Assistant** | `hayato menu setup` (`hayato menu welcome`) | Guided 8-step first-run & recovery wizard (Welcome, Security, Connectivity, Personalization, Hardware, Software, Privacy, Protection); resumable via `setup.json`; `--briefing` opens the classic 4-tab Mission Briefing |
 | **Hayato Lens** | **Alt+I** (`hayato menu lens`) | Local Circle-to-Search: drag a region to extract OCR text or QR codes, open or clean URLs, translate, or save to Notes |
 | **Hayato Drop** | `hayato menu drop` | Ephemeral LAN nearby share: send or receive files over local Wi-Fi via an in-TUI scannable QR code |
+| **Hayato Connect** | `hayato connect` (`hayato-connect`) | Opt-in, zero-daemon encrypted TLS/WSS device workspace: QR pairing with 6-digit SAS verification, file transfers, two-way clipboard, and phone links/notes |
 | **Local AI** | **Alt+Space** → Ask / **Alt+Ctrl+T** | Offline `Qwen3.5-0.8B` Ask & Translate running locally on the machine with no cloud account required |
 | **Smart Clipboard** | **Alt+Ctrl+V** (`hayato menu clip`) | Clipboard history by kind with `Ctrl+T` one-key URL tracking-parameter cleanup and JSON formatting |
 | **Eject Drive** | **Alt+Space** → Places (`hayato menu places`) | Safe USB stick and SD card unmount + power-off straight from Places |

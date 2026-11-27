@@ -110,8 +110,14 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
     (`Alt+S`), `hayato-notes` (`Ctrl+S`), `hayato-capture` (`Ctrl+S`), `hayato-studio` (`Ctrl+S`), and CLI
     stdin/paths (`system/drop.rs` is a thin compatibility facade). Its ephemeral LAN HTTP server uses a
     128-bit `/dev/urandom` token, constant-time comparison, active-theme CSS injection, HTML escaping,
-    multi-file/folder ZIP streaming, two-way phone upload/clipboard push, and 5-min auto-expiry, alongside
+    Multi-file/folder ZIP streaming, two-way phone upload/clipboard push, and 5-min auto-expiry, alongside
     zero-daemon on-demand LocalSend v2 UDP multicast (`224.0.0.167:53317`) peer discovery.
+10c. **Hayato Connect (`hayato connect` / `hayato-connect`)**: `system/connect/` extends Hayato Share/Drop
+    into an opt-in, zero-daemon encrypted (`openssl` ECDSA P-256 TLS 1.3 + `tungstenite` WSS) workspace
+    that lives and dies with its TUI window. Pairing binds QR SPKI fingerprint pinning with a deterministic
+    6-digit SAS verification code (`crypto::derive_sas`) and explicit `AuthorizePeer` confirmation before
+    saving trusted device tokens to `$XDG_CONFIG_HOME/hayato/connect/devices.json` (`0600`, `trust.rs`);
+    clipboard synchronization hashes payloads via SHA-256 (`last_clip_hash`) to prevent echo loops.
 11. **A modal replaces the body; it never floats over a live list**: a `Confirm` or a
    `centered` card is drawn on its own screen (like the Ask strip and the kill screen), or the
    screen first clears the card area. At 80×24 a 56-wide card cuts list rows in half

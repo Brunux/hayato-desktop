@@ -3754,6 +3754,18 @@ if have hayato; then
 		fail "hayato menu software --search \"video editor\" returned no video editors"
 	fi
 
+	# Hayato Connect (`hayato connect`)
+	if grep -qE '^  connect ' <<<"$_fw_help"; then
+		ok "hayato --help lists \`connect\`"
+	else
+		fail "hayato --help does not list \`connect\`"
+	fi
+	if hayato connect --status 2>/dev/null | grep -q 'paired='; then
+		ok "hayato connect --status reports trust store state"
+	else
+		fail "hayato connect --status failed"
+	fi
+
 	# Spec 020: frictionless, self-contained in-window UX & live window sizing.
 	# Interactive TUI modules in hayato-cli must never call Card::send() or
 	# external `notify-send` while a TUI window is open, and `hayato --glyphs`

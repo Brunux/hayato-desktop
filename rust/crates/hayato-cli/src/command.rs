@@ -425,6 +425,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &["hayato-share"],
     },
     CommandSpec {
+        // Connect: opt-in zero-daemon encrypted phone-to-computer workspace (TLS + WSS).
+        path: "connect",
+        summary: "encrypted LAN phone-to-computer hub: pairing QR, clipboard, files, links",
+        shape: Shape::Pick,
+        symlinks: &["hayato-connect"],
+        installed: &["hayato-connect"],
+    },
+    CommandSpec {
         // Remind: title → note → when flow (spec 011).
         path: "menu remind",
         summary: "write it now, be told later, cancel from the list (spec 011)",

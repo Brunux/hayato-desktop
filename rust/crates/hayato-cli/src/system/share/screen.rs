@@ -50,6 +50,7 @@ enum TargetKey {
     CopyClipboard,
     SaveNote,
     OpenDefault,
+    OpenConnect,
 }
 
 pub struct ShareScreen {
@@ -212,9 +213,11 @@ impl ShareScreen {
     fn activate_lan(&mut self, check_large: bool) -> Result<(), String> {
         if check_large && self.server.is_none() && self.is_large_bundle() {
             self.phase = SharePhase::ConfirmLargeZip(
-                Confirm::new("Archive folder over 100 MiB?", "Zip & Share").with_detail(
+                Confirm::new(
+                    "Archive folder over 100 MiB?",
                     "Bundling a large folder into an ephemeral ZIP may take a moment.",
-                ),
+                )
+                .with_options(&["Cancel", "Zip & Share"]),
             );
             self.sync_chrome();
             return Ok(());
@@ -311,6 +314,13 @@ impl ShareScreen {
         );
         keys.push(Some(TargetKey::WifiQr));
 
+        rows.push(
+            Row::new("Open in Hayato Connect")
+                .glyph(Glyph::Wifi)
+                .detail("paired TLS workspace · clipboard & transfers [p]"),
+        );
+        keys.push(Some(TargetKey::OpenConnect));
+
         for peer in &self.peers {
             rows.push(
                 Row::new(peer.alias.clone())
@@ -373,6 +383,7 @@ impl ShareScreen {
             SharePhase::Sheet => vec![
                 KeyHint::new("Enter", "share"),
                 KeyHint::new("v", "receive"),
+                KeyHint::new("p", "connect"),
                 KeyHint::new("c", "copy URL"),
                 KeyHint::new("r", "+5m"),
                 KeyHint::new("Esc", "close"),
@@ -504,14 +515,36 @@ impl ShareScreen {
         }
     }
 
-    fn activate_selected(&mut self) {
+    fn open_in_connect(&self) {
+        let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("/usr/bin/hayato"));
+        match &self.payload {
+            SharePayload::File(p)
+            | SharePayload::Image {
+                path: p,
+                ephemeral: false,
+                ..
+            } => {
+                let s = p.to_string_lossy().into_owned();
+                crate::system::spawn_detached_argv(exe, &["connect", &s]);
+            }
+            _ => {
+                crate::system::spawn_detached_argv(exe, &["connect"]);
+            }
+        }
+    }
+
+    fn activate_selected(&mut self) -> Outcome {
         let Some(idx) = self.list.selected_index() else {
-            return;
+            return Outcome::Consumed;
         };
         let Some(Some(target)) = self.keys.get(idx).cloned() else {
-            return;
+            return Outcome::Consumed;
         };
         match target {
+            TargetKey::OpenConnect => {
+                self.open_in_connect();
+                return Outcome::Done(hayato_ui::app::exit::OK);
+            }
             TargetKey::LanQr => {
                 if let Err(e) = self.activate_lan(true) {
                     self.status_line = e;
@@ -557,6 +590,7 @@ impl ShareScreen {
             TargetKey::SaveNote => self.save_to_notes_inbox(),
             TargetKey::OpenDefault => self.open_in_default(),
         }
+        Outcome::Consumed
     }
 
     fn draw_qr_panel(&self, ctx: &mut BodyCtx, area: Rect, title: &str) {
@@ -882,6 +916,10 @@ impl Screen for ShareScreen {
                 }
                 return Outcome::Consumed;
             }
+            KeyCode::Char('p') => {
+                self.open_in_connect();
+                return Outcome::Done(hayato_ui::app::exit::OK);
+            }
             KeyCode::Char('c') => {
                 if let Some(srv) = &self.server {
                     let u = srv.url.clone();
@@ -900,10 +938,7 @@ impl Screen for ShareScreen {
         }
 
         match self.list.handle(key, self.rows_height.get(), design) {
-            ListAction::Activated(_) => {
-                self.activate_selected();
-                Outcome::Consumed
-            }
+            ListAction::Activated(_) => self.activate_selected(),
             ListAction::Moved => Outcome::Consumed,
             ListAction::Ignored => Outcome::Continue,
         }
@@ -941,8 +976,7 @@ impl Screen for ShareScreen {
         }
         if matches!(self.phase, SharePhase::Sheet) {
             self.list.set_cursor(row);
-            self.activate_selected();
-            return Outcome::Consumed;
+            return self.activate_selected();
         }
         Outcome::Continue
     }

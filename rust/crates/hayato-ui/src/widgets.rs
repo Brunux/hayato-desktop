@@ -2742,6 +2742,7 @@ pub enum ActionStripEvent {
 pub struct ActionStrip {
     items: Vec<ActionItem>,
     cursor: usize,
+    active: Option<usize>,
     focused: bool,
 }
 
@@ -2750,7 +2751,29 @@ impl ActionStrip {
         Self {
             items,
             cursor: 0,
+            active: None,
             focused: false,
+        }
+    }
+
+    pub fn with_active(mut self, active: Option<usize>) -> Self {
+        self.active = active.filter(|&i| i < self.items.len());
+        if let Some(i) = self.active {
+            self.cursor = i;
+        }
+        self
+    }
+
+    pub fn set_active(&mut self, active: Option<usize>) {
+        self.active = active.filter(|&i| i < self.items.len());
+        if let Some(i) = self.active {
+            self.cursor = i;
+        }
+    }
+
+    pub fn set_cursor(&mut self, cursor: usize) {
+        if cursor < self.items.len() {
+            self.cursor = cursor;
         }
     }
 
@@ -2758,6 +2781,11 @@ impl ActionStrip {
         self.items = items;
         if self.cursor >= self.items.len() && !self.items.is_empty() {
             self.cursor = self.items.len() - 1;
+        }
+        if let Some(a) = self.active
+            && a >= self.items.len()
+        {
+            self.active = None;
         }
     }
 
@@ -2861,8 +2889,16 @@ impl ActionStrip {
                 break;
             }
             let selected = self.focused && idx == self.cursor;
+            let active = !selected && self.active == Some(idx);
             let pill_bg = if selected {
                 design.color(ColorRole::Accent)
+            } else if active {
+                let alt = if unselected_bg == ColorRole::SurfaceAlt {
+                    ColorRole::Surface
+                } else {
+                    ColorRole::SurfaceAlt
+                };
+                design.color(alt)
             } else {
                 design.color(unselected_bg)
             };
@@ -2880,6 +2916,11 @@ impl ActionStrip {
             let label_style = if selected {
                 Style::default()
                     .fg(design.color(ColorRole::Bg))
+                    .bg(pill_bg)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
+            } else if active {
+                Style::default()
+                    .fg(design.color(ColorRole::Accent))
                     .bg(pill_bg)
                     .add_modifier(ratatui::style::Modifier::BOLD)
             } else {

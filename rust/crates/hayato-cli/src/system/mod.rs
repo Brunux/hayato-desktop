@@ -97,6 +97,7 @@ pub mod capture;
 pub mod clean;
 pub mod clip;
 pub mod colour;
+pub mod connect;
 pub mod default_apps;
 pub mod dev;
 pub mod dictate;
