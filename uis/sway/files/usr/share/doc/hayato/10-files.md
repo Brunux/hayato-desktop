@@ -14,8 +14,8 @@ Hayato surface (`hayato theme set` re-themes it in place over SIGUSR1).
 
 * **Header** - the sidebar toggle, back / forward, the breadcrumb path (click
   **Ctrl+L** to type a path instead), the filter box (**Ctrl+F**), the grid /
-  list switch (**Ctrl+1** / **Ctrl+2**), the sort menu, the shelf toggle, and
-  **New Tab**.
+  list switch (**Ctrl+1** / **Ctrl+2**), the sort menu, the hidden-files eye
+  toggle (**Ctrl+H**), the shelf toggle, and **New Tab**.
 * **Tab bar** - appears as soon as a second tab exists. A tab is dropped on as
   a folder, and hovering one while dragging spring-loads it.
 * **PLACES** - Home, Desktop, Documents, Downloads, Pictures, Music, Videos,

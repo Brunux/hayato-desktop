@@ -49,6 +49,7 @@ pub struct FilerWindow {
     filter_entry: Entry,
     grid_btn: Button,
     list_btn: Button,
+    hidden_btn: Button,
     sidebar_toggle_btn: Button,
     tab_bar: GtkBox,
     tabs_box: GtkBox,
@@ -68,6 +69,7 @@ pub struct FilerWindow {
     quicklook_scroll: RefCell<Option<ScrolledWindow>>,
     properties_slot: RefCell<Option<GtkBox>>,
     status_label: Label,
+    status_notice: RefCell<(u64, Option<String>)>,
     progress_box: GtkBox,
     progress_bar: ProgressBar,
     progress_label: Label,
@@ -172,6 +174,11 @@ impl FilerWindow {
         sort_btn.add_css_class("filer-glyph");
         sort_btn.set_tooltip_text(Some("Sort & View Options"));
 
+        let hidden_btn = Button::with_label("\u{f070}");
+        hidden_btn.add_css_class("filer-tool-btn");
+        hidden_btn.add_css_class("filer-glyph");
+        hidden_btn.set_tooltip_text(Some("Show Hidden Files (Ctrl+H)"));
+
         let new_tab_btn = Button::with_label("\u{f067}");
         new_tab_btn.add_css_class("filer-tool-btn");
         new_tab_btn.add_css_class("filer-glyph");
@@ -200,6 +207,7 @@ impl FilerWindow {
         header.append(&filter_btn);
         header.append(&view_group);
         header.append(&sort_btn);
+        header.append(&hidden_btn);
         header.append(&shelf_btn);
         header.append(&new_tab_btn);
 
@@ -403,6 +411,7 @@ impl FilerWindow {
             filter_entry,
             grid_btn,
             list_btn,
+            hidden_btn,
             sidebar_toggle_btn,
             tab_bar,
             tabs_box,
@@ -422,6 +431,7 @@ impl FilerWindow {
             quicklook_scroll: RefCell::new(None),
             properties_slot: RefCell::new(None),
             status_label,
+            status_notice: RefCell::new((0, None)),
             progress_box,
             progress_bar,
             progress_label,
@@ -454,6 +464,7 @@ impl FilerWindow {
         this.wire_pin_drop_target();
         this.set_sidebar_compact(prefs.sidebar_compact);
         this.update_view_buttons(prefs.view_mode);
+        this.update_hidden_button();
         this.list_header
             .set_visible(prefs.view_mode == ViewMode::List);
         this.rebuild_list_header();
@@ -477,6 +488,13 @@ impl FilerWindow {
             let w = Rc::clone(self);
             self.sidebar_toggle_btn
                 .connect_clicked(move |_| w.toggle_sidebar_compact());
+        }
+
+        // Show / hide hidden files headerbar toggle
+        {
+            let w = Rc::clone(self);
+            self.hidden_btn
+                .connect_clicked(move |_| w.toggle_show_hidden());
         }
 
         // Back / Forward
@@ -530,7 +548,7 @@ impl FilerWindow {
                 } else if expanded.is_file() {
                     tools::open_file(&expanded);
                 } else {
-                    w.show_banner(&format!("Not found: {}", expanded.display()), "warn");
+                    w.show_status_notice(&format!("Not found: {}", expanded.display()));
                 }
             });
         }
@@ -696,15 +714,17 @@ impl FilerWindow {
         let shift = mods.contains(gdk::ModifierType::SHIFT_MASK);
 
         // If typing in path_entry, filter_entry, or a popover Entry (rename / new folder),
-        // let the Entry handle normal typing and only intercept Escape where appropriate.
-        if self.path_entry.has_focus() {
+        // let the Entry (whose GTK4 focus widget is its internal `gtk4::Text` child)
+        // handle normal editing keys (`BackSpace`, `Space`, `Delete`, arrows, `Ctrl+A/C/X/V`).
+        let focused = gtk4::prelude::GtkWindowExt::focus(&self.window);
+        if entry_focused(&self.path_entry, focused.as_ref()) {
             if key == gdk::Key::Escape {
                 self.hide_path_entry();
                 return glib::Propagation::Stop;
             }
             return glib::Propagation::Proceed;
         }
-        if self.filter_entry.has_focus() {
+        if entry_focused(&self.filter_entry, focused.as_ref()) {
             if key == gdk::Key::Escape {
                 self.filter_entry.set_text("");
                 self.filter_entry.set_visible(false);
@@ -714,7 +734,7 @@ impl FilerWindow {
             }
             return glib::Propagation::Proceed;
         }
-        if gtk4::prelude::GtkWindowExt::focus(&self.window).is_some_and(|w| w.is::<Entry>()) {
+        if focused.is_some_and(|w| w.is::<gtk4::Text>() || w.is::<Entry>()) {
             return glib::Propagation::Proceed;
         }
 
@@ -801,7 +821,7 @@ impl FilerWindow {
                     let sel = self.selected_paths();
                     if !sel.is_empty() {
                         tools::copy_paths_to_clipboard(&sel);
-                        self.show_banner("Copied path(s) to clipboard", "ok");
+                        self.show_status_notice("Copied path(s) to clipboard");
                     }
                     return glib::Propagation::Stop;
                 }
@@ -821,11 +841,7 @@ impl FilerWindow {
                     return glib::Propagation::Stop;
                 }
                 gdk::Key::h | gdk::Key::H => {
-                    let mut st = self.state.borrow_mut();
-                    st.show_hidden = !st.show_hidden;
-                    st.recompute_visible();
-                    drop(st);
-                    self.render_canvas();
+                    self.toggle_show_hidden();
                     return glib::Propagation::Stop;
                 }
                 gdk::Key::_1 => {
@@ -847,7 +863,7 @@ impl FilerWindow {
                     let sel = self.selected_paths();
                     if !sel.is_empty() {
                         tools::write_file_clipboard(&sel, false);
-                        self.show_banner(&format!("Copied {} item(s)", sel.len()), "ok");
+                        self.show_status_notice(&format!("Copied {} item(s)", sel.len()));
                     }
                     return glib::Propagation::Stop;
                 }
@@ -855,7 +871,7 @@ impl FilerWindow {
                     let sel = self.selected_paths();
                     if !sel.is_empty() {
                         tools::write_file_clipboard(&sel, true);
-                        self.show_banner(&format!("Cut {} item(s)", sel.len()), "ok");
+                        self.show_status_notice(&format!("Cut {} item(s)", sel.len()));
                     }
                     return glib::Propagation::Stop;
                 }
@@ -1145,7 +1161,7 @@ impl FilerWindow {
                 glib::ControlFlow::Break
             }
             Ok(Err(err)) => {
-                w.show_banner(&err, "danger");
+                w.notify_desktop(&err, "danger");
                 glib::ControlFlow::Break
             }
             Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
@@ -2009,7 +2025,7 @@ impl FilerWindow {
                 p2.popdown();
                 if w.state.borrow_mut().unpin_bookmark(&d_un) {
                     w.render_places();
-                    w.show_banner("Unpinned from Places", "ok");
+                    w.show_status_notice("Unpinned from Places");
                 }
             },
         ));
@@ -2054,7 +2070,7 @@ impl FilerWindow {
             }
             if pinned > 0 {
                 w.render_places();
-                w.show_banner(&format!("Pinned {pinned} folder(s) to Places"), "ok");
+                w.show_status_notice(&format!("Pinned {pinned} folder(s) to Places"));
             }
             pinned > 0
         });
@@ -2122,12 +2138,6 @@ impl FilerWindow {
                 let prev = w.devices.borrow().clone();
                 let was_loaded = w.devices_loaded.replace(true);
                 if was_loaded && devs != prev {
-                    // Announce newly connected drives
-                    for d in &devs {
-                        if !prev.iter().any(|p| p.dev_path == d.dev_path) {
-                            w.show_banner(&format!("Drive connected: {}", d.label), "ok");
-                        }
-                    }
                     // Handle disconnected or externally unmounted drives
                     let mut active_affected = false;
                     for p in &prev {
@@ -2148,9 +2158,6 @@ impl FilerWindow {
                                     }
                                 }
                             }
-                        }
-                        if !devs.iter().any(|d| d.dev_path == p.dev_path) {
-                            w.show_banner(&format!("Drive disconnected: {}", p.label), "warn");
                         }
                     }
                     *w.devices.borrow_mut() = devs;
@@ -2378,23 +2385,21 @@ impl FilerWindow {
     }
 
     fn mount_and_open(self: &Rc<Self>, dev_path: &str, label: &str) {
-        self.show_banner(&format!("Mounting {label}…"), "ok");
+        self.show_status_notice(&format!("Mounting {label}…"));
         let (tx, rx) = mpsc::channel();
         let dp = dev_path.to_string();
         let _ = std::thread::spawn(move || {
             let _ = tx.send(devices::mount_device(&dp));
         });
         let w = Rc::clone(self);
-        let lbl = label.to_string();
         glib::timeout_add_local(Duration::from_millis(40), move || match rx.try_recv() {
             Ok(Ok(mp)) => {
-                w.show_banner(&format!("Mounted {lbl}"), "ok");
                 w.refresh_devices();
                 w.navigate_to(mp);
                 glib::ControlFlow::Break
             }
             Ok(Err(e)) => {
-                w.show_banner(&e, "danger");
+                w.notify_desktop(&e, "danger");
                 glib::ControlFlow::Break
             }
             Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
@@ -2425,7 +2430,7 @@ impl FilerWindow {
                 self.render_tabs();
             }
         }
-        self.show_banner(&format!("Ejecting {}…", dev.label), "ok");
+        self.show_status_notice(&format!("Ejecting {}…", dev.label));
         let (tx, rx) = mpsc::channel();
         let _ = std::thread::spawn(move || {
             let _ = tx.send(devices::eject_device(&dev));
@@ -2433,12 +2438,12 @@ impl FilerWindow {
         let w = Rc::clone(self);
         glib::timeout_add_local(Duration::from_millis(40), move || match rx.try_recv() {
             Ok(Ok(msg)) => {
-                w.show_banner(&msg, "ok");
+                w.notify_desktop(&msg, "ok");
                 w.refresh_devices();
                 glib::ControlFlow::Break
             }
             Ok(Err(e)) => {
-                w.show_banner(&e, "warn");
+                w.notify_desktop(&e, "warn");
                 w.refresh_devices();
                 glib::ControlFlow::Break
             }
@@ -2821,7 +2826,7 @@ impl FilerWindow {
 
     fn paste_from_clipboard(self: &Rc<Self>) {
         let Some((is_cut, paths)) = tools::read_file_clipboard() else {
-            self.show_banner("Clipboard has no files to paste", "warn");
+            self.show_status_notice("Clipboard has no files to paste");
             return;
         };
         let dst = self.state.borrow().cwd().to_path_buf();
@@ -2883,7 +2888,7 @@ impl FilerWindow {
                         } else {
                             summary
                         };
-                        w.show_banner(&msg, "ok");
+                        w.show_status_notice(&msg);
                         w.reload_dir();
                         w.render_shelf();
                         return glib::ControlFlow::Break;
@@ -2891,7 +2896,7 @@ impl FilerWindow {
                     Ok(OpProgress::Error { message }) => {
                         w.progress_box.set_visible(false);
                         *w.active_cancel.borrow_mut() = None;
-                        w.show_banner(&message, "danger");
+                        w.notify_desktop(&message, "danger");
                         w.reload_dir();
                         w.render_shelf();
                         return glib::ControlFlow::Break;
@@ -2910,13 +2915,13 @@ impl FilerWindow {
     /// creation.
     fn undo_last(self: &Rc<Self>) {
         let Some(action) = self.state.borrow_mut().take_undo() else {
-            self.show_banner("Nothing to undo", "warn");
+            self.show_status_notice("Nothing to undo");
             return;
         };
         let label = action.label();
         match ops::undo(&action) {
             Ok(msg) => {
-                self.show_banner(&msg, "ok");
+                self.show_status_notice(&msg);
                 self.reload_dir();
                 self.render_shelf();
             }
@@ -2924,7 +2929,7 @@ impl FilerWindow {
                 // Put it back so a second Ctrl+Z can retry after the person
                 // clears whatever blocked it.
                 self.state.borrow_mut().push_undo(action);
-                self.show_banner(&format!("Could not undo {label}: {e}"), "danger");
+                self.notify_desktop(&format!("Could not undo {label}: {e}"), "danger");
             }
         }
     }
@@ -3093,12 +3098,7 @@ impl FilerWindow {
             false,
             move || {
                 p.popdown();
-                {
-                    let mut st = w.state.borrow_mut();
-                    st.show_hidden = !st.show_hidden;
-                    st.recompute_visible();
-                }
-                w.render_canvas();
+                w.toggle_show_hidden();
             },
         );
         col.append(&b);
@@ -3184,7 +3184,7 @@ impl FilerWindow {
                         for p in &ps {
                             let _ = trash::restore_from_trash(p);
                         }
-                        w.show_banner("Restored from Trash", "ok");
+                        w.show_status_notice("Restored from Trash");
                         w.reload_dir();
                     }),
                 );
@@ -3306,7 +3306,7 @@ impl FilerWindow {
                     false,
                     Box::new(move || {
                         tools::write_file_clipboard(&ps, true);
-                        w.show_banner(&format!("Cut {} item(s)", ps.len()), "ok");
+                        w.show_status_notice(&format!("Cut {} item(s)", ps.len()));
                     }),
                 );
                 let w = Rc::clone(self);
@@ -3318,7 +3318,7 @@ impl FilerWindow {
                     false,
                     Box::new(move || {
                         tools::write_file_clipboard(&ps, false);
-                        w.show_banner(&format!("Copied {} item(s)", ps.len()), "ok");
+                        w.show_status_notice(&format!("Copied {} item(s)", ps.len()));
                     }),
                 );
                 if sel.len() == 1 {
@@ -3399,7 +3399,7 @@ impl FilerWindow {
                         Box::new(move || {
                             if w.state.borrow_mut().pin_bookmark(p3.clone()) {
                                 w.render_places();
-                                w.show_banner("Pinned to Places", "ok");
+                                w.show_status_notice("Pinned to Places");
                             }
                         }),
                     );
@@ -3431,7 +3431,7 @@ impl FilerWindow {
                     false,
                     Box::new(move || {
                         tools::copy_paths_to_clipboard(&ps_cp);
-                        w.show_banner("Copied path(s)", "ok");
+                        w.show_status_notice("Copied path(s)");
                     }),
                 );
             }
@@ -3537,10 +3537,10 @@ impl FilerWindow {
                     w.state
                         .borrow_mut()
                         .push_undo(ops::UndoAction::Created(vec![target.clone()]));
-                    w.show_banner(&format!("Created folder {name} · Ctrl+Z to undo"), "ok");
+                    w.show_status_notice(&format!("Created folder {name} · Ctrl+Z to undo"));
                     w.reload_dir();
                 }
-                Err(err) => w.show_banner(&format!("Failed: {err}"), "danger"),
+                Err(err) => w.notify_desktop(&format!("Failed: {err}"), "danger"),
             }
         };
         let c1 = create.clone();
@@ -3584,10 +3584,10 @@ impl FilerWindow {
                         from: old_path.clone(),
                         to: new_path.clone(),
                     });
-                    w.show_banner(&format!("Renamed to {new_name} · Ctrl+Z to undo"), "ok");
+                    w.show_status_notice(&format!("Renamed to {new_name} · Ctrl+Z to undo"));
                     w.reload_dir();
                 }
-                Err(err) => w.show_banner(&format!("Rename failed: {err}"), "danger"),
+                Err(err) => w.notify_desktop(&format!("Rename failed: {err}"), "danger"),
             }
         };
         let r1 = do_rename.clone();
@@ -3660,9 +3660,9 @@ impl FilerWindow {
         empty.connect_clicked(move |_| {
             p2.popdown();
             if let Err(e) = trash::empty_trash() {
-                w.show_banner(&e, "danger");
+                w.notify_desktop(&e, "danger");
             } else {
-                w.show_banner("Trash emptied", "ok");
+                w.show_status_notice("Trash emptied");
                 w.reload_dir();
             }
         });
@@ -3700,12 +3700,74 @@ impl FilerWindow {
         let free_part = free_space_bytes(&cwd)
             .map(|b| format!(" · {} free", format_size(b)))
             .unwrap_or_default();
-        self.status_label
-            .set_text(&format!("{count_part}{hidden_part}{sel_part}{free_part}"));
+        let notice = self.status_notice.borrow().1.clone();
+        let text = match notice {
+            Some(note) => {
+                format!("{note}  ·  {count_part}{hidden_part}{sel_part}{free_part}")
+            }
+            None => format!("{count_part}{hidden_part}{sel_part}{free_part}"),
+        };
+        self.status_label.set_text(&text);
     }
 
-    fn show_banner(&self, msg: &str, tone: &str) {
+    fn toggle_show_hidden(self: &Rc<Self>) {
+        {
+            let mut st = self.state.borrow_mut();
+            st.show_hidden = !st.show_hidden;
+            st.recompute_visible();
+        }
+        self.update_hidden_button();
+        self.render_canvas();
+    }
+
+    fn update_hidden_button(&self) {
+        let show = self.state.borrow().show_hidden;
+        let (glyph, tooltip) = hidden_button_spec(show);
+        self.hidden_btn.set_label(glyph);
+        self.hidden_btn.set_tooltip_text(Some(tooltip));
+        if show {
+            self.hidden_btn.add_css_class("active");
+        } else {
+            self.hidden_btn.remove_css_class("active");
+        }
+    }
+
+    /// Quiet, transient feedback shown inside the Filer status bar instead of
+    /// spawning desktop notifications for routine operations.
+    fn show_status_notice(self: &Rc<Self>, msg: &str) {
+        let gen_id = {
+            let mut st = self.status_notice.borrow_mut();
+            st.0 = st.0.wrapping_add(1);
+            st.1 = Some(msg.to_string());
+            st.0
+        };
+        self.update_status_bar();
+        let w = Rc::clone(self);
+        glib::timeout_add_local_once(Duration::from_secs(3), move || {
+            let matches = w.status_notice.borrow().0 == gen_id;
+            if matches {
+                w.status_notice.borrow_mut().1 = None;
+                w.update_status_bar();
+            }
+        });
+    }
+
+    /// Desktop notification reserved strictly for failures and hardware eject alerts.
+    fn notify_desktop(&self, msg: &str, tone: &str) {
         tools::notify(msg, tone);
+    }
+}
+
+fn entry_focused(entry: &Entry, focused: Option<&Widget>) -> bool {
+    gtk4::prelude::WidgetExt::is_visible(entry)
+        && (entry.has_focus() || focused.is_some_and(|w| w.is_ancestor(entry)))
+}
+
+fn hidden_button_spec(show_hidden: bool) -> (&'static str, &'static str) {
+    if show_hidden {
+        ("\u{f06e}", "Hide Hidden Files (Ctrl+H)")
+    } else {
+        ("\u{f070}", "Show Hidden Files (Ctrl+H)")
     }
 }
 
@@ -3774,4 +3836,20 @@ fn make_menu_item(
     }
     btn.connect_clicked(move |_| on_click());
     btn
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hidden_button_spec;
+
+    #[test]
+    fn hidden_button_switches_eye_glyph_and_tooltip() {
+        let (hidden_glyph, hidden_tip) = hidden_button_spec(false);
+        assert_eq!(hidden_glyph, "\u{f070}");
+        assert!(hidden_tip.contains("Show Hidden Files"));
+
+        let (shown_glyph, shown_tip) = hidden_button_spec(true);
+        assert_eq!(shown_glyph, "\u{f06e}");
+        assert!(shown_tip.contains("Hide Hidden Files"));
+    }
 }

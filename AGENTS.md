@@ -387,7 +387,10 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
     removing an already-finished glib source panics and aborts the window. A drop moves when it
     carries its local `GdkDrag` (GDK reports every local drop as `COPY`, so the drag object, not
     `actions()`, is the signal) and copies when the source is another application or another
-    filesystem; the shelf prunes a reference whose path is gone. `hayato-filer --self-test` proves
+    filesystem; the shelf prunes a reference whose path is gone. Headerbar view controls include the
+    synchronized eye toggle for hidden dotfiles (`Ctrl+H`, `hidden_btn`, `sort_btn` popover), while
+    common file operations surface transient feedback in the bottom status bar and reserve
+    `notify-send` strictly for failures and drive-eject alerts. `hayato-filer --self-test` proves
     the CSS and the pure state/archive logic headlessly, and `check-desktop.sh` runs it.
  25. **Smart File Intent Router & Plug-and-Play Seams**:
     - `files::open::resolve()` keeps zero-latency direct `exec()` for ready local viewers, while
