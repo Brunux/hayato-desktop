@@ -1,6 +1,6 @@
 //! Native Hayato VPN Studio: WireGuard and OpenVPN over NetworkManager (`hayato menu vpn`).
 //!
-//! Master-detail Tunnel Studio (`width >= 100`, single-pane + context strip on 80x24)
+//! Master-detail Tunnel Studio (`width >= 84`, single-pane + context strip on 80x24)
 //! paired with a single-screen multi-field Form Editor (`VpnPhase::EditForm`) using
 //! `Input::render_field`:
 //! - Inline protocol toggle (`[WireGuard | OpenVPN]`), live validation, and live config preview
@@ -1706,22 +1706,7 @@ impl VpnScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
-            let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 52) / 100).max(48) as u16;
-            let right_w = area.width.saturating_sub(left_w + gap);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(
-                    area.x + left_w + gap,
-                    area.y,
-                    right_w,
-                    area.height,
-                )),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 52, 48)
     }
 
     fn draw_inspector(&self, buf: &mut Buffer, area: Rect, design: &Design) {

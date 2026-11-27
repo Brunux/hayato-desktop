@@ -685,7 +685,7 @@ impl Screen for ShareScreen {
             SharePhase::Sheet | SharePhase::ConfirmLargeZip(_) => {}
         }
 
-        let wide = ctx.area.width >= 96;
+        let wide = ctx.area.width >= crate::system::DUAL_PANE_MIN_WIDTH;
         let (left_area, right_area) = if wide {
             let left_w = (ctx.area.width * 54) / 100;
             let gap = 1;

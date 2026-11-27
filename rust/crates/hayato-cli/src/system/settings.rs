@@ -1223,7 +1223,7 @@ impl SettingsScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
+        if area.width >= super::DUAL_PANE_MIN_WIDTH {
             let gap = 1u16;
             let left_w = ((u32::from(area.width) * 28) / 100).clamp(28, 36) as u16;
             let right_w = area.width.saturating_sub(left_w + gap);

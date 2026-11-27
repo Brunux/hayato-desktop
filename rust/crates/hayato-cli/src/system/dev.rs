@@ -592,22 +592,7 @@ fn inspector_for(action: DevAction) -> DevInspectorInfo {
 
 impl DevScreen {
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
-            let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 50) / 100).max(48) as u16;
-            let right_w = area.width.saturating_sub(left_w + gap);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(
-                    area.x + left_w + gap,
-                    area.y,
-                    right_w,
-                    area.height,
-                )),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 50, 48)
     }
 
     fn draw_inspector(&self, buf: &mut ratatui::buffer::Buffer, area: Rect, design: &Design) {

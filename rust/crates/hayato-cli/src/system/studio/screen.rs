@@ -298,7 +298,7 @@ impl Screen for StudioScreen {
             ctx.area.width,
             ctx.area.height.saturating_sub(2),
         );
-        let wide = body.width >= 96;
+        let wide = body.width >= crate::system::DUAL_PANE_MIN_WIDTH;
         let (left_area, right_area) = if wide {
             let lw = (body.width * 54) / 100;
             (

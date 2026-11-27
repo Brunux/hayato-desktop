@@ -712,7 +712,7 @@ struct Panes {
 }
 
 fn panes(inner: Rect) -> Panes {
-    if inner.width >= 100 {
+    if inner.width >= super::DUAL_PANE_MIN_WIDTH.saturating_sub(2) {
         let shelf = (inner.width * 44 / 100).clamp(38, 64);
         Panes {
             filter: Rect {

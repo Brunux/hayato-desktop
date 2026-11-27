@@ -4,7 +4,7 @@
 ///
 /// Renders the Hayato manual chapters (`/usr/share/doc/hayato/*.md`) alongside
 /// `ripgrep` full-text search and `apropos` / `man` system pages inside a
-/// responsive dual-pane Ratatui workspace (`width >= 96`) with single-pane
+/// responsive dual-pane Ratatui workspace (`width >= 84`) with single-pane
 /// focus toggle on narrower terminals (`80x24`).
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -29,7 +29,7 @@ use crate::system::{have, missing};
 
 const DOCS_DIR: &str = "/usr/share/doc/hayato";
 const PAGE_WRAP_WIDTH: usize = 88;
-const DUAL_PANE_MIN_WIDTH: u16 = 96;
+const DUAL_PANE_MIN_WIDTH: u16 = super::DUAL_PANE_MIN_WIDTH;
 
 const HIT_TAB_BASE: usize = 10_000;
 const HIT_READER_PANE: usize = 20_000;

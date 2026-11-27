@@ -1430,25 +1430,7 @@ impl SoftwareScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        // Match `files::PREVIEW_MIN_WIDTH` (84 cols) so opening Software inline
-        // inside `Alt+Space` (`900x600` `hayato-pick`, ~94-98 cols) shows the
-        // side-by-side Preview pane while keeping 80x24 single-pane.
-        if area.width >= 84 {
-            let gap = 1u16;
-            let left_w = ((u32::from(area.width) * 52) / 100).max(42) as u16;
-            let right_w = area.width.saturating_sub(left_w + gap);
-            (
-                Rect::new(area.x, area.y, left_w, area.height),
-                Some(Rect::new(
-                    area.x + left_w + gap,
-                    area.y,
-                    right_w,
-                    area.height,
-                )),
-            )
-        } else {
-            (area, None)
-        }
+        super::split_panes(area, 52, 42)
     }
 
     fn draw_inspector(&self, buf: &mut Buffer, area: Rect, design: &Design) {

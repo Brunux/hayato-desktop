@@ -667,7 +667,7 @@ impl DisplayScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
+        if area.width >= super::DUAL_PANE_MIN_WIDTH {
             let gap = 1u16;
             let left_w = ((u32::from(area.width) * 52) / 100)
                 .max(48)

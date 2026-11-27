@@ -345,6 +345,39 @@ pub fn spawn_detached_argv(program: impl AsRef<std::ffi::OsStr>, args: &[&str]) 
     let _ = command.spawn();
 }
 
+/// Minimum terminal width (columns) for side-by-side dual-pane layouts.
+/// Matches `files::PREVIEW_MIN_WIDTH` (`84`) so `900x600` (`hayato-pick`,
+/// ~94–98 cols inside `Alt+Space`) and `940x620` (`hayato-task`) windows render
+/// both panes while `80x24` grids remain single-pane.
+pub const DUAL_PANE_MIN_WIDTH: u16 = 84;
+
+/// Split `area` horizontally with a 1-column gap into `(left, Some(right))`
+/// when `area.width >= DUAL_PANE_MIN_WIDTH`, or `(area, None)` on compact grids.
+pub fn split_panes(
+    area: ratatui::layout::Rect,
+    left_pct: u16,
+    left_min: u16,
+) -> (ratatui::layout::Rect, Option<ratatui::layout::Rect>) {
+    if area.width < DUAL_PANE_MIN_WIDTH {
+        return (area, None);
+    }
+    let gap = 1u16;
+    let max_left = area.width.saturating_sub(28 + gap);
+    let left_w = ((u32::from(area.width) * u32::from(left_pct)) / 100)
+        .max(u32::from(left_min))
+        .min(u32::from(max_left)) as u16;
+    let right_w = area.width.saturating_sub(left_w + gap);
+    (
+        ratatui::layout::Rect::new(area.x, area.y, left_w, area.height),
+        Some(ratatui::layout::Rect::new(
+            area.x + left_w + gap,
+            area.y,
+            right_w,
+            area.height,
+        )),
+    )
+}
+
 /// Spawn a shell line detached in a new session. Kept for the surfaces that
 /// still sequence several external tools; new work builds an argv instead
 /// (`spawn_detached_argv`).
@@ -380,5 +413,17 @@ mod tests {
         assert_eq!(missing(&["sh", "printf"]), None);
         let said = missing(&["sh", "hayato-not-a-program"]).unwrap();
         assert_eq!(said, "Missing: hayato-not-a-program");
+    }
+
+    #[test]
+    fn split_panes_enables_dual_pane_at_pick_window_widths() {
+        use ratatui::layout::Rect;
+        assert!(split_panes(Rect::new(0, 0, 80, 24), 52, 48).1.is_none());
+        let (l84, r84) = split_panes(Rect::new(0, 0, 84, 24), 52, 48);
+        assert!(l84.width >= 48 && r84.unwrap().width >= 28);
+        let (l96, r96) = split_panes(Rect::new(0, 0, 96, 32), 52, 48);
+        assert_eq!(l96.width + 1 + r96.unwrap().width, 96);
+        let (l152, r152) = split_panes(Rect::new(0, 0, 152, 45), 52, 48);
+        assert_eq!((l152.width, r152.unwrap().width), (79, 72));
     }
 }

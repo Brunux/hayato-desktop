@@ -371,7 +371,7 @@ impl CaptureScreen {
     }
 
     fn split_panes(area: Rect) -> (Rect, Option<Rect>) {
-        if area.width >= 100 {
+        if area.width >= super::DUAL_PANE_MIN_WIDTH {
             let left_w = ((area.width as u32 * 48) / 100).clamp(44, 62) as u16;
             let right_w = area.width.saturating_sub(left_w + 1);
             let left = Rect::new(area.x, area.y, left_w, area.height);

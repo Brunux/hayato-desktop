@@ -58,8 +58,13 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    events). `hayato gamepad` is the one input helper: it reads `/dev/input` and injects
    arrows/Enter/Escape into the focused `hayato-*` window, because a USB or Bluetooth pad must
    navigate every framework menu, not only the Games library; its pid lock keeps it single.
-5. **Dual density support**: `Screen::key` and `Screen::hit` receive `&Design` (`$XDG_RUNTIME_DIR/hayato-tablet`)
-   rather than caching hit boxes across normal vs tablet row spacing.
+5. **Dual density & dual-pane split contract**: `Screen::key` and `Screen::hit` receive
+   `&Design` (`$XDG_RUNTIME_DIR/hayato-tablet`) rather than caching hit boxes across normal vs
+   tablet row spacing. Dual-pane screens split horizontally at
+   `system::DUAL_PANE_MIN_WIDTH` (`84` cols, shared via `system::split_panes` matching
+   `files::PREVIEW_MIN_WIDTH`) so `900×600` (`hayato-pick`, ~94–98 cols opened via `Alt+Space`)
+   shows side-by-side detail/preview panes while `80×24` stays single-pane; never hardcode
+   `area.width >= 100` for dual-pane breakpoints.
 6. **Generated glyph & icon tables**:
    - Glyph codepoints (`Symbols Nerd Font Mono` + `Font Awesome 6 Free Solid` + `Font Awesome 6 Brands Regular`, avoiding Codicons `ea60..ec1e` stripped in Debian `fonts-nerd-symbols 3.4.0+dfsg2-1`): edit `scripts/make-glyphs.sh`, never hand-edit `glyphs/table.rs`.
    - `hayato-notify` (`FontRenderer`) loads both `SymbolsNerdFontMono` and `Font Awesome 6` (`Solid`/`Brands`) and resolves UI glyph codepoints via `hayato_ui::Glyph`.
