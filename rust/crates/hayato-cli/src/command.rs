@@ -651,6 +651,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &[],
     },
     CommandSpec {
+        // `hayato menu software`: intent-first Debian APT software catalog,
+        // updates, and cleanup (replaces hunting for raw package names).
+        path: "menu software",
+        summary: "discover apps by task, inspect APT details, updates, and cleanup",
+        shape: Shape::Task,
+        symlinks: &[],
+        installed: &[],
+    },
+    CommandSpec {
         // `hayato menu vpn`: native WireGuard & OpenVPN client over NetworkManager.
         path: "menu vpn",
         summary: "WireGuard & OpenVPN client: import .conf/.ovpn, connect, autoconnect",

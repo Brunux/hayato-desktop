@@ -1,0 +1,45 @@
+Hayato · Software                                                                                                                              Kdenlive 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Discover   Installed   Updates(3)   Cleanup                                                                       / search apps…               All APT 
+╭ Kdenlive ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   AVAILABLE   Full non-linear video editor with multi-track timeline and effects.                                                                    │
+│                                                                                                                                                      │
+│  Package     kdenlive · installed: — · candidate: 26.08.3-1                                                                                          │
+│  Size        Download 4.5 MB · On disk 20.7 MB · +3 deps (+86.0 MB)                                                                                  │
+│  Source      Debian main (DFSG-free signed repository)                                                                                               │
+│  Home        https://kdenlive.org/                                                                                                                   │
+│                                                                                                                                                      │
+│  ACCESS & TRUST (APT)                                                                                                                                │
+│  ! Runs with your full user permissions (system package · no sandbox)                                                                                │
+│  services / setuid / /etc files: unknown until installed (no AppStream)                                                                              │
+│                                                                                                                                                      │
+│  Kdenlive is a multi-track non-linear video editor for Linux.                                                                                        │
+│  Supports proxy editing, keyframes, titles and audio mixing.                                                                                         │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│                                                                                                                                                      │
+│   Install (i)    Back (Esc)                                                                                                                          │
+│                                                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ [i]  install   [u]  update   [o]  open   [r]  remove   [Esc]  back                                                                                     

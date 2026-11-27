@@ -140,6 +140,7 @@ pub mod run;
 pub mod settings;
 pub mod setup;
 pub mod share;
+pub mod software;
 pub mod ssh;
 pub mod step;
 pub mod studio;

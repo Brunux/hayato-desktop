@@ -99,6 +99,7 @@ pub fn rows() -> Vec<(&'static str, &'static str, &'static str)> {
         ("greeter", "Login screen (Greeter)", "hayato menu greeter"),
         ("automount", "Auto-mount USB drives", "automount.conf"),
         ("idle", "Idle & lock", "hayato-idle"),
+        ("software", "Software catalog", "hayato menu software"),
         ("updates", "System updates", "hayato-pkg"),
         ("clean", "Free space", "hayato-clean"),
         ("tablet", "Tablet mode", "tablet-mode toggle"),
@@ -712,6 +713,7 @@ fn section_keys(section: Section) -> &'static [&'static str] {
             "clipboard",
             "notify",
             "dnd",
+            "software",
             "updates",
             "clean",
             "automount",
@@ -1001,6 +1003,13 @@ fn build_rows(section: Section) -> (Vec<hayato_ui::Row>, Vec<String>) {
             }
             keys.push("notify".to_string());
             keys.push("dnd".to_string());
+
+            rows.push(row(
+                "Software catalog",
+                "discover apps, updates & cleanup",
+                Glyph::Box,
+            ));
+            keys.push("software".to_string());
 
             rows.push(row(
                 "System updates",
@@ -2456,6 +2465,9 @@ fn dispatch_key(
                 let _ = std::fs::remove_file(&part);
                 banner = Some(format!("Could not write {conf_display}"));
             }
+        }
+        "software" => {
+            let _ = super::software::menu_with_args(&[], terminal, design)?;
         }
         "updates" => {
             let _ = super::pkg::menu(terminal, design)?;

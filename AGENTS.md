@@ -144,11 +144,20 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    zero resident daemons. `system/audio.rs` parses `pactl list sink-inputs` for inline per-app
    volume, mute, and sink routing without spawning `pavucontrol`.
 12d. **APT Transaction Guard (`system/pkg_guard.rs`)**:
-   Every UI `apt-get` install, removal, or `full-upgrade` (`pkg.rs`, `setup/bundles.rs`,
-   `vpn.rs`) must simulate first via `apt-get -s` (`pkg_guard::evaluate`) and always pass
-   `--no-install-recommends`. Any plan that installs/upgrades `linux-image-*`/`linux-modules-*`/boot
-   packages or removes core session packages (`hayato*`, `sway*`, `systemd`, etc.) is blocked
-   in the UI; broad removals or large installs require a Cancel-first `Confirm` modal.
+   Every UI `apt-get` install, removal, or `full-upgrade` (`software/`, `pkg.rs`,
+   `setup/bundles.rs`, `vpn.rs`) must simulate first via `apt-get -s` (`pkg_guard::evaluate`)
+   and always pass `--no-install-recommends`. Any plan that installs/upgrades
+   `linux-image-*`/`linux-modules-*`/boot packages or removes core session packages (`hayato*`,
+   `sway*`, `systemd`, etc.) is blocked in the UI; broad removals or large installs require
+   a Cancel-first `Confirm` modal.
+12e. **Hayato Software Catalog (`hayato menu software`, `system/software/`)**:
+   Intent-first Debian `forky` application discovery, updates, and cleanup. Curated intents and
+   apps live in `packages/software/catalog.json` (embedded via `include_str!` and validated on
+   load so missing packages, orphan intent refs, or kernel/protected packages fail unit tests;
+   no `toml` crate needed). Never run background APT daemons or block `draw()` on APT: load
+   metadata asynchronously via channel, key disk cache (`$XDG_CACHE_HOME/hayato/software/meta/`)
+   by `/var/lib/apt/lists` mtime, and route every install/update/remove/cleanup through
+   `pkg_guard`. Keep `bar-updates` and `hayato menu pkg` intact as the low-level package fallback.
 13. **A file card opens its folder**: a notification about a written file carries the
    `x-hayato-open-path` hint (`Card::open_path`, `hayato notify --open`, or `BUSY_OPEN` for a
    busy result). A left click on the card body runs `hayato-files <parent>`; grimshot predates the

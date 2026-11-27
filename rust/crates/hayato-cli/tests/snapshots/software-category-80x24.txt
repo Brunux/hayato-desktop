@@ -1,0 +1,24 @@
+Hayato · Software                                                   Edit videos 
+────────────────────────────────────────────────────────────────────────────────
+ Discover   Installed   Updates(3)   Cleanup    / search apps…          All APT 
+╭ Edit videos ─────────────────────────────────────────────────────────────────╮
+│ ▍   Kdenlive  heavy · 4 GB note · Full non-linear video editor wit…         │
+│     Shotcut  medium · Streamlined video editor with broad for…              │
+│     Pitivi  medium · Clean GTK video editor built on GStreamer for…         │
+│     HandBrake  medium · GUI video transcoder with device presets a…         │
+│     FFmpeg  light · Fast command-line converter, trimmer and muxer …        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ [Enter]  open   [/]  search   [1-4/Tab]  view   [a]  all apt   [Esc]  back     

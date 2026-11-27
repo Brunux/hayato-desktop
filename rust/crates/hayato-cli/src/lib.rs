@@ -526,6 +526,26 @@ fn query(resolved: &Resolved) -> Option<i32> {
             println!("{}", system::setup::status_summary());
             Some(EXIT_OK)
         }
+        ("menu software", ["--status"] | ["status"]) => {
+            println!("{}", system::software::status_summary());
+            Some(EXIT_OK)
+        }
+        ("menu software", ["--rows"] | ["rows"]) => {
+            system::software::print_rows();
+            Some(EXIT_OK)
+        }
+        ("menu software", ["--updates"] | ["updates"]) => {
+            system::software::print_updates();
+            Some(EXIT_OK)
+        }
+        ("menu software", ["--search", q]) => {
+            system::software::print_search(q);
+            Some(EXIT_OK)
+        }
+        ("menu software", ["--cleanup-dry"] | ["cleanup-dry"]) => {
+            system::clean::dry_run();
+            Some(EXIT_OK)
+        }
         ("installer", ["--check"] | ["check"]) => Some(installer::check()),
         ("installer", ["apply", ..]) => {
             let rest: Vec<String> = resolved.args.iter().skip(1).cloned().collect();
@@ -657,6 +677,7 @@ fn execute(
         "menu learn" => system::learn::menu(terminal, design),
         "menu keys" => system::keys::menu(terminal, design),
         "menu pkg" => system::pkg::menu_with_args(&resolved.args, terminal, design),
+        "menu software" => system::software::menu_with_args(&resolved.args, terminal, design),
         "menu dev" => system::dev::menu(terminal, design),
         "menu about" => system::about::menu(terminal, design),
         "menu net" => system::net::menu(terminal, design),

@@ -473,6 +473,17 @@ pub const ROOT: &[MenuItem] = &[
         },
     ),
     item(
+        "software",
+        "Software",
+        "discover apps by task, updates & cleanup",
+        Glyph::Box,
+        System,
+        Action::Run {
+            program: Program::System("hayato"),
+            args: &[Arg::Lit("menu"), Arg::Lit("software")],
+        },
+    ),
+    item(
         "pkg",
         "Packages",
         "search, then install via apt",

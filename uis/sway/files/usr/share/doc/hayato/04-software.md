@@ -21,11 +21,21 @@ sudo apt full-upgrade --no-install-recommends       # upgrade Debian and Hayato 
 sudo hayato-apt upgrade-from-github     # fallback: install the latest release .debs directly from GitHub
 ```
 
-> **Kernel & boot safety:** `hayato menu pkg` and Setup bundles always pass `--no-install-recommends` and simulate every transaction (`apt-get -s`) first, blocking any UI operation that would pull in or remove `linux-image-*`, bootloaders, or core session packages. Note that running raw `apt` in a terminal bypasses that UI guard.
+> **Kernel & boot safety:** `hayato menu software`, `hayato menu pkg`, and Setup bundles always pass `--no-install-recommends` and simulate every transaction (`apt-get -s`) first, blocking any UI operation that would pull in or remove `linux-image-*`, bootloaders, or core session packages. Note that running raw `apt` in a terminal bypasses that UI guard.
 
 Nothing about this machine depends on a package manager other than apt: no
 Flatpak, no Snap, no AUR. Every Hayato release publishes both full disk images
 and `.deb` packages so an installed machine upgrades in place with `apt`.
+
+## Hayato Software (`hayato menu software`)
+
+**Hayato Software** is the session's intent-first graphical/TUI front end over Debian's native APT ecosystem: open it from the root menu (**Alt+Space** → *Software*), **Settings → System → Software catalog**, or by left-clicking the Waybar updates pill (right-clicking the pill still opens `hayato menu pkg` directly).
+
+- **Discover** (*What do you want to do?*): 12 curated tasks (*Edit video*, *Program in Python*, *Write docs & spreadsheets*, *Draw & illustrate*, *Play games*, *Make or play music*, *Record screen & stream*, *Browse & stay private*, *System & disk tools*, *Web & communication*, *Edit photos*, *Code & git*) instead of hunting for Debian package names.
+- **Search & All-APT toggle**: filter curated intents and apps as you type; press **Enter** to search Debian package names via `apt-cache search --names-only`, or press **Ctrl+A** (`All APT`) to include raw Debian matches alongside curated picks.
+- **App Detail & Trust/Access**: shows version, candidate, download and disk delta from `apt-get -s`, APT origin (*Debian official*, *Contrib*, *Non-free*, or *Hayato Cloudsmith*), and derived capability hints (Network, Camera/Mic, Removable storage, GUI/Terminal), plus **Open**, **Install**, **Update**, or **Remove**.
+- **Updates & Cleanup**: reviews upgradable packages (flagging security updates and held kernel packages — run `hayato update` for kernel upgrades) and measures reclaimable APT cache, `autoremove` orphans, `rc` residual configs, and user trash/thumbnails using `pkg_guard` safeguards.
+- **Headless queries**: `hayato menu software --status`, `--updates`, `--rows`, `--search <query>`, and `--cleanup-dry`.
 
 ## What is installed, and where the lists are
 

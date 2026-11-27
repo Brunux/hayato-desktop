@@ -194,7 +194,8 @@
         "interval": 21600,
         "signal": 8,
         "tooltip": true,
-        "on-click": "hayato menu pkg"
+        "on-click": "hayato menu software --updates",
+        "on-click-right": "hayato menu pkg"
     },
     "tray": {
         "icon-size": 14,
