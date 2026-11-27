@@ -339,8 +339,9 @@
     // mpv asks for its own inhibitor.
     "idle_inhibitor": {
         "format": "<span font_desc='JetBrains Mono 13'>\uf0f4</span>",
-        "tooltip-format-activated": "<span alpha='50%'>╭─</span> <b>IDLE // INHIBITED</b>\n<span alpha='45%'>│</span> ● AWAKE · screen sleep inhibited\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] allow sleep</span>",
-        "tooltip-format-deactivated": "<span alpha='50%'>╭─</span> <b>IDLE // AUTO</b>\n<span alpha='45%'>│</span> ○ AUTO · normal idle &amp; lock\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] keep screen awake</span>",
+        "tooltip-format-activated": "<span alpha='50%'>╭─</span> <b>IDLE // INHIBITED</b>\n<span alpha='45%'>│</span> ● AWAKE · screen sleep inhibited\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] allow sleep · [RMB] idle &amp; lock</span>",
+        "tooltip-format-deactivated": "<span alpha='50%'>╭─</span> <b>IDLE // AUTO</b>\n<span alpha='45%'>│</span> ○ AUTO · normal idle &amp; lock\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] keep screen awake · [RMB] idle &amp; lock</span>",
+        "on-click-right": "~/.config/bin/hayato-settings --idle",
         "start-activated": false
     },
     "battery": {

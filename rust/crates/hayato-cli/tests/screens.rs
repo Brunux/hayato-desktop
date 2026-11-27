@@ -385,6 +385,7 @@ fn display_studio_draws_dual_monitor_topology_at_both_grids() {
                     mode_height: 768,
                     mode_refresh: 60000,
                     active: true,
+                    ..Default::default()
                 },
                 DisplayOutput {
                     name: "DP-1".into(),
@@ -397,6 +398,7 @@ fn display_studio_draws_dual_monitor_topology_at_both_grids() {
                     mode_height: 1080,
                     mode_refresh: 60000,
                     active: true,
+                    ..Default::default()
                 },
             ],
             vec!["1920x1080@60Hz".into(), "2560x1440@60Hz".into()],

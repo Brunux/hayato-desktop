@@ -127,6 +127,9 @@ pub struct AppState {
     pub folders_first: bool,
     pub show_hidden: bool,
     pub sidebar_compact: bool,
+    pub col_size_width: i32,
+    pub col_mtime_width: i32,
+    pub col_kind_width: i32,
     pub bookmarks: Vec<Bookmark>,
     /// Persisted order of non-Home PLACES entries (both defaults and pinned folders).
     pub place_order: Vec<String>,
@@ -148,6 +151,9 @@ impl AppState {
             folders_first: true,
             show_hidden: false,
             sidebar_compact: false,
+            col_size_width: crate::prefs::DEFAULT_COL_SIZE,
+            col_mtime_width: crate::prefs::DEFAULT_COL_MTIME,
+            col_kind_width: crate::prefs::DEFAULT_COL_KIND,
             bookmarks,
             place_order,
             undo: Vec::new(),
@@ -162,6 +168,9 @@ impl AppState {
         self.folders_first = prefs.folders_first;
         self.show_hidden = prefs.show_hidden;
         self.sidebar_compact = prefs.sidebar_compact;
+        self.col_size_width = prefs.col_size_width;
+        self.col_mtime_width = prefs.col_mtime_width;
+        self.col_kind_width = prefs.col_kind_width;
     }
 
     /// Snapshot the view choices into a persistable struct.
@@ -175,6 +184,9 @@ impl AppState {
             sidebar_compact: self.sidebar_compact,
             window_width: width,
             window_height: height,
+            col_size_width: self.col_size_width,
+            col_mtime_width: self.col_mtime_width,
+            col_kind_width: self.col_kind_width,
         }
     }
 
@@ -791,6 +803,9 @@ mod tests {
             sidebar_compact: true,
             window_width: 1200,
             window_height: 700,
+            col_size_width: 112,
+            col_mtime_width: 210,
+            col_kind_width: 104,
         };
         st.apply_prefs(&prefs);
         assert_eq!(st.view_mode, ViewMode::List);

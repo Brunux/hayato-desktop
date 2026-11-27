@@ -2993,6 +2993,18 @@ if systemctl is-active --quiet polkit 2>/dev/null; then
 else
 	warn "polkitd is not running: a plugged stick will not mount (the rule is not read)"
 fi
+if grep -qsE '\-\-open "|x-hayato-open-path' /usr/local/sbin/hayato-automount "$DESKTOP_REPO/uis/sway/files/usr/local/sbin/hayato-automount" 2>/dev/null; then
+	ok "USB automount notification carries click-to-open folder hint"
+else
+	fail "hayato-automount notification is missing --open / x-hayato-open-path"
+fi
+if [ -f "$DESKTOP_REPO/uis/sway/files/etc/udev/rules.d/91-hayato-display-hotplug.rules" ] &&
+	[ -x "$DESKTOP_REPO/uis/sway/files/usr/local/sbin/hayato-display-hotplug" ] &&
+	hayato menu display --hotplug-check >/dev/null 2>&1; then
+	ok "external monitor hotplug oneshot and --hotplug-check responder are ready"
+else
+	fail "external monitor hotplug hook or hayato menu display --hotplug-check failed"
+fi
 if grep -q $'\tAuto-mount USB drives\t' <<<"$SETTINGS_ROWS"; then
 	ok "Settings has the auto-mount switch"
 else

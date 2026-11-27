@@ -1573,6 +1573,18 @@ pub fn menu(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
+    menu_with_args(&[], terminal, design)
+}
+
+pub fn menu_with_args(
+    args: &[String],
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    design: &Design,
+) -> Result<i32, crate::Failure> {
+    if args.iter().any(|a| a == "--idle") {
+        let _ = run_idle_picker(terminal, design, "Enter applies \u{00b7} Escape closes")?;
+        return Ok(0);
+    }
     if let Some(said) = missing(NEEDED) {
         return Err(crate::Failure::new(
             "Settings",
@@ -2539,50 +2551,11 @@ fn dispatch_key(
             let _ = super::media::menu(terminal, design)?;
         }
         "idle" => {
-            let current = super::idle::read();
-            let presets = super::idle::presets();
-            let rows: Vec<hayato_ui::Row> = presets
-                .iter()
-                .map(|(screen_off, lock, dpms, label, detail)| {
-                    let state = if current == (*screen_off, *lock, *dpms) {
-                        "current"
-                    } else {
-                        detail
-                    };
-                    row((*label).to_string(), state.to_string(), Glyph::Clock)
-                })
-                .collect();
-            let keys: Vec<String> = presets
-                .iter()
-                .map(|(screen_off, lock, dpms, _, _)| format!("{screen_off}:{lock}:{dpms}"))
-                .collect();
-            let mut idle_picker = Picker::new(
-                "Idle & lock",
-                vec![Question::choose(
-                    "Idle & lock",
-                    "Enter applies \u{00b7} Escape returns to Settings",
-                    rows,
-                    keys,
-                )],
-            );
-            let code = crate::run_screen(terminal, design, "Idle & lock", &mut idle_picker)?;
-            if code == 0
-                && let Some(answer) = idle_picker.answers().first()
-            {
-                let parts: Vec<u64> = answer
-                    .split(':')
-                    .filter_map(|part| part.parse::<u64>().ok())
-                    .collect();
-                if let [screen_off, lock, dpms] = parts.as_slice() {
-                    if let Err(error) = super::idle::write(*screen_off, *lock, *dpms) {
-                        banner = Some(format!("Could not write idle.conf: {error}"));
-                    } else if let Err(error) = super::idle::restart() {
-                        banner = Some(format!("Saved, but {error}"));
-                    } else {
-                        banner = Some(format!("Idle & lock: {}", super::idle::status()));
-                    }
-                }
-            }
+            banner = run_idle_picker(
+                terminal,
+                design,
+                "Enter applies \u{00b7} Escape returns to Settings",
+            )?;
         }
         "power" => {
             super::spawn_detached_argv("hayato", &["menu", "power"]);
@@ -2640,6 +2613,54 @@ fn dispatch_key(
         _ => {}
     }
     Ok(KeyOutcome::Continue(banner))
+}
+
+fn run_idle_picker(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    design: &Design,
+    hint: &str,
+) -> Result<Option<String>, crate::Failure> {
+    let current = super::idle::read();
+    let presets = super::idle::presets();
+    let rows: Vec<hayato_ui::Row> = presets
+        .iter()
+        .map(|(screen_off, lock, dpms, label, detail)| {
+            let state = if current == (*screen_off, *lock, *dpms) {
+                "current"
+            } else {
+                detail
+            };
+            row((*label).to_string(), state.to_string(), Glyph::Clock)
+        })
+        .collect();
+    let keys: Vec<String> = presets
+        .iter()
+        .map(|(screen_off, lock, dpms, _, _)| format!("{screen_off}:{lock}:{dpms}"))
+        .collect();
+    let mut idle_picker = Picker::new(
+        "Idle & lock",
+        vec![Question::choose("Idle & lock", hint, rows, keys)],
+    );
+    let code = crate::run_screen(terminal, design, "Idle & lock", &mut idle_picker)?;
+    let mut banner = None;
+    if code == 0
+        && let Some(answer) = idle_picker.answers().first()
+    {
+        let parts: Vec<u64> = answer
+            .split(':')
+            .filter_map(|part| part.parse::<u64>().ok())
+            .collect();
+        if let [screen_off, lock, dpms] = parts.as_slice() {
+            if let Err(error) = super::idle::write(*screen_off, *lock, *dpms) {
+                banner = Some(format!("Could not write idle.conf: {error}"));
+            } else if let Err(error) = super::idle::restart() {
+                banner = Some(format!("Saved, but {error}"));
+            } else {
+                banner = Some(format!("Idle & lock: {}", super::idle::status()));
+            }
+        }
+    }
+    Ok(banner)
 }
 
 fn save_notify(config: super::notify_settings::Config) -> Result<String, String> {

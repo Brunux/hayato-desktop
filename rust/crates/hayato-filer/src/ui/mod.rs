@@ -18,8 +18,9 @@ use gtk4::prelude::*;
 use gtk4::{
     Align, Application, ApplicationWindow, Box as GtkBox, Button, ContentFit, DragSource,
     DropTarget, Entry, EventControllerFocus, EventControllerKey, FlowBox, FlowBoxChild,
-    GestureClick, Label, ListBox, ListBoxRow, Orientation, Overlay, Paned, Picture, Popover,
-    ProgressBar, ScrolledWindow, SelectionMode, Separator, SizeGroup, SizeGroupMode, Widget,
+    GestureClick, GestureDrag, Label, ListBox, ListBoxRow, Orientation, Overlay, Paned, Picture,
+    Popover, ProgressBar, ScrolledWindow, SelectionMode, Separator, SizeGroup, SizeGroupMode,
+    Widget,
 };
 
 use crate::fs::archive::{self, ArchiveFormat};
@@ -64,6 +65,7 @@ pub struct FilerWindow {
     list_box: ListBox,
     overlay: Overlay,
     quicklook_slot: RefCell<Option<GtkBox>>,
+    quicklook_scroll: RefCell<Option<ScrolledWindow>>,
     properties_slot: RefCell<Option<GtkBox>>,
     status_label: Label,
     progress_box: GtkBox,
@@ -86,6 +88,9 @@ pub struct FilerWindow {
     col_size_sg: SizeGroup,
     col_mtime_sg: SizeGroup,
     col_kind_sg: SizeGroup,
+    col_size_btn: RefCell<Option<Button>>,
+    col_mtime_btn: RefCell<Option<Button>>,
+    col_kind_btn: RefCell<Option<Button>>,
     /// Header New Tab button: hidden while the tab strip (which carries its own
     /// add button) is showing, so only one "+" is ever visible.
     new_tab_btn: Button,
@@ -247,7 +252,7 @@ impl FilerWindow {
         sidebar_scroll.set_child(Some(&sidebar_box));
 
         // ── Sticky List View Column Header ────────────────────────────────
-        let list_header = GtkBox::new(Orientation::Horizontal, 10);
+        let list_header = GtkBox::new(Orientation::Horizontal, 0);
         list_header.add_css_class("filer-list-header");
         list_header.set_visible(false);
 
@@ -414,6 +419,7 @@ impl FilerWindow {
             list_box,
             overlay,
             quicklook_slot: RefCell::new(None),
+            quicklook_scroll: RefCell::new(None),
             properties_slot: RefCell::new(None),
             status_label,
             progress_box,
@@ -431,6 +437,9 @@ impl FilerWindow {
             col_size_sg: SizeGroup::new(SizeGroupMode::Horizontal),
             col_mtime_sg: SizeGroup::new(SizeGroupMode::Horizontal),
             col_kind_sg: SizeGroup::new(SizeGroupMode::Horizontal),
+            col_size_btn: RefCell::new(None),
+            col_mtime_btn: RefCell::new(None),
+            col_kind_btn: RefCell::new(None),
             new_tab_btn: new_tab_btn.clone(),
         });
 
@@ -710,22 +719,53 @@ impl FilerWindow {
             return glib::Propagation::Proceed;
         }
 
-        // Quick Look dismiss & arrow-key stepping through items
+        // Quick Look dismiss, preview scroll, and item stepping
         if self.quicklook_slot.borrow().is_some() {
             match key {
                 gdk::Key::Escape | gdk::Key::space => {
                     self.close_quicklook();
                     return glib::Propagation::Stop;
                 }
-                gdk::Key::Right | gdk::Key::Down => {
+                gdk::Key::Right => {
                     self.step_quicklook(1);
                     return glib::Propagation::Stop;
                 }
-                gdk::Key::Left | gdk::Key::Up => {
+                gdk::Key::Left => {
                     self.step_quicklook(-1);
                     return glib::Propagation::Stop;
                 }
-                _ => {}
+                gdk::Key::Down
+                | gdk::Key::Up
+                | gdk::Key::Page_Down
+                | gdk::Key::Page_Up
+                | gdk::Key::Home
+                | gdk::Key::End => {
+                    if let Some(sc) = self.quicklook_scroll.borrow().as_ref() {
+                        let adj = sc.vadjustment();
+                        let step = adj.step_increment().max(32.0);
+                        let page = adj.page_increment().max(160.0);
+                        let cur = adj.value();
+                        let max = (adj.upper() - adj.page_size()).max(adj.lower());
+                        let next = match key {
+                            gdk::Key::Down => (cur + step).min(max),
+                            gdk::Key::Up => (cur - step).max(adj.lower()),
+                            gdk::Key::Page_Down => (cur + page).min(max),
+                            gdk::Key::Page_Up => (cur - page).max(adj.lower()),
+                            gdk::Key::Home => adj.lower(),
+                            gdk::Key::End => max,
+                            _ => cur,
+                        };
+                        adj.set_value(next);
+                        return glib::Propagation::Stop;
+                    }
+                    match key {
+                        gdk::Key::Down => self.step_quicklook(1),
+                        gdk::Key::Up => self.step_quicklook(-1),
+                        _ => {}
+                    }
+                    return glib::Propagation::Stop;
+                }
+                _ => return glib::Propagation::Proceed,
             }
         }
         // Properties dismiss
@@ -1501,9 +1541,19 @@ impl FilerWindow {
         while let Some(c) = self.list_header.first_child() {
             self.list_header.remove(&c);
         }
-        let (active_field, order) = {
+        *self.col_size_btn.borrow_mut() = None;
+        *self.col_mtime_btn.borrow_mut() = None;
+        *self.col_kind_btn.borrow_mut() = None;
+
+        let (active_field, order, size_w, mtime_w, kind_w) = {
             let st = self.state.borrow();
-            (st.sort_field, st.sort_order)
+            (
+                st.sort_field,
+                st.sort_order,
+                st.col_size_width,
+                st.col_mtime_width,
+                st.col_kind_width,
+            )
         };
         let arrow = |f: SortField| -> &'static str {
             if f == active_field {
@@ -1516,29 +1566,105 @@ impl FilerWindow {
             }
         };
 
+        // Match build_list_row's 22px glyph + 10px box spacing so headers align with rows.
         let spacer = Label::new(None);
-        spacer.set_size_request(24, -1);
+        spacer.set_size_request(32, -1);
         self.list_header.append(&spacer);
 
         let cols: [(SortField, &str, bool, i32); 4] = [
             (SortField::Name, "NAME", true, -1),
-            (SortField::Size, "SIZE", false, 9),
-            (SortField::Modified, "MODIFIED", false, 17),
-            (SortField::Kind, "TYPE", false, 8),
+            (SortField::Size, "SIZE", false, size_w),
+            (SortField::Modified, "MODIFIED", false, mtime_w),
+            (SortField::Kind, "TYPE", false, kind_w),
         ];
-        for (field, title, expand, width_chars) in cols {
+        for (idx, (field, title, expand, col_w)) in cols.into_iter().enumerate() {
+            if idx > 0 {
+                let handle = GtkBox::new(Orientation::Horizontal, 0);
+                handle.add_css_class("filer-col-resizer");
+                handle.set_size_request(10, -1);
+                handle.set_cursor_from_name(Some("col-resize"));
+                handle.set_tooltip_text(Some("Drag to resize column"));
+
+                let drag = GestureDrag::new();
+                let start_widths = Rc::new(Cell::new((0i32, 0i32, 0i32)));
+                let sw_begin = Rc::clone(&start_widths);
+                let w_begin = Rc::clone(self);
+                let h_begin = handle.clone();
+                drag.connect_drag_begin(move |_, _, _| {
+                    h_begin.add_css_class("dragging");
+                    let st = w_begin.state.borrow();
+                    sw_begin.set((st.col_size_width, st.col_mtime_width, st.col_kind_width));
+                });
+
+                let sw_upd = Rc::clone(&start_widths);
+                let w_upd = Rc::clone(self);
+                drag.connect_drag_update(move |_, dx, _| {
+                    let (s0, m0, k0) = sw_upd.get();
+                    let dx_i = dx.round() as i32;
+                    let (min_w, max_w) = (prefs::MIN_COL_WIDTH, prefs::MAX_COL_WIDTH);
+                    let (s1, m1, k1) = match field {
+                        // Border Name | Size: moving right gives width to Name, shrinks Size.
+                        SortField::Size => ((s0 - dx_i).clamp(min_w, max_w), m0, k0),
+                        // Border Size | Modified: tracks pointer 1:1 between Size and Modified.
+                        SortField::Modified => {
+                            let min_dx = (min_w - s0).max(m0 - max_w);
+                            let max_dx = (max_w - s0).min(m0 - min_w);
+                            let d = if min_dx <= max_dx {
+                                dx_i.clamp(min_dx, max_dx)
+                            } else {
+                                0
+                            };
+                            (s0 + d, m0 - d, k0)
+                        }
+                        // Border Modified | Type: tracks pointer 1:1 between Modified and Type.
+                        SortField::Kind => {
+                            let min_dx = (min_w - m0).max(k0 - max_w);
+                            let max_dx = (max_w - m0).min(k0 - min_w);
+                            let d = if min_dx <= max_dx {
+                                dx_i.clamp(min_dx, max_dx)
+                            } else {
+                                0
+                            };
+                            (s0, m0 + d, k0 - d)
+                        }
+                        SortField::Name => (s0, m0, k0),
+                    };
+                    w_upd.apply_column_widths(s1, m1, k1);
+                });
+
+                let w_end = Rc::clone(self);
+                let h_end = handle.clone();
+                drag.connect_drag_end(move |_, _, _| {
+                    h_end.remove_css_class("dragging");
+                    w_end.persist_prefs();
+                });
+
+                handle.add_controller(drag);
+                self.list_header.append(&handle);
+            }
+
             let lbl = Label::new(Some(&format!("{title}{}", arrow(field))));
             lbl.set_halign(if expand { Align::Start } else { Align::End });
-            if width_chars > 0 {
-                lbl.set_width_chars(width_chars);
-            }
+            lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
             let btn = Button::new();
             btn.set_child(Some(&lbl));
             btn.add_css_class("filer-col-btn");
+            if col_w > 0 {
+                btn.set_size_request(col_w, -1);
+            }
             match field {
-                SortField::Size => self.col_size_sg.add_widget(&btn),
-                SortField::Modified => self.col_mtime_sg.add_widget(&btn),
-                SortField::Kind => self.col_kind_sg.add_widget(&btn),
+                SortField::Size => {
+                    self.col_size_sg.add_widget(&btn);
+                    *self.col_size_btn.borrow_mut() = Some(btn.clone());
+                }
+                SortField::Modified => {
+                    self.col_mtime_sg.add_widget(&btn);
+                    *self.col_mtime_btn.borrow_mut() = Some(btn.clone());
+                }
+                SortField::Kind => {
+                    self.col_kind_sg.add_widget(&btn);
+                    *self.col_kind_btn.borrow_mut() = Some(btn.clone());
+                }
                 SortField::Name => {}
             }
             if field == active_field {
@@ -1563,6 +1689,24 @@ impl FilerWindow {
                 w.render_canvas();
             });
             self.list_header.append(&btn);
+        }
+    }
+
+    fn apply_column_widths(&self, size_w: i32, mtime_w: i32, kind_w: i32) {
+        {
+            let mut st = self.state.borrow_mut();
+            st.col_size_width = size_w;
+            st.col_mtime_width = mtime_w;
+            st.col_kind_width = kind_w;
+        }
+        if let Some(b) = self.col_size_btn.borrow().as_ref() {
+            b.set_size_request(size_w, -1);
+        }
+        if let Some(b) = self.col_mtime_btn.borrow().as_ref() {
+            b.set_size_request(mtime_w, -1);
+        }
+        if let Some(b) = self.col_kind_btn.borrow().as_ref() {
+            b.set_size_request(kind_w, -1);
         }
     }
 
@@ -2531,21 +2675,21 @@ impl FilerWindow {
         };
         let size_lbl = Label::new(Some(&size_txt));
         size_lbl.add_css_class("filer-item-meta");
-        size_lbl.set_width_chars(9);
+        size_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         size_lbl.set_xalign(1.0);
         self.col_size_sg.add_widget(&size_lbl);
         row.append(&size_lbl);
 
         let mtime_lbl = Label::new(Some(&format_mtime(entry.modified_secs)));
         mtime_lbl.add_css_class("filer-item-meta");
-        mtime_lbl.set_width_chars(17);
+        mtime_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         mtime_lbl.set_xalign(1.0);
         self.col_mtime_sg.add_widget(&mtime_lbl);
         row.append(&mtime_lbl);
 
         let kind_lbl = Label::new(Some(&entry.kind));
         kind_lbl.add_css_class("filer-item-meta");
-        kind_lbl.set_width_chars(8);
+        kind_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         kind_lbl.set_xalign(1.0);
         self.col_kind_sg.add_widget(&kind_lbl);
         row.append(&kind_lbl);
@@ -2866,10 +3010,11 @@ impl FilerWindow {
         self.close_quicklook();
         self.close_properties();
         let w = Rc::clone(self);
-        let card = quicklook::build_quicklook_card(entry, move || w.close_quicklook());
+        let (card, scroller) = quicklook::build_quicklook_card(entry, move || w.close_quicklook());
         let w2 = Rc::clone(self);
         let modal = Self::wrap_modal_scrim(card, move || w2.close_quicklook());
         self.overlay.add_overlay(&modal);
+        *self.quicklook_scroll.borrow_mut() = scroller;
         *self.quicklook_slot.borrow_mut() = Some(modal);
     }
 
@@ -2916,6 +3061,7 @@ impl FilerWindow {
     }
 
     fn close_quicklook(&self) {
+        self.quicklook_scroll.borrow_mut().take();
         if let Some(card) = self.quicklook_slot.borrow_mut().take() {
             self.overlay.remove_overlay(&card);
         }

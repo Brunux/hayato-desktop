@@ -21,7 +21,7 @@ Hayato surface (`hayato theme set` re-themes it in place over SIGUSR1).
 * **PLACES** - Home, Desktop, Documents, Downloads, Pictures, Music, Videos,
   Trash, and your pinned folders. **DEVICES** - removable drives, with a usage
   bar, a mount / eject button, and right-click **Format Drive…**.
-* **Canvas** - the icon grid or the compact list; **Backspace** goes up a level.
+* **Canvas** - the icon grid or the compact list; **Backspace** goes up a level. In **List view**, drag any divider between the `NAME | SIZE | MODIFIED | TYPE` headers to resize columns (persisted in `~/.config/hayato/filer-state.json`). In **Quick Look** (`Space`), `Up`/`Down`/`PgUp`/`PgDn` scroll text previews while `Left`/`Right` step between items in the folder.
 * **Shelf** - the staging tray along the bottom (see below).
 * **Status bar** - the item count, the selected size, and the free space of the
   current filesystem, plus the progress bar for a running copy, move or archive.

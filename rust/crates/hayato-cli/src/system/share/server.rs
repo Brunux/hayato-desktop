@@ -575,7 +575,7 @@ pub(crate) fn security_headers(content_type: &str, content_len: usize) -> String
 
 fn render_mobile_page(token: &str, kind: &ServeKind, css: &ThemeCss) -> String {
     let open_recv = matches!(kind, ServeKind::Receive { .. });
-    let primary = match kind {
+    let (term_title, term_meta, kind_chip, primary) = match kind {
         ServeKind::File {
             filename,
             size,
@@ -591,78 +591,87 @@ fn render_mobile_page(token: &str, kind: &ServeKind, css: &ThemeCss) -> String {
             } else {
                 String::new()
             };
-            format!(
-                "<div class='badge'>FILE · {sz}</div>\
-                 <h2>{safe_name}</h2>{preview}\
+            let body = format!(
+                "<h2 class='item-title'>{safe_name}</h2>{preview}\
                  <div class='actions'>\
-                   <a class='btn primary' href='/{token}/download' download='{safe_name}'>Download</a>\
-                   <button id='webshare' class='btn ghost' style='display:none' onclick='shareFile()'>Share via Phone\u{2026}</button>\
+                   <a class='btn btn-primary' href='/{token}/download' download='{safe_name}'>Download File</a>\
+                   <button id='webshare' class='btn' style='display:none' onclick='shareFile()'>Share via Phone\u{2026}</button>\
                  </div>\
-                 <script>if(navigator.share){{document.getElementById('webshare').style.display='inline-block';}}\
+                 <script>if(navigator.share){{document.getElementById('webshare').style.display='inline-flex';}}\
                  async function shareFile(){{try{{const r=await fetch('/{token}/download');const b=await r.blob();\
                  const f=new File([b],{fname_js},{{type:b.type}});await navigator.share({{files:[f],title:{fname_js}}});}}catch(_e){{}}}}</script>",
                 fname_js = serde_json::to_string(filename).unwrap_or_else(|_| "\"file\"".to_string())
-            )
+            );
+            ("share --file".to_string(), sz.clone(), format!("FILE · {sz}"), body)
         }
         ServeKind::Text { content, label } => {
             let safe_label = html_escape(label);
             let safe_body = html_escape(content);
             let sz = human_size(content.len() as u64);
-            format!(
-                "<div class='badge'>TEXT · {sz}</div>\
-                 <h2>{safe_label}</h2>\
+            let body = format!(
+                "<h2 class='item-title'>{safe_label}</h2>\
                  <textarea id='txt' readonly>{safe_body}</textarea>\
                  <div class='actions'>\
-                   <button class='btn primary' onclick='copyTxt()'>Copy Text</button>\
-                   <a class='btn ghost' href='/{token}/download' download='hayato-share.txt'>Download .txt</a>\
-                   <button id='webshare' class='btn ghost' style='display:none' onclick='shareTxt()'>Share\u{2026}</button>\
+                   <button class='btn btn-primary' onclick='copyTxt()'>Copy Text</button>\
+                   <a class='btn' href='/{token}/download' download='hayato-share.txt'>Download .txt</a>\
+                   <button id='webshare' class='btn' style='display:none' onclick='shareTxt()'>Share\u{2026}</button>\
                  </div><p id='cp' class='hint'></p>\
-                 <script>if(navigator.share){{document.getElementById('webshare').style.display='inline-block';}}\
+                 <script>if(navigator.share){{document.getElementById('webshare').style.display='inline-flex';}}\
                  function copyTxt(){{const el=document.getElementById('txt');el.select();el.setSelectionRange(0,999999);\
                  if(navigator.clipboard&&navigator.clipboard.writeText){{navigator.clipboard.writeText(el.value).then(()=>{{document.getElementById('cp').textContent='Copied!';}}).catch(()=>{{document.execCommand('copy');document.getElementById('cp').textContent='Copied!';}});}}\
                  else{{document.execCommand('copy');document.getElementById('cp').textContent='Copied!';}}}}\
                  async function shareTxt(){{try{{await navigator.share({{text:document.getElementById('txt').value}});}}catch(_e){{}}}}</script>"
-            )
+            );
+            ("share --text".to_string(), sz.clone(), format!("TEXT · {sz}"), body)
         }
         ServeKind::Url { url, title } => {
             let safe_title = html_escape(title);
             let safe_url = html_escape(url);
-            format!(
-                "<div class='badge'>LINK</div>\
-                 <h2>{safe_title}</h2>\
+            let body = format!(
+                "<h2 class='item-title'>{safe_title}</h2>\
                  <p class='url'>{safe_url}</p>\
                  <textarea id='txt' style='position:absolute;left:-9999px' readonly>{safe_url}</textarea>\
                  <div class='actions'>\
-                   <a class='btn primary' href='{safe_url}' rel='noopener noreferrer'>Open Link</a>\
-                   <button class='btn ghost' onclick='copyUrl()'>Copy Link</button>\
-                   <button id='webshare' class='btn ghost' style='display:none' onclick='shareUrl()'>Share\u{2026}</button>\
+                   <a class='btn btn-primary' href='{safe_url}' rel='noopener noreferrer'>Open Link</a>\
+                   <button class='btn' onclick='copyUrl()'>Copy Link</button>\
+                   <button id='webshare' class='btn' style='display:none' onclick='shareUrl()'>Share\u{2026}</button>\
                  </div><p id='cp' class='hint'></p>\
-                 <script>if(navigator.share){{document.getElementById('webshare').style.display='inline-block';}}\
+                 <script>if(navigator.share){{document.getElementById('webshare').style.display='inline-flex';}}\
                  function copyUrl(){{const el=document.getElementById('txt');el.select();if(navigator.clipboard){{navigator.clipboard.writeText(el.value).catch(()=>document.execCommand('copy'));}}else{{document.execCommand('copy');}}document.getElementById('cp').textContent='Link copied!';}}\
                  async function shareUrl(){{try{{await navigator.share({{url:document.getElementById('txt').value}});}}catch(_e){{}}}}</script>"
-            )
+            );
+            ("share --url".to_string(), "http(s)".to_string(), "LINK".to_string(), body)
         }
-        ServeKind::Receive { .. } => {
-            "<div class='badge'>RECEIVE</div><h2>Send to Hayato</h2>\
-             <p class='hint'>Upload files to ~/Downloads or push text straight to Hayato's clipboard.</p>"
-                .to_string()
-        }
+        ServeKind::Receive { .. } => (
+            "share --receive".to_string(),
+            "~/Downloads".to_string(),
+            "RECEIVE".to_string(),
+            "<h2 class='item-title'>Send to Hayato</h2>\
+             <p class='hint'>Upload files directly to ~/Downloads or push text straight to the desktop clipboard.</p>"
+                .to_string(),
+        ),
     };
 
     let details_open = if open_recv { " open" } else { "" };
+    let safe_slug = html_escape(&css.slug);
     let recv_drawer = format!(
-        "<details class='drawer'{details_open}><summary>Send back to Hayato</summary>\
-           <div class='recv-box'>\
-             <input id='uf' type='file' multiple>\
-             <button class='btn primary' onclick='upFiles()'>Upload to ~/Downloads</button>\
-             <progress id='up' value='0' max='100' style='display:none'></progress>\
-             <p id='us' class='hint'></p>\
-             <hr>\
-             <textarea id='ct' rows='3' placeholder='Paste text or URL to send to Hayato clipboard\u{2026}'></textarea>\
-             <button class='btn ghost' onclick='sendClip()'>Send to Clipboard</button>\
-             <p id='cs' class='hint'></p>\
+        "<section class='term'>\
+           <div class='term-head'><span class='term-title'><span class='dot'></span>send \u{2192} hayato</span><span class='term-meta'>~/Downloads + clip</span></div>\
+           <div class='term-body'>\
+             <details class='drawer'{details_open}><summary>Upload files or push clipboard</summary>\
+               <div class='recv-box'>\
+                 <input id='uf' type='file' multiple>\
+                 <button class='btn btn-primary' onclick='upFiles()'>Upload to ~/Downloads</button>\
+                 <progress id='up' value='0' max='100' style='display:none'></progress>\
+                 <p id='us' class='hint'></p>\
+                 <hr>\
+                 <textarea id='ct' rows='3' placeholder='Paste text or URL to send to Hayato clipboard\u{2026}'></textarea>\
+                 <button class='btn' onclick='sendClip()'>Send to Clipboard</button>\
+                 <p id='cs' class='hint'></p>\
+               </div>\
+             </details>\
            </div>\
-         </details>\
+         </section>\
          <script>\
          function upFiles(){{const inp=document.getElementById('uf');if(!inp.files.length)return;\
          const bar=document.getElementById('up');const st=document.getElementById('us');bar.style.display='block';\
@@ -675,42 +684,106 @@ fn render_mobile_page(token: &str, kind: &ServeKind, css: &ThemeCss) -> String {
          async function sendClip(){{const t=document.getElementById('ct').value;if(!t)return;\
          const r=await fetch('/{token}/clip',{{method:'POST',body:t}});\
          document.getElementById('cs').textContent=r.ok?'Copied to Hayato clipboard!':'Failed';}}\
-         </script>"
+         const THEMES=['active','tokyo-night','hackerman','solarized','gruvbox','nord','catppuccin-latte'];\
+         let ti=0;\
+         function cycleTheme(){{ti=(ti+1)%THEMES.length;const th=THEMES[ti];document.documentElement.setAttribute('data-theme',th);\
+         const n=document.getElementById('tname');if(n)n.textContent=th==='active'?{slug_js}:th;}}\
+         document.addEventListener('keydown',e=>{{if(e.ctrlKey&&e.key.toLowerCase()==='t'){{e.preventDefault();cycleTheme();}}}});\
+         </script>",
+        slug_js =
+            serde_json::to_string(&css.slug).unwrap_or_else(|_| "\"tokyo-night\"".to_string())
     );
 
     format!(
-        "<!doctype html><html><head><meta charset='utf-8'>\
+        "<!doctype html><html lang='en' data-theme='active'><head><meta charset='utf-8'>\
          <meta name='viewport' content='width=device-width,initial-scale=1'>\
-         <title>Hayato Share</title><style>\
-         :root{{--bg:{bg};--surface:{surface};--border:{border};--text:{text};--muted:{muted};--accent:{accent};--ok:{ok}}}\
-         *{{box-sizing:border-box}}body{{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);\
-         margin:0;padding:1.2rem;min-height:100vh;display:flex;align-items:center;justify-content:center}}\
-         .card{{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--accent);\
-         border-radius:14px;padding:1.5rem;width:100%;max-width:460px;box-shadow:0 12px 32px rgba(0,0,0,.35)}}\
-         .badge{{display:inline-block;font:700 .75rem monospace;letter-spacing:.08em;padding:.25rem .6rem;\
-         border-radius:6px;background:var(--accent);color:var(--bg);margin-bottom:.6rem}}\
-         h2{{margin:.2rem 0 .8rem;font-size:1.25rem;word-break:break-word}}\
-         .url{{font-family:monospace;font-size:.85rem;color:var(--accent);word-break:break-all;background:var(--bg);\
-         padding:.6rem;border-radius:8px;border:1px solid var(--border)}}\
-         .preview{{width:100%;max-height:52vh;object-fit:contain;border-radius:10px;border:1px solid var(--border);margin:.4rem 0}}\
-         textarea{{width:100%;min-height:110px;background:var(--bg);color:var(--text);border:1px solid var(--border);\
-         border-radius:8px;padding:.7rem;font-family:monospace;font-size:.85rem;resize:vertical}}\
-         .actions{{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:.9rem}}\
-         .btn{{display:inline-block;padding:.75rem 1.2rem;border-radius:10px;font-weight:700;font-size:.95rem;\
-         text-decoration:none;cursor:pointer;border:1px solid transparent;text-align:center}}\
-         .primary{{background:var(--accent);color:var(--bg)}}.ghost{{background:var(--bg);color:var(--text);border-color:var(--border)}}\
-         .hint{{color:var(--muted);font-size:.85rem;margin:.5rem 0 0}}hr{{border:0;border-top:1px solid var(--border);margin:1rem 0}}\
-         .drawer{{margin-top:1.1rem;border-top:1px solid var(--border);padding-top:.8rem}}\
-         summary{{cursor:pointer;font-weight:600;color:var(--accent)}}.recv-box{{margin-top:.8rem;display:flex;flex-direction:column;gap:.6rem}}\
-         progress{{width:100%;height:8px;accent-color:var(--ok)}}\
-         </style></head><body><div class='card'>{primary}{recv_drawer}</div></body></html>",
+         <meta name='theme-color' content='{bg_deep}'>\
+         <title>Hayato_ Share · LAN Drop</title><style>\
+         :root,[data-theme='active']{{\
+           --bg:{bg};--bg-deep:{bg_deep};--surface:{surface};--surface-hi:{surface_hi};\
+           --border:{border};--text:{text};--body:{body};--muted:{muted};\
+           --accent:{accent};--cursor:{cursor};--gold:{gold};--ok:{ok};--danger:{danger};\
+           --shadow:rgba(0,0,0,.45);--nav-bg:rgba(22,22,30,.90);\
+           --mono:ui-monospace,'JetBrains Mono',SFMono-Regular,Menlo,Consolas,monospace}}\
+         [data-theme='tokyo-night']{{--bg:#1a1b26;--bg-deep:#16161e;--surface:#24283b;--surface-hi:#292e42;--border:#3b4261;--text:#c0caf5;--body:#a9b1d6;--muted:#565f89;--accent:#7dcfff;--cursor:#ff9e64;--gold:#e0af68;--ok:#9ece6a;--danger:#f7768e;--nav-bg:rgba(22,22,30,.90)}}\
+         [data-theme='hackerman']{{--bg:#0b0f10;--bg-deep:#070a0b;--surface:#12191c;--surface-hi:#182328;--border:#22443a;--text:#d4f5e9;--body:#9ad8c1;--muted:#4c7a6b;--accent:#00ff9c;--cursor:#00d4ff;--gold:#a6ff00;--ok:#00ff9c;--danger:#ff4d6d;--nav-bg:rgba(7,10,11,.92)}}\
+         [data-theme='solarized']{{--bg:#002b36;--bg-deep:#001f27;--surface:#073642;--surface-hi:#0d4554;--border:#1e4a55;--text:#eee8d5;--body:#93a1a1;--muted:#657b83;--accent:#2aa198;--cursor:#e8743b;--gold:#b58900;--ok:#859900;--danger:#dc322f;--nav-bg:rgba(0,31,39,.92)}}\
+         [data-theme='gruvbox']{{--bg:#282828;--bg-deep:#1d2021;--surface:#32302f;--surface-hi:#3c3836;--border:#504945;--text:#ebdbb2;--body:#d5c4a1;--muted:#928374;--accent:#83a598;--cursor:#fe8019;--gold:#fabd2f;--ok:#b8bb26;--danger:#fb4934;--nav-bg:rgba(29,32,33,.92)}}\
+         [data-theme='nord']{{--bg:#2e3440;--bg-deep:#242933;--surface:#3b4252;--surface-hi:#434c5e;--border:#4c566a;--text:#eceff4;--body:#d8dee9;--muted:#7b88a1;--accent:#88c0d0;--cursor:#d08770;--gold:#ebcb8b;--ok:#a3be8c;--danger:#bf616a;--nav-bg:rgba(36,41,51,.92)}}\
+         [data-theme='catppuccin-latte']{{--bg:#eff1f5;--bg-deep:#e6e9ef;--surface:#ffffff;--surface-hi:#dce0e8;--border:#bcc0cc;--text:#4c4f69;--body:#5c5f77;--muted:#7c7f93;--accent:#1e66f5;--cursor:#fe640b;--gold:#df8e1d;--ok:#40a02b;--danger:#d20f39;--shadow:rgba(76,79,105,.14);--nav-bg:rgba(230,233,239,.92)}}\
+         *{{box-sizing:border-box}}\
+         body{{margin:0;background:var(--bg);color:var(--body);font-family:var(--mono);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;padding-bottom:2rem}}\
+         .bar-nav{{position:sticky;top:0;z-index:20;background:var(--nav-bg);backdrop-filter:blur(10px);border-bottom:1px solid var(--surface-hi)}}\
+         .bar-in{{max-width:560px;margin:0 auto;padding:8px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}}\
+         .brand{{display:inline-flex;align-items:center;gap:8px;color:var(--text);font-weight:800;font-size:15px;letter-spacing:-.03em}}\
+         .mark{{padding:2px 7px;border:1px solid var(--border);background:var(--surface);border-radius:4px;font-size:13px}}\
+         .cur{{color:var(--cursor)}}.blink{{animation:blink 1.05s steps(1) infinite}}@keyframes blink{{50%{{opacity:0}}}}\
+         .bar-right{{margin-left:auto;display:flex;align-items:center;gap:8px}}\
+         .theme-btn{{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;font-family:var(--mono);font-size:11.5px;cursor:pointer}}\
+         .theme-btn:hover{{border-color:var(--accent)}}\
+         .sw{{width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,var(--gold),var(--accent))}}\
+         .ver-pill{{font-size:11.5px;color:var(--ok);padding:3px 8px;border:1px solid var(--surface-hi);background:var(--bg-deep);border-radius:4px}}\
+         .wrap{{max-width:560px;margin:0 auto;padding:14px;display:flex;flex-direction:column;gap:14px}}\
+         .hero-strip{{display:flex;flex-direction:column;gap:8px}}\
+         .status-line{{display:inline-flex;align-items:center;gap:8px;width:fit-content;font-size:12px;color:var(--accent);background:var(--surface);border:1px solid var(--surface-hi);padding:4px 10px;border-radius:4px}}\
+         .pulse{{width:7px;height:7px;border-radius:50%;background:var(--ok)}}\
+         .chips{{display:flex;flex-wrap:wrap;gap:6px}}\
+         .t-chip{{padding:2px 7px;background:var(--bg-deep);border:1px solid var(--surface-hi);border-radius:4px;font-size:11.5px;color:var(--muted)}}\
+         .t-chip b{{color:var(--text)}}\
+         .term{{background:var(--bg-deep);border:1px solid var(--border);border-radius:8px;overflow:hidden;box-shadow:0 12px 32px var(--shadow)}}\
+         .term-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 13px;background:var(--surface);border-bottom:1px solid var(--surface-hi);font-size:12.5px}}\
+         .term-title{{display:inline-flex;align-items:center;gap:8px;color:var(--text);font-weight:700}}\
+         .dot{{width:8px;height:8px;border-radius:50%;background:var(--cursor);display:inline-block}}\
+         .term-meta{{font-size:11.5px;color:var(--muted)}}\
+         .term-body{{padding:13px}}\
+         .item-title{{margin:0 0 10px;font-size:1.1rem;color:var(--text);word-break:break-word}}\
+         .url{{font-family:var(--mono);font-size:12.5px;color:var(--accent);word-break:break-all;background:var(--bg);padding:8px 10px;border-radius:6px;border:1px solid var(--border);margin:0 0 10px}}\
+         .preview{{width:100%;max-height:52vh;object-fit:contain;border-radius:6px;border:1px solid var(--border);background:var(--bg);margin-bottom:6px}}\
+         textarea,input[type=file]{{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:8px 10px;font-family:var(--mono);font-size:12.5px}}\
+         textarea{{min-height:100px;resize:vertical}}\
+         .actions{{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}}\
+         .btn{{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:5px;font-family:var(--mono);font-size:12.5px;font-weight:700;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;text-decoration:none;transition:transform .1s ease,border-color .15s ease}}\
+         .btn:hover{{transform:translateY(-1px);border-color:var(--accent)}}\
+         .btn-primary{{background:var(--accent);border-color:var(--accent);color:var(--bg-deep)}}\
+         .hint{{color:var(--muted);font-size:12px;margin:6px 0 0}}hr{{border:0;border-top:1px solid var(--surface-hi);margin:10px 0}}\
+         summary{{cursor:pointer;font-weight:700;color:var(--accent);font-size:13px}}.recv-box{{margin-top:10px;display:flex;flex-direction:column;gap:8px}}\
+         progress{{width:100%;height:7px;accent-color:var(--ok)}}\
+         </style></head><body>\
+         <header class='bar-nav'><div class='bar-in'>\
+           <span class='brand'><span class='mark'>H<span class='cur'>_</span></span>Hayato<span class='cur blink'>_</span></span>\
+           <span class='ver-pill'>SHARE // LAN</span>\
+           <div class='bar-right'>\
+             <button class='theme-btn' onclick='cycleTheme()' type='button'><span class='sw'></span><span class='cur'>^T</span> <span id='tname'>{safe_slug}</span></button>\
+           </div>\
+         </div></header>\
+         <main class='wrap'>\
+           <section class='hero-strip'>\
+             <div class='status-line'><span class='pulse'></span><span>HAYATO SHARE · zero daemon · ephemeral LAN drop</span></div>\
+             <div class='chips'>\
+               <span class='t-chip'><b>{kind_chip}</b></span>\
+               <span class='t-chip'><b>Zero-install</b> browser drop</span>\
+               <span class='t-chip'><b>Auto-expire</b> 5m</span>\
+             </div>\
+           </section>\
+           <section class='term'>\
+             <div class='term-head'><span class='term-title'><span class='dot'></span>{term_title}</span><span class='term-meta'>{term_meta}</span></div>\
+             <div class='term-body'>{primary}</div>\
+           </section>\
+           {recv_drawer}\
+         </main></body></html>",
         bg = css.bg,
+        bg_deep = css.bg_deep,
         surface = css.surface,
+        surface_hi = css.surface_hi,
         border = css.border,
         text = css.text,
+        body = css.body,
         muted = css.muted,
         accent = css.accent,
-        ok = css.ok
+        cursor = css.cursor,
+        gold = css.gold,
+        ok = css.ok,
+        danger = css.danger
     )
 }
 

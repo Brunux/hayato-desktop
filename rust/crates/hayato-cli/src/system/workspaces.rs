@@ -170,6 +170,25 @@ pub fn status() -> String {
         .unwrap_or_else(|_| status_from_config(""))
 }
 
+pub fn is_split_configured() -> bool {
+    std::fs::read_to_string(config_path())
+        .map(|text| {
+            text.lines()
+                .any(|l| l.trim_start().starts_with("workspace 6 output"))
+        })
+        .unwrap_or(false)
+}
+
+pub fn apply_split(panel: &str, mon: &str) -> Result<(), String> {
+    let outputs = vec![panel.to_string(), mon.to_string()];
+    let rows = assignments(&outputs, Layout::Split, None)?;
+    apply(&rows)
+}
+
+pub fn clear_assignments() -> Result<String, String> {
+    clear()
+}
+
 /// The Settings submenu. Returns the banner line, or `None` on Escape.
 pub fn choose(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,

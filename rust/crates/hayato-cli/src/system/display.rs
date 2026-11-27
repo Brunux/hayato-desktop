@@ -13,7 +13,8 @@ use std::path::PathBuf;
 
 use hayato_ui::widgets::{put, put_trunc};
 use hayato_ui::{
-    BodyCtx, ColorRole, Design, Glyph, Header, KeyHint, Outcome, Screen, TextStyle, draw_card,
+    ActionItem, ActionStrip, ActionStripEvent, BodyCtx, ColorRole, Density, Design, Glyph, Header,
+    KeyHint, Outcome, Screen, TextStyle, draw_card,
 };
 use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -70,6 +71,9 @@ pub fn panel_on_command() -> String {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Output {
     pub name: String,
+    pub make: String,
+    pub model: String,
+    pub serial: String,
     pub x: i32,
     pub y: i32,
     pub width: u32,
@@ -82,6 +86,26 @@ pub struct Output {
 }
 
 impl Output {
+    pub fn monitor_id(&self) -> String {
+        let m = self.make.trim();
+        let mdl = self.model.trim();
+        let ser = self.serial.trim();
+        if m.is_empty() && mdl.is_empty() && ser.is_empty() {
+            self.name.clone()
+        } else {
+            format!("{m}:{mdl}:{ser}")
+        }
+    }
+
+    pub fn monitor_label(&self) -> String {
+        let mdl = self.model.trim();
+        if !mdl.is_empty() && mdl != "Unknown" {
+            format!("{mdl} ({})", self.name)
+        } else {
+            self.name.clone()
+        }
+    }
+
     fn mode_str(&self) -> String {
         if self.mode_width > 0 && self.mode_height > 0 {
             format!(
@@ -122,6 +146,9 @@ fn parse_outputs(json: &str) -> Vec<Output> {
         let Some(name) = v["name"].as_str() else {
             continue;
         };
+        let make = v["make"].as_str().unwrap_or_default().to_string();
+        let model = v["model"].as_str().unwrap_or_default().to_string();
+        let serial = v["serial"].as_str().unwrap_or_default().to_string();
         let active = v["active"].as_bool().unwrap_or(false);
         let scale = v["scale"].as_f64().unwrap_or(1.0) as f32;
         let rect = &v["rect"];
@@ -135,6 +162,9 @@ fn parse_outputs(json: &str) -> Vec<Output> {
         let mode_refresh = cur["refresh"].as_u64().unwrap_or(0) as u32;
         outputs.push(Output {
             name: name.to_string(),
+            make,
+            model,
+            serial,
             x,
             y,
             width,
@@ -263,6 +293,164 @@ fn save_config(mon: &Output) -> Result<(), String> {
     let tmp = format!("{}.tmp.{}", path.display(), std::process::id());
     std::fs::write(&tmp, content).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn runtime_hayato_dir() -> PathBuf {
+    let base = std::env::var("XDG_RUNTIME_DIR")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp"));
+    base.join("hayato")
+}
+
+fn known_monitors_path() -> PathBuf {
+    let base = std::env::var("XDG_STATE_HOME")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var("HOME")
+                .map(|h| PathBuf::from(h).join(".local/state"))
+                .unwrap_or_else(|_| PathBuf::from("/tmp"))
+        });
+    base.join("hayato/known-monitors.json")
+}
+
+fn load_known_monitors(path: &std::path::Path) -> Vec<String> {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    serde_json::from_str::<Vec<String>>(&raw).unwrap_or_default()
+}
+
+pub fn record_known_monitor(id: &str) {
+    let trimmed = id.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    let path = known_monitors_path();
+    let mut known = load_known_monitors(&path);
+    if known.iter().any(|x| x == trimmed) {
+        return;
+    }
+    known.push(trimmed.to_string());
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(&known) {
+        let tmp = format!("{}.tmp.{}", path.display(), std::process::id());
+        if std::fs::write(&tmp, json).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
+}
+
+pub fn should_skip_for_stamp(stamp_raw: Option<&str>, now_secs: u64, grace_secs: u64) -> bool {
+    let Some(raw) = stamp_raw else {
+        return false;
+    };
+    let Ok(ts) = raw.trim().parse::<u64>() else {
+        return false;
+    };
+    now_secs >= ts && now_secs.saturating_sub(ts) <= grace_secs
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HotplugVerdict {
+    Skip,
+    Known { label: String },
+    FirstTime { label: String, resolution: String },
+}
+
+pub fn evaluate_hotplug(
+    outputs: &[Output],
+    prev_connected: &[String],
+    known_monitors: &[String],
+    has_saved_conf: bool,
+) -> (HotplugVerdict, Vec<String>) {
+    let (mon, _panel) = find_monitor_and_panel(outputs);
+    let Some(mon) = mon.filter(|m| m.active) else {
+        return (HotplugVerdict::Skip, Vec::new());
+    };
+    let mon_id = mon.monitor_id();
+    let current = vec![mon_id.clone()];
+    if prev_connected.iter().any(|id| id == &mon_id) {
+        return (HotplugVerdict::Skip, current);
+    }
+    let label = mon.monitor_label().replace('|', " ");
+    let is_known = has_saved_conf && known_monitors.iter().any(|id| id == &mon_id);
+    if is_known {
+        (HotplugVerdict::Known { label }, current)
+    } else {
+        let resolution = if mon.mode_width > 0 && mon.mode_height > 0 {
+            format!("{}×{}", mon.mode_width, mon.mode_height)
+        } else {
+            mon.short_res()
+        };
+        (HotplugVerdict::FirstTime { label, resolution }, current)
+    }
+}
+
+/// Evaluate whether an external monitor just connected and needs a quick setup prompt.
+pub fn hotplug_check() -> String {
+    let rt = runtime_hayato_dir();
+    let _ = std::fs::create_dir_all(&rt);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let resume_raw = std::fs::read_to_string(rt.join("dp-resume.stamp")).ok();
+    if should_skip_for_stamp(resume_raw.as_deref(), now, 6) {
+        return "skip".to_string();
+    }
+    let hotplug_stamp = rt.join("dp-hotplug.stamp");
+    let prev_hotplug = std::fs::read_to_string(&hotplug_stamp).ok();
+    if should_skip_for_stamp(prev_hotplug.as_deref(), now, 1) {
+        return "skip".to_string();
+    }
+    let _ = std::fs::write(&hotplug_stamp, format!("{now}\n"));
+
+    let outputs = read_outputs();
+    let conn_path = rt.join("dp-connected.list");
+    let prev_connected: Vec<String> = std::fs::read_to_string(&conn_path)
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    let known = load_known_monitors(&known_monitors_path());
+    let has_conf = config_path().exists();
+    let (verdict, current) = evaluate_hotplug(&outputs, &prev_connected, &known, has_conf);
+    let _ = std::fs::write(&conn_path, current.join("\n"));
+
+    match verdict {
+        HotplugVerdict::Skip => "skip".to_string(),
+        HotplugVerdict::Known { label } => format!("known:{label}"),
+        HotplugVerdict::FirstTime { label, resolution } => format!("first:{label}|{resolution}"),
+    }
+}
+
+/// Apply mirror mode immediately and remember this monitor for future hotplugs.
+pub fn apply_mirror_and_remember() -> Result<(), String> {
+    let outputs = read_outputs();
+    let (mon, panel) = find_monitor_and_panel(&outputs);
+    let Some(mon) = mon else {
+        return Err("No external monitor connected".to_string());
+    };
+    let Some(panel) = panel else {
+        return Err("No internal panel found".to_string());
+    };
+    if !panel.active {
+        checked(&["swaymsg", "output", &panel.name, "enable"])?;
+    }
+    if !mon.active {
+        checked(&["swaymsg", "output", &mon.name, "enable"])?;
+    }
+    apply_and_save("mirror", &mon, &panel)?;
+    record_known_monitor(&mon.monitor_id());
     Ok(())
 }
 
@@ -474,6 +662,7 @@ enum ControlRow {
     Position,
     Resolution,
     Scale,
+    Workspaces,
     PanelPower,
     MonitorPower,
     ApplySave,
@@ -488,6 +677,7 @@ struct DisplayDraft {
     scale_idx: usize,
     panel_active: bool,
     mon_active: bool,
+    workspaces_split: bool,
 }
 
 /// Interactive Spatial Display Arrangement Studio.
@@ -495,6 +685,9 @@ pub struct DisplayScreen {
     outputs: Vec<Output>,
     modes: Vec<String>,
     phase: DisplayPhase,
+    hotplug: bool,
+    strip: ActionStrip,
+    strip_rect: Cell<Rect>,
     live: DisplayDraft,
     draft: DisplayDraft,
     controls: Vec<ControlRow>,
@@ -515,16 +708,48 @@ impl Default for DisplayScreen {
 impl DisplayScreen {
     /// Build the Display Studio from live `swaymsg` outputs.
     pub fn new() -> Self {
+        Self::new_mode(false)
+    }
+
+    pub fn new_hotplug() -> Self {
+        Self::new_mode(true)
+    }
+
+    fn new_mode(hotplug: bool) -> Self {
         let outputs = read_outputs();
         let modes = find_monitor_and_panel(&outputs)
             .0
             .map(|m| get_modes(&m.name))
             .unwrap_or_default();
-        Self::from_outputs(outputs, modes)
+        Self::from_outputs_mode(outputs, modes, hotplug)
+    }
+
+    fn make_strip(draft: &DisplayDraft) -> ActionStrip {
+        let items = vec![
+            ActionItem::new("right", "1", "Right").glyph(Glyph::Display),
+            ActionItem::new("left", "2", "Left").glyph(Glyph::Display),
+            ActionItem::new("mirror", "3", "Mirror").glyph(Glyph::Display),
+            ActionItem::new("mon_only", "4", "Screen Only").glyph(Glyph::Display),
+        ];
+        let active = if !draft.panel_active {
+            Some(3)
+        } else {
+            match POSITIONS.get(draft.pos_idx).copied() {
+                Some("right") => Some(0),
+                Some("left") => Some(1),
+                Some("mirror") => Some(2),
+                _ => None,
+            }
+        };
+        ActionStrip::new(items).with_active(active)
     }
 
     /// Deterministic constructor for unit tests and golden snapshots.
-    pub fn from_outputs(outputs: Vec<Output>, mut modes: Vec<String>) -> Self {
+    pub fn from_outputs(outputs: Vec<Output>, modes: Vec<String>) -> Self {
+        Self::from_outputs_mode(outputs, modes, false)
+    }
+
+    pub fn from_outputs_mode(outputs: Vec<Output>, mut modes: Vec<String>, hotplug: bool) -> Self {
         let (mon, panel) = find_monitor_and_panel(&outputs);
         let phase = match (&mon, &panel) {
             (Some(_), _) => DisplayPhase::DualMonitor,
@@ -541,25 +766,27 @@ impl DisplayScreen {
 
         let live = Self::draft_from_outputs(&outputs, &modes);
         let draft = live.clone();
-        let controls = Self::controls_for(phase);
+        let controls = Self::controls_for(phase, hotplug);
+        let strip = Self::make_strip(&draft);
 
         let mut screen = Self {
             outputs,
             modes,
             phase,
+            hotplug,
+            strip,
+            strip_rect: Cell::new(Rect::default()),
             live,
             draft,
             controls,
             cursor: 0,
             banner: None,
-            header: Header::new("Hayato").subtitle("Display Studio"),
-            keybar: vec![
-                KeyHint::new("←→", "adjust"),
-                KeyHint::new("↑↓", "select"),
-                KeyHint::new("Ctrl+S", "apply & save"),
-                KeyHint::new("Ctrl+R", "refresh"),
-                KeyHint::new("Esc", "close"),
-            ],
+            header: Header::new("Hayato").subtitle(if hotplug {
+                "Display Quick Setup"
+            } else {
+                "Display Studio"
+            }),
+            keybar: Vec::new(),
             row_hits: RefCell::new(Vec::new()),
             rows_area: Cell::new(Rect::default()),
         };
@@ -602,12 +829,21 @@ impl DisplayScreen {
             scale_idx,
             panel_active,
             mon_active,
+            workspaces_split: super::workspaces::is_split_configured(),
         }
     }
 
-    fn controls_for(phase: DisplayPhase) -> Vec<ControlRow> {
-        match phase {
-            DisplayPhase::DualMonitor => vec![
+    fn controls_for(phase: DisplayPhase, hotplug: bool) -> Vec<ControlRow> {
+        match (phase, hotplug) {
+            (DisplayPhase::DualMonitor, true) => vec![
+                ControlRow::Position,
+                ControlRow::Resolution,
+                ControlRow::Scale,
+                ControlRow::Workspaces,
+                ControlRow::ApplySave,
+                ControlRow::OpenWdisplays,
+            ],
+            (DisplayPhase::DualMonitor, false) => vec![
                 ControlRow::Position,
                 ControlRow::Resolution,
                 ControlRow::Scale,
@@ -616,9 +852,51 @@ impl DisplayScreen {
                 ControlRow::ApplySave,
                 ControlRow::OpenWdisplays,
             ],
-            DisplayPhase::PanelOff => vec![ControlRow::EnablePanel, ControlRow::OpenWdisplays],
-            DisplayPhase::SinglePanel => vec![ControlRow::OpenWdisplays],
+            (DisplayPhase::PanelOff, _) => vec![ControlRow::EnablePanel, ControlRow::OpenWdisplays],
+            (DisplayPhase::SinglePanel, _) => vec![ControlRow::OpenWdisplays],
         }
+    }
+
+    fn sync_strip(&mut self) {
+        let active = if !self.draft.panel_active {
+            Some(3)
+        } else {
+            match POSITIONS.get(self.draft.pos_idx).copied() {
+                Some("right") => Some(0),
+                Some("left") => Some(1),
+                Some("mirror") => Some(2),
+                _ => None,
+            }
+        };
+        self.strip.set_active(active);
+    }
+
+    fn apply_hotplug_preset(&mut self, id: &str) {
+        match id {
+            "right" => {
+                self.draft.panel_active = true;
+                self.draft.mon_active = true;
+                self.draft.pos_idx = 0;
+            }
+            "left" => {
+                self.draft.panel_active = true;
+                self.draft.mon_active = true;
+                self.draft.pos_idx = 1;
+            }
+            "mirror" => {
+                self.draft.panel_active = true;
+                self.draft.mon_active = true;
+                self.draft.pos_idx = 4;
+            }
+            "mon_only" => {
+                self.draft.panel_active = false;
+                self.draft.mon_active = true;
+            }
+            _ => return,
+        }
+        self.banner = None;
+        self.sync_strip();
+        self.update_header();
     }
 
     pub fn is_dirty(&self) -> bool {
@@ -644,15 +922,28 @@ impl DisplayScreen {
             DisplayPhase::SinglePanel => "Internal panel only · plug in a USB-C monitor".into(),
         };
         self.header = Header::new("Hayato")
-            .subtitle("Display Studio")
+            .subtitle(if self.hotplug {
+                "Display Quick Setup"
+            } else {
+                "Display Studio"
+            })
             .status(summary);
         self.keybar = match self.phase {
             DisplayPhase::DualMonitor => {
-                let mut hints = vec![
-                    KeyHint::new("←→", "adjust"),
-                    KeyHint::new("↑↓", "select"),
-                    KeyHint::new("Ctrl+S", "apply & save"),
-                ];
+                let mut hints = if self.hotplug {
+                    vec![
+                        KeyHint::new("1-4", "preset"),
+                        KeyHint::new("←→", "adjust"),
+                        KeyHint::new("↑↓", "select"),
+                        KeyHint::new("Ctrl+S", "save"),
+                    ]
+                } else {
+                    vec![
+                        KeyHint::new("←→", "adjust"),
+                        KeyHint::new("↑↓", "select"),
+                        KeyHint::new("Ctrl+S", "apply & save"),
+                    ]
+                };
                 if self.is_dirty() {
                     hints.push(KeyHint::new("Ctrl+Z", "discard"));
                 }
@@ -681,13 +972,14 @@ impl DisplayScreen {
             .map(|m| get_modes(&m.name))
             .unwrap_or_default();
         let prev_cursor = self.cursor;
-        let fresh = Self::from_outputs(outputs, modes);
+        let fresh = Self::from_outputs_mode(outputs, modes, self.hotplug);
         self.outputs = fresh.outputs;
         self.modes = fresh.modes;
         self.phase = fresh.phase;
         self.live = fresh.live;
         self.draft = fresh.draft;
         self.controls = fresh.controls;
+        self.strip = fresh.strip;
         self.cursor = prev_cursor.min(self.controls.len().saturating_sub(1));
         self.update_header();
     }
@@ -719,6 +1011,9 @@ impl DisplayScreen {
             ControlRow::Position => {
                 let n = POSITIONS.len() as i32;
                 self.draft.pos_idx = ((self.draft.pos_idx as i32 + delta).rem_euclid(n)) as usize;
+                self.draft.panel_active = true;
+                self.draft.mon_active = true;
+                self.sync_strip();
                 self.banner = None;
             }
             ControlRow::Resolution => {
@@ -733,6 +1028,10 @@ impl DisplayScreen {
                 let n = SCALES.len() as i32;
                 self.draft.scale_idx =
                     ((self.draft.scale_idx as i32 + delta).rem_euclid(n)) as usize;
+                self.banner = None;
+            }
+            ControlRow::Workspaces => {
+                self.draft.workspaces_split = !self.draft.workspaces_split;
                 self.banner = None;
             }
             ControlRow::PanelPower => {
@@ -829,6 +1128,16 @@ impl DisplayScreen {
             }
         }
 
+        // 3. Apply workspace layout preference if changed during Quick Setup.
+        if self.hotplug && self.draft.workspaces_split != self.live.workspaces_split {
+            if self.draft.workspaces_split {
+                let _ = super::workspaces::apply_split(&panel_name, &mon.name);
+            } else {
+                let _ = super::workspaces::clear_assignments();
+            }
+        }
+        record_known_monitor(&mon.monitor_id());
+
         self.reload_live();
         self.banner = Some(("Display layout applied & saved".into(), false));
     }
@@ -838,6 +1147,7 @@ impl DisplayScreen {
             ControlRow::Position
             | ControlRow::Resolution
             | ControlRow::Scale
+            | ControlRow::Workspaces
             | ControlRow::PanelPower
             | ControlRow::MonitorPower => {
                 self.adjust_row(row, 1);
@@ -845,7 +1155,11 @@ impl DisplayScreen {
             }
             ControlRow::ApplySave => {
                 self.apply_draft();
-                Outcome::Consumed
+                if self.hotplug && self.banner.as_ref().is_some_and(|(_, err)| !err) {
+                    Outcome::Done(hayato_ui::app::exit::OK)
+                } else {
+                    Outcome::Consumed
+                }
             }
             ControlRow::EnablePanel => {
                 let panel_name = internal_panel_name(&self.outputs);
@@ -1217,7 +1531,9 @@ impl DisplayScreen {
     }
 
     fn draw_inspector(&self, buf: &mut Buffer, area: Rect, design: &Design, compact: bool) {
-        let title = if compact {
+        let title = if self.hotplug {
+            "Quick Arrangement"
+        } else if compact {
             "Display Studio"
         } else {
             "Configuration"
@@ -1238,6 +1554,15 @@ impl DisplayScreen {
         let accent = Style::default()
             .fg(design.color(ColorRole::Accent))
             .add_modifier(Modifier::BOLD);
+
+        if self.hotplug && self.phase == DisplayPhase::DualMonitor {
+            let strip_rect = Rect::new(inner.x, y, inner.width, 1);
+            self.strip_rect.set(strip_rect);
+            self.strip.render_on(strip_rect, buf, design, ColorRole::Bg);
+            y += 2;
+        } else {
+            self.strip_rect.set(Rect::default());
+        }
 
         // On compact terminals (< 100 cols), draw a 2-line live topology strip at top.
         if compact {
@@ -1339,6 +1664,16 @@ impl DisplayScreen {
                     format!("◀ {} ▶", Self::scale_label(self.draft.scale_idx)),
                     false,
                 ),
+                ControlRow::Workspaces => (
+                    Glyph::Desktop,
+                    "Workspaces".to_string(),
+                    if self.draft.workspaces_split {
+                        "◀ Split (1-5 / 6-10) ▶".to_string()
+                    } else {
+                        "◀ Focused screen ▶".to_string()
+                    },
+                    false,
+                ),
                 ControlRow::PanelPower => (
                     Glyph::Desktop,
                     format!("Internal ({p_name})"),
@@ -1361,9 +1696,15 @@ impl DisplayScreen {
                 ),
                 ControlRow::ApplySave => (
                     Glyph::Check,
-                    "Apply & Save".to_string(),
+                    if self.hotplug {
+                        "Keep & Save".to_string()
+                    } else {
+                        "Apply & Save".to_string()
+                    },
                     if self.is_dirty() {
                         "Enter · save".to_string()
+                    } else if self.hotplug {
+                        "Enter · keep".to_string()
                     } else {
                         "up to date".to_string()
                     },
@@ -1377,13 +1718,25 @@ impl DisplayScreen {
                 ),
                 ControlRow::OpenWdisplays => (
                     Glyph::Mouse,
-                    "Open wdisplays".to_string(),
-                    "freehand drag GUI".to_string(),
+                    if self.hotplug {
+                        "Open Full Studio".to_string()
+                    } else {
+                        "Open wdisplays".to_string()
+                    },
+                    if self.hotplug {
+                        "panel power / drag GUI".to_string()
+                    } else {
+                        "freehand drag GUI".to_string()
+                    },
                     false,
                 ),
             };
 
-            let step = if inner.height >= 16 { 2 } else { 1 };
+            let step = if design.density() == Density::Tablet || inner.height >= 16 {
+                2
+            } else {
+                1
+            };
             let hit_h = design.row_stride().min(step);
             let row_rect = Rect::new(inner.x, y, inner.width, hit_h);
             hits.push(row_rect);
@@ -1448,6 +1801,37 @@ impl Screen for DisplayScreen {
         if key.kind != KeyEventKind::Press {
             return Outcome::Continue;
         }
+        if self.hotplug && self.phase == DisplayPhase::DualMonitor {
+            match self.strip.handle(key) {
+                ActionStripEvent::Activated(id) => {
+                    self.apply_hotplug_preset(id);
+                    return Outcome::Consumed;
+                }
+                ActionStripEvent::Consumed => return Outcome::Consumed,
+                ActionStripEvent::Ignored => {}
+            }
+            if key.modifiers == KeyModifiers::NONE {
+                match key.code {
+                    KeyCode::Char('1') => {
+                        self.apply_hotplug_preset("right");
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Char('2') => {
+                        self.apply_hotplug_preset("left");
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Char('3') => {
+                        self.apply_hotplug_preset("mirror");
+                        return Outcome::Consumed;
+                    }
+                    KeyCode::Char('4') => {
+                        self.apply_hotplug_preset("mon_only");
+                        return Outcome::Consumed;
+                    }
+                    _ => {}
+                }
+            }
+        }
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
                 KeyCode::Char('s') | KeyCode::Char('S') => {
@@ -1509,6 +1893,10 @@ impl Screen for DisplayScreen {
     }
 
     fn hit(&self, _area: Rect, x: u16, y: u16, _design: &Design) -> Option<usize> {
+        let strip_r = self.strip_rect.get();
+        if let Some(idx) = self.strip.hit_index(strip_r, x, y) {
+            return Some(1000 + idx);
+        }
         let hits = self.row_hits.borrow();
         for (idx, r) in hits.iter().enumerate() {
             if x >= r.x && x < r.right() && y >= r.y && y < r.bottom() {
@@ -1519,12 +1907,19 @@ impl Screen for DisplayScreen {
     }
 
     fn click(&mut self, row: Option<usize>) -> Outcome {
-        if let Some(idx) = row
-            && idx < self.controls.len()
-        {
-            self.cursor = idx;
-            let ctrl = self.controls[idx];
-            return self.activate_row(ctrl);
+        if let Some(idx) = row {
+            if idx >= 1000 {
+                let sidx = idx - 1000;
+                if let Some(id) = self.strip.items().get(sidx).map(|it| it.id) {
+                    self.apply_hotplug_preset(id);
+                    return Outcome::Consumed;
+                }
+            }
+            if idx < self.controls.len() {
+                self.cursor = idx;
+                let ctrl = self.controls[idx];
+                return self.activate_row(ctrl);
+            }
         }
         Outcome::Continue
     }
@@ -1551,10 +1946,19 @@ pub fn menu(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     design: &Design,
 ) -> Result<i32, crate::Failure> {
+    menu_with_args(&[], terminal, design)
+}
+
+pub fn menu_with_args(
+    args: &[String],
+    terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
+    design: &Design,
+) -> Result<i32, crate::Failure> {
     if let Some(said) = missing(NEEDED) {
         return Err(crate::Failure::new("Display", format!("{said} (sway, jq)")));
     }
-    let mut screen = DisplayScreen::new();
+    let hotplug = args.iter().any(|a| a == "--hotplug");
+    let mut screen = DisplayScreen::new_mode(hotplug);
     crate::run_screen(terminal, design, "Display", &mut screen)
 }
 
@@ -1695,6 +2099,7 @@ mod tests {
                 mode_height: 768,
                 mode_refresh: 60000,
                 active: true,
+                ..Default::default()
             },
             Output {
                 name: "DP-1".into(),
@@ -1707,6 +2112,7 @@ mod tests {
                 mode_height: 1080,
                 mode_refresh: 60000,
                 active: true,
+                ..Default::default()
             },
         ];
         let mut screen = DisplayScreen::from_outputs(
@@ -1733,5 +2139,73 @@ mod tests {
         assert!(!screen.draft.panel_active);
         screen.adjust_row(ControlRow::MonitorPower, 1);
         assert!(screen.draft.mon_active);
+    }
+
+    #[test]
+    fn hotplug_debounces_resume_and_distinguishes_known_monitors() {
+        assert!(should_skip_for_stamp(Some("1000"), 1004, 6));
+        assert!(!should_skip_for_stamp(Some("1000"), 1008, 6));
+
+        let outputs = vec![
+            Output {
+                name: "eDP-1".into(),
+                active: true,
+                width: 1366,
+                height: 768,
+                ..Default::default()
+            },
+            Output {
+                name: "DP-1".into(),
+                make: "Dell".into(),
+                model: "U2723QE".into(),
+                serial: "ABC123".into(),
+                active: true,
+                width: 1920,
+                height: 1080,
+                mode_width: 1920,
+                mode_height: 1080,
+                ..Default::default()
+            },
+        ];
+        let mon_id = "Dell:U2723QE:ABC123".to_string();
+
+        // First connection of unknown monitor -> FirstTime
+        let (v, cur) = evaluate_hotplug(&outputs, &[], &[], false);
+        assert_eq!(
+            v,
+            HotplugVerdict::FirstTime {
+                label: "U2723QE (DP-1)".into(),
+                resolution: "1920×1080".into(),
+            }
+        );
+        assert_eq!(cur, vec![mon_id.clone()]);
+
+        // Duplicate udev event while still connected -> Skip
+        let (v_dup, _) = evaluate_hotplug(&outputs, &cur, &[], false);
+        assert_eq!(v_dup, HotplugVerdict::Skip);
+
+        // Known monitor with 40-display.conf -> Known
+        let (v_known, _) = evaluate_hotplug(&outputs, &[], &[mon_id], true);
+        assert_eq!(
+            v_known,
+            HotplugVerdict::Known {
+                label: "U2723QE (DP-1)".into(),
+            }
+        );
+
+        // Quick Setup hotplug screen supports 1-4 presets cleanly
+        let design = Design::solarized();
+        let mut quick =
+            DisplayScreen::from_outputs_mode(outputs, vec!["1920x1080@60Hz".into()], true);
+        let _ = quick.key(
+            KeyEvent::new(KeyCode::Char('3'), KeyModifiers::NONE),
+            &design,
+        );
+        assert_eq!(POSITIONS[quick.draft.pos_idx], "mirror");
+        let _ = quick.key(
+            KeyEvent::new(KeyCode::Char('4'), KeyModifiers::NONE),
+            &design,
+        );
+        assert!(!quick.draft.panel_active);
     }
 }

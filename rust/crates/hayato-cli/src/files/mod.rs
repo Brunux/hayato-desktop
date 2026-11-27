@@ -18,6 +18,7 @@ pub mod find;
 pub mod grep;
 mod md5;
 pub mod open;
+pub mod open_ui;
 pub mod preview;
 
 use std::fs::Metadata;
@@ -249,8 +250,8 @@ pub fn draw_split(
 pub fn launch(path: &Path, home: &str) -> i32 {
     let tools = open::System::from_env();
     let text = open::is_text(path);
-    match open::plan(path, text, &tools) {
-        Ok(plan) => {
+    match open::resolve(path, text, &tools) {
+        Ok(open::Resolve::Launch(plan)) => {
             if plan.image_hint {
                 image_hint(home);
             }
@@ -258,6 +259,22 @@ pub fn launch(path: &Path, home: &str) -> i32 {
                 Ok(()) => 0,
                 Err(error) => {
                     refuse(path, &format!("Could not start {}: {error}", plan.argv[0]));
+                    3
+                }
+            }
+        }
+        Ok(open::Resolve::Router(_)) => {
+            let argv = vec![
+                self_exe(),
+                "menu".to_string(),
+                "open".to_string(),
+                "--".to_string(),
+                path.display().to_string(),
+            ];
+            match crate::menu::spawn_detached(&argv, home) {
+                Ok(()) => 0,
+                Err(error) => {
+                    refuse(path, &format!("Could not open file router: {error}"));
                     3
                 }
             }

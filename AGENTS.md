@@ -369,9 +369,13 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
  24. **The Files window is one surface with one state file per concern**: `hayato-filer` is the GTK4
     browser (`Alt+Ctrl+Shift+F`), the windowed companion of the `hayato menu files` TUI; the two
     share neither code nor state. Its UI choices (view mode, sort field and order, hidden files,
-    compact sidebar, window size) persist in `~/.config/hayato/filer-state.json` (`prefs.rs`, read on
-    launch, written on close) and pinned folders in `~/.config/hayato/filer-bookmarks.json`; a
-    missing or corrupt file falls back to the defaults, never a second copy of the choice. The open
+    compact sidebar, window size, and resizable list column widths `col_size_width`,
+    `col_mtime_width`, `col_kind_width`) persist in `~/.config/hayato/filer-state.json`
+    (`prefs.rs`, read on launch, written on close) and pinned folders in
+    `~/.config/hayato/filer-bookmarks.json`; a missing or corrupt file falls back to the
+    defaults, never a second copy of the choice. In Quick Look (`quicklook.rs`),
+    `Up`/`Down`/`PgUp`/`PgDn`/`Home`/`End` scroll text previews via `vadjustment` while
+    `Left`/`Right` step folder items. The open
     folder is watched with `gio::FileMonitor` (inotify) and reloads itself, so **F5** is a fallback
     and not the mechanism. Undo is a session stack of `ops::UndoAction` (rename, move, trash, copy,
     new folder) applied by `ops::undo`; a permanent delete is deliberately not undoable. Archive work
@@ -384,6 +388,16 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
     `actions()`, is the signal) and copies when the source is another application or another
     filesystem; the shelf prunes a reference whose path is gone. `hayato-filer --self-test` proves
     the CSS and the pure state/archive logic headlessly, and `check-desktop.sh` runs it.
+ 25. **Smart File Intent Router & Plug-and-Play Seams**:
+    - `files::open::resolve()` keeps zero-latency direct `exec()` for ready local viewers, while
+      routing `.deb` packages, archives, disk images (`.iso`/`.img`), missing-app files (matched to
+      `software::catalog::Catalog`), foreign installers (`.exe`/`.dmg`/`.apk`), and unknown
+      binaries to `FileOpenScreen` (`hayato menu open`, single `FileOpenPhase` enum) guarded by
+      `pkg_guard`. `mimeapps.list` maps `.deb`/archives/`.iso`/Office MIME types to `org.hayato.view.desktop`.
+    - `hayato-automount` sends click-to-open `--open "$MP"` notifications; `91-hayato-display-hotplug.rules`
+      fires the one-shot `/usr/local/sbin/hayato-display-hotplug` (`hayato menu display --hotplug-check`),
+      ignoring S3 wake via `$XDG_RUNTIME_DIR/hayato/dp-resume.stamp` (written in `23-hayato-screensaver.conf`)
+      and remembering monitors in `$XDG_STATE_HOME/hayato/known-monitors.json`.
 
 ## Developer Profile Export
 - `hayato-profile export --include-home` streams the whole home through tar. The single

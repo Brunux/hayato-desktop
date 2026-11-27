@@ -314,6 +314,19 @@ fn query(resolved: &Resolved) -> Option<i32> {
                 Some(EXIT_FAILED)
             }
         },
+        ("menu display", ["--hotplug-check"]) => {
+            println!("{}", system::display::hotplug_check());
+            Some(EXIT_OK)
+        }
+        ("menu display", ["--apply-mirror"]) => {
+            match system::display::apply_mirror_and_remember() {
+                Ok(()) => Some(EXIT_OK),
+                Err(err) => {
+                    eprintln!("{err}");
+                    Some(EXIT_FAILED)
+                }
+            }
+        }
         ("menu display", ["--rows"]) => {
             let mut out = io::stdout();
             for (key, label, detail) in system::display::rows() {
@@ -643,12 +656,13 @@ fn execute(
         "menu power" => session_menu(resolved, terminal, design, menu::Surface::Root),
         "menu format" => system::format::menu(terminal, design),
         "menu swap" => system::swap::menu(terminal, design),
-        "menu display" => system::display::menu(terminal, design),
+        "menu display" => system::display::menu_with_args(&resolved.args, terminal, design),
+        "menu open" => files::open_ui::menu(&resolved.args, terminal, design),
         "menu tz" => system::tz::menu(terminal, design),
         "menu dns" => system::dns::menu(terminal, design),
         "menu vnc" => system::vnc::menu(terminal, design),
         "menu vpn" => system::vpn::menu(terminal, design),
-        "menu settings" => system::settings::menu(terminal, design),
+        "menu settings" => system::settings::menu_with_args(&resolved.args, terminal, design),
         "menu ssh" => system::ssh::menu(terminal, design),
         "menu palette" => session_menu(resolved, terminal, design, menu::Surface::Palette),
         "ask" => session_menu(resolved, terminal, design, menu::Surface::Root),
@@ -918,8 +932,8 @@ fn open_path(resolved: &Resolved) -> i32 {
         return usage();
     };
     let tools = files::open::System::from_env();
-    match files::open::plan(&path, files::open::is_text(&path), &tools) {
-        Ok(plan) => {
+    match files::open::resolve(&path, files::open::is_text(&path), &tools) {
+        Ok(files::open::Resolve::Launch(plan)) => {
             let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
             if plan.image_hint {
                 files::image_hint(&home);
@@ -931,6 +945,16 @@ fn open_path(resolved: &Resolved) -> i32 {
             }
             let error = command.args(&plan.argv[1..]).exec();
             files::refuse(&path, &format!("Could not start {}: {error}", plan.argv[0]));
+            EXIT_FAILED
+        }
+        Ok(files::open::Resolve::Router(_)) => {
+            let exe = files::self_exe();
+            let shown = path.display().to_string();
+            use std::os::unix::process::CommandExt;
+            let error = std::process::Command::new(&exe)
+                .args(["menu", "open", "--", &shown])
+                .exec();
+            files::refuse(&path, &format!("Could not start {exe}: {error}"));
             EXIT_FAILED
         }
         Err(refusal) => {

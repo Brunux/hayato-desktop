@@ -13,7 +13,10 @@ use sha2::{Digest, Sha256};
 use crate::fs::{FileEntry, format_mode, format_mtime, format_size};
 use crate::tools;
 
-pub fn build_quicklook_card(entry: &FileEntry, on_close: impl Fn() + 'static) -> GtkBox {
+pub fn build_quicklook_card(
+    entry: &FileEntry,
+    on_close: impl Fn() + 'static,
+) -> (GtkBox, Option<ScrolledWindow>) {
     let card = GtkBox::new(Orientation::Vertical, 10);
     card.add_css_class("filer-quicklook");
     card.set_halign(Align::Center);
@@ -57,6 +60,7 @@ pub fn build_quicklook_card(entry: &FileEntry, on_close: impl Fn() + 'static) ->
     card.append(&top);
 
     // Preview Body
+    let mut scroller: Option<ScrolledWindow> = None;
     if entry.is_image() {
         let pic = Picture::for_filename(&entry.path);
         pic.set_can_shrink(true);
@@ -83,6 +87,7 @@ pub fn build_quicklook_card(entry: &FileEntry, on_close: impl Fn() + 'static) ->
         sc.set_min_content_height(240);
         sc.set_child(Some(&tv));
         card.append(&sc);
+        scroller = Some(sc);
     } else {
         let info_box = GtkBox::new(Orientation::Vertical, 8);
         info_box.set_vexpand(true);
@@ -213,7 +218,7 @@ pub fn build_quicklook_card(entry: &FileEntry, on_close: impl Fn() + 'static) ->
     actions.append(&copy_btn);
 
     card.append(&actions);
-    card
+    (card, scroller)
 }
 
 fn count_children(dir: &std::path::Path) -> String {
