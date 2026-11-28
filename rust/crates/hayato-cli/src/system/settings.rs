@@ -2872,6 +2872,7 @@ fn run_idle_picker(
             } else if let Err(error) = super::idle::restart() {
                 banner = Some(format!("Saved, but {error}"));
             } else {
+                super::appearance::sync_idle_tooltip(*screen_off, *lock, *dpms);
                 banner = Some(format!("Idle & lock: {}", super::idle::status()));
             }
         }

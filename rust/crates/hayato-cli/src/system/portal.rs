@@ -75,11 +75,11 @@ fn sanitize(url: &str) -> Option<String> {
 pub fn open() -> Result<String, String> {
     let url = portal_url().ok_or_else(|| "No sign-in page was found".to_string())?;
     // xdg-open reads the default browser (via the shim and hayato-browser);
-    // firefox-esr is the image's last resort, not the choice.
+    // chromium is the image's last resort, not the choice.
     if have("xdg-open") {
         crate::system::spawn_detached_argv("xdg-open", &[&url]);
-    } else if have("firefox-esr") {
-        crate::system::spawn_detached_argv("firefox-esr", &["--new-tab", &url]);
+    } else if have("chromium") {
+        crate::system::spawn_detached_argv("chromium", &[&url]);
     } else {
         return Err("No browser is available to open the sign-in page".to_string());
     }

@@ -642,7 +642,7 @@ fn hayato_view_starts_what_the_table_names() {
     let bin = tree.home.join("bin");
     fs::create_dir_all(&bin).unwrap();
     let log = tree.home.join("opened");
-    for program in ["imv", "foot", "bat", "mpv", "papers", "firefox-esr"] {
+    for program in ["imv", "foot", "bat", "mpv", "papers", "chromium"] {
         script(
             &bin.join(program),
             &format!("printf '%s\\n' \"$0 $*\" >> \"{}\"\n", log.display()),

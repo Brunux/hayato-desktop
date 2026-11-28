@@ -1,0 +1,37 @@
+{
+  "browser": {
+    "check_default_browser": false,
+    "has_seen_welcome_page": true,
+    "show_home_button": true
+  },
+  "bookmark_bar": {
+    "show_on_all_tabs": false
+  },
+  "vertical_tabs": {
+    "enabled": true,
+    "collapsed_state": false,
+    "expand_on_hover": false
+  },
+  "performance_tuning": {
+    "high_efficiency_mode": {
+      "state": 2,
+      "aggressiveness": 1,
+      "time_before_discard_in_minutes": 10
+    },
+    "battery_saver_mode": {
+      "state": 1
+    },
+    "tab_freezing": {
+      "enabled": true
+    },
+    "discard_ring_treatment": {
+      "enabled": true
+    }
+  },
+  "background_mode": {
+    "enabled": false
+  },
+  "hardware_acceleration_mode": {
+    "enabled": true
+  }
+}

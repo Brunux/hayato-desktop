@@ -11,7 +11,7 @@ Hayato · Software                                                              
 │     Record & stream  wf-recorder, OBS Studio                      2 apps   │ │    Streamlined video editor with broad format support; good on 4 G…  │
 │     Stay private  KeePassXC, GnuPG, Tor                           3 apps   │ │  ○ Pitivi               medium                                       │
 │     System & disk tools  btop, htop, GParted                 1/4 on disk   │ │    Clean GTK video editor built on GStreamer for quick cuts and ti…  │
-│     Browse & sync  Firefox ESR, Chromium, qBittorrent        1/4 on disk   │ │  ○ HandBrake            medium                                       │
+│     Browse & sync  Chromium, Firefox ESR, qBittorrent        1/4 on disk   │ │  ○ HandBrake            medium                                       │
 │     Organize & edit photos  Shotwell, darktable, imv              3 apps   │ │    GUI video transcoder with device presets and batch queue.         │
 │     Build software  Git, C/C++ Build Tools, Neovim                4 apps   │ │  ○ FFmpeg               light                                        │
 │                                                                             │ │    Fast command-line converter, trimmer and muxer for audio & vide…  │

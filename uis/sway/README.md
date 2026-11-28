@@ -346,7 +346,7 @@ code role, and falls back to the file's facts when nothing can be drawn.
   is a protocol foot renders natively, 16 MB measured for a 24 MP photo); a **video** is played
   by **mpv** in its own window (`setsid`, seek, subtitles, sound, and `mpv-mpris` loaded so
   `playerctl` and the Media menu see it); an HTML file opens as text because it *is* text, and a
-  `.deb` is Firefox's download prompt. The image family is decided **before** the text test, or
+  `.deb` is Chromium's download prompt. The image family is decided **before** the text test, or
   an SVG - a text file - would open as source in bat and never as a picture. The first 4 kB are
   checked for a NUL to tell text from binary, because bat would show a binary as an empty page;
 * `↑ parent directory` is the first row (and the one that is *not* preselected), the dotfiles
@@ -377,12 +377,12 @@ PSS for a window of fourteen thumbnail rows against 17 MB for the same window wi
 nothing afterwards; the numbers are in `docs/optimization.md`.
 
 Nothing is resident: the listing is built per run, and the viewer is imv's, papers', mpv's,
-foot's or Firefox's own window. `check-system.sh` fails when the script, the browser, `imv`,
+foot's or Chromium's own window. `check-desktop.sh` fails when the script, the browser, `imv`,
 `papers`, `mpv`, `mpv-mpris`'s plugin, `ffmpeg`, `pdftocairo` or `chafa` is missing, because
 Alt+Ctrl+F and the menu entry would silently do nothing (or answer "no browser is installed"),
 and warns when the thumbnail cache is not writable or the script stops asking for pictures.
 
-`usr/local/bin/xdg-open` is two dozen lines around the same question: a URL goes to Firefox as it
+`usr/local/bin/xdg-open` is two dozen lines around the same question: a URL goes to Chromium as it
 is, and a path goes to **`hayato-view`** - the same rules a double click in favnyr applies - with
 the browser as the answer for a user who has no session `bin` directory (root, an ssh session).
 That is what foot's ctrl+click, `yt-dlp --print-trailer` and any script that shells out to
@@ -391,7 +391,7 @@ A file opened from **outside** the session - a download manager, a terminal, a `
 goes through `~/.config/bin/hayato-view` (`etc/xdg/mimeapps.list` and `org.hayato.view.desktop`),
 which applies the same rules as the browser: text in `bat`, a document in `papers`, a picture in
 `imv` (chafa when imv gets no EGL context), a video in `mpv`, and an HTML page, an EPUB or a
-`.deb` in Firefox - so a double click on a video does not open it in the browser.
+`.deb` in Chromium - so a double click on a video does not open it in the browser.
 
 ![hayato-files over ~/Documents, with the sizes and dates dimmed](../../docs/screenshots/hayato-r1-files.png)
 
@@ -416,7 +416,7 @@ carries both rows (**Files**, **Files (window)**) and so does the root menu.
   `org.hayato.view.desktop`, whose `Exec` is `~/.config/bin/hayato-view` - the same rule table as
   `hayato-files` (which reads an HTML file as text): text in `bat`, a document in `papers`, a
   picture in `imv` (or `chafa`'s sixels when imv gets no EGL context), a video in `mpv`, and an
-  HTML page, an EPUB or a `.deb` in Firefox. `inode/directory` names `pcmanfm.desktop` on purpose:
+  HTML page, an EPUB or a `.deb` in Chromium. `inode/directory` names `pcmanfm.desktop` on purpose:
   the *name* is what GIO and the launcher know, and the file that carries it is the user-level
   shadow `~/.local/share/applications/pcmanfm.desktop` whose `Exec` is `favnyr` and whose `Name`
   is *Files (window)*. There is no desktop portal here, so that pair *is* the "open with"
@@ -542,7 +542,7 @@ own it. The whole set is the *Shortcuts* page of the manual
 | root menu | `Alt+Space` (Omarchy: `Super+Space`) | `24-keys.conf` |
 | panels | `Alt+Ctrl+A/B/W` → audio, Bluetooth, network (Omarchy: `Super+Ctrl+A/B/W`) | `24-keys.conf` |
 | system | `Alt+Escape` and `Alt+Ctrl+P` power menu (`hayato-power`), `Alt+Ctrl+L` lock, `Alt+Shift+Escape` lock+sleep, `Alt+Ctrl+Escape` sleep | `21-lock-screen.conf`, `22-sleep.conf`, `24-keys.conf` |
-| browser | `Alt+Shift+Return` opens `firefox-esr` | `19-launcher.conf` |
+| browser | `Alt+Shift+Return` opens `chromium` | `19-launcher.conf` |
 | windows | `Alt+Q` close, `Alt+T` float, `Alt+F` fullscreen, `Alt+grave` scratchpad, `Alt+R` resize | `config`, `24-keys.conf` |
 | views | `Alt+Ctrl+K` every binding, `Alt+Ctrl+X` dictation, `Alt+Ctrl+Shift+A` agents | `24-keys.conf` |
 | files | `Alt+Ctrl+F` (`hayato-files`), `Alt+Ctrl+Shift+F` (favnyr, the window) | `24-keys.conf` |
@@ -691,7 +691,7 @@ get a duplicate pill beside it (and in the `"*": [1, 2, 3, 4, 5]` shape it carri
 `home/.config/workstyle/config.toml` is the table: `"pattern" = "\uXXXX"` per application, the
 glyph being a `UI_I_*` codepoint from the framework's glyph table so the pills use the same alphabet as the
 menus. Patterns match a case-insensitive substring of the title, then the app_id, then the class,
-and the first match in the file wins - `firefox` sits above `foot` so a browser tab titled after a
+and the first match in the file wins - `chromium` sits above `foot` so a browser tab titled after a
 terminal is still a browser, and the foot windows with their own app_id (`popup`, `hayato-find`,
 `hayato-welcome`) sit above it too. `deduplicate_icons = true` makes three terminals one glyph, and
 a window nobody mapped draws a plain window outline instead of nothing.

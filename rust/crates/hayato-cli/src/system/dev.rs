@@ -1116,7 +1116,7 @@ impl Screen for ExportSetupScreen {
             let hint = if self.include_home {
                 "    Exports all user files & folders under ~ (skips ~/.cache, Trash & sockets)"
             } else {
-                "    Unchecked: exports keys, dotfiles, configs, agents & Firefox profile only"
+                "    Unchecked: exports keys, dotfiles, configs, agents & Chromium profile only"
             };
             put_trunc(ctx.buf, lx, y, hint, lw, ctx.design.style(TextStyle::Dim));
             y += if self.error.is_some() { 1 } else { 2 };

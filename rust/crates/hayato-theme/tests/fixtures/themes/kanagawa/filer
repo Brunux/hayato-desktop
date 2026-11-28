@@ -440,7 +440,7 @@ flowboxchild:selected .filer-grid-item {
 .filer-list-header {
     background-color: #1f1f28;
     border-bottom: 1px solid rgba(220, 215, 186, 0.10);
-    padding: 4px 16px;
+    padding: 4px 16px 4px 18px;
 }
 
 .filer-col-btn {
@@ -504,6 +504,7 @@ list > row:selected .filer-list-row {
 .filer-item-name {
     color: #dcd7ba;
     font-size: 12px;
+    padding: 0px 4px;
 }
 
 .filer-item-name.dir {
@@ -515,6 +516,14 @@ list > row:selected .filer-list-row {
     color: rgba(220, 215, 186, 0.70);
     font-family: "JetBrains Mono", monospace;
     font-size: 11px;
+    padding: 0px 4px;
+}
+
+.filer-item-perms {
+    color: #dcd7ba;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    padding: 0px 4px;
 }
 
 /* ── Empty State ─────────────────────────────────────────────────────────── */

@@ -28,7 +28,9 @@ use crate::fs::devices::{self, DeviceEntry};
 use crate::fs::ops::{self, OpKind, OpProgress};
 use crate::fs::thumbs;
 use crate::fs::trash;
-use crate::fs::{FileEntry, format_mode, format_mtime, format_size, free_space_bytes, list_dir};
+use crate::fs::{
+    FileEntry, format_mode_markup, format_mtime, format_size, free_space_bytes, list_dir,
+};
 use crate::prefs;
 use crate::state::{AppState, SortField, SortOrder, ViewMode, home_dir, is_trash_files_dir};
 use crate::tools;
@@ -1643,14 +1645,16 @@ impl FilerWindow {
                 self.list_header.append(&handle);
             }
 
+            let right_align = matches!(field, SortField::Size | SortField::Modified);
             let lbl = Label::new(Some(&format!("{title}{}", arrow(field))));
             lbl.set_halign(Align::Fill);
-            lbl.set_hexpand(true);
-            lbl.set_xalign(if expand { 0.0 } else { 1.0 });
+            lbl.set_hexpand(expand);
+            lbl.set_xalign(if right_align { 1.0 } else { 0.0 });
             lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
             let btn = Button::new();
             btn.set_child(Some(&lbl));
             btn.add_css_class("filer-col-btn");
+            btn.set_hexpand(expand);
             if col_w > 0 {
                 btn.set_size_request(col_w, -1);
             }
@@ -2704,11 +2708,12 @@ impl FilerWindow {
         self.col_mtime_sg.add_widget(&mtime_lbl);
         row.append(&mtime_lbl);
 
-        let perms_lbl = Label::new(Some(&format_mode(entry.mode)));
-        perms_lbl.add_css_class("filer-item-meta");
+        let perms_lbl = Label::new(None);
+        perms_lbl.set_markup(&format_mode_markup(entry.mode));
+        perms_lbl.add_css_class("filer-item-perms");
         perms_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         perms_lbl.set_halign(Align::Fill);
-        perms_lbl.set_xalign(1.0);
+        perms_lbl.set_xalign(0.0);
         self.col_perms_sg.add_widget(&perms_lbl);
         row.append(&perms_lbl);
 
@@ -2716,7 +2721,7 @@ impl FilerWindow {
         owner_lbl.add_css_class("filer-item-meta");
         owner_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         owner_lbl.set_halign(Align::Fill);
-        owner_lbl.set_xalign(1.0);
+        owner_lbl.set_xalign(0.0);
         self.col_owner_sg.add_widget(&owner_lbl);
         row.append(&owner_lbl);
 

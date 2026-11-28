@@ -590,11 +590,11 @@ pub fn plan(path: &Path, text: bool, tools: &dyn Tools) -> Result<Plan, Refusal>
     let browser = || -> Result<Plan, Refusal> {
         let url = format!("file://{shown}");
         // xdg-open is the shim that reads the person's default browser; the
-        // literal firefox-esr stays only as the image's last resort.
+        // literal chromium stays only as the image's last resort.
         if tools.has("xdg-open") {
             Ok(run(&["xdg-open", &url]))
-        } else if tools.has("firefox-esr") {
-            Ok(run(&["firefox-esr", &url]))
+        } else if tools.has("chromium") {
+            Ok(run(&["chromium", &url]))
         } else {
             Err(Refusal::NoProgram)
         }
@@ -776,7 +776,7 @@ mod tests {
                 "foot",
                 "bat",
                 "mpv",
-                "firefox-esr",
+                "chromium",
                 "xdg-open",
                 "foliate",
                 "xournalpp",
@@ -847,17 +847,17 @@ mod tests {
         assert_eq!(plan.argv[..2], ["imv", "--"]);
         assert!(plan.image_hint);
         let no_imv = Fake {
-            programs: vec!["chafa", "foot", "firefox-esr"],
+            programs: vec!["chafa", "foot", "chromium"],
         };
         let chafa = super::plan(&path, false, &no_imv).unwrap();
         assert_eq!(chafa.argv[0], "foot");
         assert!(chafa.argv.iter().any(|a| a.contains("chafa -f sixels")));
         let bare = Fake {
-            programs: vec!["firefox-esr"],
+            programs: vec!["chromium"],
         };
         assert_eq!(
             super::plan(&path, false, &bare).unwrap().argv[0],
-            "firefox-esr"
+            "chromium"
         );
     }
 

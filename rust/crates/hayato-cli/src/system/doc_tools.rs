@@ -61,6 +61,6 @@ mod tests {
         assert_eq!(dark_env("foliate"), Some(DARK));
         assert_eq!(dark_env("xournalpp"), Some(DARK));
         assert_eq!(dark_env("papers"), None);
-        assert_eq!(dark_env("firefox-esr"), None);
+        assert_eq!(dark_env("chromium"), None);
     }
 }

@@ -90,7 +90,6 @@ tooltip label {
 #custom-busy,
 #custom-rec,
 #custom-cassette,
-#custom-sysmon,
 #privacy,
 #custom-updates,
 #tray,
@@ -152,16 +151,6 @@ tooltip label {
     color: {{ accent }};
 }
 
-/* System monitor icon beside the clock: muted `dim` at rest (matching the
-   coffee cup when auto-sleep is enabled) and `accent` on pointer hover. */
-#custom-sysmon {
-    color: {{ dim }};
-}
-
-#custom-sysmon:hover {
-    color: {{ accent }};
-}
-
 /* The battery icon stays in the reading colour above 5% and switches to the
    readable warning colour when discharging at <= 5%. */
 #battery.critical:not(.charging) {
@@ -217,8 +206,7 @@ tooltip label {
 #custom-keyboard-layout.empty,
 #custom-vnc.empty,
 #custom-vpn.empty,
-#custom-drives.empty,
-#custom-sysmon.empty {
+#custom-drives.empty {
     padding: 0;
     margin: 0;
     border: none;
@@ -254,14 +242,13 @@ tooltip label {
     font-weight: 700;
 }
 
-/* System monitor attention states (>= 90% CPU/RAM/disk): tint the icon
-   itself cleanly with no bottom hairline; #custom-sysmon:hover still
-   highlights accent in normal `ok` state. */
-#custom-sysmon.warn {
+/* Brand `H` hosts live sysmon telemetry: only `H` switches to warn/critical
+   pressure colours while `_` (`#custom-brand-dot`) keeps the accent colour. */
+#custom-brand.warn {
     color: {{ warn_text }};
 }
 
-#custom-sysmon.critical {
+#custom-brand.critical {
     color: {{ danger_text }};
 }
 

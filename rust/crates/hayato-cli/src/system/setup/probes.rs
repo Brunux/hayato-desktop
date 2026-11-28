@@ -118,7 +118,7 @@ impl SetupSnapshot {
             display_count: 1,
             display_summary: "eDP-1 (internal panel)".to_string(),
             root_free_gb: 24.5,
-            default_browser: "firefox-esr".to_string(),
+            default_browser: "chromium".to_string(),
             bundles: bundles::probe_all(&Default::default(), false, false),
             local_llm_present: false,
             whisper_present: false,
@@ -222,7 +222,7 @@ impl SetupSnapshot {
         // ── Step 6 & 7: Software & Privacy ────────────────────────────────
         s.root_free_gb = free_gb(Path::new("/"));
         s.default_browser = run_out("xdg-settings", &["get", "default-web-browser"])
-            .unwrap_or_else(|| "firefox-esr.desktop".to_string())
+            .unwrap_or_else(|| "chromium.desktop".to_string())
             .trim_end_matches(".desktop")
             .to_string();
         s.local_llm_present = crate::ask::local_model_path().is_some_and(|p| p.is_file());

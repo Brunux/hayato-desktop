@@ -240,6 +240,32 @@ pub fn format_mode(mode: u32) -> String {
     s
 }
 
+/// Format POSIX permissions as Pango markup with theme-adaptive gray-scale hierarchy:
+/// owner triad strongest, group medium, other subtle, unset `-` muted.
+pub fn format_mode_markup(mode: u32) -> String {
+    let raw = format_mode(mode);
+    let mut out = String::with_capacity(220);
+    for (idx, ch) in raw.chars().enumerate() {
+        let alpha = if ch == '-' {
+            "26%"
+        } else if idx < 3 {
+            if ch == 'w' { "100%" } else { "92%" }
+        } else if idx < 6 {
+            "68%"
+        } else {
+            "48%"
+        };
+        if ch == 'w' && idx < 3 {
+            out.push_str(&format!(
+                "<span alpha=\"{alpha}\" weight=\"600\">{ch}</span>"
+            ));
+        } else {
+            out.push_str(&format!("<span alpha=\"{alpha}\">{ch}</span>"));
+        }
+    }
+    out
+}
+
 pub fn format_mtime(secs: i64) -> String {
     if secs <= 0 {
         return "—".to_string();
@@ -318,5 +344,12 @@ mod tests {
         let owner = resolve_owner_name(0, &mut cache);
         assert_eq!(owner, "root");
         assert_eq!(resolve_owner_name(0, &mut cache), "root");
+
+        let markup = format_mode_markup(0o755);
+        assert!(markup.contains("<span alpha=\"92%\">r</span>"));
+        assert!(markup.contains("<span alpha=\"100%\" weight=\"600\">w</span>"));
+        assert!(markup.contains("<span alpha=\"68%\">r</span>"));
+        assert!(markup.contains("<span alpha=\"48%\">x</span>"));
+        assert!(markup.contains("<span alpha=\"26%\">-</span>"));
     }
 }

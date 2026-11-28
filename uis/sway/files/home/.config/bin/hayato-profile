@@ -105,8 +105,7 @@ ENTRIES='
 # and a restored profile came back with no file-manager settings at all.
 .config/favnyr
 .local/share/favnyr
-.config/mozilla
-.mozilla
+.config/chromium
 .config/mpv
 .config/yt-dlp
 .config/tmux
@@ -512,26 +511,24 @@ build_tar() {
 			--exclude='.copilot/session-state' \
 			--exclude='.copilot/logs' \
 			--exclude='.copilot/history' \
-			--exclude='*mozilla/firefox/*/cache2' \
-			--exclude='*mozilla/firefox/*/startupCache' \
-			--exclude='*mozilla/firefox/*/shader-cache' \
-			--exclude='*mozilla/firefox/*/security_state' \
-			--exclude='*mozilla/firefox/*/storage' \
-			--exclude='*mozilla/firefox/*/sessionstore-backups' \
-			--exclude='*mozilla/firefox/*/sessionstore.jsonlz4' \
-			--exclude='*mozilla/firefox/*/crashes' \
-			--exclude='*mozilla/firefox/*/minidumps' \
-			--exclude='*mozilla/firefox/*/datareporting' \
-			--exclude='*mozilla/firefox/*/saved-telemetry' \
-			--exclude='*mozilla/firefox/*/thumbnails' \
-			--exclude='*mozilla/firefox/*/gmp-*' \
-			--exclude='*mozilla/firefox/*/features' \
-			--exclude='*mozilla/firefox/*/*.sqlite-wal' \
-			--exclude='*mozilla/firefox/*/*.sqlite-shm' \
-			--exclude='*mozilla/firefox/*/*.sqlite-journal' \
-			--exclude='*mozilla/firefox/*/lock' \
-			--exclude='*mozilla/firefox/*/.parentlock' \
-			--exclude='*mozilla/firefox/Crash Reports'
+			--exclude='*chromium/*/Cache*' \
+			--exclude='*chromium/*/Code Cache*' \
+			--exclude='*chromium/*/GPUCache*' \
+			--exclude='*chromium/*/GrShaderCache*' \
+			--exclude='*chromium/*/Dawn*Cache*' \
+			--exclude='*chromium/*/Service Worker*' \
+			--exclude='*chromium/*/IndexedDB*' \
+			--exclude='*chromium/*/File System*' \
+			--exclude='*chromium/*/blob_storage*' \
+			--exclude='*chromium/*/OptimizationGuide*' \
+			--exclude='*chromium/*/component_crx_cache*' \
+			--exclude='*chromium/*/extensions_crx_cache*' \
+			--exclude='*chromium/Crash Reports' \
+			--exclude='*chromium/BrowserMetrics*' \
+			--exclude='*chromium/ShaderCache*' \
+			--exclude='*chromium/GrShaderCache*' \
+			--exclude='*chromium/GraphiteDawnCache*' \
+			--exclude='*chromium/Singleton*'
 	fi
 
 	# Two measured choices, both about time rather than bytes:

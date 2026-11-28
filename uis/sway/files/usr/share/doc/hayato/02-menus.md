@@ -284,7 +284,7 @@ in the floated popup (paged, in the terminal's own colours), a **document**
 (PDF, DjVu, a comic) opens in **papers**, a **picture** in **imv** (zoom, pan,
 rotate, the arrow keys walk the folder; `chafa`'s sixels when imv cannot
 start), a **video** in **mpv**, and a `.deb` or anything else binary asks
-Firefox, which is a download prompt - still an answer.
+Chromium, which is a download prompt - still an answer.
 
 **It opens where you left it.** The first time, Files starts in your home
 directory; after that it starts in the folder you were last browsing, and
@@ -330,7 +330,7 @@ walk) is not installed, the window says which package provides it and
 instead of a dead end.
 
 `xdg-open` exists too (`/usr/local/bin/xdg-open`, two dozen lines): a URL goes to
-Firefox, and a path goes to the same rule table a double click in the window uses
+Chromium, and a path goes to the same rule table a double click in the window uses
 (`hayato-view`), so a file opened from a script lands where it would from the
 desktop. That is what foot's ctrl+click and the CLI tools that print a URL call.
 
@@ -344,7 +344,7 @@ onto a folder, select several, rename in place, send to the trash - and it opens
 a file with exactly the rules above: a double click reaches
 `~/.config/bin/hayato-view`, so text goes to `bat`, a document to `papers`, a
 picture to `imv` (or `chafa`'s sixels when imv cannot start), a video to `mpv`
-and an HTML page, an EPUB or a `.deb` to Firefox (the list itself reads an HTML
+and an HTML page, an EPUB or a `.deb` to Chromium (the list itself reads an HTML
 file as text). Its colours are the session's too (background window, cyan
 selection, JetBrains Mono, the same icons), rendered into
 `~/.config/hayato/filer.css` from the active theme and re-read in place when the
@@ -634,7 +634,7 @@ With all surfaces running natively in the multi-call binary `hayato`, the
 
 The final 10 interactive surfaces have migrated from shell scripts into native `hayato menu <subcommand>` surfaces in the multi-call binary:
 
-* **Wi-Fi and Network (`hayato menu net`)**: replaces `bar-net`. Scans access points with `nmcli`, displays signal strength gauge, security status, and active connection indicator. Selecting an unconfigured secured network provides masked password input (`*`). When the connection reports `portal` or `limited`, the list starts with **Sign in to this network**; Enter opens the hotel/airport page in Firefox. Headless `hayato menu net --status` outputs waybar-compatible JSON, and `--portal` prints the sign-in URL or `none`.
+* **Wi-Fi and Network (`hayato menu net`)**: replaces `bar-net`. Scans access points with `nmcli`, displays signal strength gauge, security status, and active connection indicator. Selecting an unconfigured secured network provides masked password input (`*`). When the connection reports `portal` or `limited`, the list starts with **Sign in to this network**; Enter opens the hotel/airport page in Chromium. Headless `hayato menu net --status` outputs waybar-compatible JSON, and `--portal` prints the sign-in URL or `none`.
 * **AI Agents (`hayato menu agents`)**: replaces the old agents menu. Lists configured agents (Claude Code, OpenCode, Codex, Gemini, Copilot), marks active default, manages account directories, and provides `--default` for direct session launches.
 * **Places and Disks (`hayato menu places`)**: replaces the old places menu. Lists standard user directories (`~/Downloads`, `~/Documents`, etc.) and mounted filesystems; unmounted block devices are offered for one-click mounting via `udisksctl`. Headless `hayato menu places --rows` outputs tabular place entries.
 * **Disk Cleaner (`hayato menu clean`)**: replaces the old clean menu. Calculates reclaimable sizes for apt archives, systemd journal logs, thumbnail cache, and user trash, requiring explicit user confirmation before purging. Headless `hayato menu clean --dry-run` prints cache estimations.

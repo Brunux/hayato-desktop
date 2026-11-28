@@ -79,7 +79,7 @@
       "blurb": "Web browsers, BitTorrent client and P2P folder sync",
       "glyph": "globe",
       "keywords": ["web", "browser", "internet", "chrome", "firefox", "torrent", "sync", "files"],
-      "apps": ["firefox-esr", "chromium", "qbittorrent", "syncthing"]
+      "apps": ["chromium", "firefox-esr", "qbittorrent", "syncthing"]
     },
     {
       "id": "photos",

@@ -388,7 +388,11 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
     carries its local `GdkDrag` (GDK reports every local drop as `COPY`, so the drag object, not
     `actions()`, is the signal) and copies when the source is another application or another
     filesystem; the shelf prunes a reference whose path is gone. Headerbar view controls include the
-    synchronized eye toggle for hidden dotfiles (`Ctrl+H`, `hidden_btn`, `sort_btn` popover), while
+    synchronized eye toggle for hidden dotfiles (`Ctrl+H`, `hidden_btn`, `sort_btn` popover),
+    List View columns (`NAME`, `SIZE`, `MODIFIED`, `PERMS`, `OWNER`) keep `hexpand(expand)` strictly
+    on both header buttons and labels so `SizeGroup` aligns columns pixel-for-pixel with `.filer-list-header`
+    padding (`4px 16px 4px 18px`), `PERMS` and `OWNER` left-align as distinct columns, and
+    `format_mode_markup` renders permissions in theme-adaptive gray-scale Pango alpha levels, while
     common file operations surface transient feedback in the bottom status bar and reserve
     `notify-send` strictly for failures and drive-eject alerts. `hayato-filer --self-test` proves
     the CSS and the pure state/archive logic headlessly, and `check-desktop.sh` runs it.
@@ -456,10 +460,15 @@ Add a probe when a new state is introduced.
   stays cheap (no nmcli/systemctl probe storm) and the live status is one level down.
 - System identity uses the system tools: `localectl` for language (next login),
   `hostnamectl` plus `/etc/hosts` for the name, `xdg-mime`/`gio` for default apps, and
-  `chpasswd` with the password on stdin for the account password.
+  `chpasswd` with the password on stdin for the account password; changing the Idle & lock preset
+  (`idle::write` / `settings --idle`) also syncs Waybar's `idle_inhibitor` tooltip to the active
+  timer profile (`appearance::sync_idle_tooltip`) and signals Waybar.
 - Notification and clipboard settings are user config files read by their helpers.
   `hayato-notify` reads its file once at startup; saving a notification setting restarts
-  the daemon and clears visible cards. `hayato-clipboard` starts/stops the `cliphist`
+  the daemon and clears visible cards (`CardTheme::from_theme` derives recessed `header_bg`,
+  lifted `bg_elevated`, neutral >=3:1 `border_subtle`, solid-accent action hover fill with >=4.5:1
+  inverted label, and >=4.5:1 lifted text/danger/warning roles across all 16 themes using
+  `hayato_theme::contrast`). `hayato-clipboard` starts/stops the `cliphist`
   watcher from `clipboard.conf`.
 - Captive portal sign-in is a read-only probe in `system::portal`: NetworkManager's
   `CONNECTIVITY` says whether a page is needed, and the URL comes from the connectivity
@@ -484,8 +493,13 @@ Add a probe when a new state is introduced.
 - **The browser is one indirection.** `~/.config/bin/hayato-browser` is the only reader of
   `xdg-settings get default-web-browser` (what Settings writes); the `$mod+Shift+Return` key, the
   `/usr/local/bin/xdg-open` shim, `system::portal` and Files' browser fallback all go through it.
-  Never bind a key or spawn a browser by name again: `firefox-esr` is the image's last resort, not
-  the choice, and a literal there silently ignores Settings.
+  Never bind a key or spawn a browser by name again: `chromium` is the image's last resort, not
+  the choice, and a literal there silently ignores Settings. Keep Hayato's Chromium tuning in
+  conflict-free paths (`/etc/chromium.d/hayato` for Wayland/GPU/Memory/VerticalTabs flags,
+  `/etc/chromium/policies/recommended/hayato.json` for non-locking Memory Saver & zero-background
+  policies, and `uis/sway/files/home/.config/chromium/Default/Preferences` for seeded Vertical
+  Tabs defaults — never overwrite `/etc/chromium/master_preferences`, which is owned by Debian's
+  `chromium` package).
 - Guard optional hardware resume hooks in Sway configs (e.g., `[ -x /usr/local/bin/hayato-dp-resume ]`),
   and detect both `eDP-*` and `DSI-*` internal panel outputs dynamically in `system::display`.
 - **In-place `.deb` Packaging (`scripts/build-hayato.sh`, `scripts/build-fbneo.sh`, `scripts/build-mupen64plus-next.sh`)**:
@@ -530,5 +544,5 @@ Every user-facing change ships with:
 - The procedural wallpaper scripts are imported by `scripts/tests/test_*.py`; keep generation behind
   `main()` so importing them does not write files or run `ffmpeg`. Run them with
   `python3 -m unittest discover -s scripts/tests -p 'test_*.py'`.
-- **`custom/sysmon` (`hayato sysmon --bar`)**: Stateless one-shot telemetry next to `clock` (no daemon), caching only `/proc/stat` delta jiffies + high-CPU streak in `$XDG_RUNTIME_DIR/hayato/sysmon.stat`, gated to `BarModules::Full` in `appearance.rs`.
+- **Waybar `H_` brand telemetry (`hayato sysmon --bar` / `--bar-dot`)**: Stateless one-shot telemetry hosted directly on `custom/brand` (`H`, `ok`/`warn`/`critical` pressure classes only on `H`) and `custom/brand-dot` (`_`, fixed `accent` class `ok`, read-only delta sample against `$XDG_RUNTIME_DIR/hayato/sysmon.stat` so hovering `H` or `_` shares one tooltip without racing CPU deltas); `[LMB]` root menu, `[RMB]` terminal, `[MMB]` `btop`.
 - **`.github/workflows/rust.yml`** runs both `cargo test --workspace --all-targets` and the Python suite.

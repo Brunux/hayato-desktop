@@ -390,33 +390,54 @@ fn a_menu_writes_nothing_to_disk() {
 }
 
 #[test]
-fn browser_distribution_policies_are_valid_and_configure_vertical_tabs() {
+fn chromium_profile_dropins_and_defaults_are_valid() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../");
-    let mut policy_path =
-        repo_root.join("uis/sway/files/usr/share/firefox-esr/distribution/policies.json");
-    if !policy_path.exists() {
-        policy_path =
-            repo_root.join("uis/sway/files/usr/lib/firefox-esr/distribution/policies.json");
+
+    let dropin_path = repo_root.join("uis/sway/files/etc/chromium.d/hayato");
+    let dropin = std::fs::read_to_string(&dropin_path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", dropin_path.display()));
+    for flag in [
+        "--ozone-platform-hint=auto",
+        "--enable-zero-copy",
+        "--renderer-process-limit=",
+        "VerticalTabs",
+    ] {
+        assert!(
+            dropin.contains(flag),
+            "etc/chromium.d/hayato must include {flag}"
+        );
     }
-    let content = std::fs::read_to_string(&policy_path)
+
+    let policy_path =
+        repo_root.join("uis/sway/files/etc/chromium/policies/recommended/hayato.json");
+    let policy_raw = std::fs::read_to_string(&policy_path)
         .unwrap_or_else(|e| panic!("failed to read {}: {e}", policy_path.display()));
-    let v: serde_json::Value =
-        serde_json::from_str(&content).expect("policies.json must be valid JSON");
-    let prefs = &v["policies"]["Preferences"];
-    assert_eq!(
-        prefs["sidebar.verticalTabs"]["Value"], true,
-        "sidebar.verticalTabs must be enabled"
+    let policy: serde_json::Value = serde_json::from_str(&policy_raw)
+        .expect("hayato.json recommended policy must be valid JSON");
+    assert_eq!(policy["HighEfficiencyModeEnabled"], true);
+    assert_eq!(policy["BackgroundModeEnabled"], false);
+
+    let first_run_path = repo_root.join("uis/sway/files/home/.config/chromium/First Run");
+    assert!(
+        first_run_path.exists(),
+        "default Chromium First Run sentinel must exist so master_preferences does not clobber Preferences"
     );
+
+    let local_state_path = repo_root.join("uis/sway/files/home/.config/chromium/Local State");
+    let local_state_raw = std::fs::read_to_string(&local_state_path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", local_state_path.display()));
+    let local_state: serde_json::Value = serde_json::from_str(&local_state_raw)
+        .expect("default Chromium Local State must be valid JSON");
+    assert_eq!(local_state["browser"]["first_run_finished"], true);
     assert_eq!(
-        prefs["sidebar.verticalTabs"]["Status"], "default",
-        "sidebar.verticalTabs must be user-customizable ('default')"
+        local_state["performance_tuning"]["high_efficiency_mode"]["state"],
+        2
     );
-    assert_eq!(
-        prefs["browser.compactmode.show"]["Value"], true,
-        "browser.compactmode.show must be enabled"
-    );
-    assert_eq!(
-        prefs["browser.uidensity"]["Value"], 1,
-        "browser.uidensity must be compact (1)"
-    );
+
+    let prefs_path = repo_root.join("uis/sway/files/home/.config/chromium/Default/Preferences");
+    let prefs_raw = std::fs::read_to_string(&prefs_path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", prefs_path.display()));
+    let prefs: serde_json::Value =
+        serde_json::from_str(&prefs_raw).expect("default Chromium Preferences must be valid JSON");
+    assert_eq!(prefs["vertical_tabs"]["enabled"], true);
 }

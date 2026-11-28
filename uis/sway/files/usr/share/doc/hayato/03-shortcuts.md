@@ -78,7 +78,7 @@ mapped.
 | Alt+M | **Hayato Cassette**: toggle the floating scratchpad music player (local library & Spotify; `09-music.md`) |
 | Alt+Ctrl+E | emoji: type a name, Enter inserts the glyph at the cursor, `Ctrl+Y` copies it |
 | Alt+Return | terminal (foot) |
-| Alt+Shift+Return | the browser (default via `hayato-browser`, `firefox-esr` fallback) |
+| Alt+Shift+Return | the browser (default via `hayato-browser`, `chromium` fallback) |
 | Alt+Q | close the focused window |
 | Alt+Shift+C | reload the Sway configuration |
 | Alt+Shift+E | exit the session (asks first) |
@@ -199,7 +199,7 @@ typing only: nothing on the lock surface reads the pointer, so there a mouse
 move turns the screen back on and the password is what ends it.
 
 Two applications are exempt while they are being watched: a **fullscreen video or
-presentation** in Firefox or the document reader, and a video in **mpv**. They ask
+presentation** in Chromium or the document reader, and a video in **mpv**. They ask
 the compositor to keep the screen awake, so the lock does not interrupt a film.
 
 The **coffee cup on the bar** is the manual switch: while it takes the accent
@@ -222,7 +222,7 @@ nothing.
 | Alt+Shift+Space | toggle floating |
 | Alt+A | focus the parent container |
 | three-finger swipe left/right | previous / next workspace (touchpad) |
-| three-finger swipe up/down | next / previous tab in Firefox: Ctrl+Tab and Ctrl+Shift+Tab |
+| three-finger swipe up/down | next / previous tab in browser: Ctrl+Tab and Ctrl+Shift+Tab |
 
 **Alt+Q closes the focused window**, and it is the key to remember for the
 windows the About menu holds open: **The full picture** (fastfetch), **Boot
@@ -233,19 +233,20 @@ did not reach these windows on this keyboard, so the footer names the session's
 key instead.
 
 **The touchpad carries four three-finger swipes.** Left and right switch
-workspaces. Up and down go to the next and the previous tab of **Firefox**,
-because they type **Ctrl+Tab** and **Ctrl+Shift+Tab** into it, and they do
-nothing at all in any other window: sway checks that the focused window is
-Firefox before it starts anything, so the filter costs nothing when it is not.
-That is deliberate - a swipe that typed Ctrl+Tab into every application would be
-a keyboard nobody asked for, and in a terminal Ctrl+Tab means something else.
+workspaces. Up and down go to the next and the previous tab of **Chromium**
+(and Firefox/LibreWolf if installed), because they type **Ctrl+Tab** and
+**Ctrl+Shift+Tab** into it, and they do nothing at all in any other window: sway
+checks that the focused window is a browser before it starts anything, so the
+filter costs nothing when it is not. That is deliberate - a swipe that typed
+Ctrl+Tab into every application would be a keyboard nobody asked for, and in a
+terminal Ctrl+Tab means something else.
 
 The keys themselves are typed with `wtype` (the same virtual keyboard the emoji
 picker and dictation use), which is what makes them real for the focused window;
-if it is missing the swipe completes and nothing happens, and `check-system.sh`
-says so. A Firefox started with `MOZ_ENABLE_WAYLAND=0` runs under Xwayland, has
-no Wayland app id, and therefore gets no gesture: run it the normal way and the
-swipes work.
+if it is missing the swipe completes and nothing happens, and `check-desktop.sh`
+says so. A browser started under Xwayland (`--ozone-platform=x11`) has no
+Wayland app id, and therefore gets no gesture: run it with `/etc/chromium.d/hayato`
+Wayland defaults (`--ozone-platform-hint=auto`) and the swipes work.
 
 ## Sound, light and screenshots
 
@@ -343,7 +344,7 @@ layer is the mobile-international one, so accented characters are one **Cmp**
 away: `Cmp` then `a` opens that key's variants (`á`, `à`, `â`, `ä`…) and the one
 you tap is what gets typed; `Cmp` then `?` is how `¿` is reached. It types into
 the focused window through the virtual-keyboard protocol, which is why it works
-in foot, Firefox and the menu prompts alike.
+in foot, Chromium and the menu prompts alike.
 
 The keyboard is **opaque**: with transparency the window underneath showed
 through the keys, which is the opposite of what a keyboard is for. Folding it
@@ -376,7 +377,7 @@ not by reading the mode's state directory, which such a session takes with it.
 | lock | **Alt+Ctrl+L** (and the Lock key) |
 | power menu | **Alt+Escape** |
 | audio / Bluetooth / network panels | **Alt+Ctrl+A** / **Alt+Ctrl+B** / **Alt+Ctrl+W** |
-| browser | **Alt+Shift+Return** (`hayato-browser` / `firefox-esr`) |
+| browser | **Alt+Shift+Return** (`hayato-browser` / `chromium`) |
 | screenshot | **Alt+Shift+S**, **Alt+Ctrl+Shift+S**, **Alt+Ctrl+S** |
 | capture menu (screenshot, OCR, QR, recording) | **Alt+Ctrl+C** |
 | studio / cassette / lens / share | **Alt+Ctrl+R** / **Alt+M** / **Alt+I** / **Alt+Ctrl+U** |

@@ -11,7 +11,7 @@ Hayato · Software                          3 installed · 3 updates (1 security
 │     Record & stream  wf-recorder, OBS Studio                       2 apps   │
 │     Stay private  KeePassXC, GnuPG, Tor                            3 apps   │
 │     System & disk tools  btop, htop, GParted                  1/4 on disk   │
-│     Browse & sync  Firefox ESR, Chromium, qBittorrent         1/4 on disk   │
+│     Browse & sync  Chromium, Firefox ESR, qBittorrent         1/4 on disk   │
 │     Organize & edit photos  Shotwell, darktable, imv               3 apps   │
 │     Build software  Git, C/C++ Build Tools, Neovim                 4 apps   │
 │                                                                              │
