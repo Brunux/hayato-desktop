@@ -28,7 +28,9 @@ use crate::fs::devices::{self, DeviceEntry};
 use crate::fs::ops::{self, OpKind, OpProgress};
 use crate::fs::thumbs;
 use crate::fs::trash;
-use crate::fs::{FileEntry, format_mtime, format_size, free_space_bytes, list_dir};
+use crate::fs::{
+    FileEntry, format_mode_markup, format_mtime, format_size, free_space_bytes, list_dir,
+};
 use crate::prefs;
 use crate::state::{AppState, SortField, SortOrder, ViewMode, home_dir, is_trash_files_dir};
 use crate::tools;
@@ -49,6 +51,7 @@ pub struct FilerWindow {
     filter_entry: Entry,
     grid_btn: Button,
     list_btn: Button,
+    hidden_btn: Button,
     sidebar_toggle_btn: Button,
     tab_bar: GtkBox,
     tabs_box: GtkBox,
@@ -68,6 +71,7 @@ pub struct FilerWindow {
     quicklook_scroll: RefCell<Option<ScrolledWindow>>,
     properties_slot: RefCell<Option<GtkBox>>,
     status_label: Label,
+    status_notice: RefCell<(u64, Option<String>)>,
     progress_box: GtkBox,
     progress_bar: ProgressBar,
     progress_label: Label,
@@ -87,10 +91,12 @@ pub struct FilerWindow {
     /// Horizontal SizeGroups keeping List View headers and rows pixel-aligned.
     col_size_sg: SizeGroup,
     col_mtime_sg: SizeGroup,
-    col_kind_sg: SizeGroup,
+    col_perms_sg: SizeGroup,
+    col_owner_sg: SizeGroup,
     col_size_btn: RefCell<Option<Button>>,
     col_mtime_btn: RefCell<Option<Button>>,
-    col_kind_btn: RefCell<Option<Button>>,
+    col_perms_btn: RefCell<Option<Button>>,
+    col_owner_btn: RefCell<Option<Button>>,
     /// Header New Tab button: hidden while the tab strip (which carries its own
     /// add button) is showing, so only one "+" is ever visible.
     new_tab_btn: Button,
@@ -120,12 +126,12 @@ impl FilerWindow {
         let back_btn = Button::with_label("\u{f053}");
         back_btn.add_css_class("filer-nav-btn");
         back_btn.add_css_class("filer-glyph");
-        back_btn.set_tooltip_text(Some("Back (Alt+Left)"));
+        back_btn.set_tooltip_text(Some("Back (Ctrl+Left)"));
 
         let fwd_btn = Button::with_label("\u{f054}");
         fwd_btn.add_css_class("filer-nav-btn");
         fwd_btn.add_css_class("filer-glyph");
-        fwd_btn.set_tooltip_text(Some("Forward (Alt+Right)"));
+        fwd_btn.set_tooltip_text(Some("Forward (Ctrl+Right)"));
         nav_group.append(&back_btn);
         nav_group.append(&fwd_btn);
 
@@ -172,6 +178,11 @@ impl FilerWindow {
         sort_btn.add_css_class("filer-glyph");
         sort_btn.set_tooltip_text(Some("Sort & View Options"));
 
+        let hidden_btn = Button::with_label("\u{f070}");
+        hidden_btn.add_css_class("filer-tool-btn");
+        hidden_btn.add_css_class("filer-glyph");
+        hidden_btn.set_tooltip_text(Some("Show Hidden Files (Ctrl+H)"));
+
         let new_tab_btn = Button::with_label("\u{f067}");
         new_tab_btn.add_css_class("filer-tool-btn");
         new_tab_btn.add_css_class("filer-glyph");
@@ -200,6 +211,7 @@ impl FilerWindow {
         header.append(&filter_btn);
         header.append(&view_group);
         header.append(&sort_btn);
+        header.append(&hidden_btn);
         header.append(&shelf_btn);
         header.append(&new_tab_btn);
 
@@ -279,6 +291,7 @@ impl FilerWindow {
 
         let canvas_scroll = ScrolledWindow::new();
         canvas_scroll.add_css_class("filer-canvas");
+        canvas_scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
         canvas_scroll.set_vexpand(true);
         canvas_scroll.set_hexpand(true);
         canvas_scroll.set_child(Some(&flow_box));
@@ -290,10 +303,12 @@ impl FilerWindow {
         let status_label = Label::new(Some("Loading…"));
         status_label.set_halign(Align::Start);
         status_label.set_hexpand(true);
+        status_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
 
         let progress_box = GtkBox::new(Orientation::Horizontal, 6);
         progress_box.set_visible(false);
         let progress_label = Label::new(None);
+        progress_label.set_ellipsize(gtk4::pango::EllipsizeMode::Middle);
         let progress_bar = ProgressBar::new();
         progress_bar.add_css_class("filer-progress");
         progress_bar.set_valign(Align::Center);
@@ -403,6 +418,7 @@ impl FilerWindow {
             filter_entry,
             grid_btn,
             list_btn,
+            hidden_btn,
             sidebar_toggle_btn,
             tab_bar,
             tabs_box,
@@ -422,6 +438,7 @@ impl FilerWindow {
             quicklook_scroll: RefCell::new(None),
             properties_slot: RefCell::new(None),
             status_label,
+            status_notice: RefCell::new((0, None)),
             progress_box,
             progress_bar,
             progress_label,
@@ -436,10 +453,12 @@ impl FilerWindow {
             shelf: RefCell::new(Vec::new()),
             col_size_sg: SizeGroup::new(SizeGroupMode::Horizontal),
             col_mtime_sg: SizeGroup::new(SizeGroupMode::Horizontal),
-            col_kind_sg: SizeGroup::new(SizeGroupMode::Horizontal),
+            col_perms_sg: SizeGroup::new(SizeGroupMode::Horizontal),
+            col_owner_sg: SizeGroup::new(SizeGroupMode::Horizontal),
             col_size_btn: RefCell::new(None),
             col_mtime_btn: RefCell::new(None),
-            col_kind_btn: RefCell::new(None),
+            col_perms_btn: RefCell::new(None),
+            col_owner_btn: RefCell::new(None),
             new_tab_btn: new_tab_btn.clone(),
         });
 
@@ -454,6 +473,7 @@ impl FilerWindow {
         this.wire_pin_drop_target();
         this.set_sidebar_compact(prefs.sidebar_compact);
         this.update_view_buttons(prefs.view_mode);
+        this.update_hidden_button();
         this.list_header
             .set_visible(prefs.view_mode == ViewMode::List);
         this.rebuild_list_header();
@@ -477,6 +497,13 @@ impl FilerWindow {
             let w = Rc::clone(self);
             self.sidebar_toggle_btn
                 .connect_clicked(move |_| w.toggle_sidebar_compact());
+        }
+
+        // Show / hide hidden files headerbar toggle
+        {
+            let w = Rc::clone(self);
+            self.hidden_btn
+                .connect_clicked(move |_| w.toggle_show_hidden());
         }
 
         // Back / Forward
@@ -530,7 +557,7 @@ impl FilerWindow {
                 } else if expanded.is_file() {
                     tools::open_file(&expanded);
                 } else {
-                    w.show_banner(&format!("Not found: {}", expanded.display()), "warn");
+                    w.show_status_notice(&format!("Not found: {}", expanded.display()));
                 }
             });
         }
@@ -694,18 +721,19 @@ impl FilerWindow {
     fn handle_key(self: &Rc<Self>, key: gdk::Key, mods: gdk::ModifierType) -> glib::Propagation {
         let ctrl = mods.contains(gdk::ModifierType::CONTROL_MASK);
         let shift = mods.contains(gdk::ModifierType::SHIFT_MASK);
-        let alt = mods.contains(gdk::ModifierType::ALT_MASK);
 
         // If typing in path_entry, filter_entry, or a popover Entry (rename / new folder),
-        // let the Entry handle normal typing and only intercept Escape where appropriate.
-        if self.path_entry.has_focus() {
+        // let the Entry (whose GTK4 focus widget is its internal `gtk4::Text` child)
+        // handle normal editing keys (`BackSpace`, `Space`, `Delete`, arrows, `Ctrl+A/C/X/V`).
+        let focused = gtk4::prelude::GtkWindowExt::focus(&self.window);
+        if entry_focused(&self.path_entry, focused.as_ref()) {
             if key == gdk::Key::Escape {
                 self.hide_path_entry();
                 return glib::Propagation::Stop;
             }
             return glib::Propagation::Proceed;
         }
-        if self.filter_entry.has_focus() {
+        if entry_focused(&self.filter_entry, focused.as_ref()) {
             if key == gdk::Key::Escape {
                 self.filter_entry.set_text("");
                 self.filter_entry.set_visible(false);
@@ -715,7 +743,7 @@ impl FilerWindow {
             }
             return glib::Propagation::Proceed;
         }
-        if gtk4::prelude::GtkWindowExt::focus(&self.window).is_some_and(|w| w.is::<Entry>()) {
+        if focused.is_some_and(|w| w.is::<gtk4::Text>() || w.is::<Entry>()) {
             return glib::Propagation::Proceed;
         }
 
@@ -802,7 +830,7 @@ impl FilerWindow {
                     let sel = self.selected_paths();
                     if !sel.is_empty() {
                         tools::copy_paths_to_clipboard(&sel);
-                        self.show_banner("Copied path(s) to clipboard", "ok");
+                        self.show_status_notice("Copied path(s) to clipboard");
                     }
                     return glib::Propagation::Stop;
                 }
@@ -822,11 +850,7 @@ impl FilerWindow {
                     return glib::Propagation::Stop;
                 }
                 gdk::Key::h | gdk::Key::H => {
-                    let mut st = self.state.borrow_mut();
-                    st.show_hidden = !st.show_hidden;
-                    st.recompute_visible();
-                    drop(st);
-                    self.render_canvas();
+                    self.toggle_show_hidden();
                     return glib::Propagation::Stop;
                 }
                 gdk::Key::_1 => {
@@ -848,7 +872,7 @@ impl FilerWindow {
                     let sel = self.selected_paths();
                     if !sel.is_empty() {
                         tools::write_file_clipboard(&sel, false);
-                        self.show_banner(&format!("Copied {} item(s)", sel.len()), "ok");
+                        self.show_status_notice(&format!("Copied {} item(s)", sel.len()));
                     }
                     return glib::Propagation::Stop;
                 }
@@ -856,7 +880,7 @@ impl FilerWindow {
                     let sel = self.selected_paths();
                     if !sel.is_empty() {
                         tools::write_file_clipboard(&sel, true);
-                        self.show_banner(&format!("Cut {} item(s)", sel.len()), "ok");
+                        self.show_status_notice(&format!("Cut {} item(s)", sel.len()));
                     }
                     return glib::Propagation::Stop;
                 }
@@ -903,16 +927,6 @@ impl FilerWindow {
                     self.close_tab_at(idx);
                     return glib::Propagation::Stop;
                 }
-                gdk::Key::q | gdk::Key::Q => {
-                    self.window.close();
-                    return glib::Propagation::Stop;
-                }
-                _ => {}
-            }
-        }
-
-        if alt {
-            match key {
                 gdk::Key::Left => {
                     if self.state.borrow_mut().go_back().is_some() {
                         self.reload_dir();
@@ -931,19 +945,10 @@ impl FilerWindow {
                     }
                     return glib::Propagation::Stop;
                 }
-                gdk::Key::Return | gdk::Key::KP_Enter => {
-                    self.toggle_properties();
+                gdk::Key::q | gdk::Key::Q => {
+                    self.window.close();
                     return glib::Propagation::Stop;
                 }
-                gdk::Key::_1 => return self.jump_tab_shortcut(0),
-                gdk::Key::_2 => return self.jump_tab_shortcut(1),
-                gdk::Key::_3 => return self.jump_tab_shortcut(2),
-                gdk::Key::_4 => return self.jump_tab_shortcut(3),
-                gdk::Key::_5 => return self.jump_tab_shortcut(4),
-                gdk::Key::_6 => return self.jump_tab_shortcut(5),
-                gdk::Key::_7 => return self.jump_tab_shortcut(6),
-                gdk::Key::_8 => return self.jump_tab_shortcut(7),
-                gdk::Key::_9 => return self.jump_tab_shortcut(8),
                 _ => {}
             }
         }
@@ -987,11 +992,6 @@ impl FilerWindow {
             }
             _ => glib::Propagation::Proceed,
         }
-    }
-
-    fn jump_tab_shortcut(self: &Rc<Self>, idx: usize) -> glib::Propagation {
-        self.switch_to_tab(idx);
-        glib::Propagation::Stop
     }
 
     pub fn open_new_tab(self: &Rc<Self>, dir: PathBuf) {
@@ -1170,7 +1170,7 @@ impl FilerWindow {
                 glib::ControlFlow::Break
             }
             Ok(Err(err)) => {
-                w.show_banner(&err, "danger");
+                w.notify_desktop(&err, "danger");
                 glib::ControlFlow::Break
             }
             Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
@@ -1543,16 +1543,18 @@ impl FilerWindow {
         }
         *self.col_size_btn.borrow_mut() = None;
         *self.col_mtime_btn.borrow_mut() = None;
-        *self.col_kind_btn.borrow_mut() = None;
+        *self.col_perms_btn.borrow_mut() = None;
+        *self.col_owner_btn.borrow_mut() = None;
 
-        let (active_field, order, size_w, mtime_w, kind_w) = {
+        let (active_field, order, size_w, mtime_w, perms_w, owner_w) = {
             let st = self.state.borrow();
             (
                 st.sort_field,
                 st.sort_order,
                 st.col_size_width,
                 st.col_mtime_width,
-                st.col_kind_width,
+                st.col_perms_width,
+                st.col_owner_width,
             )
         };
         let arrow = |f: SortField| -> &'static str {
@@ -1571,11 +1573,12 @@ impl FilerWindow {
         spacer.set_size_request(32, -1);
         self.list_header.append(&spacer);
 
-        let cols: [(SortField, &str, bool, i32); 4] = [
+        let cols: [(SortField, &str, bool, i32); 5] = [
             (SortField::Name, "NAME", true, -1),
             (SortField::Size, "SIZE", false, size_w),
             (SortField::Modified, "MODIFIED", false, mtime_w),
-            (SortField::Kind, "TYPE", false, kind_w),
+            (SortField::Perms, "PERMS", false, perms_w),
+            (SortField::Owner, "OWNER", false, owner_w),
         ];
         for (idx, (field, title, expand, col_w)) in cols.into_iter().enumerate() {
             if idx > 0 {
@@ -1585,51 +1588,50 @@ impl FilerWindow {
                 handle.set_cursor_from_name(Some("col-resize"));
                 handle.set_tooltip_text(Some("Drag to resize column"));
 
+                // Track pointer coordinates in `list_header` space (which stays stationary
+                // while child buttons resize), eliminating the moving-handle feedback flicker.
                 let drag = GestureDrag::new();
-                let start_widths = Rc::new(Cell::new((0i32, 0i32, 0i32)));
-                let sw_begin = Rc::clone(&start_widths);
+                let drag_anchor = Rc::new(Cell::new((0.0f32, (0i32, 0i32, 0i32, 0i32))));
+                let anc_begin = Rc::clone(&drag_anchor);
                 let w_begin = Rc::clone(self);
                 let h_begin = handle.clone();
-                drag.connect_drag_begin(move |_, _, _| {
+                let hdr_begin = self.list_header.clone();
+                drag.connect_drag_begin(move |_, x, y| {
                     h_begin.add_css_class("dragging");
+                    let hdr_x = h_begin
+                        .compute_point(&hdr_begin, &gtk4::graphene::Point::new(x as f32, y as f32))
+                        .map_or(x as f32, |p| p.x());
                     let st = w_begin.state.borrow();
-                    sw_begin.set((st.col_size_width, st.col_mtime_width, st.col_kind_width));
+                    anc_begin.set((
+                        hdr_x,
+                        (
+                            st.col_size_width,
+                            st.col_mtime_width,
+                            st.col_perms_width,
+                            st.col_owner_width,
+                        ),
+                    ));
                 });
 
-                let sw_upd = Rc::clone(&start_widths);
+                let anc_upd = Rc::clone(&drag_anchor);
                 let w_upd = Rc::clone(self);
-                drag.connect_drag_update(move |_, dx, _| {
-                    let (s0, m0, k0) = sw_upd.get();
-                    let dx_i = dx.round() as i32;
-                    let (min_w, max_w) = (prefs::MIN_COL_WIDTH, prefs::MAX_COL_WIDTH);
-                    let (s1, m1, k1) = match field {
-                        // Border Name | Size: moving right gives width to Name, shrinks Size.
-                        SortField::Size => ((s0 - dx_i).clamp(min_w, max_w), m0, k0),
-                        // Border Size | Modified: tracks pointer 1:1 between Size and Modified.
-                        SortField::Modified => {
-                            let min_dx = (min_w - s0).max(m0 - max_w);
-                            let max_dx = (max_w - s0).min(m0 - min_w);
-                            let d = if min_dx <= max_dx {
-                                dx_i.clamp(min_dx, max_dx)
-                            } else {
-                                0
-                            };
-                            (s0 + d, m0 - d, k0)
-                        }
-                        // Border Modified | Type: tracks pointer 1:1 between Modified and Type.
-                        SortField::Kind => {
-                            let min_dx = (min_w - m0).max(k0 - max_w);
-                            let max_dx = (max_w - m0).min(k0 - min_w);
-                            let d = if min_dx <= max_dx {
-                                dx_i.clamp(min_dx, max_dx)
-                            } else {
-                                0
-                            };
-                            (s0, m0 + d, k0 - d)
-                        }
-                        SortField::Name => (s0, m0, k0),
+                let h_upd = handle.clone();
+                let hdr_upd = self.list_header.clone();
+                drag.connect_drag_update(move |g, dx, dy| {
+                    let (start_hdr_x, w0) = anc_upd.get();
+                    let cur_hdr_x = if let Some((sx, sy)) = g.start_point() {
+                        h_upd
+                            .compute_point(
+                                &hdr_upd,
+                                &gtk4::graphene::Point::new((sx + dx) as f32, (sy + dy) as f32),
+                            )
+                            .map_or(start_hdr_x + dx as f32, |p| p.x())
+                    } else {
+                        start_hdr_x + dx as f32
                     };
-                    w_upd.apply_column_widths(s1, m1, k1);
+                    let dx_i = (cur_hdr_x - start_hdr_x).round() as i32;
+                    let next = compute_resized_widths(field, w0, dx_i);
+                    w_upd.apply_column_widths(next.0, next.1, next.2, next.3);
                 });
 
                 let w_end = Rc::clone(self);
@@ -1643,12 +1645,16 @@ impl FilerWindow {
                 self.list_header.append(&handle);
             }
 
+            let right_align = matches!(field, SortField::Size | SortField::Modified);
             let lbl = Label::new(Some(&format!("{title}{}", arrow(field))));
-            lbl.set_halign(if expand { Align::Start } else { Align::End });
+            lbl.set_halign(Align::Fill);
+            lbl.set_hexpand(expand);
+            lbl.set_xalign(if right_align { 1.0 } else { 0.0 });
             lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
             let btn = Button::new();
             btn.set_child(Some(&lbl));
             btn.add_css_class("filer-col-btn");
+            btn.set_hexpand(expand);
             if col_w > 0 {
                 btn.set_size_request(col_w, -1);
             }
@@ -1661,9 +1667,13 @@ impl FilerWindow {
                     self.col_mtime_sg.add_widget(&btn);
                     *self.col_mtime_btn.borrow_mut() = Some(btn.clone());
                 }
-                SortField::Kind => {
-                    self.col_kind_sg.add_widget(&btn);
-                    *self.col_kind_btn.borrow_mut() = Some(btn.clone());
+                SortField::Perms => {
+                    self.col_perms_sg.add_widget(&btn);
+                    *self.col_perms_btn.borrow_mut() = Some(btn.clone());
+                }
+                SortField::Owner => {
+                    self.col_owner_sg.add_widget(&btn);
+                    *self.col_owner_btn.borrow_mut() = Some(btn.clone());
                 }
                 SortField::Name => {}
             }
@@ -1692,12 +1702,28 @@ impl FilerWindow {
         }
     }
 
-    fn apply_column_widths(&self, size_w: i32, mtime_w: i32, kind_w: i32) {
-        {
+    fn apply_column_widths(&self, size_w: i32, mtime_w: i32, perms_w: i32, owner_w: i32) {
+        let changed = {
             let mut st = self.state.borrow_mut();
-            st.col_size_width = size_w;
-            st.col_mtime_width = mtime_w;
-            st.col_kind_width = kind_w;
+            let prev = (
+                st.col_size_width,
+                st.col_mtime_width,
+                st.col_perms_width,
+                st.col_owner_width,
+            );
+            let next = (size_w, mtime_w, perms_w, owner_w);
+            if prev == next {
+                false
+            } else {
+                st.col_size_width = size_w;
+                st.col_mtime_width = mtime_w;
+                st.col_perms_width = perms_w;
+                st.col_owner_width = owner_w;
+                true
+            }
+        };
+        if !changed {
+            return;
         }
         if let Some(b) = self.col_size_btn.borrow().as_ref() {
             b.set_size_request(size_w, -1);
@@ -1705,8 +1731,11 @@ impl FilerWindow {
         if let Some(b) = self.col_mtime_btn.borrow().as_ref() {
             b.set_size_request(mtime_w, -1);
         }
-        if let Some(b) = self.col_kind_btn.borrow().as_ref() {
-            b.set_size_request(kind_w, -1);
+        if let Some(b) = self.col_perms_btn.borrow().as_ref() {
+            b.set_size_request(perms_w, -1);
+        }
+        if let Some(b) = self.col_owner_btn.borrow().as_ref() {
+            b.set_size_request(owner_w, -1);
         }
     }
 
@@ -2034,7 +2063,7 @@ impl FilerWindow {
                 p2.popdown();
                 if w.state.borrow_mut().unpin_bookmark(&d_un) {
                     w.render_places();
-                    w.show_banner("Unpinned from Places", "ok");
+                    w.show_status_notice("Unpinned from Places");
                 }
             },
         ));
@@ -2079,7 +2108,7 @@ impl FilerWindow {
             }
             if pinned > 0 {
                 w.render_places();
-                w.show_banner(&format!("Pinned {pinned} folder(s) to Places"), "ok");
+                w.show_status_notice(&format!("Pinned {pinned} folder(s) to Places"));
             }
             pinned > 0
         });
@@ -2147,12 +2176,6 @@ impl FilerWindow {
                 let prev = w.devices.borrow().clone();
                 let was_loaded = w.devices_loaded.replace(true);
                 if was_loaded && devs != prev {
-                    // Announce newly connected drives
-                    for d in &devs {
-                        if !prev.iter().any(|p| p.dev_path == d.dev_path) {
-                            w.show_banner(&format!("Drive connected: {}", d.label), "ok");
-                        }
-                    }
                     // Handle disconnected or externally unmounted drives
                     let mut active_affected = false;
                     for p in &prev {
@@ -2173,9 +2196,6 @@ impl FilerWindow {
                                     }
                                 }
                             }
-                        }
-                        if !devs.iter().any(|d| d.dev_path == p.dev_path) {
-                            w.show_banner(&format!("Drive disconnected: {}", p.label), "warn");
                         }
                     }
                     *w.devices.borrow_mut() = devs;
@@ -2403,23 +2423,21 @@ impl FilerWindow {
     }
 
     fn mount_and_open(self: &Rc<Self>, dev_path: &str, label: &str) {
-        self.show_banner(&format!("Mounting {label}…"), "ok");
+        self.show_status_notice(&format!("Mounting {label}…"));
         let (tx, rx) = mpsc::channel();
         let dp = dev_path.to_string();
         let _ = std::thread::spawn(move || {
             let _ = tx.send(devices::mount_device(&dp));
         });
         let w = Rc::clone(self);
-        let lbl = label.to_string();
         glib::timeout_add_local(Duration::from_millis(40), move || match rx.try_recv() {
             Ok(Ok(mp)) => {
-                w.show_banner(&format!("Mounted {lbl}"), "ok");
                 w.refresh_devices();
                 w.navigate_to(mp);
                 glib::ControlFlow::Break
             }
             Ok(Err(e)) => {
-                w.show_banner(&e, "danger");
+                w.notify_desktop(&e, "danger");
                 glib::ControlFlow::Break
             }
             Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
@@ -2450,7 +2468,7 @@ impl FilerWindow {
                 self.render_tabs();
             }
         }
-        self.show_banner(&format!("Ejecting {}…", dev.label), "ok");
+        self.show_status_notice(&format!("Ejecting {}…", dev.label));
         let (tx, rx) = mpsc::channel();
         let _ = std::thread::spawn(move || {
             let _ = tx.send(devices::eject_device(&dev));
@@ -2458,12 +2476,12 @@ impl FilerWindow {
         let w = Rc::clone(self);
         glib::timeout_add_local(Duration::from_millis(40), move || match rx.try_recv() {
             Ok(Ok(msg)) => {
-                w.show_banner(&msg, "ok");
+                w.notify_desktop(&msg, "ok");
                 w.refresh_devices();
                 glib::ControlFlow::Break
             }
             Ok(Err(e)) => {
-                w.show_banner(&e, "warn");
+                w.notify_desktop(&e, "warn");
                 w.refresh_devices();
                 glib::ControlFlow::Break
             }
@@ -2663,7 +2681,8 @@ impl FilerWindow {
         if entry.is_dir {
             name.add_css_class("dir");
         }
-        name.set_halign(Align::Start);
+        name.set_halign(Align::Fill);
+        name.set_xalign(0.0);
         name.set_hexpand(true);
         name.set_ellipsize(gtk4::pango::EllipsizeMode::Middle);
         row.append(&name);
@@ -2676,6 +2695,7 @@ impl FilerWindow {
         let size_lbl = Label::new(Some(&size_txt));
         size_lbl.add_css_class("filer-item-meta");
         size_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        size_lbl.set_halign(Align::Fill);
         size_lbl.set_xalign(1.0);
         self.col_size_sg.add_widget(&size_lbl);
         row.append(&size_lbl);
@@ -2683,16 +2703,27 @@ impl FilerWindow {
         let mtime_lbl = Label::new(Some(&format_mtime(entry.modified_secs)));
         mtime_lbl.add_css_class("filer-item-meta");
         mtime_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        mtime_lbl.set_halign(Align::Fill);
         mtime_lbl.set_xalign(1.0);
         self.col_mtime_sg.add_widget(&mtime_lbl);
         row.append(&mtime_lbl);
 
-        let kind_lbl = Label::new(Some(&entry.kind));
-        kind_lbl.add_css_class("filer-item-meta");
-        kind_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        kind_lbl.set_xalign(1.0);
-        self.col_kind_sg.add_widget(&kind_lbl);
-        row.append(&kind_lbl);
+        let perms_lbl = Label::new(None);
+        perms_lbl.set_markup(&format_mode_markup(entry.mode));
+        perms_lbl.add_css_class("filer-item-perms");
+        perms_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        perms_lbl.set_halign(Align::Fill);
+        perms_lbl.set_xalign(0.0);
+        self.col_perms_sg.add_widget(&perms_lbl);
+        row.append(&perms_lbl);
+
+        let owner_lbl = Label::new(Some(&entry.owner));
+        owner_lbl.add_css_class("filer-item-meta");
+        owner_lbl.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        owner_lbl.set_halign(Align::Fill);
+        owner_lbl.set_xalign(0.0);
+        self.col_owner_sg.add_widget(&owner_lbl);
+        row.append(&owner_lbl);
 
         self.attach_drag_source(&row, entry.path.clone());
         if entry.is_dir {
@@ -2846,7 +2877,7 @@ impl FilerWindow {
 
     fn paste_from_clipboard(self: &Rc<Self>) {
         let Some((is_cut, paths)) = tools::read_file_clipboard() else {
-            self.show_banner("Clipboard has no files to paste", "warn");
+            self.show_status_notice("Clipboard has no files to paste");
             return;
         };
         let dst = self.state.borrow().cwd().to_path_buf();
@@ -2896,6 +2927,10 @@ impl FilerWindow {
                         w.progress_label.set_text(&label);
                         w.progress_bar.set_fraction(fraction);
                     }
+                    Ok(OpProgress::Pulse { label }) => {
+                        w.progress_label.set_text(&label);
+                        w.progress_bar.pulse();
+                    }
                     Ok(OpProgress::Done { summary, undo }) => {
                         w.progress_box.set_visible(false);
                         *w.active_cancel.borrow_mut() = None;
@@ -2908,7 +2943,7 @@ impl FilerWindow {
                         } else {
                             summary
                         };
-                        w.show_banner(&msg, "ok");
+                        w.show_status_notice(&msg);
                         w.reload_dir();
                         w.render_shelf();
                         return glib::ControlFlow::Break;
@@ -2916,7 +2951,7 @@ impl FilerWindow {
                     Ok(OpProgress::Error { message }) => {
                         w.progress_box.set_visible(false);
                         *w.active_cancel.borrow_mut() = None;
-                        w.show_banner(&message, "danger");
+                        w.notify_desktop(&message, "danger");
                         w.reload_dir();
                         w.render_shelf();
                         return glib::ControlFlow::Break;
@@ -2935,13 +2970,13 @@ impl FilerWindow {
     /// creation.
     fn undo_last(self: &Rc<Self>) {
         let Some(action) = self.state.borrow_mut().take_undo() else {
-            self.show_banner("Nothing to undo", "warn");
+            self.show_status_notice("Nothing to undo");
             return;
         };
         let label = action.label();
         match ops::undo(&action) {
             Ok(msg) => {
-                self.show_banner(&msg, "ok");
+                self.show_status_notice(&msg);
                 self.reload_dir();
                 self.render_shelf();
             }
@@ -2949,7 +2984,7 @@ impl FilerWindow {
                 // Put it back so a second Ctrl+Z can retry after the person
                 // clears whatever blocked it.
                 self.state.borrow_mut().push_undo(action);
-                self.show_banner(&format!("Could not undo {label}: {e}"), "danger");
+                self.notify_desktop(&format!("Could not undo {label}: {e}"), "danger");
             }
         }
     }
@@ -3082,7 +3117,8 @@ impl FilerWindow {
             ("Sort by Name", SortField::Name),
             ("Sort by Modified", SortField::Modified),
             ("Sort by Size", SortField::Size),
-            ("Sort by Type", SortField::Kind),
+            ("Sort by Permissions", SortField::Perms),
+            ("Sort by Owner", SortField::Owner),
         ] {
             let icon = if cur_field == field { "\u{f00c}" } else { "" };
             let w = Rc::clone(self);
@@ -3118,12 +3154,7 @@ impl FilerWindow {
             false,
             move || {
                 p.popdown();
-                {
-                    let mut st = w.state.borrow_mut();
-                    st.show_hidden = !st.show_hidden;
-                    st.recompute_visible();
-                }
-                w.render_canvas();
+                w.toggle_show_hidden();
             },
         );
         col.append(&b);
@@ -3209,7 +3240,7 @@ impl FilerWindow {
                         for p in &ps {
                             let _ = trash::restore_from_trash(p);
                         }
-                        w.show_banner("Restored from Trash", "ok");
+                        w.show_status_notice("Restored from Trash");
                         w.reload_dir();
                     }),
                 );
@@ -3331,7 +3362,7 @@ impl FilerWindow {
                     false,
                     Box::new(move || {
                         tools::write_file_clipboard(&ps, true);
-                        w.show_banner(&format!("Cut {} item(s)", ps.len()), "ok");
+                        w.show_status_notice(&format!("Cut {} item(s)", ps.len()));
                     }),
                 );
                 let w = Rc::clone(self);
@@ -3343,7 +3374,7 @@ impl FilerWindow {
                     false,
                     Box::new(move || {
                         tools::write_file_clipboard(&ps, false);
-                        w.show_banner(&format!("Copied {} item(s)", ps.len()), "ok");
+                        w.show_status_notice(&format!("Copied {} item(s)", ps.len()));
                     }),
                 );
                 if sel.len() == 1 {
@@ -3424,7 +3455,7 @@ impl FilerWindow {
                         Box::new(move || {
                             if w.state.borrow_mut().pin_bookmark(p3.clone()) {
                                 w.render_places();
-                                w.show_banner("Pinned to Places", "ok");
+                                w.show_status_notice("Pinned to Places");
                             }
                         }),
                     );
@@ -3456,7 +3487,7 @@ impl FilerWindow {
                     false,
                     Box::new(move || {
                         tools::copy_paths_to_clipboard(&ps_cp);
-                        w.show_banner("Copied path(s)", "ok");
+                        w.show_status_notice("Copied path(s)");
                     }),
                 );
             }
@@ -3562,10 +3593,10 @@ impl FilerWindow {
                     w.state
                         .borrow_mut()
                         .push_undo(ops::UndoAction::Created(vec![target.clone()]));
-                    w.show_banner(&format!("Created folder {name} · Ctrl+Z to undo"), "ok");
+                    w.show_status_notice(&format!("Created folder {name} · Ctrl+Z to undo"));
                     w.reload_dir();
                 }
-                Err(err) => w.show_banner(&format!("Failed: {err}"), "danger"),
+                Err(err) => w.notify_desktop(&format!("Failed: {err}"), "danger"),
             }
         };
         let c1 = create.clone();
@@ -3609,10 +3640,10 @@ impl FilerWindow {
                         from: old_path.clone(),
                         to: new_path.clone(),
                     });
-                    w.show_banner(&format!("Renamed to {new_name} · Ctrl+Z to undo"), "ok");
+                    w.show_status_notice(&format!("Renamed to {new_name} · Ctrl+Z to undo"));
                     w.reload_dir();
                 }
-                Err(err) => w.show_banner(&format!("Rename failed: {err}"), "danger"),
+                Err(err) => w.notify_desktop(&format!("Rename failed: {err}"), "danger"),
             }
         };
         let r1 = do_rename.clone();
@@ -3685,9 +3716,9 @@ impl FilerWindow {
         empty.connect_clicked(move |_| {
             p2.popdown();
             if let Err(e) = trash::empty_trash() {
-                w.show_banner(&e, "danger");
+                w.notify_desktop(&e, "danger");
             } else {
-                w.show_banner("Trash emptied", "ok");
+                w.show_status_notice("Trash emptied");
                 w.reload_dir();
             }
         });
@@ -3725,12 +3756,110 @@ impl FilerWindow {
         let free_part = free_space_bytes(&cwd)
             .map(|b| format!(" · {} free", format_size(b)))
             .unwrap_or_default();
-        self.status_label
-            .set_text(&format!("{count_part}{hidden_part}{sel_part}{free_part}"));
+        let notice = self.status_notice.borrow().1.clone();
+        let text = match notice {
+            Some(note) => {
+                format!("{note}  ·  {count_part}{hidden_part}{sel_part}{free_part}")
+            }
+            None => format!("{count_part}{hidden_part}{sel_part}{free_part}"),
+        };
+        self.status_label.set_text(&text);
     }
 
-    fn show_banner(&self, msg: &str, tone: &str) {
+    fn toggle_show_hidden(self: &Rc<Self>) {
+        {
+            let mut st = self.state.borrow_mut();
+            st.show_hidden = !st.show_hidden;
+            st.recompute_visible();
+        }
+        self.update_hidden_button();
+        self.render_canvas();
+    }
+
+    fn update_hidden_button(&self) {
+        let show = self.state.borrow().show_hidden;
+        let (glyph, tooltip) = hidden_button_spec(show);
+        self.hidden_btn.set_label(glyph);
+        self.hidden_btn.set_tooltip_text(Some(tooltip));
+        if show {
+            self.hidden_btn.add_css_class("active");
+        } else {
+            self.hidden_btn.remove_css_class("active");
+        }
+    }
+
+    /// Quiet, transient feedback shown inside the Filer status bar instead of
+    /// spawning desktop notifications for routine operations.
+    fn show_status_notice(self: &Rc<Self>, msg: &str) {
+        let gen_id = {
+            let mut st = self.status_notice.borrow_mut();
+            st.0 = st.0.wrapping_add(1);
+            st.1 = Some(msg.to_string());
+            st.0
+        };
+        self.update_status_bar();
+        let w = Rc::clone(self);
+        glib::timeout_add_local_once(Duration::from_secs(3), move || {
+            let matches = w.status_notice.borrow().0 == gen_id;
+            if matches {
+                w.status_notice.borrow_mut().1 = None;
+                w.update_status_bar();
+            }
+        });
+    }
+
+    /// Desktop notification reserved strictly for failures and hardware eject alerts.
+    fn notify_desktop(&self, msg: &str, tone: &str) {
         tools::notify(msg, tone);
+    }
+}
+
+fn transfer_width_pair(a0: i32, b0: i32, dx_i: i32) -> (i32, i32) {
+    let (min_w, max_w) = (prefs::MIN_COL_WIDTH, prefs::MAX_COL_WIDTH);
+    let min_dx = (min_w - a0).max(b0 - max_w);
+    let max_dx = (max_w - a0).min(b0 - min_w);
+    let d = if min_dx <= max_dx {
+        dx_i.clamp(min_dx, max_dx)
+    } else {
+        0
+    };
+    (a0 + d, b0 - d)
+}
+
+fn compute_resized_widths(
+    field: SortField,
+    (s0, m0, p0, o0): (i32, i32, i32, i32),
+    dx_i: i32,
+) -> (i32, i32, i32, i32) {
+    let (min_w, max_w) = (prefs::MIN_COL_WIDTH, prefs::MAX_COL_WIDTH);
+    match field {
+        SortField::Size => ((s0 - dx_i).clamp(min_w, max_w), m0, p0, o0),
+        SortField::Modified => {
+            let (s1, m1) = transfer_width_pair(s0, m0, dx_i);
+            (s1, m1, p0, o0)
+        }
+        SortField::Perms => {
+            let (m1, p1) = transfer_width_pair(m0, p0, dx_i);
+            (s0, m1, p1, o0)
+        }
+        SortField::Owner => {
+            let (p1, o1) = transfer_width_pair(p0, o0, dx_i);
+            (s0, m0, p1, o1)
+        }
+        SortField::Name => (s0, m0, p0, o0),
+    }
+}
+
+fn entry_focused(entry: &Entry, focused: Option<&Widget>) -> bool {
+    gtk4::prelude::WidgetExt::is_visible(entry)
+        && (entry.has_focus() || focused.is_some_and(|w| w.is_ancestor(entry)))
+}
+
+fn hidden_button_spec(show_hidden: bool) -> (&'static str, &'static str) {
+    if show_hidden {
+        ("\u{f06e}", "Hide Hidden Files (Ctrl+H)")
+    } else {
+        ("\u{f070}", "Show Hidden Files (Ctrl+H)")
     }
 }
 
@@ -3799,4 +3928,41 @@ fn make_menu_item(
     }
     btn.connect_clicked(move |_| on_click());
     btn
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SortField, compute_resized_widths, hidden_button_spec};
+
+    #[test]
+    fn hidden_button_switches_eye_glyph_and_tooltip() {
+        let (hidden_glyph, hidden_tip) = hidden_button_spec(false);
+        assert_eq!(hidden_glyph, "\u{f070}");
+        assert!(hidden_tip.contains("Show Hidden Files"));
+
+        let (shown_glyph, shown_tip) = hidden_button_spec(true);
+        assert_eq!(shown_glyph, "\u{f06e}");
+        assert!(shown_tip.contains("Hide Hidden Files"));
+    }
+
+    #[test]
+    fn resized_column_widths_stay_clamped_and_conserve_pair_totals() {
+        let base = (88, 160, 96, 88);
+        assert_eq!(
+            compute_resized_widths(SortField::Size, base, -12),
+            (100, 160, 96, 88)
+        );
+        assert_eq!(
+            compute_resized_widths(SortField::Modified, base, 20),
+            (108, 140, 96, 88)
+        );
+        assert_eq!(
+            compute_resized_widths(SortField::Perms, base, -16),
+            (88, 144, 112, 88)
+        );
+        assert_eq!(
+            compute_resized_widths(SortField::Owner, base, 14),
+            (88, 160, 110, 74)
+        );
+    }
 }

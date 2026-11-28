@@ -42,4 +42,4 @@ Hayato · Theme & Appearance
 │                                    ││                                                                                                                │
 │                                    ││                                                                                                                │
 ╰────────────────────────────────────╯╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- [Enter]  apply   [↑↓]  preview   [w]  wallpaper   [p/Space]  peek desktop   [Esc]  close                                                               
+ [Enter]  apply   [↑↓]  preview   [^W]  wallpaper   [^P]  peek desktop   [type]  filter   [Esc]  close                                                  

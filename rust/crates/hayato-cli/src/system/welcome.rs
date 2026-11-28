@@ -149,7 +149,7 @@ const HOTKEYS: &[HotkeyEntry] = &[
         desc: "Hayato Lens (local Circle-to-Search)",
     },
     HotkeyEntry {
-        keys: "Alt+Ctrl+K",
+        keys: "Alt+/",
         desc: "Every key binding, live from Sway",
     },
     HotkeyEntry {
@@ -924,7 +924,7 @@ impl WelcomeScreen {
                 buf,
                 area.x + 1,
                 fy,
-                "Tip: press Alt+Ctrl+K anytime for the live searchable cheatsheet.",
+                "Tip: press Alt+/ anytime for the live searchable cheatsheet.",
                 area.width.saturating_sub(2),
                 dim_style,
             );

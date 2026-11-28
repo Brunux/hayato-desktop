@@ -42,4 +42,4 @@ Hayato · Clipboard
 │                                                                      │ │                                                                             │
 │                                                                      │ │                                                                             │
 ╰──────────────────────────────────────────────────────────────────────╯ ╰─────────────────────────────────────────────────────────────────────────────╯
- [Enter]  copy back   [Tab]  filter kind   [Del]  delete   [Ctrl+Y]  share   [Ctrl+S]  save img   [Ctrl+X]  clear   [Esc]  back                         
+ [Enter]  copy back   [Tab]  filter kind   [Del]  delete   [^S]  share   [^W]  save img   [^T]  transform   [^X]  clear   [Esc]  back                   

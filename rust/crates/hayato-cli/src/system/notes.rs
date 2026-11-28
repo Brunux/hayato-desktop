@@ -155,7 +155,8 @@ impl NotesScreen {
             header: Header::new("Hayato").subtitle("Notes"),
             keybar: vec![
                 KeyHint::new("Enter", "open"),
-                KeyHint::new("Ctrl+P", "read"),
+                KeyHint::new("^P", "read"),
+                KeyHint::new("^S", "share"),
                 KeyHint::new("Del", "trash"),
                 KeyHint::new("Esc", "close"),
             ],
@@ -599,10 +600,13 @@ impl Screen for NotesScreen {
                 },
             };
         }
-        if key.code == KeyCode::Esc && !self.list.filter().is_empty() {
-            self.list.set_filter("");
-            self.refresh_preview();
-            return Outcome::Consumed;
+        if key.code == KeyCode::Esc {
+            if !self.list.filter().is_empty() {
+                self.list.set_filter("");
+                self.refresh_preview();
+                return Outcome::Consumed;
+            }
+            return Outcome::Done(hayato_ui::app::exit::ESCAPE);
         }
         if key.code == KeyCode::Char('p') && key.modifiers.contains(KeyModifiers::CONTROL) {
             if let Some(note) = self.selected_note() {

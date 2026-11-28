@@ -33,11 +33,11 @@ never loads a web page; its scan, ids and launch rules live in
 | ↑ / ↓ | move through the games in the tab |
 | Enter | play the selected game |
 | type | filter the current tab by title or platform |
-| f | favourite / unfavourite |
-| **o** | **options**: sort, layout, covers, hide missing cores |
-| **m** | **this manual**, inside the library: scroll it, Esc goes back |
-| **r** | open the game's folder in Files |
-| s | rescan `~/Games` |
+| **Ctrl+F** | favourite / unfavourite |
+| **Ctrl+O** | **options**: sort, layout, covers, hide missing cores |
+| **Ctrl+M** | **this manual**, inside the library: scroll it, Esc goes back |
+| **Ctrl+R** | open the game's folder in Files |
+| **Ctrl+S** | rescan `~/Games` |
 | Esc | clear the filter, then close the library |
 | Alt+F | fullscreen on or off (the compositor) |
 
@@ -50,16 +50,16 @@ library without a separate mode.
 
 In the Games library three more buttons carry its own actions: **X** opens the
 options, **Y** the manual and **L1** the game's folder in Files. They are sent
-as **Alt+O**, **Alt+M** and **Alt+R**, not as bare letters, because a bare
-letter would type into another screen's filter (the root menu and the files
-list type to filter); Alt+O/M/R are unbound everywhere else, so a press still
-cannot move two things at once. `f` (favourite) and `s` (rescan) are keyboard
+as **F21**, **F22** and **F23**, not as bare letters or `Alt+...`, because a bare
+letter types into filters and Sway reserves `Alt` as `$mod`; `F21`–`F23` are
+unbound everywhere else, so a press still cannot move two things at once.
+**Ctrl+F** (favourite) and **Ctrl+S** (rescan) are keyboard
 keys.
 
 Those are the defaults, and they fit a **DualShock 4** as well as an Xbox pad:
 **Cross** confirms, **Circle** cancels, **Square** opens the options,
 **Triangle** the manual, **L1** the folder. Every button can be reassigned in
-**Settings → Input → Controller**, or from the library's **`o` → Controller**
+**Settings → Input → Controller**, or from the library's **`Ctrl+O` → Controller**
 row, which opens the same screen in its own window. The screen works with no
 pad connected — the action is chosen with ←/→ — so a preconfigured pad can be
 edited before it is paired. Changes go to `~/.config/hayato/pad.json` and
@@ -97,7 +97,7 @@ never moves two things at once.
 
 ## Options
 
-**`o`** opens four settings and one action — the rest are keys, not
+**`Ctrl+O`** (`F21` on pad) opens four settings and one action — the rest are keys, not
 preferences:
 
 | Row | Values | Does |
@@ -118,10 +118,10 @@ DS4/DS3 pairing.
 
 ## The manual, inside the library
 
-**`m`** opens a manual over the library: where a ROM goes, the platform table
+**`Ctrl+M`** (`F22` on pad) opens a manual over the library: where a ROM goes, the platform table
 with its extensions and core, the firmware files, the steps to play, the keys,
 the save locations and the fixes for the common failures. ↑/↓ scroll a line,
-**PgUp/PgDn** a page, **Home/End** the ends, and **Esc** (or `m`) goes back to
+**PgUp/PgDn** a page, **Home/End** the ends, and **Esc** (or `Ctrl+M`) goes back to
 the list. It is the same information as this page, short enough to read without
 leaving the window.
 

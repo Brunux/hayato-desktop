@@ -21,7 +21,7 @@ use hayato_ui::{Glyph, Header};
 use image::RgbImage;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 
@@ -324,8 +324,9 @@ impl ThemePickerScreen {
             keybar: vec![
                 KeyHint::new("Enter", "apply"),
                 KeyHint::new("\u{2191}\u{2193}", "preview"),
-                KeyHint::new("w", "wallpaper"),
-                KeyHint::new("p/Space", "peek desktop"),
+                KeyHint::new("^W", "wallpaper"),
+                KeyHint::new("^P", "peek desktop"),
+                KeyHint::new("type", "filter"),
                 KeyHint::new("Esc", "close"),
             ],
             rows_height: Cell::new(20),
@@ -851,10 +852,17 @@ impl Screen for ThemePickerScreen {
         }
 
         let p = paths();
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
 
         match key.code {
-            // Cancel / Exit
-            KeyCode::Esc | KeyCode::Char('q') => {
+            // Clear filter first, then Cancel / Exit cleanly
+            KeyCode::Esc => {
+                if !self.list.filter().is_empty() {
+                    self.list.set_filter("");
+                    self.sync_live_preview();
+                    return Outcome::Consumed;
+                }
                 // Restore original terminal palette
                 self.restore_original_terminal();
                 // If we were peeking, restore the original theme before exiting!
@@ -891,9 +899,8 @@ impl Screen for ThemePickerScreen {
                 }
             }
 
-            // Wallpaper cycle for selected theme (`cycle_wallpaper_for` clears any
-            // custom wallpaper override and applies the next preset immediately).
-            KeyCode::Char('w') => {
+            // Ctrl+W: Wallpaper cycle for selected theme
+            KeyCode::Char('w') if ctrl => {
                 if let Some(selected) = self.selected_entry() {
                     let slug = selected.slug.clone();
                     match cycle_wallpaper_for(&p, Some(&slug)) {
@@ -915,8 +922,8 @@ impl Screen for ThemePickerScreen {
                 Outcome::Consumed
             }
 
-            // Peek live desktop mode
-            KeyCode::Char('p') | KeyCode::Char(' ') => {
+            // Ctrl+P: Peek live desktop mode
+            KeyCode::Char('p') if ctrl => {
                 let Some((target_slug, theme_name)) = self
                     .selected_entry()
                     .map(|s| (s.slug.clone(), s.theme.name.clone()))
@@ -951,15 +958,21 @@ impl Screen for ThemePickerScreen {
                 Outcome::Consumed
             }
 
-            // Navigation
-            KeyCode::Up
-            | KeyCode::Down
-            | KeyCode::PageUp
-            | KeyCode::PageDown
-            | KeyCode::Home
-            | KeyCode::End
-            | KeyCode::Char('j')
-            | KeyCode::Char('k') => {
+            // Type-to-filter owns all printable keys (never hijack q/w/p/j/k/Space)
+            KeyCode::Backspace | KeyCode::Char(_) if !ctrl && !alt => {
+                let old_idx = self.list.selected_index();
+                if self.list.type_filter(key) {
+                    if self.list.selected_index() != old_idx {
+                        self.sync_live_preview();
+                    }
+                    Outcome::Consumed
+                } else {
+                    Outcome::Continue
+                }
+            }
+
+            // Arrow / Page / Home / End / Ctrl+N navigation
+            _ => {
                 let old_idx = self.list.selected_index();
                 let action = self.list.handle(key, self.rows_height.get(), design);
                 if action == ListAction::Moved || self.list.selected_index() != old_idx {
@@ -977,23 +990,12 @@ impl Screen for ThemePickerScreen {
                         }
                     }
                 }
-                Outcome::Consumed
-            }
-
-            // Real-time case-folded filtering as you type
-            KeyCode::Backspace | KeyCode::Char(_) => {
-                let old_idx = self.list.selected_index();
-                if self.list.type_filter(key) {
-                    if self.list.selected_index() != old_idx {
-                        self.sync_live_preview();
-                    }
-                    Outcome::Consumed
-                } else {
+                if action == ListAction::Ignored {
                     Outcome::Continue
+                } else {
+                    Outcome::Consumed
                 }
             }
-
-            _ => Outcome::Continue,
         }
     }
 }

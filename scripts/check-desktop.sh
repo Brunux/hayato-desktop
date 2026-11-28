@@ -627,7 +627,7 @@ else
 fi
 
 # A fullscreen film or presentation must not be interrupted by the lock, and
-# mpv asks the compositor for that itself (zwp_idle_inhibitor_v1); Firefox and
+# mpv asks the compositor for that itself (zwp_idle_inhibitor_v1); Chromium and
 # papers ask org.freedesktop.portal.Inhibit instead, which this image has no
 # backend for, so the compositor holds the inhibitor on their behalf.  Without
 # those lines the screen locks in the middle of a video, with no error anywhere.
@@ -637,8 +637,8 @@ fi
 _inhib_cfg=/etc/sway/config.d/32-idle-inhibit.conf
 _inhib=""
 if [ -r "$_inhib_cfg" ]; then
-	grep -qs 'firefox.*inhibit_idle fullscreen' "$_inhib_cfg" ||
-		_inhib="$_inhib no-firefox"
+	grep -qs 'chromium.*inhibit_idle fullscreen' "$_inhib_cfg" ||
+		_inhib="$_inhib no-chromium"
 	grep -qs 'Papers.*inhibit_idle fullscreen' "$_inhib_cfg" ||
 		_inhib="$_inhib no-papers"
 	grep -qs 'mpv.*inhibit_idle visible' "$_inhib_cfg" ||
@@ -647,7 +647,7 @@ else
 	_inhib="$_inhib $_inhib_cfg"
 fi
 if [ -z "$_inhib" ]; then
-	ok "fullscreen video inhibits the idle chain (Firefox, papers, mpv)"
+	ok "fullscreen video inhibits the idle chain (Chromium, papers, mpv)"
 else
 	fail "idle inhibition incomplete:$_inhib (the lock interrupts a film)"
 fi
@@ -1206,16 +1206,15 @@ done
 [ -z "$_missing_home" ] && ok "the home folders are there (Documents, Downloads, Music, Videos)" ||
 	warn "home folders missing:$_missing_home (rootfs-setup.sh creates them; a download recreates Downloads)"
 
-# The file list's Tab (Alt+1 where it arrives) hands the row to
-# bin/hayato-file-actions, which is still a script: without it the key says the
-# actions menu did not start.
+# The file list's Tab action hands the row to bin/hayato-file-actions, which
+# is still a script: without it the key says the actions menu did not start.
 _missing_actions=""
 for _c in tar unzip ffmpeg udisksctl; do have "$_c" || _missing_actions="$_missing_actions $_c"; done
 [ -x "$HOME/.config/bin/hayato-file-actions" ] || _missing_actions="$_missing_actions bin/hayato-file-actions"
 if [ -z "$_missing_actions" ]; then
 	ok "the file actions have their tools (tar, unzip, ffmpeg, udisksctl)"
 else
-	fail "file actions incomplete:$_missing_actions (Alt+1 offers rows that cannot run)"
+	fail "file actions incomplete:$_missing_actions (Tab offers rows that cannot run)"
 fi
 
 # Notes and documents: quick notes are Markdown in ~/Documents/Notes, ink notes
@@ -1363,20 +1362,16 @@ if [ -x "$HOME/.config/bin/hayato-profile" ]; then
 	else
 		fail "bin/hayato-profile lost an agent path or its transcript excludes: sign-ins or 100s of MB of history"
 	fi
-	# Firefox is the other half of "the account": bookmarks, passwords and
-	# add-ons travel, the site data (202 MB here), the session and the SQLite
-	# checkpoints do not. Both roots are in ENTRIES because the XDG path is what
-	# Debian's Firefox uses here and MOZ_LEGACY_HOME=1 moves it to ~/.mozilla; one
-	# `*mozilla/firefox/*` exclude pattern covers either.
-	_dev_ff=ok
-	for _p in .config/mozilla .mozilla; do
-		grep -qsxF -- "$_p" "$HOME/.config/bin/hayato-profile" || _dev_ff=
-	done
-	grep -qsF -- "--exclude='*mozilla/firefox/*/storage'" "$HOME/.config/bin/hayato-profile" || _dev_ff=
-	if [ -n "$_dev_ff" ]; then
-		ok "the profile export covers the Firefox profile (site data, session and caches excluded)"
+	# Chromium is the other half of "the account": bookmarks, preferences and
+	# saved logins travel under ~/.config/chromium while regenerable caches,
+	# ShaderCache and Service Worker storage stay excluded.
+	_dev_chr=ok
+	grep -qsxF -- ".config/chromium" "$HOME/.config/bin/hayato-profile" || _dev_chr=
+	grep -qsF -- "--exclude='*chromium/*/Service Worker*'" "$HOME/.config/bin/hayato-profile" || _dev_chr=
+	if [ -n "$_dev_chr" ]; then
+		ok "the profile export covers the Chromium profile (caches and Service Workers excluded)"
 	else
-		fail "bin/hayato-profile lost the Firefox profile or its storage/cache excludes: bookmarks and passwords or 200 MB of site data"
+		fail "bin/hayato-profile lost the Chromium profile or its cache/Service Worker excludes"
 	fi
 	# A passphrase prompt that lands on the VT is worse than no prompt at all:
 	# the session shows a busy card and nothing ever asks. `[ -t 0 ]` alone was
@@ -1679,7 +1674,7 @@ fi
 	fail "bin/hayato-keys is missing: the key view has no script"
 [ -x "$HOME/.config/bin/hayato-files" ] && ok "file browser (hayato-files) is executable" ||
 	fail "bin/hayato-files is missing: Alt+Ctrl+F and the Files menu entry do nothing"
-# The GTK4 Filer window (Alt+Ctrl+Shift+F) ships beside the TUI list. Its
+# The GTK4 Filer window (Alt+Shift+F) ships beside the TUI list. Its
 # --self-test proves the theme CSS rendered and the pure state / archive logic is
 # intact without needing a display; a stale /usr/local/bin copy shadows it.
 if _filer_bin=$(command -v hayato-filer 2>/dev/null) && [ -x "$_filer_bin" ]; then
@@ -1689,7 +1684,7 @@ if _filer_bin=$(command -v hayato-filer 2>/dev/null) && [ -x "$_filer_bin" ]; th
 		fail "hayato-filer --self-test failed: the Files window would open broken"
 	fi
 else
-	fail "hayato-filer is missing: Alt+Ctrl+Shift+F opens nothing"
+	fail "hayato-filer is missing: Alt+Shift+F opens nothing"
 fi
 # The translate key is taught in one place, the shortcuts page, and the Settings
 # row only says what it does - not that it exists.  A manual that lost the row
@@ -2197,15 +2192,15 @@ if [ -r "$HOME/.config/waybar/style.css" ]; then
 		warn "style.css has no #custom-vnc.control: remote control looks like a read-only view"
 fi
 if [ -r "$HOME/.config/waybar/config.jsonc" ]; then
-	grep -qs '"custom/sysmon"' "$HOME/.config/waybar/config.jsonc" &&
-		ok "the bar carries the system monitor indicator (custom/sysmon)" ||
-		warn "waybar config.jsonc has no custom/sysmon indicator beside the clock"
+	grep -qs 'hayato sysmon --bar' "$HOME/.config/waybar/config.jsonc" &&
+		ok "the bar hosts live system telemetry on the H_ brand (custom/brand)" ||
+		warn "waybar config.jsonc does not wire hayato sysmon --bar onto custom/brand"
 fi
 if [ -r "$HOME/.config/waybar/style.css" ]; then
-	grep -qs '#custom-sysmon.warn' "$HOME/.config/waybar/style.css" &&
-		grep -qs '#custom-sysmon.critical' "$HOME/.config/waybar/style.css" &&
-		ok "style.css styles custom/sysmon warning and critical pressure states" ||
-		warn "style.css lacks #custom-sysmon.warn/.critical (run \`hayato theme set\`)"
+	grep -qs '#custom-brand.warn' "$HOME/.config/waybar/style.css" &&
+		grep -qs '#custom-brand.critical' "$HOME/.config/waybar/style.css" &&
+		ok "style.css styles custom/brand warning and critical pressure states (H only)" ||
+		warn "style.css lacks #custom-brand.warn/.critical (run \`hayato theme set\`)"
 fi
 if command -v hayato >/dev/null 2>&1; then
 	_sysmon_json=$(hayato sysmon --bar 2>/dev/null || true)
@@ -2315,7 +2310,7 @@ fi
 # while the binding is exactly as written. The two workspace swipes are checked
 # with it because one file holds all four.
 #
-# The vertical two also carry the Firefox filter, and that half is checked too:
+# The vertical two also carry the browser filter, and that half is checked too:
 # `con_id="__focused__"` is what keeps the keys out of every other window (a
 # criteria without it matches a window of that app even when it is not focused,
 # measured), and it is sway's own check in-process - nothing is started when
@@ -2327,13 +2322,13 @@ _gest=""
 [ -r "$_gest_cfg" ] || _gest="$_gest config.d/22-workspace-gestures.conf"
 for _g in 'swipe:3:left workspace next_on_output' \
 	'swipe:3:right workspace prev_on_output' \
-	'swipe:3:up [app_id="(?i)^firefox" con_id="__focused__"] exec wtype -M ctrl -k Tab -m ctrl' \
-	'swipe:3:down [app_id="(?i)^firefox" con_id="__focused__"] exec wtype -M ctrl -M shift -k Tab -m shift -m ctrl'; do
+	'swipe:3:up [app_id="(?i)^(chromium|firefox|librewolf)" con_id="__focused__"] exec wtype -M ctrl -k Tab -m ctrl' \
+	'swipe:3:down [app_id="(?i)^(chromium|firefox|librewolf)" con_id="__focused__"] exec wtype -M ctrl -M shift -k Tab -m shift -m ctrl'; do
 	grep -qsF "$_g" "$_gest_cfg" 2>/dev/null || _gest="$_gest ${_g%% *}"
 done
 have wtype || _gest="$_gest wtype"
 if [ -z "$_gest" ]; then
-	ok "touchpad swipes wired (3-finger left/right workspaces, up/down Ctrl+Tab / Ctrl+Shift+Tab in Firefox)"
+	ok "touchpad swipes wired (3-finger left/right workspaces, up/down Ctrl+Tab / Ctrl+Shift+Tab in browser)"
 else
 	fail "touchpad swipes incomplete:$_gest (the swipe completes and nothing happens)"
 fi
@@ -2562,7 +2557,7 @@ if [ -z "$_welcome" ]; then
 	_welcome_text=$("$HOME/.config/bin/hayato-welcome" --print 2>/dev/null || true)
 	_welcome_missing=""
 	for _k in 'Alt+Space' 'Alt+D' 'Search' 'Alt+Ctrl+F' 'Alt+Ctrl+T' 'Alt+Return' \
-		'Alt+Q' 'Alt+Escape' 'Alt+Ctrl+K'; do
+		'Alt+Q' 'Alt+Escape' 'Alt+/'; do
 		grep -qF -- "$_k" <<<"$_welcome_text" || _welcome_missing="$_welcome_missing $_k"
 	done
 	grep -qF -- 'once per install' <<<"$_welcome_text" ||
@@ -2639,10 +2634,10 @@ fi
 # file, a URL. hayato-files and /usr/local/bin/xdg-open are the two things that
 # start it; without it they answer with a notification instead, which is easy to
 # miss.
-if have firefox-esr; then
-	ok "browser installed (firefox-esr is the image's fallback)"
+if have chromium; then
+	ok "browser installed (chromium is the image's fallback)"
 else
-	fail "firefox-esr is missing: Files cannot open an image or a PDF and xdg-open has no fallback"
+	fail "chromium is missing: Files cannot open an image or a PDF and xdg-open has no fallback"
 fi
 if [ -x /usr/local/bin/xdg-open ]; then
 	ok "xdg-open shim is installed (URLs and paths go to the browser)"
@@ -2653,12 +2648,12 @@ fi
 # through hayato-browser, which reads what Settings wrote.
 if [ -x "$HOME/.config/bin/hayato-browser" ]; then
 	ok "hayato-browser is installed (one place reads the default browser)"
-	# The image ships firefox-esr and names it for http/https; a fresh account
+	# The image ships chromium and names it for http/https; a fresh account
 	# has no user override, so the key and xdg-open open the shipped browser.
-	if grep -qs '^x-scheme-handler/https=firefox-esr.desktop' /etc/xdg/mimeapps.list; then
-		ok "the image's default browser is firefox-esr (the shipped one)"
+	if grep -qs '^x-scheme-handler/https=chromium.desktop' /etc/xdg/mimeapps.list; then
+		ok "the image's default browser is chromium (the shipped one)"
 	else
-		fail "/etc/xdg/mimeapps.list does not name firefox-esr for https: a fresh install has no default browser"
+		fail "/etc/xdg/mimeapps.list does not name chromium for https: a fresh install has no default browser"
 	fi
 	_default_browser=$(xdg-settings get default-web-browser 2>/dev/null || true)
 	_browser_print=$("$HOME/.config/bin/hayato-browser" --print 2>/dev/null || true)
@@ -2670,7 +2665,7 @@ if [ -x "$HOME/.config/bin/hayato-browser" ]; then
 		fail "hayato-browser would launch ${_browser_print:-nothing}, the default is ${_default_browser:-nothing}"
 	fi
 else
-	fail "bin/hayato-browser is missing: the browser key and xdg-open name firefox-esr whatever Settings says"
+	fail "bin/hayato-browser is missing: the browser key and xdg-open name chromium whatever Settings says"
 fi
 if grep -rqs 'exec hayato-browser' /etc/sway/config /etc/sway/config.d "$HOME/.config/sway/config" "$HOME/.config/sway/config.d" 2>/dev/null; then
 	ok "the browser key starts hayato-browser"
@@ -2678,29 +2673,26 @@ else
 	fail "no sway drop-in binds the browser key to hayato-browser: it still names one program"
 fi
 
-# Spec 015: Browser optimization (vertical tabs, compact density, zero Marionette daemons)
-if have firefox-esr; then
-	_ff_pol=/usr/lib/firefox-esr/distribution/policies.json
-	[ -n "$DESKTOP_REPO" ] && [ -f "$DESKTOP_REPO/uis/sway/files/usr/share/firefox-esr/distribution/policies.json" ] &&
-		_ff_pol="$DESKTOP_REPO/uis/sway/files/usr/share/firefox-esr/distribution/policies.json"
-	[ -n "$DESKTOP_REPO" ] && [ -f "$DESKTOP_REPO/uis/sway/files/usr/lib/firefox-esr/distribution/policies.json" ] &&
-		_ff_pol="$DESKTOP_REPO/uis/sway/files/usr/lib/firefox-esr/distribution/policies.json"
-	if [ -f "$_ff_pol" ]; then
-		if python3 -c "import json, sys; d=json.load(open('$_ff_pol')); p=d['policies']['Preferences']; assert p['sidebar.verticalTabs']['Value'] is True; assert p['browser.uidensity']['Value'] == 1" 2>/dev/null; then
-			ok "browser policies configured (vertical tabs and compact density in $_ff_pol)"
-		else
-			fail "browser policies in $_ff_pol are invalid or missing vertical tabs / compact density"
-		fi
+# Native Wayland, performance, memory, and vertical tabs profile for Chromium
+if have chromium; then
+	_chr_flags=/etc/chromium.d/hayato
+	[ -n "$DESKTOP_REPO" ] && [ -f "$DESKTOP_REPO/uis/sway/files/etc/chromium.d/hayato" ] &&
+		_chr_flags="$DESKTOP_REPO/uis/sway/files/etc/chromium.d/hayato"
+	if [ -f "$_chr_flags" ] && grep -qs -- '--ozone-platform-hint=auto' "$_chr_flags" && grep -qs -- 'VerticalTabs' "$_chr_flags"; then
+		ok "Chromium Wayland, performance & vertical tabs flags configured ($_chr_flags)"
 	else
-		fail "browser policies missing: $_ff_pol does not exist (spec 015)"
+		fail "Chromium drop-in missing --ozone-platform-hint=auto or VerticalTabs in $_chr_flags"
 	fi
-	if ss -tlnp 2>/dev/null | grep -q ":2828 "; then
-		fail "Marionette port 2828 is listening: dropped automation server is running"
+	_chr_pol=/etc/chromium/policies/recommended/hayato.json
+	[ -n "$DESKTOP_REPO" ] && [ -f "$DESKTOP_REPO/uis/sway/files/etc/chromium/policies/recommended/hayato.json" ] &&
+		_chr_pol="$DESKTOP_REPO/uis/sway/files/etc/chromium/policies/recommended/hayato.json"
+	if [ -f "$_chr_pol" ] && python3 -c "import json; d=json.load(open('$_chr_pol')); assert d.get('HighEfficiencyModeEnabled') is True" 2>/dev/null; then
+		ok "Chromium recommended Memory Saver & background policy configured ($_chr_pol)"
 	else
-		ok "browser port 2828 is not listening (no Marionette automation daemon)"
+		fail "Chromium recommended policy missing or invalid in $_chr_pol"
 	fi
 else
-	skip "firefox-esr is not installed: browser policies skipped"
+	skip "chromium is not installed: browser profile checks skipped"
 fi
 # Thumbnails in the file browser: the file browser draws a row's picture through
 # hayato-thumbnail, which is ffmpeg for images and video and pdftocairo for a
@@ -2715,7 +2707,7 @@ fi
 if have chafa; then
 	ok "picture viewer present (chafa draws sixels in foot)"
 else
-	fail "chafa is missing: Files cannot show an image without starting Firefox"
+	fail "chafa is missing: Files cannot show an image without starting Chromium"
 fi
 # The three programs the file browser hands a file to, each with a package of its
 # own: imv for a picture (chafa above is its fallback when the GPU gives it no
@@ -2761,20 +2753,20 @@ fi
 
 # A video is mpv's job: chafa only draws stills and answers a container with
 # "unknown file format", which is the error the report carried. Without mpv the
-# row falls back to Firefox (an .mkv then asks to be downloaded), so this is a
+# row falls back to Chromium (an .mkv then asks to be downloaded), so this is a
 # FAIL - the row claims to play something.
 if have mpv; then
 	ok "media player installed (mpv), what hayato-files opens a video with"
 else
-	fail "mpv is missing: a video in Files falls back to Firefox (chafa cannot decode a container)"
+	fail "mpv is missing: a video in Files falls back to Chromium (chafa cannot decode a container)"
 fi
-# A document is papers' job. Without it a PDF goes to Firefox, which is a
-# 280 MB browser for a page, and an EPUB still needs it (papers does not read
-# EPUB, whatever the comparison table once said).
+# A document is papers' job. Without it a PDF goes to Chromium, which is a
+# heavy browser for a page, and an EPUB still needs foliate (papers does not
+# read EPUB).
 if have papers; then
 	ok "document reader installed (papers), what a double click on a PDF uses"
 else
-	warn "papers is missing: a PDF opens in Firefox instead of the reader (the fallback works, it is just the browser)"
+	warn "papers is missing: a PDF opens in Chromium instead of the reader (the fallback works, it is just the browser)"
 fi
 
 # The webcam. The camera is a USB UVC device - the internal one sits on the hub
@@ -2828,7 +2820,7 @@ fi
 # The camera portal is a different road to the same device, and this image has
 # no backend that implements it: the only portal backend here is the wlr one
 # (Screenshot and ScreenCast), so xdg-desktop-portal logs "The camera portal
-# requires an access impl" on every session while guvcview, ffmpeg and Firefox
+# requires an access impl" on every session while guvcview, ffmpeg and Chromium
 # open /dev/video* directly. It is a stated limit (04-software.md), not a
 # regression - but it is the answer to "why does this Flatpak see no camera",
 # so the report says it instead of leaving the journal line to be found.
@@ -2836,7 +2828,7 @@ if [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ] && have busctl; then
 	if ! _portal=$(busctl --user call org.freedesktop.portal.Desktop \
 			/org/freedesktop/portal/desktop \
 			org.freedesktop.portal.Camera IsCameraPresent 2>&1); then
-		info "no camera portal (${_portal#Call failed: }): a Flatpak app cannot use the camera; guvcview, ffmpeg and Firefox read ${_cam_node:-the device} directly"
+		info "no camera portal (${_portal#Call failed: }): a Flatpak app cannot use the camera; guvcview, ffmpeg and Chromium read ${_cam_node:-the device} directly"
 	fi
 fi
 
@@ -2902,15 +2894,15 @@ if have hayato-filer; then
 	# can be asked without starting one; `--self-test` runs headless below.
 	ok "file manager installed (hayato-filer is executable)"
 else
-	fail "hayato-filer is missing: the Files (window) entry and Alt+Ctrl+Shift+F do nothing"
+	fail "hayato-filer is missing: the Files (window) entry and Alt+Shift+F do nothing"
 fi
-# The window has a key of its own (Alt+Ctrl+Shift+F, the Shift variant of the
+# The window has a key of its own (Alt+Shift+F, the Shift variant of the
 # Files menu's Alt+Ctrl+F): without the binding the window is only reachable
 # from the launcher, which reads as "the shortcut stopped working".
-if grep -rqs 'Ctrl+Shift+f exec .*hayato-filer' /etc/sway/config.d/; then
-	ok "Alt+Ctrl+Shift+F opens the file manager (hayato-filer)"
+if grep -rqs 'Shift+f exec .*hayato-filer' /etc/sway/config.d/; then
+	ok "Alt+Shift+F opens the file manager (hayato-filer)"
 else
-	fail "no 'Ctrl+Shift+f exec ...hayato-filer' binding in /etc/sway/config.d/: Alt+Ctrl+Shift+F does nothing"
+	fail "no 'Shift+f exec ...hayato-filer' binding in /etc/sway/config.d/: Alt+Shift+F does nothing"
 fi
 # Mounting removable media uses udisks2; both the file manager (favnyr) and hayato-places
 # through /usr/bin/udisksctl to udisksd on the system bus. The check is the client
@@ -3069,7 +3061,7 @@ else
 	warn "the Hayato theme has no icon for:$_missing (holes in favnyr's sidebar and icon view)"
 fi
 if [ -x "$HOME/.config/bin/hayato-view" ]; then
-	ok "open-with handler installed (hayato-view: bat, imv, papers, mpv, firefox-esr)"
+	ok "open-with handler installed (hayato-view: bat, imv, papers, mpv, chromium)"
 else
 	fail "bin/hayato-view is missing or not executable: a double click in favnyr opens nothing"
 fi
@@ -3332,7 +3324,7 @@ fi
 # Agents: the menu is a script; whether a CLI is installed is informational,
 # because installing one is the menu's own job.
 [ -x "$HOME/.config/bin/hayato-agents" ] && ok "agents menu (hayato-agents) is executable" ||
-	fail "bin/hayato-agents is missing: Alt+Ctrl+Shift+A does nothing"
+	fail "bin/hayato-agents is missing: Alt+Shift+A does nothing"
 # The agents menu draws the session's glyph rows natively via `hayato menu agents`.
 if [ -L "$HOME/.config/bin/hayato-agents" ] && [ "$(readlink -f "$HOME/.config/bin/hayato-agents")" = "/usr/bin/hayato" ]; then
 	ok "the agents menu draws the session's glyph rows (hayato menu agents)"
@@ -4416,7 +4408,7 @@ for _theme_key in "theme next" "theme wallpaper next"; do
 	if printf '%s' "$_theme_keys" | grep -qF "$_theme_key"; then
 		ok "the binding for \`hayato $_theme_key\` is present"
 	else
-		fail "no binding runs \`hayato $_theme_key\` (Alt+Shift+T and Alt+Shift+W)"
+		fail "no binding runs \`hayato $_theme_key\` (Alt+Ctrl+Shift+T and Alt+Shift+W)"
 	fi
 done
 
@@ -4747,14 +4739,14 @@ if have fc-list; then
 		if [ "$_lib_match" != "Symbols Nerd Font" ] && [ -n "$_lib_match" ]; then
 			ok "Liberation Mono resolves to text font ($_lib_match)"
 		else
-			fail "Liberation Mono resolves to Symbols Nerd Font (code blocks in Firefox render as boxes)"
+			fail "Liberation Mono resolves to Symbols Nerd Font (code blocks in Chromium render as boxes)"
 		fi
 
 		_roboto_match="$(fc-match "Roboto Mono" -f '%{family}' 2>/dev/null || true)"
 		if [ "$_roboto_match" != "Symbols Nerd Font" ] && [ -n "$_roboto_match" ]; then
 			ok "Roboto Mono resolves to text font ($_roboto_match)"
 		else
-			fail "Roboto Mono resolves to Symbols Nerd Font (code blocks in Firefox render as boxes)"
+			fail "Roboto Mono resolves to Symbols Nerd Font (code blocks in Chromium render as boxes)"
 		fi
 	fi
 else
@@ -4803,7 +4795,7 @@ fi
 # command palette only has icons because make-icons.sh renders them under those
 # names too.  Missing ones are a blank 26 px column, not an error.
 _runless=""
-for _c in foot btop htop lazygit tmux nvim fzf rg bat eza mpv imv firefox-esr; do
+for _c in foot btop htop lazygit tmux nvim fzf rg bat eza mpv imv chromium; do
 	[ -r "/usr/share/icons/Hayato/48x48/apps/$_c.png" ] || _runless="$_runless $_c"
 done
 if [ -z "$_runless" ]; then

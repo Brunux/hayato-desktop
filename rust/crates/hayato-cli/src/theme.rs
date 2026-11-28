@@ -67,7 +67,7 @@ fn usage() -> i32 {
     eprintln!();
     eprintln!("  list       every theme, with the active one marked");
     eprintln!("  set NAME   generate every surface from NAME and reload the session");
-    eprintln!("  next       the next theme in the cycle (Alt+Shift+T)");
+    eprintln!("  next       the next theme in the cycle (Alt+Ctrl+Shift+T)");
     eprintln!("  current    the active theme, as `slug<TAB>name`");
     eprintln!("  validate   parse and check the built-ins (or the names given)");
     eprintln!("  preview [NAME]  the palette as a card: roles, the 16 ANSI swatches, the ratios");

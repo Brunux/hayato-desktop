@@ -54,6 +54,20 @@ use crate::sway_ipc;
 /// Global flag set by `SIGUSR1` when `hayato theme set` reloads palettes live.
 pub static THEME_RELOAD_FLAG: AtomicBool = AtomicBool::new(false);
 
+pub fn signal_waybar() {
+    let _ = std::process::Command::new("pkill")
+        .args(["-RTMIN+8", "-x", "waybar"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+}
+
+pub fn clear_now_playing() {
+    hayato_music_core::NowPlayingFile::clear();
+    signal_waybar();
+}
+
 const BLOCKS: &[&str] = &[" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
 
 const HIT_FILTER_ALL: usize = 100;
@@ -1062,12 +1076,7 @@ impl CassetteScreen {
             volume_pct: self.config.volume_pct,
         };
         now_file.write_atomic();
-        let _ = Command::new("pkill")
-            .args(["-RTMIN+8", "-x", "waybar"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
+        signal_waybar();
     }
 
     fn rebuild_sidebar_and_home(&mut self) {
@@ -1756,7 +1765,7 @@ impl CassetteScreen {
                     });
                     self.set_notice(
                         StatusTone::Info,
-                        "Opening Firefox for Spotify PKCE login…",
+                        "Opening browser for Spotify PKCE login…",
                         Some(5),
                     );
                 }
@@ -1779,7 +1788,7 @@ impl CassetteScreen {
                     self.hub.send(ProviderCmd::EnableLocalConnect);
                     self.set_notice(
                         StatusTone::Info,
-                        "Opening Firefox to enable This Device audio…",
+                        "Opening browser to enable This Device audio…",
                         Some(5),
                     );
                 }
@@ -1815,7 +1824,7 @@ impl CassetteScreen {
             self.hub.send(ProviderCmd::EnableLocalConnect);
             self.set_notice(
                 StatusTone::Info,
-                "Opening Firefox to enable This Device audio…",
+                "Opening browser to enable This Device audio…",
                 Some(5),
             );
             self.phase = CassettePhase::Normal;
@@ -1927,6 +1936,7 @@ impl CassetteScreen {
                         self.remote_state = PlayState::Paused;
                         self.hub.send(ProviderCmd::RemotePause(ProviderId::Spotify));
                     }
+                    self.publish_external_state();
                 }
                 MprisCommand::Next => self.next_track(false),
                 MprisCommand::Previous => self.prev_track(),
@@ -1935,7 +1945,7 @@ impl CassetteScreen {
                 }
                 MprisCommand::Quit => {
                     self.engine.stop();
-                    NowPlayingFile::clear();
+                    clear_now_playing();
                     return Outcome::Done(hayato_ui::app::exit::OK);
                 }
             }
@@ -4000,7 +4010,7 @@ impl Screen for CassetteScreen {
             if let ListAction::Activated(idx) = list.handle(key, self.rows_height.get(), design) {
                 if idx == 13 {
                     self.engine.stop();
-                    NowPlayingFile::clear();
+                    clear_now_playing();
                     return Outcome::Done(hayato_ui::app::exit::OK);
                 }
                 self.activate_palette_row(idx);
@@ -4116,7 +4126,7 @@ impl Screen for CassetteScreen {
         match key.code {
             KeyCode::Char('q' | 'Q') => {
                 self.engine.stop();
-                NowPlayingFile::clear();
+                clear_now_playing();
                 return Outcome::Done(hayato_ui::app::exit::OK);
             }
             KeyCode::Esc => {
@@ -4133,7 +4143,7 @@ impl Screen for CassetteScreen {
                     self.sync_chrome();
                 } else if !sway_ipc::hide_to_scratchpad() {
                     self.engine.stop();
-                    NowPlayingFile::clear();
+                    clear_now_playing();
                     return Outcome::Done(hayato_ui::app::exit::ESCAPE);
                 }
                 return Outcome::Consumed;

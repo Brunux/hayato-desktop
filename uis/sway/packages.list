@@ -40,16 +40,14 @@ wvkbd
 
 # what /etc/sway/config and the drop-ins actually invoke
 waybar
-# The browser: what hayato-files sends a PDF and the HTML file to, because it is
-# the reader with search, zoom and printing, and its own PDF renderer. It is also
-# what the minimal /usr/local/bin/xdg-open opens, so foot's ctrl+click and any CLI
-# that shells out to xdg-open (yt-dlp's --print-trailer, a script printing a URL)
-# reach a browser instead of failing. 280 MB installed is the largest single
-# addition in this list, and nothing while it is closed.
-firefox-esr
+# what hayato-files sends an HTML file or .deb to, and what /usr/local/bin/xdg-open
+# opens, so foot's ctrl+click and any CLI that shells out to xdg-open reach a
+# browser instead of failing. ~302 MB installed (plus chromium-common) is the
+# largest single addition in this list, and nothing while closed.
+chromium
 # The file browser's thumbnails are made by ~/.config/bin/hayato-thumbnail, and
 # for a PDF the first page comes from poppler: 1.1 MB for pdftocairo (plus
-# pdftotext and pdftoppm), and it is the only PDF renderer besides Firefox's. No
+# pdftotext and pdftoppm), and it is the only PDF renderer besides Chromium's. No
 # XDG thumbnailer package is in this list on purpose - the file browser runs
 # that script instead and keeps the cache itself
 # (~/.cache/thumbnails/normal, 128 px, 3-8 kB a picture).
@@ -77,7 +75,7 @@ imv
 # packages/tools.list for yt-dlp), seeks, shows subtitles, takes the XF86Audio*
 # keys and draws through libplacebo360 (installed) on the Wayland context. 3.5 MB
 # plus libass, libsixel1, libbluray/libdvdnav/libcdio, libva and friends. Before
-# this, a video container fell through chafa's "unknown file format" to Firefox,
+# This, a video container fell through chafa's "unknown file format" to the browser,
 # which cannot play it either; hayato-files and hayato-view now hand it to mpv,
 # detached with setsid so the menu exits instead of waiting for the film.
 mpv

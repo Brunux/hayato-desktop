@@ -194,7 +194,7 @@ impl QrScreen {
         let mut view_strip = ActionStrip::default();
         view_strip.set_items(vec![
             ActionItem::new("save", "^S", "Save PNG").glyph(Glyph::Save),
-            ActionItem::new("copy", "^C", "Copy payload").glyph(Glyph::Clipboard),
+            ActionItem::new("copy", "^Y", "Copy payload").glyph(Glyph::Clipboard),
             ActionItem::new("open", "^O", "Open folder").glyph(Glyph::Folder),
         ]);
         let mut screen = Self {
@@ -599,10 +599,15 @@ impl Screen for QrScreen {
             }
             let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
             match key.code {
-                KeyCode::Char('s') | KeyCode::Char('S') => {
+                KeyCode::Char('s') | KeyCode::Char('S')
+                    if !key.modifiers.contains(KeyModifiers::ALT) =>
+                {
                     return self.run_view_action("save");
                 }
-                KeyCode::Char('c') | KeyCode::Char('C') => {
+                KeyCode::Char('y') | KeyCode::Char('Y') if ctrl => {
+                    return self.run_view_action("copy");
+                }
+                KeyCode::Char('c') | KeyCode::Char('C') if !ctrl => {
                     return self.run_view_action("copy");
                 }
                 KeyCode::Char('o') | KeyCode::Char('O') => {

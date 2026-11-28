@@ -47,14 +47,13 @@ window#waybar {
     margin-right: 4px;
 }
 
-/* Terminal micro-HUD tooltips matching hayato-notify's 3px left accent rail,
-   3px corners, and monospace telemetry grammar across all 16 themes. */
+/* Terminal micro-HUD tooltips with 1px subtle border, 3px corners, and
+   monospace telemetry grammar across all 16 themes. */
 tooltip,
 tooltip.background {
     background: rgba({{ surface:rgb }}, 0.97);
     color: {{ text }};
     border: 1px solid rgba({{ border:rgb }}, 0.92);
-    border-left: 3px solid {{ accent }};
     border-radius: 3px;
     padding: 9px 13px;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
@@ -91,7 +90,6 @@ tooltip label {
 #custom-busy,
 #custom-rec,
 #custom-cassette,
-#custom-sysmon,
 #privacy,
 #custom-updates,
 #tray,
@@ -153,16 +151,6 @@ tooltip label {
     color: {{ accent }};
 }
 
-/* System monitor icon beside the clock: muted `dim` at rest (matching the
-   coffee cup when auto-sleep is enabled) and `accent` on pointer hover. */
-#custom-sysmon {
-    color: {{ dim }};
-}
-
-#custom-sysmon:hover {
-    color: {{ accent }};
-}
-
 /* The battery icon stays in the reading colour above 5% and switches to the
    readable warning colour when discharging at <= 5%. */
 #battery.critical:not(.charging) {
@@ -218,8 +206,7 @@ tooltip label {
 #custom-keyboard-layout.empty,
 #custom-vnc.empty,
 #custom-vpn.empty,
-#custom-drives.empty,
-#custom-sysmon.empty {
+#custom-drives.empty {
     padding: 0;
     margin: 0;
     border: none;
@@ -255,16 +242,14 @@ tooltip label {
     font-weight: 700;
 }
 
-/* System monitor attention states (>= 90% CPU/RAM/disk): 2px indicator bar
-   matching #custom-vnc.control, paired with an explicit status word in the tooltip. */
-#custom-sysmon.warn {
+/* Brand `H` hosts live sysmon telemetry: only `H` switches to warn/critical
+   pressure colours while `_` (`#custom-brand-dot`) keeps the accent colour. */
+#custom-brand.warn {
     color: {{ warn_text }};
-    box-shadow: inset 0 -2px 0 {{ warn }};
 }
 
-#custom-sysmon.critical {
+#custom-brand.critical {
     color: {{ danger_text }};
-    box-shadow: inset 0 -2px 0 {{ danger }};
 }
 
 /* Remote control is the explicit second start (`--disable-input` absent), and

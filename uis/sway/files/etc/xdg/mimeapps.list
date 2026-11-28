@@ -14,7 +14,7 @@
 # name is what the launcher and GIO already know, and the file that carries it is
 # the user-level shadow (~/.local/share/applications/pcmanfm.desktop) whose Exec
 # is `favnyr`. hayato-files is the keyboard file list, not the directory handler.
-# http/https stay with Firefox, which is the browser the shim already calls.
+# http/https stay with Chromium, which is the browser the shim already calls.
 
 [Default Applications]
 text/plain=org.hayato.view.desktop
@@ -71,10 +71,10 @@ application/vnd.openxmlformats-officedocument.spreadsheetml.sheet=org.hayato.vie
 application/vnd.ms-powerpoint=org.hayato.view.desktop
 application/vnd.openxmlformats-officedocument.presentationml.presentation=org.hayato.view.desktop
 application/x-msdownload=org.hayato.view.desktop
-text/html=firefox-esr.desktop
-application/xhtml+xml=firefox-esr.desktop
-x-scheme-handler/http=firefox-esr.desktop
-x-scheme-handler/https=firefox-esr.desktop
+text/html=chromium.desktop
+application/xhtml+xml=chromium.desktop
+x-scheme-handler/http=chromium.desktop
+x-scheme-handler/https=chromium.desktop
 inode/directory=pcmanfm.desktop
 
 [Added Associations]

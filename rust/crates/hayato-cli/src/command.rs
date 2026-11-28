@@ -708,9 +708,9 @@ pub const COMMANDS: &[CommandSpec] = &[
         installed: &[],
     },
     CommandSpec {
-        // `hayato sysmon --bar`: one-shot Waybar JSON telemetry for custom/sysmon.
+        // `hayato sysmon --bar` / `--bar-dot`: one-shot Waybar JSON telemetry for custom/brand (`H_`).
         path: "sysmon",
-        summary: "system telemetry JSON for Waybar custom/sysmon",
+        summary: "system telemetry JSON for Waybar custom/brand (H_)",
         shape: Shape::Direct,
         symlinks: &[],
         installed: &[],

@@ -707,4 +707,126 @@ mod tests {
         let row = KeysScreen::binding_row(&b);
         assert_eq!(row.label, "Alt+Return  exec foot");
     }
+
+    #[test]
+    fn sway_configs_enforce_alt_as_super_contract() {
+        use std::collections::HashSet;
+        use std::path::Path;
+
+        let sway_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../uis/sway/files/etc/sway");
+        if !sway_dir.exists() {
+            return;
+        }
+        let mut files = vec![sway_dir.join("config")];
+        if let Ok(entries) = std::fs::read_dir(sway_dir.join("config.d")) {
+            let mut extra: Vec<_> = entries
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("conf"))
+                .collect();
+            extra.sort();
+            files.extend(extra);
+        }
+
+        let mut seen = HashSet::new();
+        for path in files {
+            let text = std::fs::read_to_string(&path).expect("read sway config");
+            let mut in_mode = String::new();
+            for (lineno, raw) in text.lines().enumerate() {
+                let line = raw.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                if let Some(rest) = line.strip_prefix("mode ")
+                    && line.ends_with('{')
+                {
+                    in_mode = rest.trim_end_matches('{').trim().to_string();
+                    continue;
+                }
+                if !in_mode.is_empty() && line == "}" {
+                    in_mode.clear();
+                    continue;
+                }
+                let Some(rest) = line.strip_prefix("bindsym ") else {
+                    continue;
+                };
+                let mut tokens = rest.split_whitespace();
+                let mut trigger = "press";
+                let mut chord = None;
+                for tok in &mut tokens {
+                    if tok == "--release" {
+                        trigger = "release";
+                    } else if tok.starts_with("--") {
+                        continue;
+                    } else {
+                        chord = Some(tok);
+                        break;
+                    }
+                }
+                let Some(chord) = chord else { continue };
+                assert!(
+                    !chord.contains("Alt+") && !chord.starts_with("Alt"),
+                    "{}:{}: literal Alt in bindsym `{chord}` (must use $mod)",
+                    path.display(),
+                    lineno + 1
+                );
+
+                let mut parts: Vec<String> =
+                    chord.split('+').map(|p| p.to_ascii_lowercase()).collect();
+                let key = parts.pop().unwrap_or_default();
+                parts.sort();
+                let norm = if parts.is_empty() {
+                    key
+                } else {
+                    format!("{}+{key}", parts.join("+"))
+                };
+
+                // Reject keyd-swallowed ChromeOS chords ($mod+Ctrl+1..0/BackSpace/F6/F7).
+                if norm.starts_with("$mod+ctrl+") {
+                    let leaf = norm.strip_prefix("$mod+ctrl+").unwrap_or_default();
+                    let blocked = (leaf.len() == 1 && leaf.chars().all(|c| c.is_ascii_digit()))
+                        || matches!(leaf, "backspace" | "f6" | "f7");
+                    assert!(
+                        !blocked,
+                        "{}:{}: ChromeOS keyd-blocked chord `{chord}`",
+                        path.display(),
+                        lineno + 1
+                    );
+                }
+
+                let slot = (in_mode.clone(), trigger.to_string(), norm);
+                assert!(
+                    seen.insert(slot.clone()),
+                    "{}:{}: duplicate Sway binding `{chord}` ({slot:?})",
+                    path.display(),
+                    lineno + 1
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn windows_never_bind_alt_modifiers() {
+        use std::path::Path;
+
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let gamepad_rs = std::fs::read_to_string(manifest.join("src/gamepad.rs")).unwrap();
+        assert!(
+            !gamepad_rs.contains("fn send_alt"),
+            "gamepad.rs must inject F21-F23 instead of send_alt"
+        );
+
+        let filer_ui = manifest.join("../hayato-filer/src/ui");
+        if let Ok(entries) = std::fs::read_dir(&filer_ui) {
+            for path in entries.filter_map(|e| e.ok().map(|e| e.path())) {
+                if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                    let src = std::fs::read_to_string(&path).unwrap();
+                    assert!(
+                        !src.contains("<Alt>"),
+                        "{}: GTK4 Filer must never register <Alt> accelerators",
+                        path.display()
+                    );
+                }
+            }
+        }
+    }
 }

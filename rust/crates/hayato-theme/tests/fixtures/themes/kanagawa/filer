@@ -440,13 +440,15 @@ flowboxchild:selected .filer-grid-item {
 .filer-list-header {
     background-color: #1f1f28;
     border-bottom: 1px solid rgba(220, 215, 186, 0.10);
-    padding: 4px 16px;
+    padding: 4px 16px 4px 18px;
 }
 
 .filer-col-btn {
     background-color: transparent;
     border: none;
     border-radius: 4px;
+    min-width: 0;
+    min-height: 0;
     padding: 2px 4px;
     color: rgba(220, 215, 186, 0.62);
     font-family: "JetBrains Mono", monospace;
@@ -462,14 +464,14 @@ flowboxchild:selected .filer-grid-item {
 
 .filer-col-resizer {
     background-color: transparent;
-    border-left: 1px solid rgba(220, 215, 186, 0.14);
+    border-left: 2px solid rgba(220, 215, 186, 0.14);
     margin: 2px 0px 2px 4px;
     min-width: 5px;
 }
 
 .filer-col-resizer:hover,
 .filer-col-resizer.dragging {
-    border-left: 2px solid #7e9cd8;
+    border-left-color: #7e9cd8;
 }
 
 list > row {
@@ -502,6 +504,7 @@ list > row:selected .filer-list-row {
 .filer-item-name {
     color: #dcd7ba;
     font-size: 12px;
+    padding: 0px 4px;
 }
 
 .filer-item-name.dir {
@@ -513,6 +516,14 @@ list > row:selected .filer-list-row {
     color: rgba(220, 215, 186, 0.70);
     font-family: "JetBrains Mono", monospace;
     font-size: 11px;
+    padding: 0px 4px;
+}
+
+.filer-item-perms {
+    color: #dcd7ba;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    padding: 0px 4px;
 }
 
 /* ── Empty State ─────────────────────────────────────────────────────────── */

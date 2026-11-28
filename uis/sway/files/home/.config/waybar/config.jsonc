@@ -10,9 +10,8 @@
 //
 // Clicks:
 //   busy        left: stop the task the spinner names   (see bar-busy)
-//   menu        left: root menu   right: terminal
-//   clock       left: switch format (time/seconds)   scroll: calendar months
-//   sysmon      hover: CPU/RAM/disk HUD   left: ncdu ~   right: btop
+//   menu (H_)   hover: CPU/RAM/disk HUD   left: root menu   right: terminal   middle: btop
+//   clock       left: switch format (time/seconds)   right: year view   scroll: calendar months
 //   updates     left: open the updater (only visible when something is pending)
 //   tray        the StatusNotifier items of running applications
 //   layout      left: next xkb layout (hidden with a single layout)
@@ -42,8 +41,7 @@
         "sway/mode"
     ],
     "modules-center": [
-        "clock",
-        "custom/sysmon"
+        "clock"
     ],
     "modules-right": [
         "privacy",
@@ -64,25 +62,30 @@
         "custom/updates",
         "tray"
     ],
-    // The brand: the wordmark's first letter and its cursor (`H_`, the mark is
-    // the eagle in brand/hayato.svg), the `H` in the reading colour and the `_`
-    // cursor in the accent - the same accent as the current workspace chip.
-    // The word is split across two modules only so the cursor can carry a
-    // colour of its own; style.css joins them and both halves are the menu
-    // button.
+    // The brand: the wordmark's first letter and its cursor (`H_`), also hosting
+    // live CPU/RAM/disk telemetry in its hover HUD (`hayato sysmon --bar`).
+    // Only the `H` takes pressure warning/critical colours; `_` stays in the
+    // accent, and both halves open the root menu (left), terminal (right), or
+    // btop (middle).
     "custom/brand": {
-        "format": "<span font_desc='JetBrains Mono 14' weight='bold'>H</span>",
+        "exec": "hayato sysmon --bar",
+        "return-type": "json",
+        "interval": 5,
+        "signal": 8,
         "tooltip": true,
-        "tooltip-format": "<span alpha='50%'>╭─</span> <b>HAYATO // DECK</b>\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+Space</span>  Menu\n<span alpha='45%'>│</span> <span alpha='65%'>Search</span>     Apps\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+I</span>      Lens\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] menu · [RMB] terminal</span>",
         "on-click": "~/.config/bin/bar-menu",
-        "on-click-right": "foot"
+        "on-click-right": "foot",
+        "on-click-middle": "foot --app-id=hayato-wide --window-size-pixels=1220x800 -e btop"
     },
     "custom/brand-dot": {
-        "format": "<span font_desc='JetBrains Mono 14' weight='bold'>_</span>",
+        "exec": "hayato sysmon --bar-dot",
+        "return-type": "json",
+        "interval": 5,
+        "signal": 8,
         "tooltip": true,
-        "tooltip-format": "<span alpha='50%'>╭─</span> <b>HAYATO // DECK</b>\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+Space</span>  Menu\n<span alpha='45%'>│</span> <span alpha='65%'>Search</span>     Apps\n<span alpha='45%'>│</span> <span alpha='65%'>Alt+I</span>      Lens\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] menu · [RMB] terminal</span>",
         "on-click": "~/.config/bin/bar-menu",
-        "on-click-right": "foot"
+        "on-click-right": "foot",
+        "on-click-middle": "foot --app-id=hayato-wide --window-size-pixels=1220x800 -e btop"
     },
     // workspace icons: workstyle (tools/workstyle/) renames each workspace to
     // "3: <glyphs>", one per kind of window in it, and `{value}` is that whole
@@ -107,9 +110,9 @@
         "tooltip": false
     },
     "clock": {
-        "format": "<span font_desc='JetBrains Mono 13'>\uf073</span>  {:%a, %d %b  %H:%M}",
-        "format-alt": "<span font_desc='JetBrains Mono 13'>\uf073</span>  {:%H:%M:%S}",
-        "tooltip-format": "<span alpha='50%'>╭─</span> <b>CLK // {:%A, %d %B %Y}</b>\n<tt><small>{calendar}</small></tt>\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] sec · [RMB] yr · [SCR] mo</span>",
+        "format": "{:%a, %d %b  %H:%M}",
+        "format-alt": "{:%H:%M:%S}",
+        "tooltip-format": "<tt>{calendar}</tt>\n<span alpha='55%'>[LMB]s  [RMB]yr  [SCR]mo</span>",
         "calendar": {
             "mode": "month",
             "mode-mon-col": 3,
@@ -128,15 +131,6 @@
             "on-scroll-down": "shift_down"
         },
         "interval": 30
-    },
-    "custom/sysmon": {
-        "exec": "hayato sysmon --bar",
-        "return-type": "json",
-        "interval": 5,
-        "signal": 8,
-        "tooltip": true,
-        "on-click": "foot --app-id=popup --window-size-pixels=940x620 -e ncdu ~",
-        "on-click-right": "foot --app-id=hayato-wide --window-size-pixels=1220x800 -e btop"
     },
     // What busy is doing, as a spinner: only there while an action runs
     // (nmcli scanning or joining, bluetoothctl scanning, du measuring), so the
@@ -351,7 +345,7 @@
     "idle_inhibitor": {
         "format": "<span font_desc='JetBrains Mono 13'>\uf0f4</span>",
         "tooltip-format-activated": "<span alpha='50%'>╭─</span> <b>IDLE // INHIBITED</b>\n<span alpha='45%'>│</span> ● AWAKE · screen sleep inhibited\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] allow sleep · [RMB] idle &amp; lock</span>",
-        "tooltip-format-deactivated": "<span alpha='50%'>╭─</span> <b>IDLE // AUTO</b>\n<span alpha='45%'>│</span> ○ AUTO · normal idle &amp; lock\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] keep screen awake · [RMB] idle &amp; lock</span>",
+        "tooltip-format-deactivated": "<span alpha='50%'>╭─</span> <b>IDLE // BALANCED</b>\n<span alpha='45%'>│</span> ○ BALANCED · screen 2m30s · lock 5m · panel 6m\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] keep screen awake · [RMB] idle &amp; lock</span>",
         "on-click-right": "~/.config/bin/hayato-settings --idle",
         "start-activated": false
     },

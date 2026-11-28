@@ -237,8 +237,8 @@ The folder is the state: there is no index and no daemon. The first open creates
 PDFs; deleting a note elsewhere simply removes it from the list.
 
 **Reading is not note-taking.** `.epub` books open in **foliate** from Files or
-`hayato open` (papers does not read EPUB, and Firefox cannot), and `.pdf` still
-opens in papers for reading. Files' **Alt+1** actions add the document rows for
+`hayato open` (papers does not read EPUB), and `.pdf` still
+opens in papers for reading. Files' **Tab** actions add the document rows for
 the file under the cursor: **Annotate or sign (xournalpp)** for a PDF, **Read
 (foliate)** for an EPUB, **Open in xournalpp** and **Export to PDF** for a
 `.xopp`, and **Edit (nvim)** for text.
@@ -253,34 +253,42 @@ export work without the LaTeX tool.
 
 ## The browser
 
-The image ships **Firefox ESR** (`firefox-esr`), bound to **Alt+Shift+Return**
+The image ships **Chromium** (`chromium`), bound to **Alt+Shift+Return**
 and selectable from the launcher (`Alt+D`).
 
-On the Hayato panel's 3:2 screen (1366×912), vertical height is scarce while
-horizontal width is plentiful. To give the web viewport maximum vertical reading
-room without sacrificing browser functionality, Hayato configures Firefox through
-`/usr/lib/firefox-esr/distribution/policies.json`:
+On Hayato's 1366×912 panel and 4 GB RAM budget, Chromium ships tuned for native
+Wayland, GPU acceleration, low memory usage, and **Native Vertical Tabs** via
+three conflict-free files:
 
-- **Native Vertical Tabs**: tabs sit in a vertical sidebar on the left instead
-  of a stacked horizontal strip at the top. The top `#TabsToolbar` is completely
-  removed, reclaiming ~38 px of vertical display height. The sidebar can be
-  collapsed to icons only when reading wide pages.
-- **Compact Toolbar**: the navigation and address bar runs at compact density
-  (~30 px), keeping URL autocomplete, SSL certificate badges, and extension
-  icons (like uBlock Origin) fully visible and accessible.
-- **Auto-Hide Fullscreen**: pressing **F11** or Sway's **Mod+F** gives 100% of the
-  panel to web content, with the toolbar revealing smoothly when the pointer
-  touches the top edge.
+- **`/etc/chromium.d/hayato`**: enables native Wayland + IME
+  (`--ozone-platform-hint=auto --enable-wayland-ime`, exposing `app_id="chromium"`
+  for idle-inhibit, touchpad tab gestures, and workspace glyphs), GPU zero-copy
+  compositing (`--ignore-gpu-blocklist --enable-zero-copy`), a bounded
+  renderer pool (`--renderer-process-limit=6`) and 64 MB disk cache, and
+  enables `--enable-features=VerticalTabs,VerticalTabsLaunch` (disabling `LensOverlay`).
+- **`/etc/chromium/policies/recommended/hayato.json`**: non-locking recommended
+  defaults enabling Memory Saver (`HighEfficiencyModeEnabled`), Battery Saver
+  on battery (`BatterySaverModeAvailability`), hardware acceleration, disabling
+  persistent background processes when closed (`BackgroundModeEnabled: false`),
+  and turning off speculative page preloading and telemetry.
+- **`~/.config/chromium/Default/Preferences`**: seeds new profiles with
+  `vertical_tabs.enabled: true` (reclaiming horizontal tab-strip height on the
+  3:2 screen), balanced timer-based Memory Saver (`state: 2`, `aggressiveness: 1`,
+  `time_before_discard_in_minutes: 10`), and tab freezing.
 
-These defaults are shipped with `Status: "default"` rather than locked. If you
-prefer traditional horizontal tabs, right-click the sidebar and toggle horizontal
-tabs, or adjust your preferences in `about:preferences` without system restrictions.
+Because everything uses drop-in flags, **recommended** (not locked) policies,
+and skeleton preferences, you can toggle vertical tabs or tune memory settings
+freely in `chrome://settings` (or switch browsers anytime in **Settings →
+System → Default apps**).
+
+- **Fullscreen**: pressing **F11** or Sway's **Alt+F** gives 100% of the
+  panel to web content and inhibits screen lock (`32-idle-inhibit.conf`).
 
 
 ## Emoji
 
 **Alt+Ctrl+E** opens the emoji picker (the root menu and the launcher carry the
-same row): type a name, Enter inserts the glyph at the cursor, Alt+1 only copies
+same row): type a name, Enter inserts the glyph at the cursor, **Ctrl+Y** only copies
 it. The list is `~/.config/emojis.tsv`, and **every row is a glyph the shipped
 font draws**: on the build host the table is filtered against the character map
 of `fonts-noto-color-emoji`, so a symbol the font does not carry is never offered
@@ -316,7 +324,7 @@ the file is one row away. The card never opens the file itself.
 
 ## QR Codes
 
-The **QR** menu (Alt+Ctrl+Q, and the root menu) generates Wi-Fi QR codes
+The **QR** menu (**Share** or root menu → *QR*) generates Wi-Fi QR codes
 or encodes arbitrary text. The Wi-Fi payload includes the SSID and password
 (escaped for ZXing), rendered in-window via `qrencode -t ANSIUTF8`.
 
@@ -324,7 +332,7 @@ or encodes arbitrary text. The Wi-Fi payload includes the SSID and password
 
 ## Reminders
 
-The **Reminders** menu (Alt+Ctrl+R, and the root menu) creates transient
+The **Reminders** menu (root menu / `hayato menu reminders`) creates transient
 systemd user timers. The flow is: title → optional note → when (delays, date,
 repeats). Every expression is validated by `systemd-analyze calendar`. The list
 shows active reminders with cancel actions.
@@ -333,7 +341,7 @@ shows active reminders with cancel actions.
 
 ## Calculator
 
-The **Calculator** menu (Alt+Ctrl+=, and the root menu) evaluates arithmetic
+The **Calculator** menu (`Alt+C`, and the root menu) evaluates arithmetic
 expressions with a Pratt parser (operators + - * / % ^, parentheses, constants
 pi/e/tau, functions sin/cos/tan/sqrt/log/ln/abs/floor/ceil/round). History is
 kept and can be copied.
@@ -375,7 +383,7 @@ takes its workspaces back to the internal panel. The chip drives one
 DisplayPort stream, so two monitors are one monitor followed by the other, not
 two at once.
 
-**Where it sits is Settings → Display arrangement** (`Alt+Ctrl+O`,
+**Where it sits is Settings → Display arrangement** (`Alt+O`,
 `~/.config/bin/hayato-display`): monitor on the right, on the left, above, below,
 mirrored, plus the monitor's resolution and scale, and **Open wdisplays** for
 what those rows do not cover (a custom position, a rotation) - that window opens
@@ -402,7 +410,7 @@ then comes out - or the monitor loses its link - there is no picture at all.
 runs `~/.config/bin/hayato-display --panel-on`, which is the reason the key exists,
 because a menu cannot be drawn when every output is off - and sway allows
 turning the last one off. When a screen *can* still draw (the monitor is present
-but disabled, or the panel is off and the monitor is on), `Alt+Ctrl+O` →
+but disabled, or the panel is off and the monitor is on), `Alt+O` →
 **Display arrangement** carries the same row, **Bring the internal panel back**,
 and the menu offers it even with no monitor plugged in. Over ssh,
 `swaymsg output eDP-1 enable` (or `DSI-1` on MT8183 tablets) is the same command, and a reboot clears it too,
@@ -443,7 +451,7 @@ hook should not rearrange the desktop. Nothing is resident, and
 
 ## Files in a window
 
-**Alt+Ctrl+Shift+F** opens **Hayato Files** (`hayato-filer`): the files
+**Alt+Shift+F** opens **Hayato Files** (`hayato-filer`): the files
 **Alt+Search** and **Alt+Ctrl+F** list, with a mouse. It is a second entry and
 not a replacement, because the two answer different questions - a list is one
 keystroke and no window, a window is what drag and drop, several files at once,
@@ -501,7 +509,7 @@ staging shelf, archives, undo and Quick Properties.
 A USB stick **mounts itself when you plug it in**: a clickable notification says
 *USB drive ready — Click to browse files* (clicking the card or pressing `Alt+,`
 opens the stick straight in Files), and it is also listed in **Places**
-(`Alt+Space`) and in Hayato Files' **DEVICES** sidebar. **Alt+1** on a mounted
+(`Alt+Space`) and in Hayato Files' **DEVICES** sidebar. **Ctrl+E** (or **Delete**) on a mounted
 disk in Places unmounts it; eject before pulling the stick out. An SD card in the
 internal slot waits as a **Mount** row instead.
 
@@ -538,7 +546,7 @@ internal slot waits as a **Mount** row instead.
 * Mounting is **udisks2**'s job, because an ordinary session cannot mount
   anything itself (that is a root operation). It is D-Bus activated: nothing of
   it runs until a mount is asked for, and nothing stays afterwards.
-* The same disks are in Hayato Files' sidebar (**Alt+Ctrl+Shift+F**), and a stick shows
+* The same disks are in Hayato Files' sidebar (**Alt+Shift+F**), and a stick shows
   up there as soon as it is mounted.
 * **Unmounting from the window goes through `udisksctl`, like the Places menu.**
   When udisks refuses because something still has the disk open, the window runs
@@ -583,7 +591,7 @@ internal slot waits as a **Mount** row instead.
 
 ## Quick settings
 
-The **Settings** menu (Alt+Ctrl+O, and the root menu) is grouped into seven sections:
+The **Settings** menu (`Alt+O`, and the root menu) is grouped into seven sections:
 
 - **Network** - Wi-Fi radio and networks (with a sign-in row when the network asks for one), Bluetooth radio and devices, DNS, Remote login (SSH), Share this screen.
 - **Display & Sound** - Night light, Display arrangement, Workspaces per monitor, Rotation, Audio output, Volume per application (`hayato menu audio`), Media.
@@ -593,13 +601,13 @@ The **Settings** menu (Alt+Ctrl+O, and the root menu) is grouped into seven sect
 - **System** - Date & time (time zone and network time), Language & region, Hostname, Default apps, Change password, Clipboard history, Notifications, Do not disturb, System updates, Free space, Auto-mount USB drives, Login screen (Greeter), Translate.
 - **Accessibility** - Reduced motion, saved to `~/.config/hayato/reduced-motion` and honored by new windows (the same file the design reads alongside `HAYATO_REDUCED_MOTION=1`), and the on-screen keyboard (`wvkbd-mobintl`) for typing without the hardware keyboard.
 
-Each row shows the real state from the same probe as today and delegates to the existing pickers/panels (bar-net, bar-bt, bar-audio, bar-power, hayato-display, hayato-vnc, hayato-dns, hayato-ssh, hayato-tz, hayato-pkg, hayato-clean) instead of duplicating them. Escape inside a section returns to the section list; Escape there closes Settings.
+Each row shows the real state from the same probe as today and delegates to the existing pickers/panels (bar-net, bar-bt, bar-audio, bar-power, hayato-display, hayato-vnc, hayato-dns, hayato-ssh, hayato-tz, hayato-pkg, hayato-clean) instead of duplicating them. **←**/**→** (or **Tab**) move between the section rail and the item list, **[** / **]** step sections, **Ctrl+1..7** jump directly, typing searches globally across every section, and **Esc** unwinds (clear filter → rail → close while preserving the last selected section and item).
 
-**Appearance → Theme** opens the existing theme picker. **Wallpaper** opens the Files list at `~/Pictures` so you can choose any PNG, JPEG, WebP, GIF, BMP or TIFF; the image is copied to `~/.local/share/hayato/wallpapers/` and a `36-custom-wallpaper.conf` drop-in points Sway at it. **Next preset** cycles the active theme's bundled wallpapers (and clears a custom one), while **Use theme wallpaper** appears when a custom image is set and returns to the preset. **Bar position** and **Bar density** edit `~/.config/waybar/config.jsonc` and signal Waybar, so the bar moves or tightens without a logout. **Bar modules** cycles Full → Compact → Minimal, rewriting `modules-right` (tray, updates, layout, Bluetooth, VNC, drives, VPN, Connect) and toggling the center **System monitor** icon (`custom/sysmon`) beside the clock: in **Full** mode, hovering `custom/sysmon` shows live CPU (cores, load, thermal), RAM, active swap, disk (`/` and `~`), and uptime, while **left-click** opens `ncdu ~` in a floating terminal (`popup`) and **right-click** opens `btop` (`hayato-wide`); **Compact** and **Minimal** hide it. **Window corners**, **Window shadows**, **Window blur** and **Animations** write `~/.config/hayato/appearance.conf`, render it into `~/.config/sway/config.d/41-appearance.conf` for the next login, and apply the same SwayFX commands through `swaymsg` now. **Accessibility → Reduced motion** stays the separate switch for the TUI windows; the compositor's animation duration is its own setting. **On-screen keyboard** starts `wvkbd-mobintl` at the bottom of the screen, or says it is already up.
+**Appearance → Theme** opens the existing theme picker. **Wallpaper** opens the Files list at `~/Pictures` so you can choose any PNG, JPEG, WebP, GIF, BMP or TIFF; the image is copied to `~/.local/share/hayato/wallpapers/` and a `36-custom-wallpaper.conf` drop-in points Sway at it. **Next preset** cycles the active theme's bundled wallpapers (and clears a custom one), while **Use theme wallpaper** appears when a custom image is set and returns to the preset. **Bar position** and **Bar density** edit `~/.config/waybar/config.jsonc` and signal Waybar, so the bar moves or tightens without a logout. **Bar modules** cycles Full → Compact → Minimal, rewriting `modules-right` (tray, updates, layout, Bluetooth, VNC, drives, VPN, Connect, and Cassette `custom/cassette` beside `custom/rec`: `Full` and `Compact` show Cassette; `Minimal` hides it) while keeping the date/time `clock` dead center. Live CPU (cores, load, thermal), RAM, active swap, disk (`/` and `~`), and uptime telemetry lives directly on the **`H_`** brand at the left end of the bar (`hayato sysmon --bar`): only the **`H`** shifts to warning/critical pressure colours while **`_`** keeps the accent colour, with **left-click** opening the root menu, **right-click** opening a terminal, and **middle-click** launching `btop`. **Window corners**, **Window shadows**, **Window blur** and **Animations** write `~/.config/hayato/appearance.conf`, render it into `~/.config/sway/config.d/41-appearance.conf` for the next login, and apply the same SwayFX commands through `swaymsg` now. **Accessibility → Reduced motion** stays the separate switch for the TUI windows; the compositor's animation duration is its own setting. **On-screen keyboard** starts `wvkbd-mobintl` at the bottom of the screen, or says it is already up.
 
 **Input → Touchpad** writes `~/.config/sway/config.d/36-touchpad.conf` and applies the same values with `swaymsg input type:touchpad` immediately. It covers tap-to-click, natural scrolling, disable-while-typing and pointer speed; the file is the user override read after `/etc/sway/config`, so it wins over the system tap/natural-scroll defaults at the next login.
 
-**System → Language & region** uses `localectl` and takes effect at the next login. **Hostname** uses `hostnamectl` and keeps the `127.0.1.1` line in `/etc/hosts` in step. **Default apps** lists what `gio mime` registers for the browser, file manager, text editor, image/video/music player and PDF viewer, and writes the choice with `xdg-mime` (plus `xdg-settings` for the browser). The browser choice is the one every path reads: the `$mod+Shift+Return` key, `xdg-open`, the captive-portal sign-in and Files' browser fallback all go through `hayato-browser`, which launches the desktop file `xdg-settings` names - so choosing LibreWolf opens LibreWolf, not the image's firefox-esr fallback. **Change password** uses `chpasswd` with the password on stdin, never on a command line.
+**System → Language & region** uses `localectl` and takes effect at the next login. **Hostname** uses `hostnamectl` and keeps the `127.0.1.1` line in `/etc/hosts` in step. **Default apps** lists what `gio mime` registers for the browser, file manager, text editor, image/video/music player and PDF viewer, and writes the choice with `xdg-mime` (plus `xdg-settings` for the browser). The browser choice is the one every path reads: the `$mod+Shift+Return` key, `xdg-open`, the captive-portal sign-in and Files' browser fallback all go through `hayato-browser`, which launches the desktop file `xdg-settings` names - so choosing another browser opens it instead of the image's `chromium` fallback. **Change password** uses `chpasswd` with the password on stdin, never on a command line.
 
 **System → Notifications** sets the default timeout, how many cards are visible, the card width and the history limit in `~/.config/hayato/notify.conf`. The daemon reads that file once at startup, so saving a change restarts `hayato-notify` and clears the cards currently on screen; explicit app timeouts and critical cards are untouched. Cards from one sender group together and identical repeats collapse into one with a **×N** badge. **Alt+Comma** acts on the newest card, **Alt+Shift+Comma** dismisses it, and **Alt+Ctrl+Comma** clears the stack. **Clipboard history** pauses or clears the `cliphist` watcher through `~/.config/hayato/clipboard.conf`.
 
@@ -620,7 +628,7 @@ with udisks - the same mechanism as Places - or `~/Downloads` when no stick is
 in), then opens **Passphrase & options** with masked passphrase confirmation
 and an optional **`[ ] Include user home folder`** check (`Space`/`Enter`/click).
 When unchecked (the default), it writes only the curated keys, dotfiles, configs,
-agents, and Firefox profile; when checked (`--include-home`), it exports all files
+agents, and Chromium profile; when checked (`--include-home`), it exports all files
 and directories inside `$HOME` (skipping `~/.cache`, Trash, runtime sockets,
 rootless container storage under `~/.local/share/containers`,
 `~/.local/share/docker` and `~/.local/share/buildah`, and older profile archives
@@ -653,18 +661,11 @@ including them would abort the archive with `Permission denied`. It writes
   (`~/.local/share/hayato/agents`, sign-ins included), OpenCode's configuration
   (`~/.config/opencode`) and the CLIs' own homes - `~/.claude`, `~/.codex`,
   `~/.gemini`, `~/.copilot` and `~/.config/github-copilot` - with their
-  credentials and settings; and the **Firefox profile** (`~/.config/mozilla`,
-  the XDG path this image's Firefox uses, or `~/.mozilla` with
-  `MOZ_LEGACY_HOME=1`): bookmarks and history in `places.sqlite`, passwords in
-  `logins.db` with `key4.db`, the certificate and permission overrides, cookies,
-  the add-ons in `extensions/`, the daily backup in `bookmarkbackups/` and
-  `prefs.js`.
-* **What is deliberately not**: caches, the Firefox *site data* - `storage/`
-  (202 MB of IndexedDB and localStorage here), `security_state`,
-  `sessionstore-backups`, `gmp-*`, the SQLite `-wal`/`-shm` checkpoints (a copy
-  of a live profile is the database at its last checkpoint, so close Firefox
-  first if the last few seconds matter) and `~/.cache/mozilla` (468 MB, never in
-  the archive) - `node_modules`, the
+  credentials and settings; and the **Chromium profile** (`~/.config/chromium`):
+  bookmarks, preferences, extensions and saved site logins.
+* **What is deliberately not**: caches, Chromium *Service Worker* / *IndexedDB*
+  / `ShaderCache` / `Code Cache*` / `GPUCache*` directories, `Singleton*`
+  locks (close Chromium first so databases flush cleanly before archiving) - `node_modules`, the
   code in `~/Dev` (git remotes are its backup), the conversation transcripts and
   caches inside the agents' homes (`~/.claude/projects`, `~/.codex/sessions`,
   `~/.copilot/session-state`, `plugins/repos`…: history, not configuration), and
@@ -739,10 +740,10 @@ from it — foot, waybar (including the uniform 4 px bar end insets matching wid
 the prompt (starship), the greeter, the window frame sway uses, and the wallpaper.
 
 ```
-hayato menu theme           # interactive visual theme selector (Alt+Shift+C / hayato-theme-picker)
+hayato menu theme           # interactive visual theme selector (Alt+Shift+T / hayato-theme-picker)
 hayato theme list           # every theme, the active one marked *
 hayato theme set gruvbox    # regenerate everything and reload the session
-hayato theme next           # the next one in the cycle      (Alt+Shift+T)
+hayato theme next           # the next one in the cycle      (Alt+Ctrl+Shift+T)
 hayato theme wallpaper next # the next wallpaper of a theme  (Alt+Shift+W)
 hayato theme validate       # parse every built-in and check its contrast
 hayato theme diff           # is every file still what the theme says?
@@ -751,11 +752,11 @@ hayato theme diff           # is every file still what the theme says?
 Tokyo Night Dark is the default and the brand; the others are Catppuccin Mocha,
 Tokyo Night, Rose Pine, Nord, Gruvbox, Everforest Dark and Kanagawa.
 
-**The Visual Theme Selector (`hayato menu theme` / `Alt+Shift+C` / `hayato-theme-picker`).**
+**The Visual Theme Selector (`hayato menu theme` / `Alt+Shift+T` / `hayato-theme-picker`).**
 An interactive, dual-pane Ratatui surface for exploring themes with zero friction:
 * **Left pane:** lists all installed themes with search-as-you-type filtering, active session markers (`●`/`○`), and accent badges.
 * **Right pane:** real-time eye-candy preview canvas showing the 16 ANSI truecolor terminal swatches, semantic roles (surface, accent, ok, warn, danger), simulated Hayato desktop mockups (mini Waybar status strip, floating notification card, Starship shell prompt), WCAG 2.1 contrast ratio verification, and wallpaper info.
-* **Zero friction:** press **Enter** to apply, **w** to cycle wallpapers, and **p** (or **Space**) to toggle **live desktop peek** (temporarily previews the theme across all your real windows and workspace, automatically reverting on **Esc** or committing on **Enter**).
+* **Zero friction:** type at any time to filter, press **Enter** to apply, **Ctrl+W** to cycle wallpapers, and **Ctrl+P** to toggle **live desktop peek** (temporarily previews the theme across all your real windows and workspace, clearing the filter or closing cleanly on **Esc** / committing on **Enter**).
 
 **Every theme carries its own wallpaper.** The wallpaper is a gradient
 composition generated from the theme's palette with the Hayato wordmark

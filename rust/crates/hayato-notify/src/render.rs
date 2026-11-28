@@ -10,9 +10,9 @@ pub const OSD_WIDTH: f32 = 280.0;
 pub const OSD_HEIGHT: f32 = 44.0;
 pub const CARD_SPACING: f32 = 8.0;
 pub const CORNER_RADIUS: f32 = 3.0;
-const HEADER_H: f32 = 20.0;
+const HEADER_H: f32 = 22.0;
 const OVERFLOW_PILL_H: f32 = 22.0;
-const ACTION_BTN_H: f32 = 24.0;
+const ACTION_BTN_H: f32 = 26.0;
 const ACTION_BTN_GAP: f32 = 6.0;
 const ACTION_ROW_GAP: f32 = 6.0;
 const CONTENT_LEFT_PAD: f32 = 14.0;
@@ -34,7 +34,7 @@ pub struct CardTheme {
     pub bg_elevated: Color,
     pub header_bg: Color,
     pub border_subtle: Color,
-    pub text_bright: Color,
+    pub accent_text: Color,
     pub text_body: Color,
     pub text_dim: Color,
     pub accent: Color,
@@ -45,7 +45,6 @@ pub struct CardTheme {
     pub danger_bg: Color,
     #[allow(dead_code)]
     pub warn: Color,
-    #[allow(dead_code)]
     pub warn_text: Color,
     #[allow(dead_code)]
     pub ok: Color,
@@ -53,31 +52,37 @@ pub struct CardTheme {
     pub ok_text: Color,
     pub track_bg: Color,
     pub btn_bg: Color,
+    pub btn_fg: Color,
     pub btn_bg_hover: Color,
+    pub btn_fg_hover: Color,
+    pub btn_bevel_hover: Color,
 }
 
 impl Default for CardTheme {
     fn default() -> Self {
         Self {
-            bg: Color::from_rgba8(36, 40, 59, 244), // surface: #24283b
-            bg_elevated: Color::from_rgba8(41, 46, 66, 250),
-            header_bg: Color::from_rgba8(29, 32, 47, 246),
-            border_subtle: Color::from_rgba8(59, 66, 97, 230), // border: #3b4261
-            text_bright: Color::from_rgba8(125, 207, 255, 255), // cyan: #7dcfff
-            text_body: Color::from_rgba8(192, 202, 245, 245),  // text: #c0caf5
-            text_dim: Color::from_rgba8(86, 95, 137, 255),
-            accent: Color::from_rgba8(125, 207, 255, 255),
+            bg: Color::from_rgba8(31, 35, 53, 246),
+            bg_elevated: Color::from_rgba8(40, 45, 65, 252),
+            header_bg: Color::from_rgba8(24, 27, 41, 248),
+            border_subtle: Color::from_rgba8(74, 83, 118, 235),
+            accent_text: Color::from_rgba8(122, 162, 247, 255),
+            text_body: Color::from_rgba8(192, 202, 245, 250),
+            text_dim: Color::from_rgba8(133, 143, 184, 255),
+            accent: Color::from_rgba8(122, 162, 247, 255),
             accent_alt: Color::from_rgba8(187, 154, 247, 255),
             danger: Color::from_rgba8(247, 118, 142, 255),
-            danger_text: Color::from_rgba8(247, 118, 142, 255),
-            danger_bg: Color::from_rgba8(72, 34, 48, 220),
+            danger_text: Color::from_rgba8(247, 148, 166, 255),
+            danger_bg: Color::from_rgba8(66, 33, 46, 235),
             warn: Color::from_rgba8(224, 175, 104, 255),
             warn_text: Color::from_rgba8(224, 175, 104, 255),
             ok: Color::from_rgba8(158, 206, 106, 255),
             ok_text: Color::from_rgba8(158, 206, 106, 255),
-            track_bg: Color::from_rgba8(41, 46, 66, 175),
-            btn_bg: Color::from_rgba8(41, 46, 66, 215),
-            btn_bg_hover: Color::from_rgba8(59, 66, 97, 245),
+            track_bg: Color::from_rgba8(53, 58, 80, 220),
+            btn_bg: Color::from_rgba8(44, 48, 69, 245),
+            btn_fg: Color::from_rgba8(192, 202, 245, 255),
+            btn_bg_hover: Color::from_rgba8(122, 162, 247, 255),
+            btn_fg_hover: Color::from_rgba8(26, 27, 38, 255),
+            btn_bevel_hover: Color::from_rgba8(92, 122, 185, 255),
         }
     }
 }
@@ -105,32 +110,111 @@ impl CardTheme {
     }
 
     pub fn from_theme(theme: &hayato_theme::Theme) -> Self {
+        use hayato_theme::contrast::{luminance, ratio, readable};
+        use hayato_theme::{Hex, Rgb};
+
+        const BLACK: Rgb = Rgb::new(0, 0, 0);
+        const WHITE: Rgb = Rgb::new(255, 255, 255);
+        let extreme = |against: Rgb| -> Rgb {
+            if ratio(WHITE, against) >= ratio(BLACK, against) {
+                WHITE
+            } else {
+                BLACK
+            }
+        };
+
         let r = theme.roles();
-        let to_color =
-            |hex: hayato_theme::Hex, a: u8| Color::from_rgba8(hex.0.r, hex.0.g, hex.0.b, a);
+        let to_color = |c: Rgb, a: u8| Color::from_rgba8(c.r, c.g, c.b, a);
+
+        let bg_rgb = r.surface.0;
+        let is_light = luminance(bg_rgb) > 0.5;
+
+        // Card hover lift: brighter on dark surfaces, crisper paper on light ones.
+        let elev_rgb = if is_light {
+            r.surface.mix(Hex(WHITE), 0.55).0
+        } else {
+            r.surface.mix(r.text, 0.055).0
+        };
+
+        // Recessed header strip: darker on dark surfaces, gently tinted on light ones.
+        let hdr_rgb = if is_light {
+            r.surface.mix(r.text, 0.06).0
+        } else {
+            r.surface.mix(Hex(BLACK), 0.22).0
+        };
+
+        // Neutral structural border clearing 3.0:1 against both rest & hovered surfaces.
+        let border_base = r.surface.mix(r.text, 0.28).0;
+        let border_rgb = readable(border_base, r.text.0, bg_rgb, 3.0);
+        let border_rgb = readable(border_rgb, r.text.0, elev_rgb, 3.0);
+
+        // Body and muted text clearing 4.5:1 on card, hover, and recessed header surfaces.
+        let body_rgb = readable(r.text.0, extreme(elev_rgb), elev_rgb, 4.5);
+        let body_rgb = readable(body_rgb, extreme(bg_rgb), bg_rgb, 4.5);
+        let body_rgb = readable(body_rgb, extreme(hdr_rgb), hdr_rgb, 4.5);
+
+        let muted_rgb = readable(r.dim.0, body_rgb, hdr_rgb, 4.5);
+        let muted_rgb = readable(muted_rgb, body_rgb, elev_rgb, 4.5);
+        let muted_rgb = readable(muted_rgb, body_rgb, bg_rgb, 4.5);
+
+        // Accent: 3.0:1 for glyphs/bars, 4.5:1 for titles, tags, and OSD percentages.
+        let accent_ui_rgb = readable(r.accent.0, body_rgb, elev_rgb, 3.0);
+        let accent_txt_rgb = readable(r.accent.0, body_rgb, hdr_rgb, 4.5);
+        let accent_txt_rgb = readable(accent_txt_rgb, body_rgb, elev_rgb, 4.5);
+        let accent_txt_rgb = readable(accent_txt_rgb, body_rgb, bg_rgb, 4.5);
+
+        // Warning & critical roles lifted against header strip and danger pill fills too.
+        let warn_txt_rgb = readable(r.warn.0, body_rgb, hdr_rgb, 4.5);
+        let warn_txt_rgb = readable(warn_txt_rgb, body_rgb, bg_rgb, 4.5);
+
+        let danger_ui_rgb = readable(r.danger.0, body_rgb, elev_rgb, 3.0);
+        let danger_hdr_bg = Hex(bg_rgb).mix(r.danger_bg, 0.78).0;
+        let danger_txt_rgb = readable(r.danger.0, extreme(r.danger_bg.0), r.danger_bg.0, 4.5);
+        let danger_txt_rgb = readable(danger_txt_rgb, body_rgb, danger_hdr_bg, 4.5);
+        let danger_txt_rgb = readable(danger_txt_rgb, body_rgb, elev_rgb, 4.5);
+        let danger_txt_rgb = readable(danger_txt_rgb, body_rgb, bg_rgb, 4.5);
+
+        // Action keycaps: calm raised neutral at rest, solid accent + inverted ink on hover.
+        let btn_bg_rgb = if is_light {
+            r.surface.mix(Hex(WHITE), 0.70).0
+        } else {
+            r.surface.mix(r.text, 0.08).0
+        };
+        let btn_fg_rgb = readable(body_rgb, extreme(btn_bg_rgb), btn_bg_rgb, 4.5);
+        let btn_hov_rgb = r.accent.0;
+        let btn_fg_hov_rgb = readable(
+            theme.colors.background.0,
+            extreme(btn_hov_rgb),
+            btn_hov_rgb,
+            4.5,
+        );
+        let btn_bevel_hov_rgb = Hex(btn_hov_rgb).mix(Hex(BLACK), 0.25).0;
+
+        let track_rgb = r.surface.mix(r.text, 0.14).0;
 
         Self {
-            bg: to_color(r.surface, 244),
-            bg_elevated: to_color(r.hover, 250),
-            header_bg: to_color(r.surface_alt, 242),
-            border_subtle: to_color(r.border, 230),
-            text_bright: to_color(r.accent, 255),
-            // Use `r.text` (not `r.strong`) so body copy remains high-contrast
-            // on light themes like Catppuccin Latte and Flexoki Light.
-            text_body: to_color(r.text, 245),
-            text_dim: to_color(r.dim, 255),
-            accent: to_color(r.accent, 255),
-            accent_alt: to_color(r.accent_alt, 255),
-            danger: to_color(r.danger, 255),
-            danger_text: to_color(r.danger_text, 255),
-            danger_bg: to_color(r.danger_bg, 225),
-            warn: to_color(r.warn, 255),
-            warn_text: to_color(r.warn_text, 255),
-            ok: to_color(r.ok, 255),
-            ok_text: to_color(r.ok_text, 255),
-            track_bg: to_color(r.hover, 175),
-            btn_bg: to_color(r.hover, 215),
-            btn_bg_hover: to_color(r.border, 245),
+            bg: to_color(bg_rgb, 246),
+            bg_elevated: to_color(elev_rgb, 252),
+            header_bg: to_color(hdr_rgb, 248),
+            border_subtle: to_color(border_rgb, 235),
+            accent_text: to_color(accent_txt_rgb, 255),
+            text_body: to_color(body_rgb, 250),
+            text_dim: to_color(muted_rgb, 255),
+            accent: to_color(accent_ui_rgb, 255),
+            accent_alt: to_color(r.accent_alt.0, 255),
+            danger: to_color(danger_ui_rgb, 255),
+            danger_text: to_color(danger_txt_rgb, 255),
+            danger_bg: to_color(r.danger_bg.0, 235),
+            warn: to_color(r.warn.0, 255),
+            warn_text: to_color(warn_txt_rgb, 255),
+            ok: to_color(r.ok.0, 255),
+            ok_text: to_color(r.ok_text.0, 255),
+            track_bg: to_color(track_rgb, 220),
+            btn_bg: to_color(btn_bg_rgb, 245),
+            btn_fg: to_color(btn_fg_rgb, 255),
+            btn_bg_hover: to_color(btn_hov_rgb, 255),
+            btn_fg_hover: to_color(btn_fg_hov_rgb, 255),
+            btn_bevel_hover: to_color(btn_bevel_hov_rgb, 255),
         }
     }
 }
@@ -324,13 +408,13 @@ impl Renderer {
             let mut cur_row_w = 0.0f32;
             let bracket_extra = self.font.measure_width("[  ]", 10.0, true);
             for action in &notif.actions {
-                let max_inner_w = (text_max_width - bracket_extra - 16.0).max(32.0);
+                let max_inner_w = (text_max_width - bracket_extra - 20.0).max(32.0);
                 let raw = self
                     .font
                     .truncate_text(&action.label, 10.0, max_inner_w, true);
                 let label = format!("[ {raw} ]");
                 let btn_w =
-                    (self.font.measure_width(&label, 10.0, true) + 14.0).min(text_max_width);
+                    (self.font.measure_width(&label, 10.0, true) + 18.0).min(text_max_width);
                 let needed = if cur_row.is_empty() {
                     btn_w
                 } else {
@@ -489,7 +573,7 @@ impl Renderer {
         let pill_x = (max_w - pill_w).max(0.0);
 
         let mut pb = PathBuilder::new();
-        Self::add_rounded_rect(&mut pb, pill_x, y, pill_w, pill_h, 2.0);
+        Self::add_rounded_rect(&mut pb, pill_x, y, pill_w, pill_h, CORNER_RADIUS);
         if let Some(path) = pb.finish() {
             let mut paint = Paint::default();
             paint.set_color(self.theme.header_bg);
@@ -501,7 +585,17 @@ impl Renderer {
                 Transform::identity(),
                 None,
             );
-
+        }
+        let mut bpb = PathBuilder::new();
+        Self::add_rounded_rect(
+            &mut bpb,
+            pill_x + 0.5,
+            y + 0.5,
+            (pill_w - 1.0).max(1.0),
+            (pill_h - 1.0).max(1.0),
+            CORNER_RADIUS,
+        );
+        if let Some(bpath) = bpb.finish() {
             let stroke = Stroke {
                 width: 1.0,
                 ..Default::default()
@@ -509,23 +603,7 @@ impl Renderer {
             let mut bpaint = Paint::default();
             bpaint.set_color(self.theme.border_subtle);
             bpaint.anti_alias = true;
-            pixmap.stroke_path(&path, &bpaint, &stroke, Transform::identity(), None);
-        }
-
-        // Crisp left accent tick
-        let mut tick_pb = PathBuilder::new();
-        Self::add_rounded_rect(&mut tick_pb, pill_x + 2.0, y + 4.0, 2.0, pill_h - 8.0, 1.0);
-        if let Some(path) = tick_pb.finish() {
-            let mut paint = Paint::default();
-            paint.set_color(self.theme.accent);
-            paint.anti_alias = true;
-            pixmap.fill_path(
-                &path,
-                &paint,
-                FillRule::Winding,
-                Transform::identity(),
-                None,
-            );
+            pixmap.stroke_path(&bpath, &bpaint, &stroke, Transform::identity(), None);
         }
 
         self.font.draw_text(
@@ -665,24 +743,7 @@ impl Renderer {
             pixmap.fill_path(&bg_path, &paint, FillRule::Winding, transform, None);
         }
 
-        // 2. Crisp 3px left urgency/status rail
-        let mut rail_builder = PathBuilder::new();
-        Self::add_rounded_rect(
-            &mut rail_builder,
-            card_x + 3.0,
-            card_y + 5.0,
-            3.0,
-            (card_h - 10.0).max(8.0),
-            1.0,
-        );
-        if let Some(rail_path) = rail_builder.finish() {
-            let mut paint = Paint::default();
-            paint.set_color(with_alpha(icon_color, alpha));
-            paint.anti_alias = true;
-            pixmap.fill_path(&rail_path, &paint, FillRule::Winding, transform, None);
-        }
-
-        // 3. Border
+        // 2. Border
         let mut border_builder = PathBuilder::new();
         Self::add_rounded_rect(
             &mut border_builder,
@@ -740,8 +801,8 @@ impl Renderer {
             "[   0% ]".to_string()
         };
 
-        let val_w = self.font.measure_width(&val_str, 10.5 * scale, true);
-        let val_color = self.theme.accent;
+        let val_w = self.font.measure_width(&val_str, 10.5, true);
+        let val_color = self.theme.accent_text;
 
         // Terminal chevron `> ` + uppercase HUD label
         let chevron = "> ";
@@ -768,14 +829,14 @@ impl Renderer {
             map_x(content_x + chevron_w),
             map_y(card_y + 17.0),
             11.5 * scale,
-            with_alpha(self.theme.text_bright, alpha),
+            with_alpha(self.theme.accent_text, alpha),
             true,
         );
 
         self.font.draw_text(
             pixmap,
             &val_str,
-            map_x(right_margin) - val_w,
+            map_x(right_margin - val_w),
             map_y(card_y + 17.0),
             10.5 * scale,
             with_alpha(val_color, alpha),
@@ -824,19 +885,14 @@ impl Renderer {
         let map_x = |x: f32| cx + (x - cx) * scale;
         let map_y = |y: f32| cy + (y - cy) * scale;
 
-        let strip_color = match notif.urgency {
-            Urgency::Low => self.theme.border_subtle,
-            Urgency::Normal => self.theme.accent,
-            Urgency::Critical => self.theme.danger,
-        };
         let glyph_color = match notif.urgency {
             Urgency::Low => self.theme.text_dim,
             Urgency::Normal => self.theme.accent,
             Urgency::Critical => self.theme.danger,
         };
         let tag_color = match notif.urgency {
-            Urgency::Low => self.theme.text_body,
-            Urgency::Normal => self.theme.accent,
+            Urgency::Low => self.theme.text_dim,
+            Urgency::Normal => self.theme.accent_text,
             Urgency::Critical => self.theme.danger_text,
         };
 
@@ -875,7 +931,7 @@ impl Renderer {
         if let Some(hdr_path) = hdr_builder.finish() {
             let mut paint = Paint::default();
             let hdr_fill = if notif.urgency == Urgency::Critical {
-                with_alpha(self.theme.danger_bg, 0.75)
+                with_alpha(self.theme.danger_bg, 0.78)
             } else {
                 self.theme.header_bg
             };
@@ -895,33 +951,16 @@ impl Renderer {
             };
             let mut paint = Paint::default();
             let rule_color = if notif.urgency == Urgency::Critical {
-                with_alpha(self.theme.danger, 0.55)
+                with_alpha(self.theme.danger, 0.60)
             } else {
-                with_alpha(self.theme.border_subtle, 0.65)
+                with_alpha(self.theme.border_subtle, 0.45)
             };
             paint.set_color(with_alpha(rule_color, alpha));
             paint.anti_alias = false;
             pixmap.stroke_path(&rule_path, &paint, &stroke, transform, None);
         }
 
-        // 3. Crisp 3px left urgency rail
-        let mut strip_builder = PathBuilder::new();
-        Self::add_rounded_rect(
-            &mut strip_builder,
-            card_x + 3.0,
-            card_y + 4.0,
-            3.0,
-            (card_h - 8.0).max(8.0),
-            1.0,
-        );
-        if let Some(strip_path) = strip_builder.finish() {
-            let mut paint = Paint::default();
-            paint.set_color(with_alpha(strip_color, alpha));
-            paint.anti_alias = true;
-            pixmap.fill_path(&strip_path, &paint, FillRule::Winding, transform, None);
-        }
-
-        // 4. Outer border (Critical gets danger border; hovered file cards highlight accent)
+        // 3. Outer border (Critical gets danger border; hovered file cards highlight accent)
         let border_color = if notif.urgency == Urgency::Critical {
             self.theme.danger
         } else if notif.is_hovered && notif.open_path.is_some() {
@@ -956,7 +995,7 @@ impl Renderer {
             &notif.summary,
             notif.urgency,
         );
-        let header_baseline = card_y + 13.5;
+        let header_baseline = card_y + 14.5;
         let content_x = card_x + CONTENT_LEFT_PAD;
 
         self.font.draw_text(
@@ -980,16 +1019,37 @@ impl Renderer {
         );
         notif.close_rect = Some(close_rect);
 
+        let pill_x = card_x + card_w - 23.0;
+        let pill_y = card_y + 2.0;
+        let pill_w = 20.0;
+        let pill_h = HEADER_H - 4.0;
         if notif.hovered_close {
-            let pill_x = card_x + card_w - 23.0;
-            let pill_y = card_y + 2.0;
             let mut pb = PathBuilder::new();
-            Self::add_rounded_rect(&mut pb, pill_x, pill_y, 19.0, HEADER_H - 4.0, 2.0);
+            Self::add_rounded_rect(&mut pb, pill_x, pill_y, pill_w, pill_h, 2.0);
             if let Some(path) = pb.finish() {
                 let mut paint = Paint::default();
                 paint.set_color(with_alpha(self.theme.danger_bg, alpha));
                 paint.anti_alias = true;
                 pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
+            }
+            let mut bpb = PathBuilder::new();
+            Self::add_rounded_rect(
+                &mut bpb,
+                pill_x + 0.5,
+                pill_y + 0.5,
+                pill_w - 1.0,
+                pill_h - 1.0,
+                2.0,
+            );
+            if let Some(bpath) = bpb.finish() {
+                let stroke = Stroke {
+                    width: 1.0,
+                    ..Default::default()
+                };
+                let mut bpaint = Paint::default();
+                bpaint.set_color(with_alpha(self.theme.danger, alpha * 0.65));
+                bpaint.anti_alias = true;
+                pixmap.stroke_path(&bpath, &bpaint, &stroke, transform, None);
             }
         }
 
@@ -1000,10 +1060,12 @@ impl Renderer {
         } else {
             self.theme.text_dim
         };
+        let close_glyph = "\u{f00d}";
+        let close_glyph_w = self.font.measure_width(close_glyph, 10.5, false);
         self.font.draw_text(
             pixmap,
-            "\u{f00d}", // Font Awesome xmark
-            map_x(card_x + card_w - 17.5),
+            close_glyph, // Font Awesome xmark
+            map_x(pill_x + (pill_w - close_glyph_w) * 0.5),
             map_y(header_baseline + 0.5),
             10.5 * scale,
             with_alpha(close_color, alpha),
@@ -1088,7 +1150,8 @@ impl Renderer {
             .truncate_text(&notif.summary, 12.0, summary_max_w, true);
         let summary_color = match notif.urgency {
             Urgency::Critical => self.theme.danger_text,
-            _ => self.theme.text_bright,
+            Urgency::Low => self.theme.text_body,
+            Urgency::Normal => self.theme.accent_text,
         };
         self.font.draw_text(
             pixmap,
@@ -1179,7 +1242,7 @@ impl Renderer {
                         row_y,
                         chip.width,
                         ACTION_BTN_H,
-                        2.0,
+                        CORNER_RADIUS,
                     );
                     if let Some(btn_path) = btn_builder.finish() {
                         let mut paint = Paint::default();
@@ -1192,22 +1255,22 @@ impl Renderer {
                         paint.anti_alias = true;
                         pixmap.fill_path(&btn_path, &paint, FillRule::Winding, transform, None);
 
-                        // Subtle tactile keycap bottom bevel
+                        // Subtle tactile keycap bottom bevel inset inside the stroke
                         let mut bevel_pb = PathBuilder::new();
                         Self::add_rounded_rect(
                             &mut bevel_pb,
-                            btn_x + 1.0,
-                            row_y + ACTION_BTN_H - 2.0,
-                            (chip.width - 2.0).max(2.0),
+                            btn_x + 1.5,
+                            row_y + ACTION_BTN_H - 2.5,
+                            (chip.width - 3.0).max(2.0),
                             1.5,
                             0.5,
                         );
                         if let Some(bevel_path) = bevel_pb.finish() {
                             let mut bevel_paint = Paint::default();
                             let bevel_col = if is_btn_hovered {
-                                self.theme.accent
+                                self.theme.btn_bevel_hover
                             } else {
-                                with_alpha(self.theme.border_subtle, 0.85)
+                                with_alpha(self.theme.border_subtle, 0.65)
                             };
                             bevel_paint.set_color(with_alpha(bevel_col, alpha));
                             bevel_paint.anti_alias = true;
@@ -1219,7 +1282,18 @@ impl Renderer {
                                 None,
                             );
                         }
+                    }
 
+                    let mut btn_stroke_pb = PathBuilder::new();
+                    Self::add_rounded_rect(
+                        &mut btn_stroke_pb,
+                        btn_x + 0.5,
+                        row_y + 0.5,
+                        (chip.width - 1.0).max(2.0),
+                        (ACTION_BTN_H - 1.0).max(2.0),
+                        CORNER_RADIUS,
+                    );
+                    if let Some(btn_stroke_path) = btn_stroke_pb.finish() {
                         let stroke = Stroke {
                             width: 1.0,
                             ..Default::default()
@@ -1232,20 +1306,20 @@ impl Renderer {
                         };
                         bpaint.set_color(with_alpha(btn_border, alpha));
                         bpaint.anti_alias = true;
-                        pixmap.stroke_path(&btn_path, &bpaint, &stroke, transform, None);
+                        pixmap.stroke_path(&btn_stroke_path, &bpaint, &stroke, transform, None);
                     }
 
                     let label_color = if is_btn_hovered {
-                        self.theme.text_bright
+                        self.theme.btn_fg_hover
                     } else {
-                        self.theme.text_body
+                        self.theme.btn_fg
                     };
 
                     self.font.draw_text(
                         pixmap,
                         &chip.label,
-                        map_x(btn_x + 7.0),
-                        map_y(row_y + 15.5),
+                        map_x(btn_x + 9.0),
+                        map_y(row_y + 16.5),
                         10.0 * scale,
                         with_alpha(label_color, alpha),
                         true,
@@ -1282,7 +1356,12 @@ impl Renderer {
                 if let Some(path) = pb.finish() {
                     let mut paint = Paint::default();
                     let line_alpha = if notif.is_hovered { 0.8 } else { 0.5 };
-                    paint.set_color(with_alpha(strip_color, alpha * line_alpha));
+                    let ttl_color = if notif.urgency == Urgency::Low {
+                        self.theme.border_subtle
+                    } else {
+                        glyph_color
+                    };
+                    paint.set_color(with_alpha(ttl_color, alpha * line_alpha));
                     paint.anti_alias = true;
                     pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None);
                 }
@@ -1505,8 +1584,8 @@ mod tests {
             "[ SYS // FILE ]"
         );
         assert_eq!(
-            format_header_tag("Firefox", Urgency::Normal, false, false),
-            "[ FIREFOX // INFO ]"
+            format_header_tag("Chromium", Urgency::Normal, false, false),
+            "[ CHROMIUM // INFO ]"
         );
         assert_eq!(
             format_header_tag("", Urgency::Low, false, false),
@@ -1514,20 +1593,56 @@ mod tests {
         );
     }
 
+    fn as_rgb(c: Color) -> hayato_theme::Rgb {
+        hayato_theme::Rgb::new(
+            (c.red() * 255.0).round() as u8,
+            (c.green() * 255.0).round() as u8,
+            (c.blue() * 255.0).round() as u8,
+        )
+    }
+
     #[test]
     fn every_builtin_theme_produces_readable_card_theme() {
+        use hayato_theme::contrast::ratio;
+
         for (slug, text) in hayato_theme::builtin::ALL {
             let parsed = hayato_theme::Theme::parse(text).expect("builtin theme parses");
-            let theme = CardTheme::from_theme(&parsed);
-            let bg_luma =
-                0.299 * theme.bg.red() + 0.587 * theme.bg.green() + 0.114 * theme.bg.blue();
-            let fg_luma = 0.299 * theme.text_body.red()
-                + 0.587 * theme.text_body.green()
-                + 0.114 * theme.text_body.blue();
-            assert!(
-                (bg_luma - fg_luma).abs() > 0.30,
-                "{slug}: body text must contrast with card surface (bg={bg_luma:.2}, fg={fg_luma:.2})"
-            );
+            let t = CardTheme::from_theme(&parsed);
+            let bg = as_rgb(t.bg);
+            let elev = as_rgb(t.bg_elevated);
+            let hdr = as_rgb(t.header_bg);
+            let danger_bg = as_rgb(t.danger_bg);
+            let danger_hdr = hayato_theme::Hex(bg)
+                .mix(hayato_theme::Hex(danger_bg), 0.78)
+                .0;
+
+            for (name, fg, against, floor) in [
+                (
+                    "btn_fg_hover on btn_bg_hover",
+                    t.btn_fg_hover,
+                    as_rgb(t.btn_bg_hover),
+                    4.5,
+                ),
+                ("btn_fg on btn_bg", t.btn_fg, as_rgb(t.btn_bg), 4.5),
+                ("text_body on bg", t.text_body, bg, 4.5),
+                ("text_body on bg_elevated", t.text_body, elev, 4.5),
+                ("text_body on header_bg", t.text_body, hdr, 4.5),
+                ("text_dim on header_bg", t.text_dim, hdr, 4.5),
+                ("text_dim on bg", t.text_dim, bg, 4.5),
+                ("accent_text on header_bg", t.accent_text, hdr, 4.5),
+                ("accent_text on bg", t.accent_text, bg, 4.5),
+                ("accent_text on bg_elevated", t.accent_text, elev, 4.5),
+                ("warn_text on header_bg", t.warn_text, hdr, 4.5),
+                ("danger_text on danger_bg", t.danger_text, danger_bg, 4.5),
+                ("danger_text on danger_hdr", t.danger_text, danger_hdr, 4.5),
+                ("border_subtle on bg", t.border_subtle, bg, 3.0),
+                ("border_subtle on bg_elevated", t.border_subtle, elev, 3.0),
+                ("accent on bg", t.accent, bg, 3.0),
+                ("danger on bg", t.danger, bg, 3.0),
+            ] {
+                let r = ratio(as_rgb(fg), against);
+                assert!(r >= floor, "{slug}: {name} contrast {r:.2} < {floor:.1}");
+            }
         }
     }
 }

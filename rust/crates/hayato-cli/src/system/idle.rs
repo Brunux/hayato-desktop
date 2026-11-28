@@ -94,14 +94,29 @@ fn human(seconds: u64) -> String {
     }
 }
 
-pub fn status() -> String {
-    let (screen_off, lock, dpms) = read();
+pub fn format_summary(screen_off: u64, lock: u64, dpms: u64) -> String {
+    if screen_off == 0 && lock == 0 && dpms == 0 {
+        return "screen stays on · no idle lock".to_string();
+    }
     format!(
         "screen {} · lock {} · panel {}",
         human(screen_off),
         human(lock),
         human(dpms)
     )
+}
+
+pub fn preset_name(screen_off: u64, lock: u64, dpms: u64) -> &'static str {
+    presets()
+        .into_iter()
+        .find(|(s, l, d, _, _)| *s == screen_off && *l == lock && *d == dpms)
+        .map(|(_, _, _, name, _)| name)
+        .unwrap_or("Custom")
+}
+
+pub fn status() -> String {
+    let (screen_off, lock, dpms) = read();
+    format_summary(screen_off, lock, dpms)
 }
 
 pub fn presets() -> Vec<(u64, u64, u64, &'static str, &'static str)> {

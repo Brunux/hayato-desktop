@@ -275,7 +275,7 @@ impl MusicProvider for SpotifyProvider {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn();
-            return Err("Spotify Free account: opened track in Firefox".into());
+            return Err("Spotify Free account: opened track in browser".into());
         }
         let endpoint = match device_id {
             Some(id) => format!(

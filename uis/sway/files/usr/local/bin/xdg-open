@@ -12,7 +12,10 @@
 # document, mpv for a video, bat for text - so the shell and the desktop cannot
 # disagree, and the browser stays the fallback (and the answer for a user with
 # no session bin directory, e.g. root). A path handed to the browser becomes a
-# file:// URL, absolute, so Firefox does not have to guess a working directory.
+# URLs go directly to Chromium; local paths go through `hayato-view` so
+# text, PDFs, images, and videos use the session's viewers instead of the
+# browser. file:// URLs expand to an absolute path so Chromium does not have
+# to guess a working directory.
 # The NUL-separated form (`xdg-open` with no arguments, reading paths from
 # stdin) is deliberately not supported - nothing in this image uses it, and
 # guessing would be worse than saying so.
@@ -33,7 +36,7 @@ case ${1:-} in
 	if [ -n "${HOME:-}" ] && [ -x "$HOME/.config/bin/hayato-browser" ]; then
 		exec "$HOME/.config/bin/hayato-browser" "$1"
 	fi
-	exec firefox-esr -- "$1"
+	exec chromium -- "$1"
 	;;
 *)
 	case $1 in
@@ -48,6 +51,6 @@ case ${1:-} in
 	if [ -n "${HOME:-}" ] && [ -x "$HOME/.config/bin/hayato-browser" ]; then
 		exec "$HOME/.config/bin/hayato-browser" "file://$path"
 	fi
-	exec firefox-esr -- "file://$path"
+	exec chromium -- "file://$path"
 	;;
 esac

@@ -1,7 +1,7 @@
 # The Files window
 
 **Hayato Files** (`hayato-filer`) is the native GTK4 file browser of the session,
-bound to **`Alt+Ctrl+Shift+F`**. It is the windowed companion of the terminal
+bound to **`Alt+Shift+F`**. It is the windowed companion of the terminal
 list (`hayato menu files`, the old `hayato-files`): the list is one folder with a
 preview beside it, and this is a Finder / elementary OS window with a sidebar,
 tabs, a grid or a list, and drag-and-drop.
@@ -14,14 +14,14 @@ Hayato surface (`hayato theme set` re-themes it in place over SIGUSR1).
 
 * **Header** - the sidebar toggle, back / forward, the breadcrumb path (click
   **Ctrl+L** to type a path instead), the filter box (**Ctrl+F**), the grid /
-  list switch (**Ctrl+1** / **Ctrl+2**), the sort menu, the shelf toggle, and
-  **New Tab**.
+  list switch (**Ctrl+1** / **Ctrl+2**), the sort menu, the hidden-files eye
+  toggle (**Ctrl+H**), the shelf toggle, and **New Tab**.
 * **Tab bar** - appears as soon as a second tab exists. A tab is dropped on as
   a folder, and hovering one while dragging spring-loads it.
 * **PLACES** - Home, Desktop, Documents, Downloads, Pictures, Music, Videos,
   Trash, and your pinned folders. **DEVICES** - removable drives, with a usage
   bar, a mount / eject button, and right-click **Format Drive…**.
-* **Canvas** - the icon grid or the compact list; **Backspace** goes up a level. In **List view**, drag any divider between the `NAME | SIZE | MODIFIED | TYPE` headers to resize columns (persisted in `~/.config/hayato/filer-state.json`). In **Quick Look** (`Space`), `Up`/`Down`/`PgUp`/`PgDn` scroll text previews while `Left`/`Right` step between items in the folder.
+* **Canvas** - the icon grid or the compact list; **Backspace** goes up a level. In **List view**, columns show `NAME | SIZE | MODIFIED | PERMS | OWNER` (`PERMS` uses theme-adaptive gray-scale shading for owner/group/other bits) and dragging any header divider resizes columns (persisted in `~/.config/hayato/filer-state.json`). In **Quick Look** (`Space`), `Up`/`Down`/`PgUp`/`PgDn` scroll text previews while `Left`/`Right` step between items in the folder.
 * **Shelf** - the staging tray along the bottom (see below).
 * **Status bar** - the item count, the selected size, and the free space of the
   current filesystem, plus the progress bar for a running copy, move or archive.
@@ -31,7 +31,8 @@ Hayato surface (`hayato theme set` re-themes it in place over SIGUSR1).
 | Key | Action |
 |---|---|
 | `Enter` | open the selection (a folder, or the file's program) |
-| `Alt+Enter` / `Ctrl+I` | Quick Properties (see below) |
+| `Ctrl+Left` / `Ctrl+Right` / `Ctrl+Up` | back / forward / parent folder (`Backspace` also goes up) |
+| `Ctrl+I` | Quick Properties (see below) |
 | `Space` | Quick Look preview |
 | `Ctrl+Z` | undo the last rename, move, trash, copy or folder creation |
 | `F2` | rename |
@@ -39,7 +40,7 @@ Hayato surface (`hayato theme set` re-themes it in place over SIGUSR1).
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | copy / cut / paste files |
 | `Ctrl+H` | show hidden files |
 | `Ctrl+A` | select all |
-| `Ctrl+T` / `Ctrl+W` | new tab / close tab (`Ctrl+Tab` cycles, `Alt+1…9` jumps) |
+| `Ctrl+T` / `Ctrl+W` | new tab / close tab (`Ctrl+Tab` / `Ctrl+PgUp` / `Ctrl+PgDn` cycle) |
 | `Ctrl+F` | filter the folder as you type |
 | `Ctrl+L` | type a path |
 | `Ctrl+B` / `F9` | show or hide the sidebar |
@@ -96,7 +97,7 @@ reversed.
 
 ## Quick Properties
 
-**Alt+Enter** or **Ctrl+I** opens a compact inspector for the selection: its
+**Ctrl+I** opens a compact inspector for the selection: its
 kind, exact size (bytes and a human figure, plus a folder's item count), where
 it lives, when it changed, its permissions in `rwx` and octal, its owner and
 group, its MIME type, a symlink's target, and a **Compute SHA-256** button for a

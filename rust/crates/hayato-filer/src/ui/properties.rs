@@ -1,4 +1,4 @@
-//! Alt+Enter / Ctrl+I Quick Properties: a compact monospace inspector card.
+//! Ctrl+I Quick Properties: a compact monospace inspector card.
 //!
 //! The Quick Look overlay answers "what is this?"; this answers "exactly what
 //! is it?" - byte count, permissions with a one-click executable bit, owner,

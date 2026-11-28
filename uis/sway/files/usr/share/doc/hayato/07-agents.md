@@ -4,7 +4,7 @@ Hayato includes a native **Agents** manager (`hayato menu agents`) for launching
 AI coding assistants in `~/Work`, managing multiple provider accounts, and
 installing CLIs into `~/.local` without root privileges.
 
-**The menu**: `hayato-agents`, on **Alt+Ctrl+Shift+A**,
+**The menu**: `hayato-agents`, on **Alt+Shift+A**,
 or "Agents" in the root menu / the launcher.
 
 **A session in one click.** The root menu's AI group (`Alt+Space`) opens with

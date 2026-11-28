@@ -160,7 +160,7 @@ exclusively: a second program gets a black preview or an error, which looks like
 **A Flatpak application sees no camera.** It asks
 `org.freedesktop.portal.Camera`, and this image has no portal backend for it -
 the journal says *The camera portal requires an access impl* once per session.
-Native programs (guvcview, Firefox, `ffmpeg`) read the device directly and are
+Native programs (guvcview, Chromium, `ffmpeg`) read the device directly and are
 not affected. `04-software.md` states the limit; the portal is not going to
 appear by itself.
 
@@ -227,7 +227,7 @@ monitor* in `04-software.md`). In order:
   link to the crosspoint). **`Alt+Ctrl+Shift+D`** turns the panel back on - it
   runs `~/.config/bin/hayato-display --panel-on`, a sway command with no menu
   involved, which matters because a menu cannot be drawn with every output off.
-  When a screen can still draw, `Alt+Ctrl+O` → **Display arrangement** has the
+  When a screen can still draw, `Alt+O` → **Display arrangement** has the
   same row, **Bring the internal panel back**, even with no monitor plugged in.
   Blind, over ssh, the command is `swaymsg output eDP-1 enable` (or `DSI-1` on MT8183 tablets). A reboot clears
   it too, because the choice is never written to the saved arrangement.
@@ -267,15 +267,15 @@ glow /usr/share/doc/hayato/01-welcome.md    # the message names the problem
 The file browser picks the program by what the file is: text goes to `bat`, a
 document (PDF, DjVu, a comic) to **papers**, a picture to **imv** (or `chafa`,
 drawn in a foot window, when imv cannot get a graphics context), a video to
-**mpv**, and an EPUB, a `.deb` or anything else to **firefox-esr**; `xdg-open`
+**mpv**, and an EPUB, a `.deb` or anything else to **chromium**; `xdg-open`
 is a two-dozen-line shim that sends a URL to the browser and a path to the same
 rules. If a file only produces a notification, the program is gone:
 
 ```sh
-command -v firefox-esr papers imv mpv chafa bat
+command -v chromium papers imv mpv chafa bat
 ```
 
-A video that opens in Firefox instead of mpv means mpv is missing; a document
+A video that opens in Chromium instead of mpv means mpv is missing; a document
 that opens in the browser means `papers` is; a picture that opens in the browser
 means both `imv` and `chafa` are.
 
@@ -371,17 +371,16 @@ fc-list :lang=ja               # empty = install fonts-noto-cjk
 
 `check-system.sh` reports `fc-list :lang=ar` in one line.
 
-## Code blocks in Firefox render as boxes or blank spaces
+## Code blocks in Chromium render as boxes or blank spaces
 
-Firefox uses fontconfig to select fonts for code blocks and web pages. When the
+Web browsers use fontconfig to select fonts for code blocks and web pages. When the
 `fonts-nerd-symbols` package is installed, Debian includes a fontconfig rule
 (`/etc/fonts/conf.d/10-nerd-font-symbols.conf`) that aggressively binds over 50
 monospace families (such as `Liberation Mono`, `Roboto Mono`, `Fira Code`) to
 `Symbols Nerd Font` with `binding="same"`. Because `Symbols Nerd Font` is a
 symbols-only font with zero Latin alphanumeric characters, web pages specifying
 those monospace stacks resolve to a font that cannot render letters or numbers,
-producing tofu boxes or blank lines unless "Allow pages to choose their own fonts"
-is disabled in Firefox settings.
+producing tofu boxes or blank lines.
 
 Hayato fixes this in three ways:
 1. Disables `/etc/fonts/conf.d/10-nerd-font-symbols.conf`. Terminals (`foot`, `kitty`)
@@ -540,15 +539,15 @@ The value is still changed either way: `wpctl status` and
 
 ## The screen turns off while you are watching something
 
-A fullscreen video in Firefox or the reader, and any video in mpv, ask the
+A fullscreen video in Chromium or the reader, and any video in mpv, ask the
 compositor to keep the screen awake; the rules are
 `/etc/sway/config.d/32-idle-inhibit.conf`. If a film is interrupted:
 
-* it is **not** fullscreen (the Firefox and papers rules apply to a fullscreen
+* it is **not** fullscreen (the Chromium and papers rules apply to a fullscreen
   window; fullscreen it, or turn on the bar's coffee cup);
-* the application is running under Xwayland (`MOZ_ENABLE_WAYLAND=0`), where it
+* the application is running under Xwayland (`--ozone-platform=x11`), where it
   has no Wayland app id and no rule can match it;
-* a Firefox page playing in a background tab does not inhibit, by design - the
+* a browser tab playing in the background does not inhibit, by design - the
   page that is not on screen should not hold the machine awake.
 
 The **coffee cup** on the bar is the manual override (accent = kept awake) and
@@ -706,27 +705,27 @@ swaymsg reload
 
 ## The three-finger swipes do nothing up or down
 
-That is the design in every window that is not Firefox: the binding carries
-sway's own filter, `[app_id="(?i)^firefox" con_id="__focused__"]`, so the
+That is the design in every window that is not a browser: the binding carries
+sway's own filter, `[app_id="(?i)^(chromium|firefox|librewolf)" con_id="__focused__"]`, so the
 compositor checks the focused window and starts nothing otherwise. In foot, in
 an editor, on the desktop - nothing happens, and nothing is supposed to.
 
-Inside Firefox it should still move a tab. If it does not:
+Inside Chromium it should still move a tab. If it does not:
 
 ```sh
 command -v wtype
 swaymsg -t get_tree | jq -r '.. | objects | select(.focused==true) | .app_id'
 ```
 
-`wtype` is the package of that name (`check-system.sh` FAILs when it is gone).
-The second line names the focused window's Wayland app id; it must start with
-`firefox` (Debian's package reports `firefox-esr`). A Firefox started with
-`MOZ_ENABLE_WAYLAND=0` runs under Xwayland, has no app id at all, and gets no
-gesture - start it normally.
+`wtype` is the package of that name (`check-desktop.sh` FAILs when it is gone).
+The second line names the focused window's Wayland app id; it must be
+`chromium`. A Chromium instance started under Xwayland (`--ozone-platform=x11`)
+has no Wayland app id and gets no gesture - keep `/etc/chromium.d/hayato`
+(`--ozone-platform-hint=auto`).
 
 To let the gesture work in more applications, widen that one regex in
 `/etc/sway/config.d/22-workspace-gestures.conf` instead of adding a second
-binding (`(?i)^(firefox|code)` and so on), then `swaymsg reload`: two
+binding (`(?i)^(chromium|firefox|librewolf|code)` and so on), then `swaymsg reload`: two
 `bindgesture` lines for the same swipe are the duplicate that raises the red
 bar above.
 
@@ -870,7 +869,7 @@ ordinary gpg and tar; nothing about the export needs the menu.
 
 The restore writes files into your home and says **log out and back in**, which
 is not a suggestion: `~/.bashrc` is read by a new shell, `~/.config/sway` by the
-compositor (or `Alt+Shift+C` for a reload), and the agents read their account
+compositor (or `Alt+Ctrl+R` for Studio / `swaymsg reload` — note `Alt+Shift+C` reloads Sway config), and the agents read their account
 directories at startup. A terminal opened before the restore keeps the old
 environment until it is closed.
 

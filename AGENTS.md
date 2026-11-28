@@ -107,7 +107,7 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
     contaminates the video, and the "saved" card fires only after the recorder exits.
 10b. **System Share Sheet (`hayato share` / `hayato-share`)**: `system/share/` provides the OS-wide
     Share Sheet invoked from `hayato-files` (`Ctrl+S`), `file_actions`, `hayato-lens` (`s`), `hayato-clip`
-    (`Alt+S`), `hayato-notes` (`Ctrl+S`), `hayato-capture` (`Ctrl+S`), `hayato-studio` (`Ctrl+S`), and CLI
+    (`Ctrl+S`), `hayato-notes` (`Ctrl+S`), `hayato-capture` (`Ctrl+S`), `hayato-studio` (`Ctrl+S`), and CLI
     stdin/paths (`system/drop.rs` is a thin compatibility facade). Its ephemeral LAN HTTP server uses a
     128-bit `/dev/urandom` token, constant-time comparison, active-theme CSS injection, HTML escaping,
     Multi-file/folder ZIP streaming, two-way phone upload/clipboard push, and 5-min auto-expiry, alongside
@@ -215,8 +215,8 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
    never write a second copy of that table by hand. The prose is a short form of
    `08-games.md`, which stays the long reference.
    The shelf is a master-detail surface: the rail is the platform, the shelf (or the dense list)
-   is the game, the hero is the selected one. `o` opens the four options — sort, layout, covers,
-   hide missing cores — stored in `State::options` so they survive the next game; `r` opens the
+   is the game, the hero is the selected one. `Ctrl+O` opens the four options — sort, layout, covers,
+   hide missing cores — stored in `State::options` so they survive the next game; `Ctrl+R` opens the
    game's folder in Files. The manual is markdown rendered by **glow** through the shared
    `system::manual` module (Learn uses the same renderer and ANSI parser), so its tables are real
    tables; it re-renders at the window width. The cartridge and the hero's monogram are generated
@@ -225,11 +225,12 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
 15. **A controller is the session's input helper**: `hayato gamepad` reads `/dev/input` through
    evdev and injects arrows, Enter and Escape with `wtype` into the focused `hayato-*` window
    (the root menu, Settings, Files, the Games TUI). The library is one of those windows; its tabs
-   are Left/Right and its list Up/Down. Its own surfaces get three buttons — X options, Y manual,
-   L1 the folder in Files — sent as **Alt+O / Alt+M / Alt+R**, never bare letters, because a bare
-   letter would type into another screen's filter; the Alt combinations are unbound elsewhere.
+   are Left/Right and its list Up/Down. Its own surfaces get three buttons — X options (`Ctrl+O`),
+   Y manual (`Ctrl+M`), L1 the folder in Files (`Ctrl+R`) — injected by `gamepad` as dedicated
+   **F21 / F22 / F23** function keysyms via `crate::padmap::Action::pad_keysym()`, never bare letters
+   (which type into filters) and never `Alt+<letter>` (since `Alt` is Sway's `$mod`).
    The table lives in `crate::padmap`, not in the mapper: the Controller screen (`menu controller`,
-   Settings → Input, and the library's `o` row) edits it and writes
+   Settings → Input, and `Ctrl+O` in Games) edits it and writes
    `~/.config/hayato/pad.json`, and the mapper reloads the file when its mtime changes, so a remap
    needs no restart and works with no pad connected. The defaults are the console layout and cover
    a DualShock 4 (Cross confirm, Circle cancel), which pairs over Bluetooth (PS + Share) like any
@@ -367,10 +368,10 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
     `check-desktop.sh` move together. The release sanitizer strips `service.json` and `auth.json`
     from that directory, never the directory, so the registration reaches the image.
  24. **The Files window is one surface with one state file per concern**: `hayato-filer` is the GTK4
-    browser (`Alt+Ctrl+Shift+F`), the windowed companion of the `hayato menu files` TUI; the two
+    browser (`Alt+Shift+F`), the windowed companion of the `hayato menu files` TUI; the two
     share neither code nor state. Its UI choices (view mode, sort field and order, hidden files,
     compact sidebar, window size, and resizable list column widths `col_size_width`,
-    `col_mtime_width`, `col_kind_width`) persist in `~/.config/hayato/filer-state.json`
+    `col_mtime_width`, `col_perms_width`, `col_owner_width`) persist in `~/.config/hayato/filer-state.json`
     (`prefs.rs`, read on launch, written on close) and pinned folders in
     `~/.config/hayato/filer-bookmarks.json`; a missing or corrupt file falls back to the
     defaults, never a second copy of the choice. In Quick Look (`quicklook.rs`),
@@ -386,7 +387,14 @@ Verified by workspace tests (`cargo test`) **and** `scripts/check-desktop.sh`:
     removing an already-finished glib source panics and aborts the window. A drop moves when it
     carries its local `GdkDrag` (GDK reports every local drop as `COPY`, so the drag object, not
     `actions()`, is the signal) and copies when the source is another application or another
-    filesystem; the shelf prunes a reference whose path is gone. `hayato-filer --self-test` proves
+    filesystem; the shelf prunes a reference whose path is gone. Headerbar view controls include the
+    synchronized eye toggle for hidden dotfiles (`Ctrl+H`, `hidden_btn`, `sort_btn` popover),
+    List View columns (`NAME`, `SIZE`, `MODIFIED`, `PERMS`, `OWNER`) keep `hexpand(expand)` strictly
+    on both header buttons and labels so `SizeGroup` aligns columns pixel-for-pixel with `.filer-list-header`
+    padding (`4px 16px 4px 18px`), `PERMS` and `OWNER` left-align as distinct columns, and
+    `format_mode_markup` renders permissions in theme-adaptive gray-scale Pango alpha levels, while
+    common file operations surface transient feedback in the bottom status bar and reserve
+    `notify-send` strictly for failures and drive-eject alerts. `hayato-filer --self-test` proves
     the CSS and the pure state/archive logic headlessly, and `check-desktop.sh` runs it.
  25. **Smart File Intent Router & Plug-and-Play Seams**:
     - `files::open::resolve()` keeps zero-latency direct `exec()` for ready local viewers, while
@@ -452,10 +460,15 @@ Add a probe when a new state is introduced.
   stays cheap (no nmcli/systemctl probe storm) and the live status is one level down.
 - System identity uses the system tools: `localectl` for language (next login),
   `hostnamectl` plus `/etc/hosts` for the name, `xdg-mime`/`gio` for default apps, and
-  `chpasswd` with the password on stdin for the account password.
+  `chpasswd` with the password on stdin for the account password; changing the Idle & lock preset
+  (`idle::write` / `settings --idle`) also syncs Waybar's `idle_inhibitor` tooltip to the active
+  timer profile (`appearance::sync_idle_tooltip`) and signals Waybar.
 - Notification and clipboard settings are user config files read by their helpers.
   `hayato-notify` reads its file once at startup; saving a notification setting restarts
-  the daemon and clears visible cards. `hayato-clipboard` starts/stops the `cliphist`
+  the daemon and clears visible cards (`CardTheme::from_theme` derives recessed `header_bg`,
+  lifted `bg_elevated`, neutral >=3:1 `border_subtle`, solid-accent action hover fill with >=4.5:1
+  inverted label, and >=4.5:1 lifted text/danger/warning roles across all 16 themes using
+  `hayato_theme::contrast`). `hayato-clipboard` starts/stops the `cliphist`
   watcher from `clipboard.conf`.
 - Captive portal sign-in is a read-only probe in `system::portal`: NetworkManager's
   `CONNECTIVITY` says whether a page is needed, and the URL comes from the connectivity
@@ -480,8 +493,13 @@ Add a probe when a new state is introduced.
 - **The browser is one indirection.** `~/.config/bin/hayato-browser` is the only reader of
   `xdg-settings get default-web-browser` (what Settings writes); the `$mod+Shift+Return` key, the
   `/usr/local/bin/xdg-open` shim, `system::portal` and Files' browser fallback all go through it.
-  Never bind a key or spawn a browser by name again: `firefox-esr` is the image's last resort, not
-  the choice, and a literal there silently ignores Settings.
+  Never bind a key or spawn a browser by name again: `chromium` is the image's last resort, not
+  the choice, and a literal there silently ignores Settings. Keep Hayato's Chromium tuning in
+  conflict-free paths (`/etc/chromium.d/hayato` for Wayland/GPU/Memory/VerticalTabs flags,
+  `/etc/chromium/policies/recommended/hayato.json` for non-locking Memory Saver & zero-background
+  policies, and `uis/sway/files/home/.config/chromium/Default/Preferences` for seeded Vertical
+  Tabs defaults — never overwrite `/etc/chromium/master_preferences`, which is owned by Debian's
+  `chromium` package).
 - Guard optional hardware resume hooks in Sway configs (e.g., `[ -x /usr/local/bin/hayato-dp-resume ]`),
   and detect both `eDP-*` and `DSI-*` internal panel outputs dynamically in `system::display`.
 - **In-place `.deb` Packaging (`scripts/build-hayato.sh`, `scripts/build-fbneo.sh`, `scripts/build-mupen64plus-next.sh`)**:
@@ -496,6 +514,23 @@ Add a probe when a new state is introduced.
   `1:<hayato_ver>+git.<shortrev>+hayato1` (and filename `<hayato_ver>+git.<shortrev>+hayato1`) so
   `dpkg` version comparisons remain strictly monotonic across pin bumps.
 
+## Navigation, Shortcuts & Control Continuity (`Alt`-as-Super Rules)
+1. **Zero `Alt` (`Mod1`) bindings inside windows**: Sway owns `Alt` (`$mod`). Never bind `KeyModifiers::ALT` (in Ratatui/`hayato-ui`), `Alt+...` GTK4 accelerators (`hayato-filer`), or `send_alt` (`hayato gamepad`) inside any Hayato application. `hayato gamepad` injects `F21`/`F22`/`F23` via `crate::padmap::Action::pad_keysym()`, GTK4 Filer uses `Ctrl+Left/Right/Up/I/Tab/PgUp/PgDn`, and TUI row actions use `Tab` or `Ctrl+<key>`.
+2. **Sway `$mod` & ChromeOS `keyd` discipline**:
+   - Always write `$mod+...` in `/etc/sway/config.d/*.conf`, never literal `Alt+...`.
+   - Maintain a clean **single binding per action** across `/etc/sway/config` and `config.d/*.conf` (no duplicate `$mod` chords for the same tool).
+   - Never bind chords swallowed or remapped by `keyd` on ChromeOS keyboards (`$mod+Ctrl+1..0`, `$mod+Ctrl+Backspace`, `$mod+Ctrl+F6`/`F7`).
+   - Keep compositor bindings at 2–3 keys max; reserve 4-key chords (`$mod+Ctrl+Shift+...`) strictly for rare emergency recovery (`$mod+Ctrl+Shift+d` panel rescue) or direct theme cycling (`$mod+Ctrl+Shift+t`).
+3. **Search-vs-hotkey separation & filter guards**:
+   - Every list screen with `type_filter` owns all unmodified printable characters (`Char(_)` without `CTRL`/`ALT`) when typing into the filter. Single-letter action hotkeys (`Space`, `r`, `j`/`k`, etc.) are allowed ONLY on non-filter screens (`studio`, `lens`, `connect`, detail/pager views) OR guarded by `ctrl || filter.is_empty()` (`+`/`-`/`=` in `audio`). Filterable pickers (`theme_picker`, `games`, `notes`, `clip`, `emoji`, `software`) MUST use `Ctrl+<key>` for actions (`Ctrl+P` preview, `Ctrl+W` save/wallpaper, `Ctrl+S` share, `Ctrl+Y` copy) and guard `type_filter` with `!modifiers.contains(KeyModifiers::ALT)`.
+4. **Unified `Esc` unwind & `Ctrl+C`/`Ctrl+Y`/`Ctrl+S` verb contract**:
+   - **`Esc` unwind ladder**: clear non-empty filter -> exit sub-view / return to parent pane (`Settings` list -> rail or overlay -> list) -> close window (reverting temporary previews if unapplied).
+   - **`Ctrl+C`**: universal process/window cancel & close — NEVER bind `Ctrl+C` to Copy!
+   - **`Ctrl+Y`**: universal "yank / copy to clipboard" (`about`, `qr`, `emoji`, `find`, `clip`, `grep`).
+   - **`Ctrl+S`**: universal Share Sheet trigger on browse/history/capture screens (or explicit Save inside modal editors/forms); **`Del`**: delete item; **`Tab`**: row actions menu.
+5. **Master-detail navigation contract (`hayato menu settings`, etc.)**:
+   - Two-pane master-detail layouts use spatial `Left`/`Right` (`Tab`/`BackTab`) to cross between section rail and active item list without closing the window, keep cursor navigation (`Up`/`Down`/`Ctrl+P`/`Ctrl+N`) functional in both panes, support `[` / `]` and `Ctrl+1..N` section jumping, preserve section/item/filter/focus cursor state across spawned sub-panels (`SettingsResume`), and switch to grouped cross-section filtering when typing a search query.
+
 ## Feature Witnesses
 Every user-facing change ships with:
 1. Automated test(s) in `rust/crates/*/tests/` and/or a probe in `scripts/check-desktop.sh`.
@@ -509,5 +544,5 @@ Every user-facing change ships with:
 - The procedural wallpaper scripts are imported by `scripts/tests/test_*.py`; keep generation behind
   `main()` so importing them does not write files or run `ffmpeg`. Run them with
   `python3 -m unittest discover -s scripts/tests -p 'test_*.py'`.
-- **`custom/sysmon` (`hayato sysmon --bar`)**: Stateless one-shot telemetry next to `clock` (no daemon), caching only `/proc/stat` delta jiffies + high-CPU streak in `$XDG_RUNTIME_DIR/hayato/sysmon.stat`, gated to `BarModules::Full` in `appearance.rs`.
+- **Waybar `H_` brand telemetry (`hayato sysmon --bar` / `--bar-dot`)**: Stateless one-shot telemetry hosted directly on `custom/brand` (`H`, `ok`/`warn`/`critical` pressure classes only on `H`) and `custom/brand-dot` (`_`, fixed `accent` class `ok`, read-only delta sample against `$XDG_RUNTIME_DIR/hayato/sysmon.stat` so hovering `H` or `_` shares one tooltip without racing CPU deltas); `[LMB]` root menu, `[RMB]` terminal, `[MMB]` `btop`.
 - **`.github/workflows/rust.yml`** runs both `cargo test --workspace --all-targets` and the Python suite.

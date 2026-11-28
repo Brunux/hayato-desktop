@@ -287,7 +287,7 @@ impl MediaScreen {
                 buf,
                 inner.x,
                 y,
-                "Start audio or video in Firefox, Spotify, mpv, or any",
+                "Start audio or video in Chromium, Spotify, mpv, or any",
                 inner.width,
                 dim,
             );

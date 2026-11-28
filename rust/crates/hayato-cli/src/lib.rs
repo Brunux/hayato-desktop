@@ -501,6 +501,10 @@ fn query(resolved: &Resolved) -> Option<i32> {
             println!("{}", system::sysmon::bar_json());
             Some(EXIT_OK)
         }
+        ("sysmon", ["--bar-dot"] | ["bar-dot"]) => {
+            println!("{}", system::sysmon::bar_dot_json());
+            Some(EXIT_OK)
+        }
         ("menu studio", _) => system::studio::try_query(&resolved.args),
         ("menu notes", ["--rows"] | ["rows"]) => {
             let mut out = io::stdout();

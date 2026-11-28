@@ -5,7 +5,7 @@
 //! font draws. The font pin is checked at runtime.
 //!
 //! Insertion is Omarchy's trick: the glyph goes to the clipboard and a virtual
-//! Shift+Insert is typed. Alt+1 is clipboard only, for a surface that refuses a
+//! Shift+Insert is typed. Ctrl+Y copies only, for a surface that refuses a
 //! virtual keyboard.
 
 #![allow(unused_imports)]

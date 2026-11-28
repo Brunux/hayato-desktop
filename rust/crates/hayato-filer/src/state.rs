@@ -19,10 +19,12 @@ pub enum ViewMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SortField {
+    #[serde(alias = "kind")]
     Name,
     Modified,
     Size,
-    Kind,
+    Perms,
+    Owner,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -129,7 +131,8 @@ pub struct AppState {
     pub sidebar_compact: bool,
     pub col_size_width: i32,
     pub col_mtime_width: i32,
-    pub col_kind_width: i32,
+    pub col_perms_width: i32,
+    pub col_owner_width: i32,
     pub bookmarks: Vec<Bookmark>,
     /// Persisted order of non-Home PLACES entries (both defaults and pinned folders).
     pub place_order: Vec<String>,
@@ -153,7 +156,8 @@ impl AppState {
             sidebar_compact: false,
             col_size_width: crate::prefs::DEFAULT_COL_SIZE,
             col_mtime_width: crate::prefs::DEFAULT_COL_MTIME,
-            col_kind_width: crate::prefs::DEFAULT_COL_KIND,
+            col_perms_width: crate::prefs::DEFAULT_COL_PERMS,
+            col_owner_width: crate::prefs::DEFAULT_COL_OWNER,
             bookmarks,
             place_order,
             undo: Vec::new(),
@@ -170,7 +174,8 @@ impl AppState {
         self.sidebar_compact = prefs.sidebar_compact;
         self.col_size_width = prefs.col_size_width;
         self.col_mtime_width = prefs.col_mtime_width;
-        self.col_kind_width = prefs.col_kind_width;
+        self.col_perms_width = prefs.col_perms_width;
+        self.col_owner_width = prefs.col_owner_width;
     }
 
     /// Snapshot the view choices into a persistable struct.
@@ -186,7 +191,8 @@ impl AppState {
             window_height: height,
             col_size_width: self.col_size_width,
             col_mtime_width: self.col_mtime_width,
-            col_kind_width: self.col_kind_width,
+            col_perms_width: self.col_perms_width,
+            col_owner_width: self.col_owner_width,
         }
     }
 
@@ -361,7 +367,10 @@ impl AppState {
                 SortField::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
                 SortField::Modified => a.modified_secs.cmp(&b.modified_secs),
                 SortField::Size => a.size.cmp(&b.size),
-                SortField::Kind => a.kind.cmp(&b.kind),
+                SortField::Perms => {
+                    crate::fs::format_mode(a.mode).cmp(&crate::fs::format_mode(b.mode))
+                }
+                SortField::Owner => a.owner.to_lowercase().cmp(&b.owner.to_lowercase()),
             };
             let cmp = if cmp == Ordering::Equal {
                 a.name.to_lowercase().cmp(&b.name.to_lowercase())
@@ -744,6 +753,7 @@ mod tests {
             size,
             modified_secs: mtime,
             mode: if is_dir { 0o755 } else { 0o644 },
+            owner: "brunux".to_string(),
             kind: if is_dir { "Folder" } else { "File" }.to_string(),
             icon_glyph: if is_dir { "\u{f07b}" } else { "\u{f15b}" },
             icon_class: if is_dir { "icon-folder" } else { "icon-file" },
@@ -805,7 +815,8 @@ mod tests {
             window_height: 700,
             col_size_width: 112,
             col_mtime_width: 210,
-            col_kind_width: 104,
+            col_perms_width: 104,
+            col_owner_width: 92,
         };
         st.apply_prefs(&prefs);
         assert_eq!(st.view_mode, ViewMode::List);

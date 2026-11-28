@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use hayato_music_core::{NowPlayingFile, PlayState, format_time, load_config, runtime_dir};
+use hayato_music_core::{NowPlayingFile, PlayState, load_config, runtime_dir};
 use hayato_ui::{App, Design, Header};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -23,7 +23,7 @@ use ratatui::crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 
-use screen::{CassetteScreen, THEME_RELOAD_FLAG};
+use screen::{CassetteScreen, THEME_RELOAD_FLAG, clear_now_playing};
 
 const VERSION: &str = include_str!("../../../../VERSION");
 static SAVED_STDERR_FD: AtomicI32 = AtomicI32::new(-1);
@@ -90,6 +90,12 @@ fn main() {
         return;
     }
 
+    if let Some(bad) = unknown_flag(&args) {
+        eprintln!("hayato-cassette: unknown option: {bad}");
+        eprintln!("usage: hayato-cassette [--toggle | --bar | --mini | --play FILE]");
+        std::process::exit(2);
+    }
+
     let start_mini = args.iter().any(|a| a == "--mini");
     let play_file = args
         .windows(2)
@@ -114,10 +120,36 @@ fn main() {
 
     let code = run_tui(play_file, start_mini);
 
-    NowPlayingFile::clear();
+    clear_now_playing();
     let _ = std::fs::remove_file(runtime_dir().join("mode"));
     let _ = std::fs::remove_file(&pid_file);
     std::process::exit(code);
+}
+
+fn unknown_flag(args: &[String]) -> Option<&str> {
+    let mut skip_next = false;
+    for arg in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if arg == "--" {
+            break;
+        }
+        if arg == "--play" {
+            skip_next = true;
+            continue;
+        }
+        if arg.starts_with('-')
+            && !matches!(
+                arg.as_str(),
+                "-V" | "--version" | "-h" | "--help" | "--bar" | "--toggle" | "--mini"
+            )
+        {
+            return Some(arg.as_str());
+        }
+    }
+    None
 }
 
 fn run_tui(play_file: Option<PathBuf>, start_mini: bool) -> i32 {
@@ -221,12 +253,17 @@ fn spawn_in_foot(mini: bool, play_file: Option<&std::path::Path>) {
 
 /// Waybar `custom/cassette` JSON payload (`<1 ms`, zero D-Bus).
 fn bar_json() -> String {
-    let Some(now) = NowPlayingFile::read_live() else {
+    bar_json_from(NowPlayingFile::read_live().as_ref())
+}
+
+fn format_time(secs: u64) -> String {
+    format!("{:02}:{:02}", secs / 60, secs % 60)
+}
+
+fn bar_json_from(now: Option<&NowPlayingFile>) -> String {
+    let Some(now) = now.filter(|n| n.state != PlayState::Stopped && !n.title.is_empty()) else {
         return r#"{"class":"empty"}"#.to_string();
     };
-    if now.state == PlayState::Stopped || now.title.is_empty() {
-        return r#"{"class":"empty"}"#.to_string();
-    }
     let state_word = if now.state == PlayState::Playing {
         "PLAYING"
     } else {
@@ -272,4 +309,59 @@ fn escape_pango(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_now(state: PlayState, title: &str) -> NowPlayingFile {
+        NowPlayingFile {
+            pid: 1,
+            state,
+            title: title.to_string(),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            source_label: "LOCAL".to_string(),
+            codec_label: "FLAC".to_string(),
+            position_secs: 10,
+            duration_secs: 120,
+            volume_pct: 80,
+        }
+    }
+
+    #[test]
+    fn bar_json_formats_and_truncates_at_twenty_chars() {
+        assert_eq!(bar_json_from(None), r#"{"class":"empty"}"#);
+        let stopped = sample_now(PlayState::Stopped, "Song");
+        assert_eq!(bar_json_from(Some(&stopped)), r#"{"class":"empty"}"#);
+
+        let mut playing = sample_now(PlayState::Playing, "A Very Long Track Name & <Title>");
+        playing.artist = "Artist & Co".to_string();
+        let v: serde_json::Value = serde_json::from_str(&bar_json_from(Some(&playing))).unwrap();
+        assert_eq!(v["class"], "playing");
+        let text = v["text"].as_str().unwrap();
+        assert!(text.starts_with("\u{f001} "));
+        assert!(text.ends_with('…'));
+        assert_eq!(text.chars().count(), 2 + 20);
+        let tip = v["tooltip"].as_str().unwrap();
+        assert!(tip.contains("CASSETTE // PLAYING"));
+        assert!(tip.contains("[LMB] toggle · [RMB] pause · [SCR] prev/next"));
+
+        let paused = sample_now(PlayState::Paused, "Short");
+        let vp: serde_json::Value = serde_json::from_str(&bar_json_from(Some(&paused))).unwrap();
+        assert_eq!(vp["class"], "paused");
+        assert_eq!(vp["text"], "\u{f04c} Short");
+    }
+
+    #[test]
+    fn unknown_flag_rejects_unrecognized_flags_without_launching() {
+        let s = |v: &[&str]| v.iter().map(|x| (*x).to_string()).collect::<Vec<_>>();
+        assert_eq!(unknown_flag(&s(&["--bar"])), None);
+        assert_eq!(
+            unknown_flag(&s(&["--mini", "--play", "-odd-name.flac"])),
+            None
+        );
+        assert_eq!(unknown_flag(&s(&["--unknown"])), Some("--unknown"));
+    }
 }

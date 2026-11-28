@@ -14,8 +14,10 @@ symlinks to `/usr/bin/hayato`.
 | **Alt+Tab** | `hayato menu window` (`hayato-window`) | the open windows (sway has no switcher of its own; this uses wlroots' foreign-toplevel protocol) |
 | **Alt+Shift+D** | `hayato menu run` (`hayato-run`) | every executable in `$PATH`. **Enter** runs it, **Shift+Enter** runs it in foot |
 | **Alt+Space** | `hayato menu` (`bar-menu`) | the root menu: what opens something, the AI rows (Ask among them), the system panels, and the session actions - type to narrow it |
-| **Alt+Ctrl+K** | `hayato menu keys` (`hayato-keys`) | every key binding this session defines, parsed from `/etc/sway` and `~/.config/sway`. Enter copies the command |
-| **Alt+Ctrl+F** | `hayato menu files` (`hayato-files`) | the filesystem with a preview beside it: directories first, sizes and dates dimmed. Enter opens a directory or the file; the dotfiles are Ctrl+H away |
+| **Alt+/** | `hayato menu keys` (`hayato-keys`) | every key binding this session defines, parsed from `/etc/sway` and `~/.config/sway`. Enter copies the command |
+| **Alt+Shift+/** | `hayato menu learn` (`hayato-learn`) | these interactive manual pages, rendered with glow and searchable across every section |
+| **Alt+Shift+F** | `hayato-filer` | **Hayato Files** GTK4 dual-pane/window file manager (drag, multi-select, archive extract, properties via `Ctrl+I`) |
+| **Alt+Ctrl+F** | `hayato menu files` (`hayato-files`) | the TUI file browser with inline preview: directories first, sizes and dates dimmed. Enter opens a directory or the file; dotfiles are `Ctrl+H` away |
 | **Alt+Ctrl+G** | `hayato menu grep` (`hayato-grep`) | **search inside the files**: ripgrep over your home, one row per match; Enter opens the file at that line, in the same window |
 | **Alt+Ctrl+D** | `hayato menu dev` (`hayato-dev`) | **developer**: export your profile (keys, configs, package list) into an encrypted archive on a disk, restore one, or save a diagnostics bundle |
 | **Download** (root menu, launcher) | `hayato menu download` (`hayato-download`) | a link - or the one in the clipboard - kept in `~/Downloads`, as a video or as audio |
@@ -24,20 +26,21 @@ symlinks to `/usr/bin/hayato`.
 | **Alt+M** | `hayato-cassette --toggle` (`hayato-music`) | **Cassette**: terminal-native local (FLAC/MP3/OGG/Opus) & Spotify cyberdeck music player in a Sway scratchpad with Sixel album art, 32-band FFT spectrum, synced `.lrc` lyrics, MPRIS2, and Waybar `custom/cassette` pill (`09-music.md`) |
 | **Share** (root menu / `Ctrl+S` in apps) | `hayato share` (`hayato-share`) | **Share Sheet**: send files, folders (auto-ZIP), Lens captures, clipboard, notes, or stdin to phones via themed LAN QR web card (with 2-way upload & clipboard push), zero-daemon LocalSend v2 discovery, instant offline QR, or local targets |
 | **Connect** (root menu / `hayato connect`) | `hayato connect` (`hayato-connect`) | **Hayato Connect**: zero-daemon encrypted phone-to-computer workspace supporting native **KDE Connect** apps (auto-discovery, touchpad/keyboard, presenter, curated run commands, battery, ring-phone, Share Sheet) alongside an embedded zero-install **Hayato Web App** (QR pairing, two-way files/clipboard/links, MPRIS2 media remote, phone camera + mic PipeWire sink, scoped alerts, 1-shot folder diff sync) and collapsible Waybar pill (`01-welcome.md`) |
-| **Alt+Ctrl+O** | `hayato menu settings` (`hayato-settings`) | **Settings**: seven sections - Network, Display & Sound, Appearance, Input, Power & Idle, System, Accessibility - each holding the switches and panels for that subject |
-| **Software** (root menu, Settings) | `hayato menu software` | **Hayato Software**: intent-first Debian `forky` app catalog, access/trust details, updates, and system cleanup (`04-software.md`) |
-| **Alt+Ctrl+P** or **Alt+Escape** | `hayato menu power` (`hayato-power`) | **power**: lock, suspend, hibernate, log out, reboot, shut down - the last three ask once more |
+| **Alt+O** | `hayato menu settings` (`hayato-settings`) | **Settings**: seven sections - Network, Display & Sound, Appearance, Input, Power & Idle, System, Accessibility - each holding the switches and panels for that subject |
+| **Alt+Shift+P** | `hayato menu software` | **Hayato Software**: intent-first Debian `forky` app catalog, access/trust details, updates, and system cleanup (`04-software.md`) |
+| **Alt+Shift+V** | `hayato menu vpn` | **Hayato VPN**: one-window VPN status, profile import, and Tailscale / WireGuard / OpenVPN toggle |
+| **Alt+Escape** | `hayato menu power` (`hayato-power`) | **power**: lock, suspend, hibernate, log out, reboot, shut down - the last three ask once more |
 | **Alt+Ctrl+N** | `hayato menu notify` (`hayato-notify-history`) | the notification history, with do-not-disturb and "copy this notification" |
-| **Alt+C** or **Alt+Ctrl+Q** | `hayato menu calc` (`hayato-calc`) | a calculator: type `(3*4)/2` or `2**8`, Enter copies the result |
-| **Alt+Ctrl+V** | `hayato menu clip` (`hayato-clip`) | **clipboard history**: what was copied, Enter puts it back, Alt+1 deletes that entry |
-| **Alt+Ctrl+E** | `hayato menu emoji` (`hayato-emoji`) | **emoji**: type a name, Enter inserts the glyph at the cursor, Alt+1 only copies it |
+| **Alt+Shift+N** | `hayato menu notes` (`hayato-notes`) | **Notes**: quick Markdown notes, `xournalpp` ink notes, and document workspace |
+| **Alt+C** | `hayato menu calc` (`hayato-calc`) | a calculator: type `(3*4)/2` or `2**8`, Enter copies the result |
+| **Alt+Ctrl+V** | `hayato menu clip` (`hayato-clip`) | **clipboard history**: what was copied, Enter puts it back, `Ctrl+S` shares it, `Del` deletes that entry |
+| **Alt+Ctrl+E** | `hayato menu emoji` (`hayato-emoji`) | **emoji**: type a name, Enter inserts the glyph at the cursor, `Ctrl+Y` copies it |
 | **Alt+Ctrl+T** | `hayato menu translate` (`translate`) | **translate** the selected text (or the clipboard) into the language Settings sets, English until it is set; the answer is copied, and a long one opens in a read window |
-| **Alt+Ctrl+Shift+T** | `hayato menu theme` (`hayato-theme-picker`) | interactive dual-pane theme picker with live preview and wallpaper switching |
-| **Alt+Ctrl+R** | `hayato-studio` (`hayato menu studio`) | screen recording (PipeWire mixer + live webcam PiP), webcam video, and camera photos |
+| **Alt+Shift+T** | `hayato menu theme` (`hayato-theme-picker`) | interactive dual-pane theme picker with live preview and wallpaper switching |
+| **Alt+Ctrl+Shift+T** / **Alt+Shift+W** | `hayato theme next` / `hayato theme wallpaper next` | step straight to the next theme or next wallpaper |
 | **Alt+I** | `hayato menu lens` | local "Circle to Search": drag a region for OCR text, QR/barcode scan, URL, or translate |
 | **Alt+Ctrl+U** | `hayato share` | send/receive files, links, clipboard text, and Wi-Fi QR codes with a phone or nearby device |
-| **Alt+M** | `hayato-cassette` | music player for local audio and Spotify Connect (This Device audio + 5 live visualizers) |
-| **Learn** (root menu) | `hayato menu learn` (`hayato-learn`) | these pages, rendered with glow, plus a search across all of them |
+| **Alt+Shift+A** | `hayato menu agents` (`hayato-agents`) | AI agents workspace (launch, install, or switch coding agents) |
 
 The root menu is also a launcher entry: **Hayato Menu** (`Alt+D`, type
 `lazy`). It runs the same `bar-menu` that **Alt+Space** opens, so the list is
@@ -102,7 +105,7 @@ The rest of the menus live in the root menu and the launcher: **Places**
 (home, documents, downloads, pictures, every mounted disk, and a **Mount** row
 for each unmounted one - an SD card in the internal slot, or a stick when
 Settings' *Auto-mount USB drives* is off - where Enter mounts it and opens it in
-Files and **Ctrl+E** (or **Alt+1** / **Delete**) safely unmounts and powers off a disk; a USB stick is already in that list by the
+Files and **Ctrl+E** (or **Delete**) safely unmounts and powers off a disk; a USB stick is already in that list by the
 time you open it, because plugging one in mounts it and raises an **eject icon** on Waybar
 (`custom/drives`, showing a drive count when multiple drives are mounted — click to choose a drive to
 safely eject, right-click to open Places). You can also open the **Eject drive** studio directly from
@@ -281,7 +284,7 @@ in the floated popup (paged, in the terminal's own colours), a **document**
 (PDF, DjVu, a comic) opens in **papers**, a **picture** in **imv** (zoom, pan,
 rotate, the arrow keys walk the folder; `chafa`'s sixels when imv cannot
 start), a **video** in **mpv**, and a `.deb` or anything else binary asks
-Firefox, which is a download prompt - still an answer.
+Chromium, which is a download prompt - still an answer.
 
 **It opens where you left it.** The first time, Files starts in your home
 directory; after that it starts in the folder you were last browsing, and
@@ -294,9 +297,8 @@ that file or folder: measure a folder, pack it into `name.tar.xz`, unpack an
 archive, mount a disk image, convert a video or a song, copy the path, open a
 terminal there. Nothing is touched until you pick something, an existing name
 is refused rather than overwritten, and the long ones are `busy` cards with the
-bar's spinner. (In the old picker this was **Alt+1**; inside the session sway
-keeps Alt+1 for workspace 1, so the window never hears it - it still works in a
-terminal outside sway.)
+bar's spinner. (In `hayato` lists, **Tab** is the universal actions trigger because
+Sway reserves `Alt` as `$mod`.)
 
 **Alt+Search: which file was it.** One list of the newest 500 files under your
 home (the caches and build trees left out: `.cache`, `.git`, `node_modules`,
@@ -328,21 +330,21 @@ walk) is not installed, the window says which package provides it and
 instead of a dead end.
 
 `xdg-open` exists too (`/usr/local/bin/xdg-open`, two dozen lines): a URL goes to
-Firefox, and a path goes to the same rule table a double click in the window uses
+Chromium, and a path goes to the same rule table a double click in the window uses
 (`hayato-view`), so a file opened from a script lands where it would from the
 desktop. That is what foot's ctrl+click and the CLI tools that print a URL call.
 
 It is the same trade as everything else here: 16 MB while open, nothing
 afterwards.
 
-**Alt+Ctrl+Shift+F: the same files in a window.** **Hayato Files**
+**Alt+Shift+F: the same files in a window.** **Hayato Files**
 (`hayato-filer`, the root menu's **Files (window)** row, `Files (window)` in the
 launcher) is a real file manager for the things a list cannot do - drag a file
 onto a folder, select several, rename in place, send to the trash - and it opens
 a file with exactly the rules above: a double click reaches
 `~/.config/bin/hayato-view`, so text goes to `bat`, a document to `papers`, a
 picture to `imv` (or `chafa`'s sixels when imv cannot start), a video to `mpv`
-and an HTML page, an EPUB or a `.deb` to Firefox (the list itself reads an HTML
+and an HTML page, an EPUB or a `.deb` to Chromium (the list itself reads an HTML
 file as text). Its colours are the session's too (background window, cyan
 selection, JetBrains Mono, the same icons), rendered into
 `~/.config/hayato/filer.css` from the active theme and re-read in place when the
@@ -431,7 +433,7 @@ offer the high-quality formats at all (`[debug] JS runtimes: node-24.21.0`).
 
 **Alt+Ctrl+V** (`hayato-clip`, and "Clipboard" in the root menu and the launcher)
 lists what has been copied since the session started. Enter puts an entry back on
-the clipboard, ready to paste; Alt+1 deletes that one entry.
+the clipboard, ready to paste; `Del` deletes that one entry (`Ctrl+S` shares it, `Ctrl+W` saves images).
 
 The history is kept by `cliphist`, which is fed by `wl-paste --watch cliphist
 store` through `~/.config/bin/hayato-clipboard` — one line in
@@ -471,7 +473,7 @@ the script on a build host with `fontconfig` and the font rebuilds it.
 Enter inserts the glyph at the cursor: the glyph goes to
 the clipboard and a virtual **Shift+Insert** is typed with `wtype`, which every
 toolkit here understands as paste. Typing the character itself would need a
-keysym for its codepoint, and most emoji have none in the current keymap. Alt+1
+keysym for its codepoint, and most emoji have none in the current keymap. **Ctrl+Y**
 is the clipboard write alone, for a program that refuses a virtual keyboard. What
 draws the glyph is `fonts-noto-color-emoji`; without it an emoji is a tofu box,
 which is why `check-system.sh` asks `fc-match emoji`.
@@ -632,7 +634,7 @@ With all surfaces running natively in the multi-call binary `hayato`, the
 
 The final 10 interactive surfaces have migrated from shell scripts into native `hayato menu <subcommand>` surfaces in the multi-call binary:
 
-* **Wi-Fi and Network (`hayato menu net`)**: replaces `bar-net`. Scans access points with `nmcli`, displays signal strength gauge, security status, and active connection indicator. Selecting an unconfigured secured network provides masked password input (`*`). When the connection reports `portal` or `limited`, the list starts with **Sign in to this network**; Enter opens the hotel/airport page in Firefox. Headless `hayato menu net --status` outputs waybar-compatible JSON, and `--portal` prints the sign-in URL or `none`.
+* **Wi-Fi and Network (`hayato menu net`)**: replaces `bar-net`. Scans access points with `nmcli`, displays signal strength gauge, security status, and active connection indicator. Selecting an unconfigured secured network provides masked password input (`*`). When the connection reports `portal` or `limited`, the list starts with **Sign in to this network**; Enter opens the hotel/airport page in Chromium. Headless `hayato menu net --status` outputs waybar-compatible JSON, and `--portal` prints the sign-in URL or `none`.
 * **AI Agents (`hayato menu agents`)**: replaces the old agents menu. Lists configured agents (Claude Code, OpenCode, Codex, Gemini, Copilot), marks active default, manages account directories, and provides `--default` for direct session launches.
 * **Places and Disks (`hayato menu places`)**: replaces the old places menu. Lists standard user directories (`~/Downloads`, `~/Documents`, etc.) and mounted filesystems; unmounted block devices are offered for one-click mounting via `udisksctl`. Headless `hayato menu places --rows` outputs tabular place entries.
 * **Disk Cleaner (`hayato menu clean`)**: replaces the old clean menu. Calculates reclaimable sizes for apt archives, systemd journal logs, thumbnail cache, and user trash, requiring explicit user confirmation before purging. Headless `hayato menu clean --dry-run` prints cache estimations.

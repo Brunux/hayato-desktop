@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OpKind {
@@ -21,6 +22,9 @@ pub enum OpProgress {
     Update {
         label: String,
         fraction: f64,
+    },
+    Pulse {
+        label: String,
     },
     Done {
         summary: String,
@@ -177,6 +181,109 @@ pub fn remove_path(path: &Path) -> Result<(), String> {
     }
 }
 
+struct ByteProgress<'a> {
+    tx: &'a Sender<OpProgress>,
+    verb: &'static str,
+    current_name: String,
+    done_bytes: u64,
+    total_bytes: u64,
+    started: Instant,
+    last_emit: Instant,
+}
+
+impl<'a> ByteProgress<'a> {
+    fn new(tx: &'a Sender<OpProgress>, verb: &'static str, total_bytes: u64) -> Self {
+        let now = Instant::now();
+        Self {
+            tx,
+            verb,
+            current_name: String::new(),
+            done_bytes: 0,
+            total_bytes,
+            started: now,
+            last_emit: now.checked_sub(Duration::from_secs(1)).unwrap_or(now),
+        }
+    }
+
+    fn emit_if_due(&mut self, force: bool) {
+        if !force && self.last_emit.elapsed() < Duration::from_millis(80) {
+            return;
+        }
+        self.last_emit = Instant::now();
+        let label = format_byte_progress(
+            self.verb,
+            &self.current_name,
+            self.done_bytes,
+            self.total_bytes,
+            self.started.elapsed(),
+        );
+        let fraction = if self.total_bytes > 0 {
+            (self.done_bytes as f64 / self.total_bytes as f64).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let _ = self.tx.send(OpProgress::Update { label, fraction });
+    }
+}
+
+pub fn format_eta(secs: u64) -> String {
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        format!("{}m {}s", secs / 60, secs % 60)
+    } else {
+        format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
+    }
+}
+
+pub fn format_byte_progress(
+    verb: &str,
+    name: &str,
+    done_bytes: u64,
+    total_bytes: u64,
+    elapsed: Duration,
+) -> String {
+    let done_s = crate::fs::format_size(done_bytes);
+    if total_bytes == 0 {
+        return format!("{verb} {name} · {done_s}");
+    }
+    let total_s = crate::fs::format_size(total_bytes);
+    let secs = elapsed.as_secs_f64();
+    if secs >= 0.4 && done_bytes > 0 {
+        let bps = (done_bytes as f64 / secs).max(1.0);
+        let rate_s = crate::fs::format_size(bps as u64);
+        if total_bytes > done_bytes {
+            let rem = ((total_bytes - done_bytes) as f64 / bps).ceil() as u64;
+            return format!(
+                "{verb} {name} · {done_s} / {total_s} · {rate_s}/s · {} left",
+                format_eta(rem)
+            );
+        }
+        return format!("{verb} {name} · {done_s} / {total_s} · {rate_s}/s");
+    }
+    format!("{verb} {name} · {done_s} / {total_s}")
+}
+
+fn measure_tree_bytes(path: &Path, cancel: &AtomicBool) -> Result<u64, String> {
+    if cancel.load(Ordering::Relaxed) {
+        return Err("Cancelled".into());
+    }
+    let meta = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    if meta.file_type().is_symlink() {
+        return Ok(0);
+    }
+    if !meta.is_dir() {
+        return Ok(meta.len());
+    }
+    let mut total = 0u64;
+    if let Ok(rd) = fs::read_dir(path) {
+        for entry in rd.flatten() {
+            total = total.saturating_add(measure_tree_bytes(&entry.path(), cancel)?);
+        }
+    }
+    Ok(total)
+}
+
 pub fn spawn_batch(
     kind: OpKind,
     sources: Vec<PathBuf>,
@@ -188,6 +295,41 @@ pub fn spawn_batch(
         .name("hayato-filer-ops".into())
         .spawn(move || {
             let total = sources.len().max(1);
+            let verb = match kind {
+                OpKind::Copy => "Copying",
+                OpKind::Move => "Moving",
+                OpKind::Delete => "Deleting",
+                OpKind::Trash => "Trashing",
+            };
+
+            let mut total_bytes = 0u64;
+            if matches!(kind, OpKind::Copy | OpKind::Move)
+                && let Some(dst_root) = dest_dir.as_deref()
+            {
+                let _ = tx.send(OpProgress::Pulse {
+                    label: "Preparing…".to_string(),
+                });
+                for src in &sources {
+                    if kind == OpKind::Copy || !same_filesystem(src, dst_root) {
+                        match measure_tree_bytes(src, &cancel) {
+                            Ok(bytes) => total_bytes = total_bytes.saturating_add(bytes),
+                            Err(e) => {
+                                if e == "Cancelled" {
+                                    let _ = tx.send(OpProgress::Done {
+                                        summary: "Cancelled".to_string(),
+                                        undo: None,
+                                    });
+                                } else {
+                                    let _ = tx.send(OpProgress::Error { message: e });
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+
+            let mut tracker = (total_bytes > 0).then(|| ByteProgress::new(&tx, verb, total_bytes));
             let mut done = 0usize;
             let mut created: Vec<PathBuf> = Vec::new();
             let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
@@ -200,20 +342,16 @@ pub fn spawn_batch(
                     });
                     return;
                 }
-                let name = src
-                    .file_name()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| src.display().to_string());
-                let verb = match kind {
-                    OpKind::Copy => "Copying",
-                    OpKind::Move => "Moving",
-                    OpKind::Delete => "Deleting",
-                    OpKind::Trash => "Trashing",
-                };
-                let _ = tx.send(OpProgress::Update {
-                    label: format!("{verb} {name}…"),
-                    fraction: done as f64 / total as f64,
-                });
+                let name = display_name(&src);
+                if let Some(tr) = tracker.as_mut() {
+                    tr.current_name = name.clone();
+                    tr.emit_if_due(true);
+                } else {
+                    let _ = tx.send(OpProgress::Update {
+                        label: format!("{verb} {name}…"),
+                        fraction: done as f64 / total as f64,
+                    });
+                }
 
                 let res = match kind {
                     OpKind::Copy => {
@@ -221,7 +359,8 @@ pub fn spawn_batch(
                             continue;
                         };
                         let dst = unique_dest(&dst_root.join(&name));
-                        copy_recursive(&src, &dst, &cancel).inspect(|_| created.push(dst))
+                        copy_recursive_with(&src, &dst, &cancel, tracker.as_mut())
+                            .inspect(|_| created.push(dst))
                     }
                     OpKind::Move => {
                         let Some(dst_root) = &dest_dir else {
@@ -234,7 +373,8 @@ pub fn spawn_batch(
                             let moved_res = if fs::rename(&src, &dst).is_ok() {
                                 Ok(())
                             } else {
-                                copy_recursive(&src, &dst, &cancel).and_then(|()| remove_path(&src))
+                                copy_recursive_with(&src, &dst, &cancel, tracker.as_mut())
+                                    .and_then(|()| remove_path(&src))
                             };
                             moved_res.inspect(|_| moved.push((src.clone(), dst)))
                         }
@@ -252,10 +392,14 @@ pub fn spawn_batch(
                     return;
                 }
                 done += 1;
-                let _ = tx.send(OpProgress::Update {
-                    label: format!("{verb} ({done}/{total})"),
-                    fraction: done as f64 / total as f64,
-                });
+                if let Some(tr) = tracker.as_mut() {
+                    tr.emit_if_due(done == total);
+                } else {
+                    let _ = tx.send(OpProgress::Update {
+                        label: format!("{verb} ({done}/{total})"),
+                        fraction: done as f64 / total as f64,
+                    });
+                }
             }
             let (summary, undo) = match kind {
                 OpKind::Copy => (
@@ -277,6 +421,15 @@ pub fn spawn_batch(
 }
 
 pub fn copy_recursive(src: &Path, dst: &Path, cancel: &AtomicBool) -> Result<(), String> {
+    copy_recursive_with(src, dst, cancel, None)
+}
+
+fn copy_recursive_with(
+    src: &Path,
+    dst: &Path,
+    cancel: &AtomicBool,
+    mut tracker: Option<&mut ByteProgress<'_>>,
+) -> Result<(), String> {
     if cancel.load(Ordering::Relaxed) {
         return Err("Cancelled".into());
     }
@@ -294,9 +447,13 @@ pub fn copy_recursive(src: &Path, dst: &Path, cancel: &AtomicBool) -> Result<(),
         fs::create_dir_all(dst).map_err(|e| e.to_string())?;
         for entry in fs::read_dir(src).map_err(|e| e.to_string())?.flatten() {
             let child_dst = dst.join(entry.file_name());
-            copy_recursive(&entry.path(), &child_dst, cancel)?;
+            copy_recursive_with(&entry.path(), &child_dst, cancel, tracker.as_deref_mut())?;
         }
         return Ok(());
+    }
+    if let Some(tr) = tracker.as_deref_mut() {
+        tr.current_name = display_name(src);
+        tr.emit_if_due(false);
     }
     let mut reader = fs::File::open(src).map_err(|e| e.to_string())?;
     let mut writer = fs::File::create(dst).map_err(|e| e.to_string())?;
@@ -311,6 +468,10 @@ pub fn copy_recursive(src: &Path, dst: &Path, cancel: &AtomicBool) -> Result<(),
             break;
         }
         writer.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+        if let Some(tr) = tracker.as_deref_mut() {
+            tr.done_bytes = tr.done_bytes.saturating_add(n as u64);
+            tr.emit_if_due(false);
+        }
     }
     let _ = fs::set_permissions(dst, meta.permissions());
     Ok(())
@@ -398,5 +559,29 @@ mod tests {
         let dst = dir.path().join("dst");
         copy_recursive(&src, &dst, &AtomicBool::new(false)).unwrap();
         assert_eq!(fs::read_to_string(dst.join("sub/a.txt")).unwrap(), "abc");
+    }
+
+    #[test]
+    fn byte_progress_measures_trees_and_formats_rate_and_eta() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("tree");
+        fs::create_dir_all(root.join("nested")).unwrap();
+        fs::write(root.join("a.bin"), vec![0u8; 1024]).unwrap();
+        fs::write(root.join("nested/b.bin"), vec![0u8; 2048]).unwrap();
+        assert_eq!(
+            measure_tree_bytes(&root, &AtomicBool::new(false)).unwrap(),
+            3072
+        );
+        let msg = format_byte_progress(
+            "Copying",
+            "big.iso",
+            1024 * 1024,
+            4 * 1024 * 1024,
+            Duration::from_secs(1),
+        );
+        assert!(msg.contains("Copying big.iso"));
+        assert!(msg.contains("1.0 MB / 4.0 MB"));
+        assert!(msg.contains("/s"));
+        assert!(msg.contains("3s left"));
     }
 }

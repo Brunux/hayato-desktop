@@ -812,11 +812,25 @@ impl Screen for AudioScreen {
                 }
                 return Outcome::Done(hayato_ui::app::exit::ESCAPE);
             }
-            KeyCode::Left | KeyCode::Char('-') => {
+            KeyCode::Left => {
                 self.adjust_volume(-5);
                 return Outcome::Consumed;
             }
-            KeyCode::Right | KeyCode::Char('+') | KeyCode::Char('=') => {
+            KeyCode::Char('-')
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    || self.list.filter().is_empty() =>
+            {
+                self.adjust_volume(-5);
+                return Outcome::Consumed;
+            }
+            KeyCode::Right => {
+                self.adjust_volume(5);
+                return Outcome::Consumed;
+            }
+            KeyCode::Char('+') | KeyCode::Char('=')
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    || self.list.filter().is_empty() =>
+            {
                 self.adjust_volume(5);
                 return Outcome::Consumed;
             }
@@ -828,7 +842,8 @@ impl Screen for AudioScreen {
             _ => {}
         }
         let typed = matches!(key.code, KeyCode::Char(_) | KeyCode::Backspace)
-            && !key.modifiers.contains(KeyModifiers::CONTROL);
+            && !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT);
         if typed {
             self.list.type_filter(key);
             return Outcome::Consumed;

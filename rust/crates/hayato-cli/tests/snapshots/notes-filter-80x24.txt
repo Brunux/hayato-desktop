@@ -21,4 +21,4 @@ Hayato · Notes
 │   Some bold notes about the books I want to read this winter, with a line…   │
 │   72 words · edited 2026-11-18 11:11                                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- [Enter]  open   [Ctrl+P]  read   [Del]  trash   [Esc]  close
+ [Enter]  open   [^P]  read   [^S]  share   [Del]  trash   [Esc]  close

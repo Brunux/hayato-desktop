@@ -750,7 +750,7 @@ impl FileOpenScreen {
 
             IntentAction::OpenInBrowser => {
                 let url = format!("file://{}", self.path.display());
-                self.pending_launch = Some(vec!["firefox-esr".to_string(), url]);
+                self.pending_launch = Some(vec!["chromium".to_string(), url]);
                 Outcome::Done(hayato_ui::app::exit::OK)
             }
 

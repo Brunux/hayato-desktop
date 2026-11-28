@@ -673,8 +673,7 @@ impl BarModules {
 
     fn center_modules(self) -> &'static [&'static str] {
         match self {
-            Self::Full => &["clock", "custom/sysmon"],
-            Self::Compact | Self::Minimal => &["clock"],
+            Self::Full | Self::Compact | Self::Minimal => &["clock"],
         }
     }
 
@@ -1037,6 +1036,57 @@ fn set_bar(position: BarPosition, density: BarDensity) -> Result<(), String> {
     Ok(())
 }
 
+pub fn idle_tooltip_value(screen_off: u64, lock: u64, dpms: u64) -> String {
+    let preset = super::idle::preset_name(screen_off, lock, dpms).to_ascii_uppercase();
+    let detail = super::idle::format_summary(screen_off, lock, dpms);
+    format!(
+        "<span alpha='50%'>╭─</span> <b>IDLE // {preset}</b>\\n<span alpha='45%'>│</span> ○ {preset} · {detail}\\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] keep screen awake · [RMB] idle &amp; lock</span>"
+    )
+}
+
+fn idle_tooltip_body(text: &str, screen_off: u64, lock: u64, dpms: u64) -> String {
+    let value = idle_tooltip_value(screen_off, lock, dpms);
+    let mut replaced = false;
+    let mut out = Vec::new();
+    for line in text.lines() {
+        if !replaced
+            && line
+                .trim_start()
+                .starts_with("\"tooltip-format-deactivated\":")
+        {
+            let indent = &line[..line.len() - line.trim_start().len()];
+            let comma = if line.trim_end().ends_with(',') {
+                ","
+            } else {
+                ""
+            };
+            out.push(format!(
+                "{indent}\"tooltip-format-deactivated\": \"{value}\"{comma}"
+            ));
+            replaced = true;
+        } else {
+            out.push(line.to_string());
+        }
+    }
+    let mut body = out.join("\n");
+    if text.ends_with('\n') {
+        body.push('\n');
+    }
+    body
+}
+
+/// Reflect the saved idle/lock timer preset in Waybar's coffee-cup tooltip
+/// and reload Waybar so hovering immediately reports the active mode.
+pub fn sync_idle_tooltip(screen_off: u64, lock: u64, dpms: u64) {
+    let Ok(text) = bar_text() else {
+        return;
+    };
+    let next = idle_tooltip_body(&text, screen_off, lock, dpms);
+    if next != text && write_atomic(&waybar_path(), &next).is_ok() {
+        signal_waybar();
+    }
+}
+
 pub fn toggle_bar_position() -> Result<String, String> {
     let position = bar_position().next();
     set_bar(position, bar_density())?;
@@ -1198,18 +1248,34 @@ mod tests {
             assert_eq!(bar_modules_from(&body), Some(modules));
             serde_json::from_str::<serde_json::Value>(&strip_jsonc(&body)).unwrap();
         }
-        let compact = bar_modules_body(&text, BarModules::Compact);
-        assert_eq!(bar_modules_from(&compact), Some(BarModules::Compact));
-        assert!(compact.contains("\"modules-left\""));
-        assert!(compact.contains("\"tray\""));
+        let minimal = bar_modules_body(&text, BarModules::Minimal);
+        assert_eq!(bar_modules_from(&minimal), Some(BarModules::Minimal));
         assert!(
-            !modules_in_section(&compact, "\"modules-center\":")
-                .contains(&"custom/sysmon".to_string())
+            !modules_in_section(&minimal, "\"modules-right\":")
+                .contains(&"custom/cassette".to_string())
         );
-        let full = bar_modules_body(&compact, BarModules::Full);
+        let full = bar_modules_body(&minimal, BarModules::Full);
         assert_eq!(bar_modules_from(&full), Some(BarModules::Full));
         assert!(
-            modules_in_section(&full, "\"modules-center\":").contains(&"custom/sysmon".to_string())
+            modules_in_section(&full, "\"modules-right\":")
+                .contains(&"custom/cassette".to_string())
         );
+    }
+
+    #[test]
+    fn idle_tooltip_updates_without_breaking_jsonc() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../uis/sway/files/home/.config/waybar/config.jsonc");
+        let text = std::fs::read_to_string(&path).unwrap();
+        for (s, l, d, expected) in [
+            (150, 300, 360, "IDLE // BALANCED"),
+            (600, 1200, 1800, "IDLE // LONG"),
+            (0, 0, 0, "IDLE // NEVER"),
+        ] {
+            let updated = idle_tooltip_body(&text, s, l, d);
+            assert!(updated.contains(expected));
+            serde_json::from_str::<serde_json::Value>(&strip_jsonc(&updated))
+                .unwrap_or_else(|e| panic!("invalid JSONC for {expected}: {e}"));
+        }
     }
 }

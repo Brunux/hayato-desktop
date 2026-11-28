@@ -55,7 +55,7 @@ hardware media keys (`XF86AudioPlay`, `Next`, `Prev`) and `playerctl` control it
 
 1. Press **`4`** (Settings) and choose **Spotify Developer Client ID** to paste your Client ID
    (set redirect URI to `http://127.0.0.1:8898/callback`).
-2. Press **`Enter`** on **Sign in with Spotify (Browser PKCE)** — Firefox opens to authorize
+2. Press **`Enter`** on **Sign in with Spotify (Browser PKCE)** — your browser opens to authorize
    and returns automatically.
 3. To play Spotify audio directly on **this Chromebook** (instead of remote speakers like Echo
    or your phone), press **`Enter`** on **This Device Audio (Spotify Connect)** (or press

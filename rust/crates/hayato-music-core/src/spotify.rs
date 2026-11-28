@@ -6,7 +6,7 @@
 //!   Spotify Developer `client_id` (complying with Spotify's 2026 Development Mode
 //!   5-user / Premium owner rules), enabling in-TUI search, playlists, device picker,
 //!   and play/pause/next/prev/seek/volume over HTTPS (`curl`).
-//! - **Tier 3 (Free Account / Unlinked):** Browse & open tracks in Firefox cleanly.
+//! - **Tier 3 (Free Account / Unlinked):** Browse & open tracks in browser cleanly.
 //!
 //! Credentials are stored at `~/.config/hayato/cassette/spotify.json` with mode `0600`
 //! and excluded from release images by `make-release.sh`.
@@ -106,7 +106,7 @@ pub fn authorize_url(client_id: &str, challenge: &str, state: &str) -> String {
     )
 }
 
-/// Run the interactive PKCE login: opens Firefox to Spotify's auth page and
+/// Run the interactive PKCE login: opens the default browser to Spotify's auth page and
 /// listens on `127.0.0.1:8898/callback` for up to 120 seconds.
 pub fn login_pkce(client_id: &str) -> Result<SpotifyToken, String> {
     let cid = client_id.trim();

@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Open with Hayato
-Comment=Text in bat, images with chafa, video in mpv, the rest in Firefox - the rules of the Files menu
+Comment=Text in bat, images with chafa, video in mpv, the rest in Chromium - the rules of the Files menu
 Exec=/home/brunux/.config/bin/hayato-view %U
 Icon=system-file-manager
 # The handler, not a menu entry: /etc/xdg/mimeapps.list makes it the default for

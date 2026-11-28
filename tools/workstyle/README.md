@@ -100,7 +100,7 @@ Awesome, same family) sits at 12-13 px in the other modules.
 * **The patterns are app_ids, not titles**, as far as possible, and they are
   ordered specific-first. Matching is a case-insensitive substring of the title,
   *then* the app_id, then the WM_CLASS, and the first pattern in the file wins -
-  so `firefox` sits above `foot`: a browser tab whose title mentions a terminal is
+  so `chromium` sits above `foot`: a browser tab whose title mentions a terminal is
   still a browser. `popup`, `hayato-find` and `hayato-welcome` are foot windows
   with their own app_id and are named before `foot` for the same reason.
 

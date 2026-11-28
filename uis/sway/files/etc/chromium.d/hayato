@@ -1,0 +1,12 @@
+# Hayato Chromium profile flags: native Wayland, Panfrost GPU acceleration,
+# low-memory tuning for 4 GB ARM64 devices, and native Chromium vertical tabs.
+# Sourced by /usr/bin/chromium in addition to /etc/chromium.d/{default-flags,dev-shm}.
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS \
+  --ozone-platform-hint=auto \
+  --enable-wayland-ime \
+  --ignore-gpu-blocklist \
+  --enable-zero-copy \
+  --renderer-process-limit=6 \
+  --disk-cache-size=67108864 \
+  --enable-features=VerticalTabs,VerticalTabsLaunch \
+  --disable-features=LensOverlay"

@@ -105,7 +105,7 @@ fn a_frame_of_a_cached_list_allocates_at_most_a_constant() {
             .map(|i| {
                 Row::new(format!("row {i:02}"))
                     .detail("cached")
-                    .value("Alt+1")
+                    .value("Tab")
             })
             .collect(),
     );

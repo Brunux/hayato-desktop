@@ -132,7 +132,7 @@ fn body_rows() -> ListState {
         Row::new("Files (window)")
             .glyph(Glyph::Folder)
             .detail("pcmanfm")
-            .value("Alt+Ctrl+Shift+F"),
+            .value("Alt+Shift+F"),
         Row::new("Capture")
             .glyph(Glyph::Capture)
             .detail("screenshot")
@@ -152,7 +152,7 @@ fn body_rows() -> ListState {
         Row::new("Settings")
             .glyph(Glyph::Gear)
             .detail("radios")
-            .value("Alt+Ctrl+O"),
+            .value("Alt+O"),
         Row::new("Notifications")
             .glyph(Glyph::Bell)
             .detail("mako history")
@@ -250,7 +250,7 @@ fn keybar() {
             design,
             &[
                 KeyHint::new("Enter", "open"),
-                KeyHint::new("Alt+1", "actions"),
+                KeyHint::new("Tab", "actions"),
                 KeyHint::new("type", "filter"),
                 KeyHint::new("Esc", "close"),
             ],
@@ -553,7 +553,7 @@ fn the_app_shell_with_the_menu() {
     .design(Design::solarized().with_reduced_motion(true))
     .keybar(vec![
         KeyHint::new("Enter", "open"),
-        KeyHint::new("Alt+1", "actions"),
+        KeyHint::new("Tab", "actions"),
         KeyHint::new("Esc", "close"),
     ])
     .screen(&mut body);

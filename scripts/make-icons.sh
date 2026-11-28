@@ -150,7 +150,7 @@ TABLE
 render <<'COMMANDS'
 foot                               f120
 footclient                         f120
-firefox-esr                        f0ac
+chromium                           f0ac
 bash                               f120
 dash                               f120
 btop                               f201

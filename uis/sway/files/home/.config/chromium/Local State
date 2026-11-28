@@ -1,0 +1,21 @@
+{
+  "browser": {
+    "first_run_finished": true
+  },
+  "performance_tuning": {
+    "high_efficiency_mode": {
+      "state": 2,
+      "aggressiveness": 1,
+      "time_before_discard_in_minutes": 10
+    },
+    "battery_saver_mode": {
+      "state": 1
+    },
+    "tab_freezing": {
+      "enabled": true
+    },
+    "discard_ring_treatment": {
+      "enabled": true
+    }
+  }
+}

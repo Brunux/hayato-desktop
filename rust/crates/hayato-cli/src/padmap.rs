@@ -71,12 +71,13 @@ impl Action {
         }
     }
 
-    /// The Alt letter, for the three actions that are not a plain key.
-    pub fn alt(self) -> Option<&'static str> {
+    /// Unbound function keysyms (`F21`–`F23`) injected by `wtype` for gamepad actions
+    /// that must never collide with `Alt`-as-Super WM shortcuts or type-to-filter inputs.
+    pub fn pad_keysym(self) -> Option<&'static str> {
         match self {
-            Self::Options => Some("o"),
-            Self::Manual => Some("m"),
-            Self::Folder => Some("r"),
+            Self::Options => Some("F21"),
+            Self::Manual => Some("F22"),
+            Self::Folder => Some("F23"),
             _ => None,
         }
     }
@@ -551,10 +552,10 @@ mod tests {
     }
 
     #[test]
-    fn the_alt_actions_are_the_three_letters() {
-        assert_eq!(Action::Options.alt(), Some("o"));
-        assert_eq!(Action::Manual.alt(), Some("m"));
-        assert_eq!(Action::Folder.alt(), Some("r"));
-        assert_eq!(Action::Enter.alt(), None);
+    fn the_pad_actions_are_the_dedicated_function_keys() {
+        assert_eq!(Action::Options.pad_keysym(), Some("F21"));
+        assert_eq!(Action::Manual.pad_keysym(), Some("F22"));
+        assert_eq!(Action::Folder.pad_keysym(), Some("F23"));
+        assert_eq!(Action::Enter.pad_keysym(), None);
     }
 }

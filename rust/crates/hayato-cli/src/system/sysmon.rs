@@ -1,4 +1,4 @@
-//! Stateless system telemetry probe for Waybar (`custom/sysmon`, `hayato sysmon --bar`).
+//! Stateless system telemetry probe for Waybar (`custom/brand` `H_`, `hayato sysmon --bar`).
 //!
 //! Runs once per Waybar poll interval with zero background daemons, caching only
 //! the previous `/proc/stat` CPU sample in `$XDG_RUNTIME_DIR/hayato/sysmon.stat`
@@ -8,7 +8,8 @@ use std::fmt::Write as _;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-const ICON_SYSMON: &str = "<span font_desc='JetBrains Mono 13'>\u{f201}</span>";
+const BRAND_H: &str = "<span font_desc='JetBrains Mono 14' weight='bold'>H</span>";
+const BRAND_DOT: &str = "<span font_desc='JetBrains Mono 14' weight='bold'>_</span>";
 const WARN_PCT: u8 = 90;
 const CRIT_PCT: u8 = 95;
 
@@ -68,20 +69,32 @@ impl Pressure {
 /// Entrypoint for direct `hayato sysmon` invocations.
 pub fn run(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("hayato sysmon --bar: emit Waybar JSON telemetry for custom/sysmon");
+        println!(
+            "hayato sysmon [--bar | --bar-dot]: emit Waybar JSON telemetry for custom/brand (H_)"
+        );
+        return crate::EXIT_OK;
+    }
+    if args.iter().any(|a| a == "--bar-dot" || a == "bar-dot") {
+        println!("{}", bar_dot_json());
         return crate::EXIT_OK;
     }
     println!("{}", bar_json());
     crate::EXIT_OK
 }
 
-/// Collect live telemetry from `/proc`, `/sys`, and `statvfs` and emit Waybar JSON.
+/// Collect live telemetry from `/proc`, `/sys`, and `statvfs` and emit Waybar JSON for `H`.
 pub fn bar_json() -> String {
-    let snap = collect_snapshot();
+    let snap = collect_snapshot(true);
     bar_json_for(&snap)
 }
 
-fn collect_snapshot() -> SysSnapshot {
+/// Emit matching Waybar telemetry tooltip for `_` (`custom/brand-dot`) without advancing `sysmon.stat`.
+pub fn bar_dot_json() -> String {
+    let snap = collect_snapshot(false);
+    bar_json_for_text(&snap, BRAND_DOT, Some("ok"))
+}
+
+fn collect_snapshot(update_state: bool) -> SysSnapshot {
     let cores = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
@@ -92,7 +105,7 @@ fn collect_snapshot() -> SysSnapshot {
     let cur_cpu = std::fs::read_to_string("/proc/stat")
         .ok()
         .and_then(|s| parse_proc_stat(&s));
-    let (cpu_pct, cpu_sustained_high) = compute_cpu_state(cur_cpu, load_1m, cores);
+    let (cpu_pct, cpu_sustained_high) = compute_cpu_state(cur_cpu, load_1m, cores, update_state);
 
     let (mem_used_kb, mem_total_kb, swap_used_kb, swap_total_kb) =
         std::fs::read_to_string("/proc/meminfo")
@@ -151,6 +164,7 @@ fn compute_cpu_state(
     cur: Option<CpuSample>,
     load_1m: Option<f32>,
     cores: usize,
+    update_state: bool,
 ) -> (Option<u8>, bool) {
     let Some(cur) = cur else {
         let est = estimate_cpu_from_load(load_1m, cores);
@@ -167,7 +181,7 @@ fn compute_cpu_state(
     let is_high = pct.is_some_and(|v| v >= WARN_PCT);
     let sustained = is_high && prev_high;
 
-    if let Some(p) = path {
+    if update_state && let Some(p) = path {
         if let Some(parent) = p.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -428,6 +442,10 @@ fn pressure_assessment(snap: &SysSnapshot) -> (Pressure, &'static str) {
 
 /// Format Waybar JSON (`text`, `class`, `tooltip`) for a [`SysSnapshot`].
 pub fn bar_json_for(snap: &SysSnapshot) -> String {
+    bar_json_for_text(snap, BRAND_H, None)
+}
+
+fn bar_json_for_text(snap: &SysSnapshot, text: &str, class_override: Option<&str>) -> String {
     let (pressure, header_word) = pressure_assessment(snap);
     let up = format_uptime(snap.uptime_secs);
     let mut tooltip = format!(
@@ -512,12 +530,12 @@ pub fn bar_json_for(snap: &SysSnapshot) -> String {
     }
 
     tooltip.push_str(
-        "\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] ncdu ~ · [RMB] btop</span>",
+        "\n<span alpha='50%'>╰─</span> <span alpha='65%'>[LMB] menu · [RMB] terminal · [MMB] btop</span>",
     );
 
     serde_json::json!({
-        "text": ICON_SYSMON,
-        "class": pressure.class(),
+        "text": text,
+        "class": class_override.unwrap_or(pressure.class()),
         "tooltip": tooltip,
     })
     .to_string()
@@ -582,13 +600,14 @@ SwapFree:        1835008 kB
         let raw = bar_json_for(&snap);
         let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(parsed["class"], "ok");
+        assert!(parsed["text"].as_str().unwrap().contains(">H<"));
         let tip = parsed["tooltip"].as_str().unwrap();
         assert!(tip.contains("SYS // LIVE"));
         assert!(tip.contains("up 4h 12m"));
         assert!(tip.contains("24%"));
         assert!(tip.contains("46°C"));
         assert!(!tip.contains("SWP"), "idle swap should be omitted: {tip}");
-        assert!(tip.contains("[LMB] ncdu ~ · [RMB] btop"));
+        assert!(tip.contains("[LMB] menu · [RMB] terminal · [MMB] btop"));
 
         // Separate home partition >= 92% triggers warn with word + active swap row
         let mut high = snap.clone();
@@ -604,6 +623,18 @@ SwapFree:        1835008 kB
         assert!(high_tip.contains("SYS // DISK HIGH"));
         assert!(high_tip.contains("SWP"));
         assert!(high_tip.contains("HOM"));
+
+        // `_` brand dot always keeps `ok` class even when H warns
+        let dot_json: serde_json::Value =
+            serde_json::from_str(&bar_json_for_text(&high, BRAND_DOT, Some("ok"))).unwrap();
+        assert_eq!(dot_json["class"], "ok");
+        assert!(dot_json["text"].as_str().unwrap().contains(">_<"));
+        assert!(
+            dot_json["tooltip"]
+                .as_str()
+                .unwrap()
+                .contains("SYS // DISK HIGH")
+        );
 
         // >= 96% memory triggers critical
         let mut crit = snap;

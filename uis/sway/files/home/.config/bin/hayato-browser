@@ -24,7 +24,9 @@ default_id() {
 case ${1:-} in
 --print)
 	_id=$(default_id)
-	printf '%s\n' "${_id:-firefox-esr.desktop}"
+	# Debian's Chromium ships chromium.desktop and the chromium launcher script;
+	# check-desktop.sh checks both against `xdg-settings get default-web-browser`.
+	printf '%s\n' "${_id:-chromium.desktop}"
 	exit 0
 	;;
 esac
@@ -36,7 +38,7 @@ if [ -n "$url" ]; then
 	if command -v gio >/dev/null 2>&1 && gio open -- "$url"; then
 		exit 0
 	fi
-	exec firefox-esr -- "$url"
+	exec chromium -- "$url"
 fi
 
 _id=$(default_id)
@@ -49,4 +51,4 @@ if [ -n "$_id" ] && command -v gio >/dev/null 2>&1; then
 fi
 # No choice, or the chosen desktop file is gone: the image always ships this
 # one, so the key still opens a browser instead of doing nothing.
-exec firefox-esr
+exec chromium

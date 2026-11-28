@@ -121,13 +121,14 @@ can no longer end the idle screen, and when the 150 s command stops returning at
 once (swayidle waits for it, and the lock and the panel-off timer would never
 arrive).
 
-A **fullscreen video or presentation** in Firefox or `papers`, and a video in
+A **fullscreen video or presentation** in Chromium or `papers`, and a video in
 **mpv**, are exempt: they ask the compositor to inhibit the idle timer while
 they are being watched, so a film is not interrupted and the screen stays on.
 The automatic half is `/etc/sway/config.d/32-idle-inhibit.conf`; the manual half
 is the **coffee cup on the bar**, in the workspace accent while the screen is
-kept awake and dim when it may sleep. It is waybar's own module and starts no
-process.
+kept awake and dim when it may sleep (hovering shows the active **Idle & lock**
+preset — Balanced, Long, Never, etc. — and right-clicking opens it directly). It
+is waybar's own module and starts no process.
 
 ## The first launch
 
@@ -269,7 +270,7 @@ The native **VPN** client (`hayato menu vpn`, Settings → *Network → VPN*, or
 A network that wants you to accept its terms before it lets you online is a
 **captive portal**. NetworkManager reports it as `portal` or `limited`; the
 **Wi-Fi** menu (`hayato menu net`) then starts with **Sign in to this network**,
-and Enter opens the page in Firefox. The page is found by asking NetworkManager's
+and Enter opens the page in Chromium. The page is found by asking NetworkManager's
 own connectivity endpoint where it redirects; only `http` and `https` URLs are
 opened. Settings → Network shows the same row while a sign-in is pending. After
 the page accepts you, the row disappears on the next scan or connection.
@@ -284,7 +285,7 @@ a shell but not the picture. A rotated screen, a window that will not draw, a
 lock screen that came up wrong: all of those are one glance away instead of one
 photograph.
 
-**Settings** (Alt+Ctrl+O) → **Share this screen** starts it and says where it is
+**Settings** (Alt+O) → **Share this screen** starts it and says where it is
 serving; the same list is in the root menu (Alt+Space), and it is where **Stop
 sharing** and **Copy the tunnel command** live. While it is on, the bar shows an
 eye for read-only sharing or a keyboard for remote control (right click stops

@@ -65,14 +65,14 @@ input "1267:287:Elan_Touchpad" {
 ### Key bindings
 #
 # $mod is Alt on this machine. Every binding carries its description on the line
-# above (hayato-keys, Alt+Shift+K, shows those comments), and a description applies
+# above (hayato-keys, Alt+/, shows those comments), and a description applies
 # to the bindings that follow it until a blank line or the next comment.
 
     # Start a terminal
     bindsym $mod+Return exec $term
 
     # Close the focused window
-    bindsym $mod+Shift+q kill
+    bindsym $mod+q kill
 
     # Reload the configuration file
     bindsym $mod+Shift+c reload
@@ -200,13 +200,13 @@ input "1267:287:Elan_Touchpad" {
     # Fullscreen
     bindsym $mod+f fullscreen
 
-    # Toggle floating (Alt+T floats the window; there is no focus mode to toggle)
+    # Toggle floating
     bindsym $mod+Shift+space floating toggle
 
     # Focus the parent container
     bindsym $mod+a focus parent
 
-# Scratchpad: a bag of holding for windows. Alt+grave and Alt+minus both reach it.
+# Scratchpad: a bag of holding for windows. Alt+minus and Alt+Shift+minus reach it.
 
     # Put the focused window in the scratchpad
     bindsym $mod+Shift+minus move scratchpad
